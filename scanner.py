@@ -470,6 +470,10 @@ def main():
         if trade_id in seen:
             continue
 
+        # Mark this listing as processed exactly once, including listings with
+        # unmatched items, so the same listing is not repeatedly re-analysed.
+        evaluated_ids.append(trade_id)
+
         # BloxSwaps Propose = what the poster offers (you receive).
         # BloxSwaps Recherche = what the poster wants (you give).
         give_total, give_lines, give_missing = calculate_side(listing["give_items"], values)
@@ -481,7 +485,6 @@ def main():
             continue
 
         difference = receive_total - give_total
-        evaluated_ids.append(trade_id)
 
         # Zero-profit trades are intentionally included. Negative results are not sent as opportunities.
         if difference >= MIN_DIFF:
