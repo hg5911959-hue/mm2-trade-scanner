@@ -381,18 +381,19 @@ def _item_quantity_details(image_node, segment_text):
     if semantic_quantity is not None:
         explicit.append(semantic_quantity)
 
-    if invalid_structured or len(set(explicit)) > 1:
-        return None, "uncertain", _listed_price(local_text), local_text[:240]
+    candidates = list(explicit)
+    if structured is not None:
+        candidates.append(structured)
+    if invalid_structured or len(set(explicit)) > 1 or unreadable:
+        bounds = (min(candidates), max(candidates)) if candidates else (1, None)
+        return None, "uncertain", _listed_price(local_text), local_text[:240], bounds[0], bounds[1], "ambiguous quantity marker"
     if structured is not None:
         if explicit and any(value != structured for value in explicit):
-            return None, "uncertain", _listed_price(local_text), local_text[:240]
-        return structured, "structured", _listed_price(local_text), local_text[:240]
+            return None, "uncertain", _listed_price(local_text), local_text[:240], min(candidates), max(candidates), "HTML/structured quantity disagreement"
+        return structured, "structured", _listed_price(local_text), local_text[:240], structured, structured, ""
     if explicit:
-        return explicit[0], "explicit", _listed_price(local_text), local_text[:240]
-    if unreadable:
-        return None, "uncertain", _listed_price(local_text), local_text[:240]
-    return 1, "implicit_single", _listed_price(local_text), local_text[:240]
-
+        return explicit[0], "explicit", _listed_price(local_text), local_text[:240], explicit[0], explicit[0], ""
+    return 1, "implicit_single", _listed_price(local_text), local_text[:240], 1, 1, ""
 
 def extract_side_items(node):
     events = collect_ordered_events(node)
@@ -423,7 +424,7 @@ def extract_side_items(node):
             if next_kind == "text":
                 suffix.append(next_value)
             end += 1
-        quantity, source, price, raw_excerpt = _item_quantity_details(
+        quantity, source, price, raw_excerpt, quantity_min, quantity_max, reason = _item_quantity_details(
             value["node"], " ".join(suffix)
         )
         target = received if side == "receive" else requested
@@ -431,6 +432,9 @@ def extract_side_items(node):
             "name": value["name"],
             "quantity": quantity,
             "quantity_source": source,
+            "quantity_min": quantity_min,
+            "quantity_max": quantity_max,
+            "quantity_reason": reason,
             "listed_price": price,
             "raw_excerpt": raw_excerpt,
         })
