@@ -43,6 +43,7 @@ SEEN_FILE = Path("data/seen_ads.json")
 PENDING_FILE = Path("data/pending_recheck.json")
 FIRST_SEEN_FILE = Path("data/first_seen_ads.json")
 LAST_SUCCESS_FILE = Path("data/last_successful_scan.json")
+WATCH_FILE = Path("data/watch_ads.json")
 ALIASES_FILE = Path("aliases.json")
 UNMATCHED_FILE = Path("data/unmatched_names.json")
 MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
@@ -1164,7 +1165,7 @@ def _last_successful_scan_timestamp():
         raise RuntimeError("[state] Last-success checkpoint is unreadable; refusing unsafe pagination boundary.")
 
 
-def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None):
+def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None):
     """Fetch recent RSC/API posts and recheck unresolved IDs beyond seen posts."""
     if seen_ad_ids is None and pending_ad_ids:
         seen_ad_ids = set()
@@ -1248,6 +1249,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None):
 
     seen = set(str(value) for value in seen_ad_ids)
     pending_remaining = set(str(value) for value in (pending_ad_ids or []))
+    watch_ids = set(str(value) for value in (watch_ad_ids or []))
     pending_found_ids = []
     by_ad_id = {
         str(listing.get("source_ad_id")): listing
@@ -1285,7 +1287,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None):
                 refreshed_ts is not None and last_success_ts is not None
                 and refreshed_ts >= last_success_ts - 90
             )
-            if post_id in seen and post_id not in pending_remaining and not recently_refreshed:
+            if post_id in seen and post_id not in pending_remaining and post_id not in watch_ids and not recently_refreshed:
                 seen_ids_skipped.append(post_id)
                 if pending_remaining:
                     # Pending ads take priority over an early boundary.
@@ -2358,6 +2360,54 @@ def write_step_summary(line):
             pass
 
 
+def listing_watch_fingerprints(listing, values, aliases=None):
+    content, valuation = [], []
+    for side, field in (('give', 'give_items'), ('receive', 'receive_items')):
+        for item in listing.get(field, []):
+            name = str(item.get('name') or '')
+            content.append((side, normalize_name(name), str(item.get('structured_item_id') or ''), item.get('quantity'), item.get('quantity_min'), item.get('quantity_max'), item.get('quantity_source')))
+            record, match_source, _ = resolve_value_record(name, values, aliases)
+            unit_value = None
+            if record: unit_value, _selected = _select_conservative_variant(record, side)
+            valuation.append((side, normalize_name(name), unit_value, match_source))
+    content_hash = hashlib.sha256(json.dumps(sorted(content), sort_keys=True, default=str).encode()).hexdigest()
+    values_hash = hashlib.sha256(json.dumps(sorted(valuation), sort_keys=True, default=str).encode()).hexdigest()
+    return content_hash, values_hash
+
+def load_watch_state():
+    if not WATCH_FILE.exists(): return {}
+    try: data = json.loads(WATCH_FILE.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as exc: raise RuntimeError('[state] Watch-window state is unreadable; refusing to lose re-evaluation coverage.') from exc
+    ads = data.get('ads') if isinstance(data, dict) else None
+    if not isinstance(ads, dict): raise RuntimeError('[state] Watch-window state has an invalid structure.')
+    now = time.time()
+    active = {}
+    for ad_id, entry in ads.items():
+        if not isinstance(entry, dict): raise RuntimeError('[state] Watch-window entry has an invalid structure.')
+        created = float(entry.get('created_at', 0) or 0)
+        if created > 0 and now - created <= 6 * 3600: active[str(ad_id)] = entry
+    if len(active) > 300: active = dict(sorted(active.items(), key=lambda pair: float(pair[1].get('updated_at', 0)))[-300:])
+    if len(active) != len(ads): save_watch_state(active)
+    return active
+
+def save_watch_state(ads):
+    now = time.time()
+    active = {str(k): v for k, v in ads.items() if isinstance(v, dict) and now - float(v.get('created_at', now)) <= 6 * 3600}
+    if len(active) > 300: active = dict(sorted(active.items(), key=lambda pair: float(pair[1].get('updated_at', 0)))[-300:])
+    atomic_write_text(WATCH_FILE, json.dumps({'version': 1, 'ads': active}, ensure_ascii=False, indent=2) + '\\n')
+
+def update_watch_entry(watch_state, listing, values, aliases=None):
+    ad_id = str(listing.get('source_ad_id') or '')
+    if not ad_id: return False
+    content_hash, values_hash = listing_watch_fingerprints(listing, values, aliases)
+    now = time.time()
+    previous = watch_state.get(ad_id, {})
+    changed = bool(previous) and (previous.get('content_hash') != content_hash or previous.get('values_hash') != values_hash)
+    created = now if changed or not previous else float(previous.get('created_at', now))
+    watch_state[ad_id] = {'content_hash': content_hash, 'values_hash': values_hash, 'created_at': created, 'updated_at': now}
+    save_watch_state(watch_state)
+    return changed
+
 def scan_once():
     if not BOT_TOKEN or not CHAT_ID:
         raise RuntimeError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in GitHub Actions secrets.")
@@ -2382,7 +2432,7 @@ def scan_once():
         seen_ads = set()
     print(f"[state] Pending listings queued for recheck: {len(pending_ids)}")
     print("[stage] Fetching BloxSwaps listings and cursor pages")
-    listings, stats, discovered_ids = fetch_bloxswaps_all(seen_ads, pending_ids.keys())
+    listings, stats, discovered_ids = fetch_bloxswaps_all(seen_ads, pending_ids.keys(), watch_state.keys())
     first_seen_ads = load_first_seen_ads()
     first_seen_changed = False
     observed_at = datetime.now(timezone.utc).isoformat()
@@ -2578,7 +2628,16 @@ def scan_once():
             mark_seen_ad(listing)
             uncertain_skipped += 1
             continue
-        if trade_id in alerted_set:
+        watch_id = str(listing.get("source_ad_id") or "")
+        previous_watch = watch_state.get(watch_id, {})
+        content_hash, values_hash = listing_watch_fingerprints(listing, values, aliases)
+        fingerprint_changed = bool(previous_watch) and (
+            previous_watch.get("content_hash") != content_hash
+            or previous_watch.get("values_hash") != values_hash
+        )
+        if trade_id in alerted_set and not fingerprint_changed:
+            if not previous_watch:
+                update_watch_entry(watch_state, listing, values, aliases)
             already_alerted_skipped += 1
             mark_seen_ad(listing)
             continue
@@ -2602,12 +2661,14 @@ def scan_once():
             ]
             if unknown_names:
                 record_unmatched_names(unknown_names)
+            update_watch_entry(watch_state, listing, values, aliases)
             continue
         if not qualifies(result):
             if result.get("uncertain_items"):
                 mark_pending(listing)
             else:
                 mark_seen_ad(listing)
+            update_watch_entry(watch_state, listing, values, aliases)
             continue
         opportunities.append(result)
 
@@ -2686,6 +2747,7 @@ def scan_once():
             )
             continue
         mark_alerted(trade_id)
+        update_watch_entry(watch_state, listing, values, aliases)
         uncertain_ids.discard(trade_id)
         save_uncertain_ids(uncertain_ids)
         mark_seen_ad(listing)
