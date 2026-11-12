@@ -45,7 +45,9 @@ UNMATCHED_FILE = Path("data/unmatched_names.json")
 MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
 BLOXSWAPS_PAGE_SIZE = 20
 MAX_FEED_PAGES = max(1, min(100, int(os.environ.get("MAX_FEED_PAGES", "50"))))
-VALUES_TTL_SECONDS = 4 * 60 * 60
+VALUES_TTL_SECONDS = max(60, int(os.environ.get("VALUES_TTL_SECONDS", "300")))
+BLOXSWAPS_ITEMS_TTL_SECONDS = max(300, int(os.environ.get("BLOXSWAPS_ITEMS_TTL_SECONDS", "3600")))
+BLOXSWAPS_ITEMS_FILE = Path("data/bloxswaps_items.json")
 SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "100"))
 TELEGRAM_MAX_CHARS = 4000
 
@@ -819,6 +821,16 @@ def bloxswaps_api_get_json(path, params=None):
 
 
 def fetch_bloxswaps_items_map():
+    if BLOXSWAPS_ITEMS_FILE.exists():
+        try:
+            cache = json.loads(BLOXSWAPS_ITEMS_FILE.read_text(encoding="utf-8"))
+            age = max(0, int(time.time() - float(cache.get("fetched_at", 0))))
+            cached = cache.get("items")
+            if age <= BLOXSWAPS_ITEMS_TTL_SECONDS and isinstance(cached, dict) and cached:
+                print(f"[bloxswaps] Using fresh item catalogue ({len(cached)} names; age {age}s)")
+                return cached
+        except (OSError, ValueError, TypeError):
+            print("[bloxswaps] Item catalogue cache is unreadable; attempting live refresh")
     payload = bloxswaps_api_get_json("/items")
     if isinstance(payload, dict):
         payload = payload.get("items", payload.get("data", []))
@@ -830,7 +842,11 @@ def fetch_bloxswaps_items_map():
             mapping[str(item["id"])] = item
     if not mapping:
         raise RuntimeError("[bloxswaps] Item catalogue has no id/displayName mapping.")
-    print(f"[bloxswaps] Loaded {len(mapping)} item-name mappings from site catalogue")
+    BLOXSWAPS_ITEMS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(BLOXSWAPS_ITEMS_FILE, json.dumps({
+        "fetched_at": time.time(), "items": mapping,
+    }, ensure_ascii=False) + "\n")
+    print(f"[bloxswaps] Refreshed {len(mapping)} item-name mappings from site catalogue")
     return mapping
 
 
@@ -1134,12 +1150,16 @@ def _read_values_cache():
 
 
 def load_supreme_values():
-    # Always fetch the provider's current snapshot on every scan. The API
-    # itself may publish Supreme's upstream changes on its own refresh cadence;
-    # never silently calculate trades from an older local snapshot.
+    # Reuse a short-lived, successfully fetched snapshot; never fall back to stale
+    # values after the TTL because that can manufacture false-profit alerts.
     cached_values, cached_age = _read_values_cache()
+    if cached_values is not None and cached_age is not None and cached_age <= VALUES_TTL_SECONDS:
+        print(f"[supreme] Using fresh source_b snapshot (age {cached_age}s; TTL {VALUES_TTL_SECONDS}s)")
+        return cached_values
+    if not RBLXVALUE_API_KEY:
+        raise RuntimeError("[supreme] API key missing and no fresh cached source_b snapshot; refusing stale values.")
     if cached_values is not None:
-        print(f"[supreme] Cached snapshot available for diagnostics only (age {cached_age // 60} min); refreshing API")
+        print(f"[supreme] Cached snapshot expired (age {cached_age}s); refreshing API")
 
     all_values = {}
     try:
