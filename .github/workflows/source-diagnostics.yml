@@ -25,6 +25,7 @@ jobs:
           python - <<'PY'
           import base64, json, os, re, urllib.request
           from html.parser import HTMLParser
+          from html import escape as html_escape, unescape as html_unescape
           from urllib.parse import urljoin, urlsplit, urlencode
 
           URL = "https://bloxswaps.com/fr/trade-mm2?trade-type=P2P"
@@ -203,14 +204,18 @@ jobs:
               selected_article = ""
               selected_id = ""
               for article in articles:
-                  if "propose" not in article.casefold() or "recherche" not in article.casefold():
+                  article_decoded = html_unescape(article)
+                  if "propose" not in article_decoded.casefold() or "recherche" not in article_decoded.casefold():
                       continue
-                  match = re.search(r"""[?&]ad=([^&"' ]+)""", article)
+                  match = re.search(r"""[?&]ad=([^&"' ]+)""", article_decoded)
                   if not match: continue
                   candidate_id = match.group(1)
-                  if any(str(x.get("id")) == candidate_id for x in captured_page.get("items", [])):
-                      selected_article, selected_id = article, candidate_id
-                      break
+                  post = next((x for x in captured_page.get("items", []) if str(x.get("id")) == candidate_id), None)
+                  if not post: continue
+                  if any(str(value).casefold() in {"add", "ajout", "ajouts"} for value in (post.get("requestedWildcards") or [])):
+                      continue
+                  selected_article, selected_id = article_decoded, candidate_id
+                  break
               if selected_article:
                   def redact_link(match):
                       href = match.group(1)
@@ -219,7 +224,7 @@ jobs:
                       href = re.sub(r"([?&])with=[^&]+", r"\1with=fixture-user", href)
                       href = re.sub(r"([?&])id=[^&]+", r"\1id=123", href)
                       href = re.sub(r"([?&])name=[^&]+", r"\1name=Fixture", href)
-                      return 'href="' + href + '"'
+                      return 'href="' + html_escape(href, quote=True) + '"'
                   selected_article = re.sub(r'href="([^"]+)"', redact_link, selected_article)
                   selected_post = next(x for x in captured_page["items"] if str(x.get("id")) == selected_id)
                   fixture_post = {
