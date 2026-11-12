@@ -165,6 +165,40 @@ class ParserTests(unittest.TestCase):
         listing = parse_listings(html)[0]
         self.assertEqual(listing["receive_items"][0]["quantity"], 3)
 
+    def test_stack_quantity_in_bloxswaps_badge_is_parsed(self):
+        html = """
+        <article>
+          <div>Propose
+            <div class="trade-item">
+              <span class="item-quantity">2</span>
+              <img alt="Harvester">
+            </div>
+            <div class="trade-item">
+              <img alt="Spirit">
+              <span class="quantity-badge">x3</span>
+            </div>
+          </div>
+          <div>Recherche <img alt="Harvester"></div>
+          <a href="/fr/users/12345">Owner</a>
+        </article>
+        """
+        listing = parse_listings(html)[0]
+        self.assertEqual(
+            listing["receive_items"],
+            [{"name": "Harvester", "quantity": 2},
+             {"name": "Spirit", "quantity": 3}],
+        )
+
+    def test_quantity_from_data_attribute_is_parsed(self):
+        html = """
+        <article>
+          <div>Propose <img alt="Harvester" data-quantity="2"></div>
+          <div>Recherche <img alt="Spirit"></div>
+        </article>
+        """
+        listing = parse_listings(html)[0]
+        self.assertEqual(listing["receive_items"][0]["quantity"], 2)
+
     def test_stale_supreme_cache_is_used_when_api_fails(self):
         values = {
             f"item {i}": {"name": f"Item {i}", "value": i + 1, "secondary_value": None}
