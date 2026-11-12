@@ -248,6 +248,7 @@ class ReliabilityTests(unittest.TestCase):
         message = scanner.format_trade_message(listing, 10, ["give"], 20, ["receive"], 10)
         self.assertIn("OPEN OWNER PROFILE: https://bloxswaps.com/fr/users/12345", message)
         self.assertLess(message.index("OPEN OWNER PROFILE"), message.index("Listing details"))
+        self.assertLess(message.index("OPEN OWNER PROFILE"), message.index("YOU GIVE"))
 
     def test_unvalued_trade_message_is_explicit_and_links_owner(self):
         listing = {
@@ -260,6 +261,23 @@ class ReliabilityTests(unittest.TestCase):
         self.assertIn("Knife A x2", message)
         self.assertIn("PROFIT: NOT CALCULATED", message)
         self.assertIn("OPEN OWNER PROFILE: https://bloxswaps.com/fr/users/123", message)
+
+    def test_owner_link_survives_telegram_truncation(self):
+        listing = {
+            "url": "https://bloxswaps.com/fr/trade-mm2?ad=abc",
+            "owner_url": "https://bloxswaps.com/fr/users/12345?tab=trade-ads",
+        }
+        many_items = [f"• Item {i} — 1 each = 1" for i in range(500)]
+        message = scanner.format_trade_message(listing, 500, many_items, 500, many_items, 0)
+        captured = {}
+        def fake_request(req, timeout, label, attempts=4):
+            captured["text"] = json.loads(req.data.decode())["text"]
+            return b'{"ok": true}'
+        with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
+            "scanner.request_with_retry", side_effect=fake_request
+        ):
+            scanner.send_telegram(message)
+        self.assertIn("OPEN OWNER PROFILE: https://bloxswaps.com/fr/users/12345", captured["text"])
 
     def test_main_retries_unmatched_offer_after_value_mapping_becomes_available(self):
         html = """
