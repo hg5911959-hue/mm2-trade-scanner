@@ -125,15 +125,17 @@ def node_text(node):
 
 def has_trade_sides(text):
     t = text.casefold()
-    return (("propose" in t and "recherche" in t) or
-            ("offer" in t and "request" in t) or
-            ("offering" in t and "looking for" in t))
+    receive = bool(re.search(r"\bpropose\b|\boffering\b|\boffer\b", t))
+    give = bool(re.search(r"\brecherche\b|\blooking for\b|\brequest\b", t))
+    return receive and give
 
 
 def smallest_matching_nodes(node, predicate):
+    if getattr(node, "tag", "") in {"script", "style", "noscript"}:
+        return []
     child_matches = []
     for kind, value in node.events:
-        if kind == "node" and predicate(node_text(value)):
+        if kind == "node" and getattr(value, "tag", "") not in {"script", "style", "noscript"} and predicate(node_text(value)):
             child_matches.extend(smallest_matching_nodes(value, predicate))
     if child_matches:
         return child_matches
