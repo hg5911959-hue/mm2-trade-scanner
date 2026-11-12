@@ -21,7 +21,7 @@ jobs:
           python - <<'PY'
           import json, re, urllib.request
           from html.parser import HTMLParser
-          from urllib.parse import urljoin, urlsplit
+          from urllib.parse import urljoin, urlsplit, urlencode
 
           URL = "https://bloxswaps.com/fr/trade-mm2?trade-type=P2P"
           HEADERS = {
@@ -100,6 +100,7 @@ jobs:
                               try: return json.loads(text[start:i+1])
                               except Exception: return None
               return None
+          discovered_cursor = None
           for i, payload in enumerate(rsc_payloads):
               if "initialPage" in payload:
                   page_obj = extract_object_after(payload, '"initialPage":')
@@ -108,6 +109,7 @@ jobs:
                       items = page_obj.get("items", [])
                       print("RSC_INITIAL_PAGE_ITEM_COUNT", len(items))
                       print("RSC_PAGE_META", {k:v for k,v in page_obj.items() if k != "items"})
+                      discovered_cursor = (page_obj.get("meta") or {}).get("cursor")
                       for item in items[:12]:
                           print("RSC_LISTING", json.dumps({
                               "id": item.get("id"),
@@ -117,6 +119,25 @@ jobs:
                           }, ensure_ascii=False)[:2400])
                   else:
                       print("RSC_INITIAL_PAGE_PARSE_FAILED", i, payload.find('"initialPage":'))
+          print("TRADE_POST_LINKS", [x for x in parser.links if "trade-mm2" in x or "ad=" in x][:50])
+          if discovered_cursor:
+              for params in ({"cursor": discovered_cursor}, {"type":"P2P","cursor":discovered_cursor}, {"tradeType":"P2P","cursor":discovered_cursor}, {"trade-type":"P2P","cursor":discovered_cursor}):
+                  endpoint = "https://bloxswaps.com/api/trade-posts?" + urlencode(params)
+                  try:
+                      rq = urllib.request.Request(endpoint, headers=HEADERS)
+                      with urllib.request.urlopen(rq, timeout=20) as response:
+                          data = json.loads(response.read().decode("utf-8", "replace"))
+                      payload = data.get("data", data)
+                      print("PAGINATION_API_OK", params.keys(), "keys", list(payload) if isinstance(payload, dict) else type(payload).__name__)
+                      print("PAGINATION_API_PAGE", json.dumps({
+                          "count": len(payload.get("items", [])) if isinstance(payload, dict) else None,
+                          "meta": payload.get("meta") if isinstance(payload, dict) else None,
+                          "first_ids": [x.get("id") for x in payload.get("items", [])[:3]] if isinstance(payload, dict) else None
+                      }, ensure_ascii=False)[:1500])
+                      if isinstance(payload, dict) and payload.get("items"):
+                          break
+                  except Exception as e:
+                      print("PAGINATION_API_FAIL", params.keys(), type(e).__name__, str(e)[:200])
           print("PAGINATION_LINKS", [x for x in parser.links if re.search(r"page|cursor|offset|next", x, re.I)][:80])
           print("PAGE_QUERY_HINTS", sorted(set(re.findall(r"(?i)(?:page|cursor|offset|limit|take|skip)[A-Za-z0-9_]*", html)))[:80])
           print("APP_DATA_MARKERS", [m for m in re.findall(r"(?i)(?:/api/|graphql|trades|listings)[^\\\"'\\s]{0,140}", html)[:80]])
