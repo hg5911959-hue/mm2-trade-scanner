@@ -607,6 +607,48 @@ class ReliabilityTests(unittest.TestCase):
             scanner.send_telegram(message)
         self.assertIn("OPEN OWNER PROFILE: https://bloxswaps.com/fr/users/12345", captured["text"])
 
+    def test_one_definite_telegram_failure_does_not_stop_later_alerts(self):
+        html = """
+        <article>
+          <div>Propose <img alt="Knife B"></div>
+          <div>Recherche <img alt="Knife A"></div>
+          <a href="/fr/trade-mm2?ad=offer-one">Discussion</a>
+          <a href="/fr/users/123">Owner</a>
+        </article>
+        <article>
+          <div>Propose <img alt="Knife B"></div>
+          <div>Recherche <img alt="Knife A"></div>
+          <a href="/fr/trade-mm2?ad=offer-two">Discussion</a>
+          <a href="/fr/users/456">Owner</a>
+        </article>
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            values = {
+                "knife a": {"name": "Knife A", "value": 10},
+                "knife b": {"name": "Knife B", "value": 20},
+            }
+            with (
+                patch("scanner.BOT_TOKEN", "test-token"),
+                patch("scanner.CHAT_ID", "123"),
+                patch("scanner.ALERTED_FILE", root / "alerted.json"),
+                patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
+                patch("scanner.FAILURE_FILE", root / "failure.json"),
+                patch("scanner.HISTORY_FILE", root / "history.csv"),
+                patch("scanner.SEEN_FILE", root / "seen_ads.json"),
+                patch("scanner.load_supreme_values", return_value=values),
+                patch("scanner.fetch_bloxswaps", return_value=html),
+                patch("scanner.send_telegram", side_effect=[RuntimeError("rejected"), None]) as send,
+                patch("scanner.compare_secondary_values", return_value=""),
+            ):
+                scanner.main()
+            self.assertEqual(send.call_count, 2)
+            alerted = json.loads((root / "alerted.json").read_text(encoding="utf-8"))["alerted"]
+            self.assertEqual(len(alerted), 1)
+            seen = json.loads((root / "seen_ads.json").read_text(encoding="utf-8"))["ad_ids"]
+            self.assertEqual(seen, ["offer-two"])
+
+
     def test_main_quarantines_uncertain_telegram_delivery_on_next_scan(self):
         html = """
         <article>
