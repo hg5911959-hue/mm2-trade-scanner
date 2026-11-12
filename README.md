@@ -47,6 +47,7 @@ Never commit or share any of these secrets. The scanner never prints API keys or
 - Failure alerts: Telegram is notified after 3 consecutive failed runs, then every 5 additional consecutive failures (8, 13, 18...). A successful run resets the counter.
 - GitHub Actions schedules are recurring checks, not a permanently running server; GitHub may occasionally delay scheduled starts.
 - Manual run: **Actions → MM2 Trade Scanner → Run workflow**.
+- Telegram connection test: **Actions → Telegram Connection Test → Run workflow**. This sends one explicit test message without changing scanner state or triggering a trade scan; the job fails with a safe API error if Telegram rejects it.
 - Logs: open the workflow run and download the `mm2-scanner-diagnostics` artifact.
 - Optional missed-schedule monitoring: create a free check at Healthchecks.io and save its ping URL as the repository secret `HEALTHCHECKS_PING_URL`. The workflow pings on successful scans and sends `/fail` on failures; the service can alert if scheduled pings stop arriving.
 - Processed IDs, Supreme cache, failure counter, and `history.csv` are persisted with GitHub Actions Cache. Runtime `data/` is git-ignored and is not tracked in `main`. A separate monthly keepalive workflow commits a tiny activity marker to reduce the risk of scheduled workflows being disabled for inactivity.
