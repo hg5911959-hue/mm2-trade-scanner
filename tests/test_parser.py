@@ -107,6 +107,18 @@ class ParserTests(unittest.TestCase):
         listing = parse_listings(html)[0]
         self.assertEqual(listing["receive_items"], [{"name": "Chroma Gemstone", "quantity": 2}])
 
+    def test_items_without_numeric_supreme_value_are_ignored(self):
+        items = [
+            {"name": "Brew", "quantity": 1},
+            {"name": "Drool", "quantity": 1},
+            {"name": "Snowstorm", "quantity": 1},
+        ]
+        values = {"snowstorm": {"name": "Snowstorm", "value": 250}}
+        total, breakdown, missing = calculate_side(items, values)
+        self.assertEqual(total, 250)
+        self.assertEqual(missing, [])
+        self.assertEqual(breakdown, ["• Snowstorm — 250 each = 250"])
+
     def test_calculate_side_multiplies_quantities_and_groups_duplicates(self):
         items = [
             {"name": "Chroma Gemstone", "quantity": 2},
