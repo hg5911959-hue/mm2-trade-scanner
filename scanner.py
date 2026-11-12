@@ -1968,8 +1968,11 @@ def load_supreme_values():
         if numeric_count < 100:
             raise RuntimeError(f"[supreme] Only {numeric_count} numeric source_b values loaded; refusing to calculate")
     except Exception as exc:
+        # Preserve the safe failure, but expose the sanitized upstream reason for diagnosis.
+        reason = redact(str(exc))[:300]
         raise RuntimeError(
-            f"[supreme] Could not refresh current source_b values; refusing stale-cache calculations ({type(exc).__name__})"
+            f"[supreme] Could not refresh current source_b values; refusing stale-cache calculations "
+            f"({type(exc).__name__}: {reason})"
         ) from exc
 
     VALUES_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -2624,10 +2627,11 @@ def evaluate_listing(listing, values, aliases=None):
 def qualifies(result, min_diff=None, min_percent=None):
     min_diff = MIN_DIFF if min_diff is None else min_diff
     min_percent = MIN_PROFIT_PERCENT if min_percent is None else min_percent
-    metric = result.get(
-        "profit_best" if result.get("manual_review") else "profit_worst",
-        result.get("difference", 0),
-    )
+    # Only fully verified, conservative-positive trades are eligible for Telegram.
+    # A best-case-only profit is uncertain and must never be advertised as a WIN.
+    if result.get("manual_review") or result.get("uncertain_items"):
+        return False
+    metric = result.get("profit_worst", result.get("difference", 0))
     return metric > 0 and metric >= min_diff and result["margin"] >= min_percent
 
 
