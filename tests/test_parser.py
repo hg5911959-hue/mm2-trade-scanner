@@ -4,11 +4,45 @@ import watchdog
 import json
 import re
 import tempfile
+import os
+from datetime import datetime, timezone
 from pathlib import Path
 from datetime import datetime, timezone
 from unittest.mock import patch
 
 from scanner import parse_listings, parse_page, calculate_side, load_supreme_values
+
+def with_rsc(html):
+    """Attach explicit RSC item names to HTML fixtures so tests exercise identity matching."""
+    listings, _ = parse_page(html)
+    posts = []
+    for listing in listings:
+        rows = []
+        for field, role in (("receive_items", "OFFERED"), ("give_items", "REQUESTED")):
+            for item in listing.get(field, []):
+                quantity = item.get("quantity")
+                if quantity is None:
+                    quantity = 1
+                rows.append({
+                    "itemDetailsId": normalize_fixture_id(item["name"]),
+                    "displayName": item["name"],
+                    "quantity": quantity,
+                    "tradeRole": role,
+                })
+        posts.append({
+            "id": listing["source_ad_id"],
+            "tradePostItems": rows,
+            "requestedWildcards": [],
+            "lastRefreshedAt": datetime.now(timezone.utc).isoformat(),
+            "user": {"robloxUserId": "123", "robloxUsername": "fixture", "robloxDisplayName": "Fixture"},
+        })
+    page = {"items": posts, "meta": {"cursor": None}}
+    payload = json.dumps({"initialPage": page}, ensure_ascii=False, separators=(",", ":"))
+    return '<script>self.__next_f.push([1,' + json.dumps(payload) + ']);</script>' + html
+
+
+def normalize_fixture_id(name):
+    return re.sub(r"[^a-z0-9]+", "-", str(name).casefold()).strip("-")
 
 
 class ParserTests(unittest.TestCase):
@@ -702,7 +736,7 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.PENDING_FILE", root / "pending.json"),
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
                 patch("scanner.load_supreme_values", return_value=values),
-                patch("scanner.fetch_bloxswaps", return_value=html),
+                patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)),
                 patch("scanner.send_telegram", side_effect=[RuntimeError("rejected"), None]) as send,
                 patch("scanner.compare_secondary_values", return_value=""),
             ):
@@ -864,7 +898,7 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.PENDING_FILE", root / "pending.json"),
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
                 patch("scanner.load_supreme_values", return_value=values),
-                patch("scanner.fetch_bloxswaps", return_value=page),
+                patch("scanner.fetch_bloxswaps", return_value=with_rsc(page)),
                 patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)),
                 patch("scanner.compare_secondary_values", return_value=""),
                 patch("scanner.MAX_ALERTS_PER_RUN", 2),
@@ -906,7 +940,7 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.load_supreme_values", return_value={
                      "knife a": {"name": "Knife A", "value": 10},
                      "knife b": {"name": "Knife B", "value": 20},
-                 }), patch("scanner.fetch_bloxswaps", side_effect=sequence), \
+                 }), patch("scanner.fetch_bloxswaps", side_effect=[with_rsc(item) for item in sequence]), \
                  patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)), \
                  patch("scanner.compare_secondary_values", return_value=""):
                 scanner.main()
