@@ -2,6 +2,7 @@ import unittest
 import scanner
 import watchdog
 import json
+import re
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
