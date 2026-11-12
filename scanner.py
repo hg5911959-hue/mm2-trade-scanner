@@ -1196,6 +1196,33 @@ def send_telegram(message):
     raise RuntimeError("[telegram] Rate limit persisted after explicit 429 responses")
 
 
+def load_seen_ads():
+    """Return None only when state is genuinely absent; corruption must stop the scan."""
+    if not SEEN_FILE.exists():
+        return None
+    try:
+        data = json.loads(SEEN_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(
+            f"[state] Seen-ad state is unreadable ({SEEN_FILE}); refusing to replay old feed pages."
+        ) from exc
+    if isinstance(data, dict) and isinstance(data.get("ad_ids"), list):
+        return set(str(value) for value in data["ad_ids"])
+    if isinstance(data, list):
+        return set(str(value) for value in data)
+    raise RuntimeError(
+        f"[state] Seen-ad state has an unsupported structure ({SEEN_FILE}); refusing to replay old feed pages."
+    )
+
+
+def save_seen_ads(ad_ids):
+    ordered = sorted(set(str(value) for value in ad_ids if value))[-50000:]
+    atomic_write_text(SEEN_FILE, json.dumps({
+        "version": 1, "updated_at": datetime.now(timezone.utc).isoformat(),
+        "ad_ids": ordered,
+    }, indent=2) + "\\n")
+
+
 def load_alerted():
     """Load sent IDs; tolerate missing first-run files but never reset on corruption."""
     ordered = []
