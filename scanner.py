@@ -2100,27 +2100,42 @@ def ignored_item_names(listing):
     return names
 
 
+def _compact_telegram_items(items, limit=8):
+    items = list(items or [])
+    shown = items[:limit]
+    if len(items) > limit:
+        shown.append(f"• … and {len(items) - limit} more items")
+    return shown or ["• No items"]
+
+
+def _clean_owner_link(url):
+    parsed = urlsplit(str(url or ""))
+    if parsed.scheme and parsed.netloc and parsed.path:
+        return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
+    return str(url or BLOXSWAPS_URL)
+
+
 def format_trade_message(listing, give_total, give_lines, receive_total, receive_lines, difference):
-    """Keep Telegram alerts focused on the trade; diagnostics stay in GitHub logs."""
+    """Short trade-first Telegram alert; parser diagnostics remain in Actions logs."""
     result = "WIN" if difference > 0 else ("FAIR" if difference == 0 else "LOSS")
-    owner_link = listing.get("owner_url") or listing.get("url") or BLOXSWAPS_URL
+    owner_link = _clean_owner_link(listing.get("owner_url") or listing.get("url"))
     lines = [
-        "💎 MM2 SUPREME TRADE",
-        f"👤 OWNER: {owner_link}",
+        "💎 MM2 TRADE",
+        f"👤 {owner_link}",
     ]
     if listing.get("url") and listing.get("url") != owner_link:
-        lines.append(f"🔗 LISTING: {listing['url']}")
+        lines.append(f"🔗 {listing['url']}")
     lines.extend([
         "",
-        "📤 YOU GIVE:",
-        *(give_lines or ["• No items"]),
-        f"TOTAL: {format_number(give_total)}",
+        "📤 GIVE:",
+        *_compact_telegram_items(give_lines),
+        f"Total: {format_number(give_total)}",
         "",
-        "📥 YOU RECEIVE:",
-        *(receive_lines or ["• No items"]),
-        f"TOTAL: {format_number(receive_total)}",
+        "📥 GET:",
+        *_compact_telegram_items(receive_lines),
+        f"Total: {format_number(receive_total)}",
         "",
-        f"💰 SUPREME PROFIT: {'+' if difference > 0 else ''}{format_number(difference)}",
+        f"💰 PROFIT: {'+' if difference > 0 else ''}{format_number(difference)}",
         f"RESULT: {result}",
     ])
     return "\n".join(lines)
@@ -2131,7 +2146,6 @@ def format_unvalued_message(listing, missing):
         lines = []
         for item in items:
             quantity = item.get("quantity")
-            source = item.get("quantity_source", "uncertain")
             if quantity is None:
                 low = item.get("quantity_min", 1)
                 high = item.get("quantity_max")
@@ -2139,22 +2153,26 @@ def format_unvalued_message(listing, missing):
             else:
                 label = f" x{quantity}" if quantity > 1 else ""
             lines.append(f"• {item['name']}{label}")
-        return lines or ["• No items"]
-    owner_link = listing.get("owner_url") or listing.get("url") or BLOXSWAPS_URL
+        return _compact_telegram_items(lines)
+
+    owner_link = _clean_owner_link(listing.get("owner_url") or listing.get("url"))
     lines = [
-        "MM2 TRADE SCANNER — MANUAL VALUE CHECK",
-        f"OPEN OWNER PROFILE: {owner_link}",
-        *( [f"Listing details: {listing['url']}"] if listing.get("url") and listing.get("url") != owner_link else [] ),
+        "⚠️ MM2 MANUAL VALUE CHECK",
+        f"👤 {owner_link}",
+    ]
+    if listing.get("url") and listing.get("url") != owner_link:
+        lines.append(f"🔗 {listing['url']}")
+    lines.extend([
         "",
-        "YOU GIVE (Recherche):",
+        "📤 GIVE:",
         *describe(listing.get("give_items", [])),
         "",
-        "YOU RECEIVE (Propose):",
+        "📥 GET:",
         *describe(listing.get("receive_items", [])),
         "",
-        "UNMATCHED SUPREME ITEMS: " + ", ".join(sorted(set(missing))),
+        "UNMATCHED: " + ", ".join(sorted(set(missing))[:8]),
         "PROFIT: NOT CALCULATED — no value was guessed.",
-    ]
+    ])
     return "\n".join(lines)
 
 
