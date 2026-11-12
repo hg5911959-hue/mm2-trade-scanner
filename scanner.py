@@ -1534,6 +1534,68 @@ def save_uncertain_ids(ids):
     atomic_write_text(UNCERTAIN_FILE, json.dumps({"ids": ordered}, indent=2) + "\n")
 
 
+def _load_json_state(path, default, label):
+    if not path.exists():
+        return default
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(f"[state] {label} is unreadable ({path}); refusing silent reset.") from exc
+    return data
+
+
+def send_maintenance_alert(key, message, cooldown_seconds=3600):
+    state = _load_json_state(MAINTENANCE_FILE, {}, "maintenance alert state")
+    if not isinstance(state, dict):
+        raise RuntimeError("[state] Maintenance alert state has an invalid structure.")
+    now = time.time()
+    last_sent = float(state.get(key, 0) or 0)
+    if now - last_sent < cooldown_seconds:
+        return False
+    # Persist the guard before the non-idempotent Telegram call.
+    state[key] = now
+    atomic_write_text(MAINTENANCE_FILE, json.dumps(state, indent=2) + "\n")
+    try:
+        send_telegram("MM2 SCANNER MAINTENANCE\n" + message)
+        print(f"[maintenance] Alert sent: {key}")
+        return True
+    except Exception as exc:
+        print(f"[maintenance] Alert failed for {key}: {type(exc).__name__}")
+        return False
+
+
+def record_unmatched_names(names):
+    state = _load_json_state(UNMATCHED_FILE, {}, "unmatched-name state")
+    if not isinstance(state, dict):
+        raise RuntimeError("[state] Unmatched-name state has an invalid structure.")
+    now = datetime.now(timezone.utc).isoformat()
+    new_names = []
+    for raw_name in names:
+        name = str(raw_name).strip()
+        key = normalize_name(name)
+        if not key or key in IGNORED_VALUE_ITEMS:
+            continue
+        if key not in state:
+            state[key] = {"name": name, "first_seen_at": now, "last_seen_at": now}
+            new_names.append(name)
+        else:
+            state[key]["last_seen_at"] = now
+    atomic_write_text(UNMATCHED_FILE, json.dumps(state, ensure_ascii=False, indent=2) + "\n")
+    if new_names:
+        unique = sorted(set(new_names), key=str.casefold)
+        alert_key = "unmatched:" + hashlib.sha256(
+            "|".join(normalize_name(name) for name in unique).encode()
+        ).hexdigest()[:16]
+        send_maintenance_alert(
+            alert_key,
+            "New item names not found in Supreme source_b (no values guessed): "
+            + ", ".join(unique)
+            + "\nThey will be rechecked on every scan. Review aliases.json only after confirming the exact item.",
+            cooldown_seconds=86400,
+        )
+    return new_names
+
+
 def ignored_item_names(listing):
     """Return unique explicitly ignored item names in give-then-receive order."""
     names = []
