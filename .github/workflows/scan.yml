@@ -23,9 +23,6 @@ jobs:
       actions: read
     env:
       HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
-      MM2_SCAN_DURATION_SECONDS: "720"
-      MM2_SCAN_INTERVAL_SECONDS: "45"
-      MAX_ALERTS_PER_SESSION: "3"
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -67,6 +64,8 @@ jobs:
           FAILURE_ALERT_THRESHOLD: "3"
           MAX_ALERTS_PER_RUN: "3"
           MAX_ALERTS_PER_SESSION: "3"
+          MM2_SCAN_DURATION_SECONDS: "720"
+          MM2_SCAN_INTERVAL_SECONDS: "45"
           ALERT_DELAY_SECONDS: "2"
           MAX_FEED_PAGES: "50"
           VALUES_TTL_SECONDS: "300"
