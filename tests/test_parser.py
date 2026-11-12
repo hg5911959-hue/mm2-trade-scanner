@@ -778,7 +778,7 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.PENDING_FILE", root / "pending.json"),
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
                 patch("scanner.load_supreme_values", return_value=values),
-                patch("scanner.fetch_bloxswaps", return_value=html),
+                patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)),
                 patch("scanner.send_telegram") as send,
                 patch("scanner.compare_secondary_values", return_value=""),
                 patch("scanner.MIN_PROFIT_PERCENT", 0),
@@ -818,7 +818,7 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.PENDING_FILE", root / "pending.json"),
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
                 patch("scanner.load_supreme_values", return_value=values),
-                patch("scanner.fetch_bloxswaps", return_value=html),
+                patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)),
                 patch("scanner.send_telegram", side_effect=scanner.TelegramDeliveryUncertain("unknown")),
                 patch("scanner.compare_secondary_values", return_value=""),
             ):
@@ -856,7 +856,7 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.PENDING_FILE", root / "pending.json"), \
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"), \
                  patch("scanner.load_supreme_values", side_effect=value_sets), \
-                 patch("scanner.fetch_bloxswaps", return_value=html), \
+                 patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)), \
                  patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)), \
                  patch("scanner.compare_secondary_values", return_value=""):
                 scanner.main()
@@ -1143,8 +1143,8 @@ class StructuredQuantityCrossCheckTests(unittest.TestCase):
             }],
         }
         structured = {"id": "ad", "tradePostItems": [
-            {"itemDetailsId": "snow", "quantity": 2, "tradeRole": "OFFERED"},
-            {"itemDetailsId": "spirit", "quantity": 1, "tradeRole": "REQUESTED"},
+            {"itemDetailsId": "snow", "displayName": "Snowcannon", "quantity": 2, "tradeRole": "OFFERED"},
+            {"itemDetailsId": "spirit", "displayName": "Spirit", "quantity": 1, "tradeRole": "REQUESTED"},
         ]}
         scanner._apply_structured_quantities(listing, structured)
         item = listing["receive_items"][0]
@@ -1276,7 +1276,7 @@ class CursorPaginationTests(unittest.TestCase):
     def test_cursor_pages_are_scanned_until_first_seen_ad(self):
         responses = [
             {"items": [self._post("post-2"), self._post("post-3")], "meta": {"cursor": "cursor-2"}},
-            {"items": [self._post("post-4"), self._post("seen-old"), self._post("after-boundary")], "meta": {"cursor": "cursor-3"}},
+            {"items": [self._post("post-4")] + [self._post(f"seen-old-{i}") for i in range(25)], "meta": {"cursor": None}},
         ]
         with (
             patch("scanner.fetch_bloxswaps", return_value=self._first_page_html()),
@@ -1292,7 +1292,7 @@ class CursorPaginationTests(unittest.TestCase):
         self.assertEqual(stats["pagination_pages"], 3)
         self.assertTrue(stats["pagination_complete"])
         self.assertTrue(stats["seen_boundary_reached"])
-        self.assertNotIn("after-boundary", [x["source_ad_id"] for x in listings])
+        self.assertEqual(len([x for x in listings if x["source_ad_id"].startswith("seen-old-")]), 0)
         self.assertEqual(listings[1]["receive_items"][0]["quantity_source"], "structured")
         self.assertEqual(listings[1]["receive_items"][0]["quantity"], 2)
         self.assertEqual(listings[1]["owner_url"], "https://bloxswaps.com/fr/users/123")
@@ -1318,7 +1318,8 @@ class CursorPaginationTests(unittest.TestCase):
         self.assertEqual([item["source_ad_id"] for item in listings], ["pending-post"])
         self.assertEqual(stats["pending_found_ids"], ["pending-post"])
         self.assertEqual(stats["pending_remaining_ids"], [])
-        self.assertTrue(stats["seen_boundary_reached"])
+        self.assertFalse(stats["seen_boundary_reached"])
+        self.assertTrue(stats["pagination_complete"])
         self.assertEqual(stats["pagination_pages"], 2)
 
 
@@ -1358,7 +1359,11 @@ class LiveBloxSwapsFixtureTests(unittest.TestCase):
     def test_redacted_real_bloxswaps_card_matches_rsc_quantities(self):
         fixture = Path(__file__).parent / "fixtures" / "bloxswaps-live-sample.html"
         html = fixture.read_text(encoding="utf-8")
-        listings, stats = parse_page(html)
+        listings, stats = parse_page(html, {
+            "136e4b17-a761-4c2e-aa17-cb5ef7153148": {"displayName": "Emberbow"},
+            "cmazobvc2001enu708o9j9vtg": {"displayName": "Harvester"},
+            "cmazobw1m00linu70am6x8ca3": {"displayName": "Icepiercer"},
+        })
         self.assertEqual(len(listings), 1)
         self.assertEqual(stats["structured_matched_count"], 1)
         listing = listings[0]
@@ -1399,7 +1404,7 @@ class StructuredQuantityTests(unittest.TestCase):
             {"itemDetailsId": "b-id", "quantity": 2, "tradeRole": "OFFERED"},
             {"itemDetailsId": "a-id", "quantity": 1, "tradeRole": "REQUESTED"},
         ])
-        listing = parse_listings(html)[0]
+        listing = parse_page(html, {"b-id": {"displayName": "Knife B"}, "a-id": {"displayName": "Knife A"}})[0][0]
         self.assertIsNone(listing["receive_items"][0]["quantity"])
         self.assertEqual(listing["receive_items"][0]["quantity_source"], "uncertain")
         self.assertEqual(
