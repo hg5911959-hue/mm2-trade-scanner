@@ -48,6 +48,7 @@ Never commit or share any of these secrets. The scanner never prints API keys or
 - Recommended independent monitoring: configure Healthchecks.io with a 5-minute period and 15-minute grace time, then store its ping URL as `HEALTHCHECKS_PING_URL`.
 - IDs use normalized owner identity, stable card/ad identifiers when exposed, listing path/query identity, and sorted item names and quantities; relative-time labels are ignored.
 - Telegram messages are capped at 4,000 characters. Calculated margins at or above 200% include a warning to manually verify item names and values.
+- Telegram delivery safety: `sendMessage` is never automatically retried after a timeout, connection failure, or HTTP 5xx because Telegram may already have accepted the message. Only explicit Telegram 429 rejections are retried. Before sending, the listing ID is written to a delivery-guard file; if delivery is ambiguous, that ID is quarantined and is not resent automatically. Check Telegram manually before clearing that ID from `data/telegram_uncertain.json` in the persisted workflow state. Definite API rejections clear the guard so the offer can be retried later.
 - Failure alerts: Telegram is notified after 3 consecutive failed runs, then every 5 additional consecutive failures (8, 13, 18...). A successful run resets the counter.
 - GitHub Actions schedules are recurring checks, not a permanently running server; GitHub may occasionally delay scheduled starts.
 - Manual run: **Actions → MM2 Trade Scanner → Run workflow**.
@@ -65,7 +66,7 @@ If the API returns HTTP 403, the key is invalid, inactive, unverified, expired, 
 - Direct Supreme Values page access from GitHub Actions can be blocked; the API is used instead.
 - The API is a third-party delivery source for Supreme Values data, not an official Supreme Values API. The scanner specifically selects the provider's `value_source_b` field.
 - Only listings visible on the selected BloxSwaps P2P page are scanned.
-- HTTP 429 and transient 5xx/network errors are retried with exponential backoff and `Retry-After` support.
+- BloxSwaps and RBLXValue transient HTTP 429/5xx/network errors are retried with backoff; Telegram sendMessage is handled separately to avoid duplicate delivery on ambiguous retries.
 - If BloxSwaps' expected trade-side markers disappear or cards stop parsing, the scanner fails loudly instead of treating the page as empty; regression tests run before each scan.
 - GitHub Actions Cache is not permanent archival storage; export `history.csv` periodically if you need long-term records.
 - Parsing depends on BloxSwaps' page structure; changes to its markup may require parser updates.
