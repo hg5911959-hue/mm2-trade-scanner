@@ -809,6 +809,19 @@ class CloudflareDetectionTests(unittest.TestCase):
                 scanner.http_get("https://bloxswaps.com/fr/trade-mm2")
 
 
+class SeenAdStateTests(unittest.TestCase):
+    def test_seen_state_round_trips_and_corruption_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "seen_ads.json"
+            with patch("scanner.SEEN_FILE", path):
+                self.assertIsNone(scanner.load_seen_ads())
+                scanner.save_seen_ads({"ad-one", "ad-two"})
+                self.assertEqual(scanner.load_seen_ads(), {"ad-one", "ad-two"})
+                path.write_text("{bad", encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "refusing to replay old feed pages"):
+                    scanner.load_seen_ads()
+
+
 class MaintenanceAndUnmatchedNameTests(unittest.TestCase):
     def test_unmatched_names_are_alerted_once_and_kept_for_recheck(self):
         with tempfile.TemporaryDirectory() as directory:
