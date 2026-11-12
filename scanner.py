@@ -381,12 +381,14 @@ def _item_quantity_details(image_node, segment_text):
     if semantic_quantity is not None:
         explicit.append(semantic_quantity)
 
-    candidates = list(explicit)
-    if structured is not None:
-        candidates.append(structured)
-    if invalid_structured or len(set(explicit)) > 1 or unreadable:
-        bounds = (min(candidates), max(candidates)) if candidates else (1, None)
-        return None, "uncertain", _listed_price(local_text), local_text[:240], bounds[0], bounds[1], "ambiguous quantity marker"
+    if invalid_structured:
+        lower = min(explicit) if explicit else 1
+        return None, "uncertain", _listed_price(local_text), local_text[:240], lower, None, "invalid structured quantity marker"
+    if len(set(explicit)) > 1:
+        return None, "uncertain", _listed_price(local_text), local_text[:240], min(explicit), max(explicit), "conflicting explicit quantity markers"
+    if unreadable:
+        lower = min(explicit) if explicit else 1
+        return None, "uncertain", _listed_price(local_text), local_text[:240], lower, None, "ambiguous quantity marker"
     if structured is not None:
         if explicit and any(value != structured for value in explicit):
             return None, "uncertain", _listed_price(local_text), local_text[:240], min(candidates), max(candidates), "HTML/structured quantity disagreement"
