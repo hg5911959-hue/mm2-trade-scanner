@@ -444,7 +444,7 @@ class ReliabilityTests(unittest.TestCase):
         }
         result, missing = scanner.evaluate_listing(listing, values)
         self.assertIsNone(result)
-        self.assertEqual(missing, ["Harvester (quantity unreadable)"])
+        self.assertEqual(missing, ["Harvester (quantity uncertain)"])
 
     def test_evaluate_listing_rejects_unknown_values_and_unvalued_only_side(self):
         listing = {
