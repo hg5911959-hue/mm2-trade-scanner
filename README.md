@@ -39,12 +39,17 @@ Never commit or share any of these secrets. The scanner never prints API keys or
 - Scheduled checks: every 5 minutes (GitHub Actions cron uses UTC; starts may be delayed).
 - Workflow triggers: schedule and manual `workflow_dispatch` only; pushes do not start scans.
 - Concurrency: one workflow at a time; queued runs are not cancelled.
+- The scanner workflow has `contents: read` only; the separate monthly keepalive workflow alone has `contents: write`.
+- State is treated as a baseline when missing or corrupt: visible listings are recorded without alerts to prevent a Telegram flood. This is intentionally conservative and can miss offers posted during a cache-loss window.
+- Seen IDs preserve insertion order and retain the newest 5,000. State, values cache, failure counter, and history writes use atomic replace operations.
+- IDs are based on normalized owner identity, sorted item names and quantities, and a stable ad identifier when available; relative-time labels are ignored. The first run after an ID-version migration is a silent baseline.
+- Telegram messages are capped at 4,000 characters. Calculated margins at or above 200% include a warning to manually verify item names and values.
 - Failure alerts: Telegram is notified after 3 consecutive failed runs, then every 5 additional consecutive failures (8, 13, 18...). A successful run resets the counter.
 - GitHub Actions schedules are recurring checks, not a permanently running server; GitHub may occasionally delay scheduled starts.
 - Manual run: **Actions → MM2 Trade Scanner → Run workflow**.
 - Logs: open the workflow run and download the `mm2-scanner-diagnostics` artifact.
 - Optional missed-schedule monitoring: create a free check at Healthchecks.io and save its ping URL as the repository secret `HEALTHCHECKS_PING_URL`. The workflow pings on successful scans and sends `/fail` on failures; the service can alert if scheduled pings stop arriving.
-- Processed IDs, Supreme cache, failure counter, and `history.csv` are persisted with GitHub Actions Cache. The first successful run seeds the cache from the existing state, then automatically removes the legacy tracked `data/` files from `main`; afterwards `data/` remains ignored. A separate monthly keepalive workflow commits a tiny activity marker to reduce the risk of scheduled workflows being disabled for inactivity.
+- Processed IDs, Supreme cache, failure counter, and `history.csv` are persisted with GitHub Actions Cache. Runtime `data/` is git-ignored and is not tracked in `main`. A separate monthly keepalive workflow commits a tiny activity marker to reduce the risk of scheduled workflows being disabled for inactivity.
 - `history.csv` records detected opportunities and their calculated values. It cannot confirm that a Roblox trade was accepted or completed.
 
 If the API returns HTTP 403, the key is invalid, inactive, unverified, expired, or suspended. Check its status at https://rblxvalue.com/developer, create/regenerate a key if needed, then replace the GitHub secret `RBLXVALUE_API_KEY`. A GitHub secret's name must remain exactly the same.
