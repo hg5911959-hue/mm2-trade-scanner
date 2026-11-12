@@ -1598,7 +1598,12 @@ def load_seen_ads():
 
 
 def load_pending_ids():
-    data = _load_json_state(PENDING_FILE, {}, "pending recheck state")
+    if not PENDING_FILE.exists():
+        return {}
+    try:
+        data = json.loads(PENDING_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("[state] Pending recheck state is unreadable; refusing to lose unresolved listings.") from exc
     if isinstance(data, list):
         # Legacy list has no timestamps; retain every ID for re-evaluation.
         return {str(value): time.time() for value in data if value}
