@@ -14,7 +14,7 @@ import urllib.request
 from urllib.error import HTTPError, URLError
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import urljoin, urlencode
+from urllib.parse import urljoin, urlencode, urlsplit, parse_qs
 
 BLOXSWAPS_URL = os.environ.get(
     "BLOXSWAPS_URL",
@@ -33,6 +33,16 @@ FAILURE_FILE = Path("data/failure_state.json")
 HISTORY_FILE = Path("data/history.csv")
 MAX_SEEN = 5000
 VALUES_TTL_SECONDS = 4 * 60 * 60
+SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "200"))
+TELEGRAM_MAX_CHARS = 4000
+
+
+def atomic_write_text(path, content):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(path.name + ".tmp")
+    temp_path.write_text(content, encoding="utf-8")
+    os.replace(temp_path, path)
 
 
 class Node:
@@ -218,8 +228,21 @@ def _identity_items(items):
 
 
 def stable_listing_id(owner_url, receive_items, give_items, listing_url=""):
+    owner = urlsplit(owner_url or "")
+    listing = urlsplit(listing_url or "")
+    ad_values = []
+    for key, values in parse_qs(listing.query, keep_blank_values=False).items():
+        if key.casefold() in {"ad", "id", "listing", "post", "trade"}:
+            ad_values.extend((key.casefold(), value) for value in values)
+    if owner_url:
+        owner_identity = (owner.scheme + "://" + owner.netloc + owner.path).rstrip("/").casefold()
+        listing_key = sorted(ad_values) if ad_values else ""
+    else:
+        owner_identity = (listing.scheme + "://" + listing.netloc + listing.path).rstrip("/").casefold()
+        listing_key = sorted(ad_values) if ad_values else listing.query
     identity = {
-        "owner": (owner_url or listing_url or "").split("?", 1)[0].rstrip("/").casefold(),
+        "owner": owner_identity,
+        "listing_key": listing_key,
         "receive": _identity_items(receive_items),
         "give": _identity_items(give_items),
     }
@@ -397,11 +420,11 @@ def load_supreme_values():
         raise
 
     VALUES_FILE.parent.mkdir(parents=True, exist_ok=True)
-    VALUES_FILE.write_text(json.dumps({
+    atomic_write_text(VALUES_FILE, json.dumps({
         "fetched_at": time.time(),
         "source": "Supreme Values via RBLXValue API value_source_b",
         "values": all_values,
-    }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    }, ensure_ascii=False, indent=2) + "\n")
     print(f"[supreme] Loaded {len(all_values)} numeric Supreme source_b values via API")
     return all_values
 
@@ -442,6 +465,9 @@ def format_number(value):
 
 
 def send_telegram(message):
+    message = str(message)
+    if len(message) > TELEGRAM_MAX_CHARS:
+        message = message[:TELEGRAM_MAX_CHARS - 24] + "\\n[message truncated]"
     url = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage"
     body = json.dumps({
         "chat_id": CHAT_ID,
@@ -469,25 +495,21 @@ def send_telegram(message):
 
 def load_seen():
     if not SEEN_FILE.exists():
-        return {"seen": [], "id_version": 2}
+        return {"seen": [], "id_version": 1, "fresh": True}
     try:
         data = json.loads(SEEN_FILE.read_text(encoding="utf-8"))
-        if isinstance(data, dict):
-            return {
-                "seen": data.get("seen", []) if isinstance(data.get("seen", []), list) else [],
-                "id_version": int(data.get("id_version", 1)),
-            }
-        return {"seen": data if isinstance(data, list) else [], "id_version": 1}
+        if isinstance(data, dict) and isinstance(data.get("seen"), list):
+            return {"seen": data["seen"], "id_version": int(data.get("id_version", 1)), "fresh": False}
+        if isinstance(data, list):
+            return {"seen": data, "id_version": 1, "fresh": False}
     except (json.JSONDecodeError, OSError, TypeError, ValueError):
-        return {"seen": [], "id_version": 1}
+        pass
+    return {"seen": [], "id_version": 1, "fresh": True}
 
 
 def save_seen(seen_list):
-    SEEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-    SEEN_FILE.write_text(
-        json.dumps({"id_version": 2, "seen": seen_list[-MAX_SEEN:]}, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    ordered = list(dict.fromkeys(str(value) for value in seen_list))[-MAX_SEEN:]
+    atomic_write_text(SEEN_FILE, json.dumps({"id_version": 3, "seen": ordered}, indent=2) + "\n")
 
 
 def format_trade_message(listing, give_total, give_lines, receive_total, receive_lines, difference):
@@ -513,6 +535,37 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
     return "\n".join(lines)
 
 
+def evaluate_listing(listing, values):
+    give_total, give_lines, give_missing = calculate_side(listing["give_items"], values)
+    receive_total, receive_lines, receive_missing = calculate_side(listing["receive_items"], values)
+    missing = give_missing + receive_missing
+    if missing:
+        return None, missing
+    difference = receive_total - give_total
+    margin = (difference / give_total * 100.0) if give_total > 0 else (100.0 if difference > 0 else 0.0)
+    return {
+        "listing": listing, "give_total": give_total, "give_lines": give_lines,
+        "receive_total": receive_total, "receive_lines": receive_lines,
+        "difference": difference, "margin": margin,
+    }, []
+
+
+def qualifies(result, min_diff=None, min_percent=None):
+    min_diff = MIN_DIFF if min_diff is None else min_diff
+    min_percent = MIN_PROFIT_PERCENT if min_percent is None else min_percent
+    return result["difference"] >= min_diff and result["margin"] >= min_percent
+
+
+def write_step_summary(line):
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if path:
+        try:
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write(line + "\n")
+        except OSError:
+            pass
+
+
 def main():
     if not BOT_TOKEN or not CHAT_ID:
         raise RuntimeError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in GitHub Actions secrets.")
@@ -533,20 +586,31 @@ def main():
         if stats["candidate_count"] > 0 and stats["addition_count"] == stats["candidate_count"]:
             print(f"[bloxswaps] No eligible listings: all {stats['addition_count']} candidate cards contained Ajouts.")
             record_success()
+            write_step_summary("Successful scan: all visible candidates excluded for Ajouts.")
             return
         if stats["candidate_count"] == 0:
             raise RuntimeError("[bloxswaps] No trade cards parsed; page structure may have changed or feed is empty.")
         raise RuntimeError(f"[bloxswaps] Parser could not read {stats['malformed_count']} non-Ajouts cards.")
     print(f"[bloxswaps] Eligible listings after Ajouts filter: {len(listings)}")
 
-    seen_state = load_seen()
-    seen = set(seen_state["seen"])
-    if seen_state["id_version"] < 2 and seen:
-        # One-time migration: old IDs included volatile relative-time text.
-        # Suppress currently visible cards once to avoid duplicate Telegram alerts.
-        seen.update(listing["id"] for listing in listings)
-        save_seen(list(seen))
-        print(f"[migration] Converted legacy seen state; suppressed {len(listings)} currently visible cards once.")
+    state = load_seen()
+    seen_order = list(dict.fromkeys(state["seen"]))
+    seen = set(seen_order)
+
+    def mark_seen(trade_id):
+        if trade_id not in seen:
+            seen.add(trade_id)
+            seen_order.append(trade_id)
+            save_seen(seen_order)
+
+    if state["fresh"] or state["id_version"] < 3:
+        for listing in listings:
+            if listing["id"] not in seen:
+                seen.add(listing["id"])
+                seen_order.append(listing["id"])
+        save_seen(seen_order)
+        print(f"[baseline] Recorded {len(listings)} visible cards without alerts (fresh/legacy state).")
+        write_step_summary(f"Baseline run: {len(listings)} listings recorded, no alerts sent.")
         record_success()
         return
 
@@ -558,30 +622,19 @@ def main():
         trade_id = listing["id"]
         if trade_id in seen:
             continue
-        give_total, give_lines, give_missing = calculate_side(listing["give_items"], values)
-        receive_total, receive_lines, receive_missing = calculate_side(listing["receive_items"], values)
-        missing = give_missing + receive_missing
-        if missing:
+        result, missing = evaluate_listing(listing, values)
+        evaluated += 1
+        if result is None:
             skipped_unknown += 1
             print(f"[skip] Unmatched Supreme item(s): {', '.join(missing)}")
-            seen.add(trade_id)
-            save_seen(list(seen))
-            evaluated += 1
+            mark_seen(trade_id)
             continue
-        difference = receive_total - give_total
-        margin = (difference / give_total * 100.0) if give_total > 0 else (100.0 if difference > 0 else 0.0)
-        if difference < MIN_DIFF or margin < MIN_PROFIT_PERCENT:
-            seen.add(trade_id)
-            save_seen(list(seen))
-            evaluated += 1
+        if not qualifies(result):
+            mark_seen(trade_id)
             continue
-        opportunities.append({
-            "listing": listing, "give_total": give_total, "give_lines": give_lines,
-            "receive_total": receive_total, "receive_lines": receive_lines,
-            "difference": difference, "margin": margin,
-        })
+        opportunities.append(result)
 
-    opportunities.sort(key=lambda x: (x["difference"], x["margin"]), reverse=True)
+    opportunities.sort(key=lambda item: (item["difference"], item["margin"]), reverse=True)
     for op in opportunities:
         listing = op["listing"]
         message = format_trade_message(
@@ -589,18 +642,20 @@ def main():
             op["receive_total"], op["receive_lines"], op["difference"]
         )
         message += f"\nPROFIT MARGIN: {op['margin']:.2f}%"
+        if op["margin"] >= SUSPICIOUS_PROFIT_PERCENT:
+            message += "\nWARNING: unusually high profit - verify item names and values before trading."
         secondary_note = compare_secondary_values(listing["give_items"] + listing["receive_items"], values)
         if secondary_note:
             message += "\nSECOND-SOURCE CHECK (MM2Values): " + secondary_note
         print(f"[telegram] Sending ranked trade; profit={op['difference']:g}")
         send_telegram(message)
+        mark_seen(listing["id"])
         append_history(listing, op)
-        seen.add(listing["id"])
-        save_seen(list(seen))
         sent += 1
-        evaluated += 1
 
-    print(f"[summary] Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | qualified={len(opportunities)} | alerts={sent}")
+    summary = f"Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | qualified={len(opportunities)} | alerts={sent}"
+    print(f"[summary] {summary}")
+    write_step_summary(summary)
     record_success()
 
 
@@ -617,30 +672,38 @@ def compare_secondary_values(items, values):
 
 
 def append_history(listing, op):
-    HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    exists = HISTORY_FILE.exists()
-    with HISTORY_FILE.open("a", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=[
-            "detected_at_utc", "listing_id", "profit_supreme", "profit_margin_percent",
-            "you_give", "you_receive", "listing_url", "owner_url"
-        ])
-        if not exists:
+    from io import StringIO
+    fieldnames = ["detected_at_utc", "listing_id", "profit_supreme", "profit_margin_percent", "you_give", "you_receive", "listing_url", "owner_url"]
+    buffer = StringIO(newline="")
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+    if HISTORY_FILE.exists():
+        try:
+            with HISTORY_FILE.open("r", newline="", encoding="utf-8") as handle:
+                reader = csv.DictReader(handle)
+                if reader.fieldnames == fieldnames:
+                    writer.writeheader()
+                    writer.writerows(reader)
+                else:
+                    writer.writeheader()
+        except (OSError, csv.Error):
             writer.writeheader()
-        writer.writerow({
-            "detected_at_utc": datetime.now(timezone.utc).isoformat(),
-            "listing_id": listing["id"],
-            "profit_supreme": round(op["difference"], 2),
-            "profit_margin_percent": round(op["margin"], 2),
-            "you_give": round(op["give_total"], 2),
-            "you_receive": round(op["receive_total"], 2),
-            "listing_url": listing["url"],
-            "owner_url": listing.get("owner_url", ""),
-        })
+    else:
+        writer.writeheader()
+    writer.writerow({
+        "detected_at_utc": datetime.now(timezone.utc).isoformat(),
+        "listing_id": listing["id"],
+        "profit_supreme": round(op["difference"], 2),
+        "profit_margin_percent": round(op["margin"], 2),
+        "you_give": round(op["give_total"], 2),
+        "you_receive": round(op["receive_total"], 2),
+        "listing_url": listing["url"],
+        "owner_url": listing.get("owner_url", ""),
+    })
+    atomic_write_text(HISTORY_FILE, buffer.getvalue())
 
 
 def record_success():
-    FAILURE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    FAILURE_FILE.write_text(json.dumps({"consecutive_failures": 0}, indent=2) + "\n")
+    atomic_write_text(FAILURE_FILE, json.dumps({"consecutive_failures": 0}, indent=2) + "\n")
 
 
 def record_failure(error):
@@ -651,7 +714,7 @@ def record_failure(error):
         state = {"consecutive_failures": 0}
     count = int(state.get("consecutive_failures", 0)) + 1
     state["consecutive_failures"] = count
-    FAILURE_FILE.write_text(json.dumps(state, indent=2) + "\n")
+    atomic_write_text(FAILURE_FILE, json.dumps(state, indent=2) + "\n")
     print(f"[failure] Consecutive failures: {count}")
     if count >= FAILURE_THRESHOLD and (
         count == FAILURE_THRESHOLD or
