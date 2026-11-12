@@ -894,7 +894,7 @@ class ReliabilityTests(unittest.TestCase):
             self.assertEqual(seen, ["offer-two"])
 
 
-    def test_best_case_only_profit_is_sent_as_manual_verification(self):
+    def test_unbounded_unknown_stack_is_never_sent_as_a_profitable_trade(self):
         html = """
         <article>
           <div>Propose <img alt="Spirit"></div>
@@ -917,8 +917,7 @@ class ReliabilityTests(unittest.TestCase):
                 patch("scanner.FAILURE_FILE", root / "failure.json"),
                 patch("scanner.HISTORY_FILE", root / "history.csv"),
                 patch("scanner.SEEN_FILE", root / "seen_ads.json"),
-                 patch("scanner.PENDING_FILE", root / "pending.json"),
-                 patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
+                patch("scanner.PENDING_FILE", root / "pending.json"),
                 patch("scanner.load_supreme_values", return_value=values),
                 patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)),
                 patch("scanner.send_telegram") as send,
@@ -927,12 +926,25 @@ class ReliabilityTests(unittest.TestCase):
             ):
                 scanner.main()
             trade_messages = [call.args[0] for call in send.call_args_list if "💎 MM2 TRADE" in call.args[0]]
-            self.assertEqual(len(trade_messages), 1)
-            message = trade_messages[0]
-            self.assertIn("MANUAL CHECK", message)
-            self.assertIn("POSSIBLE PROFIT RANGE: -∞ to 275", message)
-            self.assertIn("Harvester x? (1..∞)", message)
-            self.assertNotIn("raw=", message)
+            self.assertEqual(trade_messages, [])
+            self.assertFalse(any("∞" in call.args[0] for call in send.call_args_list))
+            pending = json.loads((root / "pending.json").read_text(encoding="utf-8"))["pending"]
+            self.assertIn("manual-review-test", pending)
+
+    def test_unknown_receive_stack_does_not_produce_infinite_profit(self):
+        listing = {
+            "give_items": [{"name": "Heartblade", "quantity": 1, "quantity_source": "structured",
+                            "quantity_min": 1, "quantity_max": 1}],
+            "receive_items": [{"name": "Xmas", "quantity": None, "quantity_source": "uncertain",
+                               "quantity_min": 1, "quantity_max": None, "quantity_reason": "quantity missing"}],
+        }
+        values = {
+            "heartblade": {"name": "Heartblade", "value": 65},
+            "xmas": {"name": "Xmas", "value": 8},
+        }
+        result, missing = scanner.evaluate_listing(listing, values)
+        self.assertIsNone(result)
+        self.assertTrue(any("quantity unknown" in value for value in missing))
 
 
     def test_main_quarantines_uncertain_telegram_delivery_on_next_scan(self):
@@ -1369,6 +1381,7 @@ class StructuredFirstPageRecoveryTests(unittest.TestCase):
             }],
         }
         merged = scanner._merge_html_quantity_diagnostics(api_listing, html_listing)
+        self.assertEqual(merged["owner_url"], "owner")
         item = merged["receive_items"][0]
         self.assertIsNone(item["quantity"])
         self.assertEqual(item["quantity_source"], "uncertain")
