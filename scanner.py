@@ -1,105 +1,187 @@
 #!/usr/bin/env python3
-"""Scan a configured MM2 trade feed and send value-positive alerts to Telegram.
-
-The scanner intentionally requires a user-configured trade-feed URL. It does not
-pretend that an official public live-trade API exists.
-"""
+"""Scan public BloxSwaps MM2 P2P listings and send value-positive alerts."""
+import hashlib
 import json
 import os
+import re
 import sys
 import urllib.request
+from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import urljoin
 
-VALUES_URL = os.environ.get("MM2_VALUES_URL", "").strip()
-TRADES_URL = os.environ.get("MM2_TRADES_URL", "").strip()
+BLOXSWAPS_URL = os.environ.get(
+    "BLOXSWAPS_URL",
+    "https://bloxswaps.com/fr/trade-mm2?trade-type=P2P"
+).strip()
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 MIN_DIFF = float(os.environ.get("MIN_VALUE_DIFFERENCE", "0"))
 SEEN_FILE = Path("data/seen.json")
+MAX_SEEN = 5000
 
 
-def fetch_json(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "MM2-Trade-Scanner/1.0"})
-    with urllib.request.urlopen(req, timeout=25) as response:
-        return json.loads(response.read().decode("utf-8"))
+class Node:
+    def __init__(self, tag="", attrs=None):
+        self.tag = tag
+        self.attrs = dict(attrs or [])
+        self.children = []
+        self.parts = []
 
 
-def unwrap_list(payload, keys):
-    if isinstance(payload, list):
-        return payload
-    if isinstance(payload, dict):
-        for key in keys:
-            value = payload.get(key)
-            if isinstance(value, list):
-                return value
-    raise ValueError("Feed JSON must be a list or contain one of: " + ", ".join(keys))
+class PageTree(HTMLParser):
+    VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input",
+            "link", "meta", "param", "source", "track", "wbr"}
 
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.root = Node("document")
+        self.stack = [self.root]
 
-def normalize_values(payload):
-    if isinstance(payload, dict):
-        for key in ("values", "items", "data"):
-            if isinstance(payload.get(key), (dict, list)):
-                payload = payload[key]
+    def handle_starttag(self, tag, attrs):
+        node = Node(tag, attrs)
+        self.stack[-1].children.append(node)
+        if tag not in self.VOID:
+            self.stack.append(node)
+
+    def handle_startendtag(self, tag, attrs):
+        self.stack[-1].children.append(Node(tag, attrs))
+
+    def handle_endtag(self, tag):
+        for i in range(len(self.stack) - 1, 0, -1):
+            if self.stack[i].tag == tag:
+                del self.stack[i:]
                 break
-    result = {}
-    if isinstance(payload, dict):
-        for name, value in payload.items():
-            if isinstance(value, (int, float)):
-                result[str(name).strip().casefold()] = float(value)
-            elif isinstance(value, dict):
-                amount = value.get("value", value.get("price"))
-                if isinstance(amount, (int, float)):
-                    result[str(name).strip().casefold()] = float(amount)
-    elif isinstance(payload, list):
-        for item in payload:
-            if not isinstance(item, dict):
-                continue
-            name = item.get("name", item.get("item"))
-            amount = item.get("value", item.get("price"))
-            if name is not None and isinstance(amount, (int, float)):
-                result[str(name).strip().casefold()] = float(amount)
-    if not result:
-        raise ValueError("Could not read item values. Expected {item_name: number} or [{name, value}].")
-    return result
+
+    def handle_data(self, data):
+        if data and data.strip():
+            self.stack[-1].parts.append(data.strip())
 
 
-def item_names(side):
-    if isinstance(side, str):
-        return [side]
-    if isinstance(side, dict):
-        return [str(k) for k, v in side.items() if v]
-    if isinstance(side, list):
-        names = []
-        for item in side:
-            if isinstance(item, str):
-                names.append(item)
-            elif isinstance(item, dict):
-                name = item.get("name", item.get("item"))
-                if name:
-                    names.append(str(name))
-        return names
-    return []
+def node_text(node):
+    chunks = list(node.parts)
+    alt = node.attrs.get("alt")
+    if node.tag == "img" and alt:
+        chunks.append(alt)
+    for child in node.children:
+        chunks.append(node_text(child))
+    return " ".join(chunks)
 
 
-def side_value(side, values):
-    names = item_names(side)
-    missing = [name for name in names if name.strip().casefold() not in values]
-    if missing:
-        raise ValueError("Missing value(s): " + ", ".join(missing))
-    return sum(values[name.strip().casefold()] for name in names), names
+def has_sides(text):
+    t = text.casefold()
+    return (("propose" in t and "recherche" in t) or
+            ("offer" in t and "request" in t) or
+            ("offering" in t and "looking for" in t))
 
 
-def trade_sides(trade):
-    give = next((trade[k] for k in ("give", "offering", "offer", "you_give") if k in trade), None)
-    receive = next((trade[k] for k in ("receive", "want", "requested", "you_receive") if k in trade), None)
-    if give is None or receive is None:
-        return None, None
-    return give, receive
+def smallest_listing_nodes(node):
+    child_matches = []
+    for child in node.children:
+        if has_sides(node_text(child)):
+            child_matches.extend(smallest_listing_nodes(child))
+    if child_matches:
+        return child_matches
+    return [node] if has_sides(node_text(node)) else []
+
+
+def amount_after(text, labels):
+    for label in labels:
+        match = re.search(
+            rf"{re.escape(label)}\s*[:\-]?\s*([0-9][0-9,]*(?:\.[0-9]+)?\s*[KMB]?)",
+            text, flags=re.IGNORECASE
+        )
+        if match:
+            raw = re.sub(r"\s+", "", match.group(1)).replace(",", "")
+            multiplier = 1
+            if raw[-1:].upper() in ("K", "M", "B"):
+                multiplier = {"K": 1_000, "M": 1_000_000, "B": 1_000_000_000}[raw[-1].upper()]
+                raw = raw[:-1]
+            return float(raw) * multiplier
+    return None
+
+
+def image_names(node):
+    found = []
+    def walk(n):
+        if n.tag == "img":
+            alt = n.attrs.get("alt", "").strip()
+            alt = re.sub(r"^Image de\s+", "", alt, flags=re.I)
+            alt = re.sub(r"\s+dans Murder Mystery 2$", "", alt, flags=re.I)
+            alt = re.sub(r"^Image of\s+", "", alt, flags=re.I)
+            alt = re.sub(r"\s+in Murder Mystery 2$", "", alt, flags=re.I)
+            if alt and alt.casefold() not in ("murder mystery 2", "mm2"):
+                found.append(alt)
+        for c in n.children:
+            walk(c)
+    walk(node)
+    return list(dict.fromkeys(found))
+
+
+def listing_link(node):
+    links = []
+    def walk(n):
+        if n.tag == "a" and n.attrs.get("href"):
+            links.append(n.attrs["href"])
+        for c in n.children:
+            walk(c)
+    walk(node)
+    # Prefer a listing-specific discussion/details link over navigation links.
+    for href in links:
+        if any(word in href.casefold() for word in ("trade", "post", "listing", "discussion")):
+            return urljoin(BLOXSWAPS_URL, href)
+    return urljoin(BLOXSWAPS_URL, links[0]) if links else BLOXSWAPS_URL
+
+
+def parse_listings(html):
+    parser = PageTree()
+    parser.feed(html)
+    candidates = smallest_listing_nodes(parser.root)
+    listings = []
+    for node in candidates:
+        text = node_text(node)
+        offered = amount_after(text, ("Propose", "Offer", "Offering"))
+        wanted = amount_after(text, ("Recherche", "Request", "Looking for"))
+        if offered is None or wanted is None:
+            continue
+        names = image_names(node)
+        link = listing_link(node)
+        stable = hashlib.sha256((text + "|" + link).encode("utf-8")).hexdigest()[:20]
+        listings.append({
+            "id": stable,
+            "give_value": offered,
+            "receive_value": wanted,
+            "give_names": names,
+            "url": link,
+            "source_text": text[:500]
+        })
+    # Keep one result per stable ID in case nested markup produced duplicates.
+    unique = {item["id"]: item for item in listings}
+    return list(unique.values())
+
+
+def fetch_page():
+    req = urllib.request.Request(
+        BLOXSWAPS_URL,
+        headers={
+            "User-Agent": "Mozilla/5.0 (compatible; MM2TradeScanner/1.0)",
+            "Accept": "text/html,application/xhtml+xml",
+            "Accept-Language": "fr,en;q=0.8"
+        }
+    )
+    with urllib.request.urlopen(req, timeout=30) as response:
+        if response.status != 200:
+            raise RuntimeError(f"BloxSwaps returned HTTP {response.status}")
+        return response.read().decode("utf-8", errors="replace")
 
 
 def send_telegram(message):
     url = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage"
-    body = json.dumps({"chat_id": CHAT_ID, "text": message, "disable_web_page_preview": True}).encode()
+    body = json.dumps({
+        "chat_id": CHAT_ID,
+        "text": message,
+        "disable_web_page_preview": True
+    }).encode()
     req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=20) as response:
         result = json.loads(response.read().decode("utf-8"))
@@ -109,64 +191,59 @@ def send_telegram(message):
 
 def load_seen():
     if not SEEN_FILE.exists():
-        return set()
+        return []
     try:
-        return set(json.loads(SEEN_FILE.read_text()).get("seen", []))
-    except (json.JSONDecodeError, AttributeError):
-        return set()
+        data = json.loads(SEEN_FILE.read_text(encoding="utf-8"))
+        return data.get("seen", []) if isinstance(data, dict) else []
+    except (json.JSONDecodeError, OSError):
+        return []
 
 
 def main():
-    missing = [name for name, value in (
-        ("MM2_VALUES_URL", VALUES_URL), ("MM2_TRADES_URL", TRADES_URL),
-        ("TELEGRAM_BOT_TOKEN", BOT_TOKEN), ("TELEGRAM_CHAT_ID", CHAT_ID)
-    ) if not value]
-    if missing:
-        raise RuntimeError("Configure these GitHub variables/secrets first: " + ", ".join(missing))
+    if not BOT_TOKEN or not CHAT_ID:
+        raise RuntimeError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in GitHub Actions secrets.")
 
-    values = normalize_values(fetch_json(VALUES_URL))
-    trades = unwrap_list(fetch_json(TRADES_URL), ("trades", "offers", "data", "results"))
-    seen = load_seen()
-    new_seen = set(seen)
+    html = fetch_page()
+    listings = parse_listings(html)
+    if not listings:
+        raise RuntimeError(
+            "No BloxSwaps P2P listings could be parsed. The page may have changed "
+            "its markup or may require client-side rendering; no alerts were sent."
+        )
+
+    seen_list = load_seen()
+    seen = set(seen_list)
+    new_ids = []
     sent = 0
-    skipped = 0
 
-    for index, trade in enumerate(trades):
-        if not isinstance(trade, dict):
-            skipped += 1
-            continue
-        trade_id = str(trade.get("id", trade.get("trade_id", trade.get("url", index))))
+    for listing in listings:
+        trade_id = listing["id"]
         if trade_id in seen:
             continue
-        give, receive = trade_sides(trade)
-        if give is None:
-            skipped += 1
-            continue
-        try:
-            give_total, give_names = side_value(give, values)
-            receive_total, receive_names = side_value(receive, values)
-        except ValueError:
-            skipped += 1
-            continue
+        give = listing["give_value"]
+        receive = listing["receive_value"]
+        difference = receive - give
+        new_ids.append(trade_id)
 
-        difference = receive_total - give_total
-        new_seen.add(trade_id)
         if difference >= MIN_DIFF:
-            link = trade.get("url", "")
             message = (
-                "MM2 VALUE ALERT\n"
-                f"Trade ID: {trade_id}\n"
-                f"You give: {', '.join(give_names)} ({give_total:g})\n"
-                f"You receive: {', '.join(receive_names)} ({receive_total:g})\n"
-                f"Difference: +{difference:g}\n"
-                + (f"Link: {link}" if link else "")
+                "MM2 P2P VALUE ALERT — BLOXSWAPS\n"
+                f"Offer value: {give:g}\n"
+                f"Requested value: {receive:g}\n"
+                f"Value difference: {difference:+g}\n"
+                f"Items shown: {', '.join(listing['give_names'][:8]) or 'Open listing'}\n"
+                f"Source: {listing['url']}"
             )
-            send_telegram(message.strip())
+            send_telegram(message)
             sent += 1
 
+    updated_seen = (seen_list + new_ids)[-MAX_SEEN:]
     SEEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-    SEEN_FILE.write_text(json.dumps({"seen": sorted(new_seen)}, indent=2) + "\n")
-    print(f"Trades checked: {len(trades)} | alerts sent: {sent} | skipped: {skipped}")
+    SEEN_FILE.write_text(json.dumps({"seen": updated_seen}, indent=2) + "\n", encoding="utf-8")
+    print(
+        f"BloxSwaps listings parsed: {len(listings)} | "
+        f"new listings: {len(new_ids)} | alerts sent: {sent}"
+    )
 
 
 if __name__ == "__main__":
