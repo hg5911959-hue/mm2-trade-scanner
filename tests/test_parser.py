@@ -719,7 +719,7 @@ class QuantityIncidentReproductionTests(unittest.TestCase):
               <span class="item-name">Snowcannon</span>
               <img alt="coin">
               <span class="price">750.0</span>
-              <span class="quantity-prefix">x</span><span class="quantity-value">2</span>
+              <span class="badge-part-a">x</span><span class="badge-part-b">2</span>
             </div>
           </div>
           <div>Recherche <img alt="Spirit"></div>
