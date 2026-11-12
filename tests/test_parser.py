@@ -749,6 +749,79 @@ class ReliabilityTests(unittest.TestCase):
 
 
 
+class CursorPaginationTests(unittest.TestCase):
+    @staticmethod
+    def _first_page_html():
+        page = {
+            "items": [{
+                "id": "first-post",
+                "tradePostItems": [
+                    {"itemDetailsId": "b-id", "quantity": 1, "tradeRole": "OFFERED"},
+                    {"itemDetailsId": "a-id", "quantity": 1, "tradeRole": "REQUESTED"},
+                ],
+                "requestedWildcards": [],
+            }],
+            "meta": {"cursor": "cursor-1"},
+        }
+        payload = json.dumps({"initialPage": page}, separators=(",", ":"))
+        return (
+            '<script>self.__next_f.push([1,' + json.dumps(payload) + ']);</script>'
+            '<article><div>Propose <img alt="Knife B"></div>'
+            '<div>Recherche <img alt="Knife A"></div>'
+            '<a href="/fr/trade-mm2?ad=first-post">Discussion</a>'
+            '<a href="/fr/users/123">Owner</a></article>'
+        )
+
+    @staticmethod
+    def _post(post_id):
+        return {
+            "id": post_id,
+            "user": {
+                "robloxUserId": "123",
+                "robloxUsername": "fixture_user",
+                "robloxDisplayName": "Fixture Owner",
+            },
+            "tradePostItems": [
+                {"itemDetailsId": "b-id", "quantity": 2, "tradeRole": "OFFERED"},
+                {"itemDetailsId": "a-id", "quantity": 1, "tradeRole": "REQUESTED"},
+            ],
+            "requestedWildcards": [],
+            "lastRefreshedAt": "2026-11-12T00:00:00Z",
+        }
+
+    def test_cursor_pages_are_scanned_until_first_seen_ad(self):
+        responses = [
+            {"items": [self._post("post-2"), self._post("post-3")], "meta": {"cursor": "cursor-2"}},
+            {"items": [self._post("post-4"), self._post("seen-old"), self._post("after-boundary")], "meta": {"cursor": "cursor-3"}},
+        ]
+        with (
+            patch("scanner.fetch_bloxswaps", return_value=self._first_page_html()),
+            patch("scanner.fetch_bloxswaps_items_map", return_value={
+                "a-id": {"id": "a-id", "displayName": "Knife A"},
+                "b-id": {"id": "b-id", "displayName": "Knife B"},
+            }),
+            patch("scanner.bloxswaps_api_get_json", side_effect=responses) as api,
+        ):
+            listings, stats, discovered = scanner.fetch_bloxswaps_all({"seen-old"})
+        self.assertEqual(api.call_count, 2)
+        self.assertEqual([x["source_ad_id"] for x in listings], ["first-post", "post-2", "post-3", "post-4"])
+        self.assertEqual(stats["pagination_pages"], 3)
+        self.assertTrue(stats["pagination_complete"])
+        self.assertTrue(stats["seen_boundary_reached"])
+        self.assertNotIn("after-boundary", [x["source_ad_id"] for x in listings])
+        self.assertEqual(listings[1]["receive_items"][0]["quantity_source"], "structured")
+        self.assertEqual(listings[1]["receive_items"][0]["quantity"], 2)
+        self.assertEqual(listings[1]["owner_url"], "https://bloxswaps.com/fr/users/123")
+        self.assertIn("ad=post-2", listings[1]["url"])
+
+    def test_missing_seen_state_seeds_current_page_without_replaying_history(self):
+        with patch("scanner.fetch_bloxswaps", return_value=self._first_page_html()):
+            listings, stats, seed_ids = scanner.fetch_bloxswaps_all(None)
+        self.assertEqual(listings, [])
+        self.assertTrue(stats["cold_start"])
+        self.assertEqual(seed_ids, ["first-post"])
+
+
 class LiveBloxSwapsFixtureTests(unittest.TestCase):
     def test_redacted_real_bloxswaps_card_matches_rsc_quantities(self):
         fixture = Path(__file__).parent / "fixtures" / "bloxswaps-live-sample.html"
