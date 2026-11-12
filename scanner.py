@@ -2099,7 +2099,8 @@ def main():
     successful_cycles = 0
     while time.monotonic() < deadline:
         cycle += 1
-        print(f"[loop] Starting scan cycle {cycle}; interval={interval}s")
+        cycle_started = time.monotonic()
+        print(f"[loop] Starting scan cycle {cycle}; target start-to-start interval={interval}s")
         try:
             scan_once()
             successful_cycles += 1
@@ -2112,7 +2113,9 @@ def main():
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
-        time.sleep(min(interval, remaining))
+        elapsed = time.monotonic() - cycle_started
+        wait_seconds = max(0.0, interval - elapsed)
+        time.sleep(min(wait_seconds, remaining))
     print(f"[loop] Completed {cycle} scan cycles; successful={successful_cycles} within {duration}s.")
     if successful_cycles == 0:
         raise RuntimeError("No scan cycle completed successfully during the loop window.")
