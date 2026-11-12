@@ -647,6 +647,8 @@ def _apply_structured_quantities(listing, structured):
         items = listing.get(field, [])
         if len(rows) != len(items):
             for item in items:
+                item["html_quantity"] = item.get("quantity")
+                item["html_quantity_source"] = item.get("quantity_source", "implicit_single")
                 item["quantity"] = None
                 item["quantity_source"] = "uncertain"
                 item["quantity_min"] = 1
@@ -654,6 +656,10 @@ def _apply_structured_quantities(listing, structured):
                 item["quantity_reason"] = "structured/HTML item count mismatch"
             continue
         for item, row in zip(items, rows):
+            html_source = item.get("quantity_source", "implicit_single")
+            html_quantity = item.get("quantity")
+            item["html_quantity"] = html_quantity
+            item["html_quantity_source"] = html_source
             try:
                 quantity = int(row.get("quantity"))
             except (TypeError, ValueError):
@@ -665,20 +671,22 @@ def _apply_structured_quantities(listing, structured):
                 item["quantity_max"] = None
                 item["quantity_reason"] = "invalid structured quantity"
                 continue
-            html_source = item.get("quantity_source")
-            html_quantity = item.get("quantity")
             if html_source == "uncertain":
                 item["quantity"] = None
                 item["quantity_source"] = "uncertain"
                 item["quantity_min"] = item.get("quantity_min", 1)
                 item["quantity_max"] = item.get("quantity_max")
                 item["quantity_reason"] = "HTML quantity marker is ambiguous; structured data cannot override the conflict"
-            elif html_source == "explicit" and html_quantity != quantity:
+            elif html_quantity != quantity:
+                known = [
+                    int(value) for value in (html_quantity, quantity)
+                    if value is not None and str(value).isdigit() and 1 <= int(value) <= 100
+                ]
                 item["quantity"] = None
                 item["quantity_source"] = "uncertain"
-                item["quantity_min"] = min(int(html_quantity), quantity)
-                item["quantity_max"] = max(int(html_quantity), quantity)
-                item["quantity_reason"] = f"HTML says {html_quantity}, structured data says {quantity}"
+                item["quantity_min"] = min(known) if known else 1
+                item["quantity_max"] = max(known) if known else None
+                item["quantity_reason"] = f"HTML ({html_source}) says {html_quantity}; structured data says {quantity}"
             else:
                 item["quantity"] = quantity
                 item["quantity_source"] = "structured"
@@ -945,8 +953,8 @@ def _merge_html_quantity_diagnostics(api_listing, html_listing):
         for api_item, html_item in zip(api_items, html_items):
             api_item["listed_price"] = html_item.get("listed_price")
             api_item["raw_excerpt"] = html_item.get("raw_excerpt", api_item.get("raw_excerpt", ""))
-            html_source = html_item.get("quantity_source", "implicit_single")
-            html_quantity = html_item.get("quantity")
+            html_source = html_item.get("html_quantity_source", html_item.get("quantity_source", "implicit_single"))
+            html_quantity = html_item.get("html_quantity", html_item.get("quantity"))
             api_quantity = api_item.get("quantity")
             if html_source == "uncertain":
                 api_item["quantity"] = None
