@@ -671,6 +671,7 @@ def _apply_structured_quantities(listing, structured):
                 item["quantity_max"] = None
                 item["quantity_reason"] = "invalid structured quantity"
                 continue
+            item["structured_quantity"] = quantity
             if html_source == "uncertain":
                 item["quantity"] = None
                 item["quantity_source"] = "uncertain"
@@ -956,6 +957,9 @@ def _merge_html_quantity_diagnostics(api_listing, html_listing):
             html_source = html_item.get("html_quantity_source", html_item.get("quantity_source", "implicit_single"))
             html_quantity = html_item.get("html_quantity", html_item.get("quantity"))
             api_quantity = api_item.get("quantity")
+            api_item["structured_quantity"] = api_quantity
+            api_item["html_quantity"] = html_quantity
+            api_item["html_quantity_source"] = html_source
             if html_source == "uncertain":
                 api_item["quantity"] = None
                 api_item["quantity_source"] = "uncertain"
@@ -1745,8 +1749,18 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
             else:
                 label = f"{quantity} ({source})"
             price = f"; listed_price={item['listed_price']}" if item.get("listed_price") is not None else ""
+            reason = item.get("quantity_reason", "")
+            comparison = ""
+            if item.get("html_quantity") is not None or item.get("structured_quantity") is not None:
+                comparison = (
+                    f"; HTML={item.get('html_quantity')} ({item.get('html_quantity_source', 'n/a')})"
+                    f" vs RSC={item.get('structured_quantity')}"
+                )
             raw = str(item.get("raw_excerpt", "")).replace("\n", " ")[:150]
-            lines.append(f"• {side}: {item['name']} — {label}{price}; raw={raw!r}")
+            lines.append(
+                f"• {side}: {item['name']} — {label}{price}{comparison}; "
+                f"reason={reason!r}; raw={raw!r}"
+            )
     lines.extend([
         "",
         "Values: Supreme Values source_b via RBLXValue API (Data from rblxvalue.com).",
