@@ -1234,8 +1234,13 @@ def api_get_json(path, params=None):
 def _read_values_cache():
     try:
         cached = json.loads(VALUES_FILE.read_text(encoding="utf-8"))
+        if cached.get("schema_version") != 2:
+            return None, None
         values = cached.get("values", {})
-        if isinstance(values, dict) and len(values) >= 100:
+        if (
+            isinstance(values, dict) and len(values) >= 100
+            and all(isinstance(record, dict) and isinstance(record.get("variants"), list) and record["variants"] for record in values.values())
+        ):
             age = max(0, int(time.time() - float(cached.get("fetched_at", 0))))
             return values, age
     except (ValueError, OSError, json.JSONDecodeError, AttributeError, TypeError):
