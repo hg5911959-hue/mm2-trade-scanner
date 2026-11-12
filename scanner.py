@@ -10,6 +10,7 @@ import os
 import re
 import sys
 import time
+import signal
 import unicodedata
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -32,6 +33,8 @@ MIN_DIFF = float(os.environ.get("MIN_VALUE_DIFFERENCE", "0"))
 MIN_PROFIT_PERCENT = float(os.environ.get("MIN_PROFIT_PERCENT", "5"))
 FAILURE_THRESHOLD = int(os.environ.get("FAILURE_ALERT_THRESHOLD", "3"))
 MAX_ALERTS_PER_RUN = max(1, int(os.environ.get("MAX_ALERTS_PER_RUN", "3")))
+_SESSION_ALERTS_SENT = 0
+_SESSION_ALERT_LIMIT = MAX_ALERTS_PER_RUN
 ALERT_DELAY_SECONDS = max(0.0, float(os.environ.get("ALERT_DELAY_SECONDS", "1")) )
 VALUES_FILE = Path("data/supreme_values.json")
 FAILURE_FILE = Path("data/failure_state.json")
@@ -2684,7 +2687,8 @@ def scan_once():
         opportunities.append(result)
 
     opportunities.sort(key=lambda item: (item["difference"], item["margin"]), reverse=True)
-    selected_opportunities = opportunities[:MAX_ALERTS_PER_RUN]
+    remaining_session_alerts = max(0, _SESSION_ALERT_LIMIT - _SESSION_ALERTS_SENT)
+    selected_opportunities = opportunities[:min(MAX_ALERTS_PER_RUN, remaining_session_alerts)]
     deferred = max(0, len(opportunities) - len(selected_opportunities))
     for deferred_op in opportunities[len(selected_opportunities):]:
         mark_pending(deferred_op["listing"])
@@ -2738,6 +2742,7 @@ def scan_once():
         # It is cleared only after a definite success or definite API rejection.
         uncertain_ids.add(trade_id)
         save_uncertain_ids(uncertain_ids)
+        _SESSION_ALERTS_SENT += 1
         try:
             send_telegram(message)
         except TelegramDeliveryUncertain:
@@ -2875,9 +2880,74 @@ def record_failure(error):
             print(f"[telegram] Failure alert could not be sent: {type(notify_error).__name__}")
 
 
+def run_scan_loop(duration_seconds=720, interval_seconds=45):
+    """Poll repeatedly in one Actions job while preserving one alert budget per job."""
+    global _SESSION_ALERTS_SENT, _SESSION_ALERT_LIMIT
+    duration_seconds = max(1, int(duration_seconds))
+    interval_seconds = max(30, min(60, int(interval_seconds)))
+    _SESSION_ALERTS_SENT = 0
+    _SESSION_ALERT_LIMIT = max(1, int(os.environ.get("MAX_ALERTS_PER_SESSION", str(MAX_ALERTS_PER_RUN))))
+    started = time.monotonic()
+    deadline = started + duration_seconds
+    stop = {"requested": False}
+    previous_handlers = {}
+
+    def request_stop(signum, frame):
+        stop["requested"] = True
+        print(f"[loop] Graceful shutdown requested (signal={signum}); finishing current scan cycle.")
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            previous_handlers[sig] = signal.getsignal(sig)
+            signal.signal(sig, request_stop)
+        except (ValueError, OSError):
+            pass
+
+    cycles = 0
+    successful_cycles = 0
+    try:
+        while not stop["requested"] and time.monotonic() < deadline:
+            cycle_started = time.monotonic()
+            cycles += 1
+            print(f"[loop] Starting scan cycle {cycles}; elapsed={cycle_started - started:.1f}s")
+            try:
+                scan_once()
+                successful_cycles += 1
+            except Exception as exc:
+                print(f"[loop] Scan cycle {cycles} failed safely: {type(exc).__name__}: {str(exc)[:300]}")
+                record_failure(exc)
+            cycle_elapsed = time.monotonic() - cycle_started
+            remaining = deadline - time.monotonic()
+            print(
+                f"[loop] Cycle {cycles} finished in {cycle_elapsed:.1f}s; "
+                f"alerts_this_session={_SESSION_ALERTS_SENT}/{_SESSION_ALERT_LIMIT}; "
+                f"remaining={max(0, remaining):.1f}s"
+            )
+            sleep_for = min(max(0.0, interval_seconds - cycle_elapsed), max(0.0, remaining))
+            sleep_until = time.monotonic() + sleep_for
+            while not stop["requested"] and time.monotonic() < sleep_until:
+                time.sleep(min(1.0, sleep_until - time.monotonic()))
+    finally:
+        for sig, handler in previous_handlers.items():
+            try:
+                signal.signal(sig, handler)
+            except (ValueError, OSError):
+                pass
+    elapsed = time.monotonic() - started
+    print(f"[loop] Finished: cycles={cycles}, successful={successful_cycles}, elapsed={elapsed:.1f}s")
+    if successful_cycles == 0:
+        raise RuntimeError("No scan cycle completed successfully during the scheduled polling window.")
+    return {"cycles": cycles, "successful_cycles": successful_cycles, "elapsed_seconds": elapsed}
+
+
 def main():
-    # One feed snapshot per workflow invocation; cadence is controlled by GitHub cron.
-    # Production cadence is deliberately bounded to prevent repeated Telegram alerts.
+    duration = int(os.environ.get("MM2_SCAN_DURATION_SECONDS", "0") or 0)
+    if duration > 0:
+        interval = int(os.environ.get("MM2_SCAN_INTERVAL_SECONDS", "45") or 45)
+        return run_scan_loop(duration, interval)
+    global _SESSION_ALERTS_SENT, _SESSION_ALERT_LIMIT
+    _SESSION_ALERTS_SENT = 0
+    _SESSION_ALERT_LIMIT = max(1, int(os.environ.get("MAX_ALERTS_PER_SESSION", str(MAX_ALERTS_PER_RUN))))
     return scan_once()
 
 if __name__ == "__main__":
