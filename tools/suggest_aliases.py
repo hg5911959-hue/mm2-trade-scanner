@@ -32,18 +32,17 @@ def build_suggestions(catalogue, values):
             continue
         ranked = sorted(
             (
-                difflib.SequenceMatcher(None, key, candidate_key).ratio(),
-                candidate_key,
-                canonical,
-            )
-            for candidate_key, canonical in supreme_names.items()
-        , reverse=True)
-        ranked.reverse()
-        best = ranked[-1] if ranked else None
-        second = ranked[-2] if len(ranked) > 1 else None
+                (difflib.SequenceMatcher(None, key, candidate_key).ratio(), candidate_key, canonical)
+                for candidate_key, canonical in supreme_names.items()
+            ),
+            key=lambda row: (row[0], row[1]),
+            reverse=True,
+        )
+        best = ranked[0] if ranked else None
+        second = ranked[1] if len(ranked) > 1 else None
         candidates = [
             {"name": row[2], "score": round(row[0], 4)}
-            for row in reversed(ranked[-3:])
+            for row in ranked[:3]
         ]
         if best and best[0] >= 0.90 and (second is None or best[0] - second[0] >= 0.05):
             report.append({
@@ -69,8 +68,21 @@ def apply_reviewed_aliases(approved, catalogue, values, aliases_path):
         scanner.normalize_name(str(item.get("displayName", "")))
         for item in catalogue.values() if isinstance(item, dict)
     }
-    existing = scanner.load_aliases()
-    updated = dict(existing)
+    path = Path(aliases_path)
+    if path.exists():
+        try:
+            raw_existing = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ValueError("Existing aliases file is unreadable; refusing to overwrite it.") from exc
+        if not isinstance(raw_existing, dict):
+            raise ValueError("Existing aliases file must contain a JSON object.")
+        updated = {
+            scanner.normalize_name(alias): canonical
+            for alias, canonical in raw_existing.items()
+            if isinstance(alias, str) and isinstance(canonical, str)
+        }
+    else:
+        updated = {}
     for alias, canonical in approved.items():
         if not isinstance(alias, str) or not isinstance(canonical, str) or not alias.strip() or not canonical.strip():
             raise ValueError("Every approved alias and canonical name must be a non-empty string.")
@@ -86,7 +98,6 @@ def apply_reviewed_aliases(approved, catalogue, values, aliases_path):
             raise ValueError(f"'{alias}' already maps to a different canonical item.")
         updated[alias_key] = values[canonical_key].get("name", canonical.strip())
 
-    path = Path(aliases_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
     try:
