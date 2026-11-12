@@ -223,6 +223,25 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(result["difference"], 10)
         self.assertAlmostEqual(result["margin"], 50)
 
+    def test_evaluate_listing_rejects_unknown_values_and_unvalued_only_side(self):
+        listing = {
+            "give_items": [{"name": "Knife A", "quantity": 1}],
+            "receive_items": [{"name": "Unknown Knife", "quantity": 1}],
+        }
+        values = {"knife a": {"name": "Knife A", "value": 10}}
+        result, missing = scanner.evaluate_listing(listing, values)
+        self.assertIsNone(result)
+        self.assertEqual(missing, ["Unknown Knife"])
+
+        ignored_only = {
+            "give_items": [{"name": "Brew", "quantity": 1}],
+            "receive_items": [{"name": "Snowstorm", "quantity": 1}],
+        }
+        values["snowstorm"] = {"name": "Snowstorm", "value": 250}
+        result, reason = scanner.evaluate_listing(ignored_only, values)
+        self.assertIsNone(result)
+        self.assertEqual(reason, ["one side has no valued items"])
+
     def test_qualifies_applies_both_absolute_and_percent_thresholds(self):
         result = {"difference": 10, "margin": 4.99}
         self.assertFalse(scanner.qualifies(result, min_diff=0, min_percent=5))
@@ -319,11 +338,12 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.compare_secondary_values", return_value=""):
                 scanner.main()
                 scanner.main()
-            self.assertEqual(len(sent), 2)
-            self.assertIn("MANUAL VALUE CHECK", sent[0])
-            self.assertIn("SUPREME TRADE SCANNER", sent[1])
+            # Unknown-valued offers are silently excluded, then re-evaluated.
+            self.assertEqual(len(sent), 1)
+            self.assertIn("SUPREME TRADE SCANNER", sent[0])
+            self.assertNotIn("MANUAL VALUE CHECK", "".join(sent))
             self.assertTrue((root / "alerted.json").exists())
-            self.assertTrue((root / "reviewed.json").exists())
+            self.assertFalse((root / "reviewed.json").exists())
 
     def test_main_alerts_visible_qualifying_offers_once(self):
         def html(ad_ids):
