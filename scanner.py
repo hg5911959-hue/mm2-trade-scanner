@@ -41,7 +41,7 @@ SEEN_FILE = Path("data/seen_ads.json")
 BLOXSWAPS_PAGE_SIZE = 20
 MAX_FEED_PAGES = max(1, min(100, int(os.environ.get("MAX_FEED_PAGES", "50"))))
 VALUES_TTL_SECONDS = 4 * 60 * 60
-SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "200"))
+SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "100"))
 TELEGRAM_MAX_CHARS = 4000
 
 # Items without a numeric Supreme value are excluded from valuation.
@@ -1249,6 +1249,10 @@ def calculate_side_bounds(items, values):
 
 
 def format_number(value):
+    if math.isinf(float(value)):
+        return "∞"
+    if math.isnan(float(value)):
+        return "uncertain"
     if float(value).is_integer():
         return f"{int(value):,}"
     return f"{value:,.2f}".rstrip("0").rstrip(".")
@@ -1438,17 +1442,34 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
         "",
         "YOU GIVE (BloxSwaps: Recherche):",
         *(give_lines or ["• No items"]),
-        f"TOTAL YOU GIVE: {format_number(give_total)}",
+        f"TOTAL YOU GIVE (scenario): {format_number(give_total)}",
         "",
         "YOU RECEIVE (BloxSwaps: Propose):",
         *(receive_lines or ["• No items"]),
-        f"TOTAL YOU RECEIVE: {format_number(receive_total)}",
+        f"TOTAL YOU RECEIVE (scenario): {format_number(receive_total)}",
         "",
-        f"SUPREME PROFIT: {difference:+,.2f}".replace(".00", ""),
+        f"SUPREME PROFIT (scenario): {format_number(difference)}",
         f"CALCULATED RESULT: {result}",
         "",
-        "Values: Supreme Values source_b via RBLXValue API (Data from rblxvalue.com).",
+        "QUANTITY PROVENANCE (listed prices are diagnostic only, never used for Supreme value):",
     ]
+    for side, field in (("Propose/receive", "receive_items"), ("Recherche/give", "give_items")):
+        for item in listing.get(field, []):
+            source = item.get("quantity_source", "uncertain")
+            quantity = item.get("quantity")
+            if source == "uncertain":
+                low = item.get("quantity_min", 1)
+                high = item.get("quantity_max")
+                label = f"uncertain ({low}..{high if high is not None else '∞'})"
+            else:
+                label = f"{quantity} ({source})"
+            price = f"; listed_price={item['listed_price']}" if item.get("listed_price") is not None else ""
+            raw = str(item.get("raw_excerpt", "")).replace("\n", " ")[:150]
+            lines.append(f"• {side}: {item['name']} — {label}{price}; raw={raw!r}")
+    lines.extend([
+        "",
+        "Values: Supreme Values source_b via RBLXValue API (Data from rblxvalue.com).",
+    ])
     return "\n".join(lines)
 
 
