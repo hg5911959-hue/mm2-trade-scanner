@@ -1783,7 +1783,7 @@ def format_unvalued_message(listing, missing):
         for item in items:
             quantity = item.get("quantity")
             source = item.get("quantity_source", "uncertain")
-            if quantity is None or source == "uncertain":
+            if quantity is None:
                 low = item.get("quantity_min", 1)
                 high = item.get("quantity_max")
                 label = f" x? ({low}..{high if high is not None else '∞'})"
