@@ -65,14 +65,20 @@ jobs:
           print("SCRIPT_COUNT", len(parser.scripts), "LINK_COUNT", len(parser.links), "IMAGE_COUNT", len(parser.images))
           print("SCRIPT_TAGS")
           rsc_payloads = []
+          decoder = json.JSONDecoder()
           for script in parser.scripts:
               src = script["text"]
-              if "__next_f.push" in src:
-                  for match in re.finditer(r'self\\.__next_f\\.push\\(\\[1,("(?:\\\\.|[^"\\\\])*")\\]\\)', src):
-                      try:
-                          rsc_payloads.append(json.loads(match.group(1)))
-                      except Exception:
-                          pass
+              cursor = 0
+              marker = "self.__next_f.push([1,"
+              while True:
+                  pos = src.find(marker, cursor)
+                  if pos < 0: break
+                  try:
+                      payload, consumed = decoder.raw_decode(src[pos + len(marker):])
+                      if isinstance(payload, str): rsc_payloads.append(payload)
+                      cursor = pos + len(marker) + consumed
+                  except Exception:
+                      cursor = pos + len(marker)
           def extract_object_after(text, marker):
               pos = text.find(marker)
               if pos < 0: return None
