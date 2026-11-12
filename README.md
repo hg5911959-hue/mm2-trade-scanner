@@ -12,9 +12,9 @@ From the scanner user's perspective:
 - The scanner ignores BloxSwaps' own Win/Loss label.
 - Profit = total Supreme Values of received items minus total Supreme Values of given items.
 - Minimum absolute profit defaults to **0**, and minimum profit percentage is set to **5%** in the scheduled workflow, filtering out fair trades. Qualified offers are sorted by highest absolute Supreme profit before alerts are sent.
-- If even one item cannot be matched to a numeric Supreme Values entry, the whole listing is skipped. The scanner never guesses or sends partial totals.
+- If even one item cannot be matched to a numeric Supreme Values entry, the scanner does not calculate or guess a partial total. It sends one **MANUAL VALUE CHECK** Telegram alert for that listing, then keeps retrying the listing on future scans so a later API mapping can still produce a full profit alert.
 
-Telegram alerts include both item lists, quantities, per-item values, both totals, calculated profit, result, and source links. The **OPEN OWNER PROFILE** link is shown first when the card exposes a BloxSwaps user URL; the listing/discussion URL is secondary. Repeated copies of the same weapon are grouped after quantities are summed from repeated item images, explicit stack counts such as `x3` / `3x` / `×3`, and counts embedded in image alt labels. The scanner sends Telegram messages only for listings it has not successfully alerted before. A listing with an unknown Supreme item or a currently unprofitable value is **not** marked as completed: it is re-evaluated on later scans, so an API mapping/value update can still make it alert.
+Telegram alerts include both item lists, quantities, per-item values, both totals, calculated profit, result, and source links. The **OPEN OWNER PROFILE** link is shown first when the card exposes a BloxSwaps user URL; the listing/discussion URL is secondary. The scan log reports how many parsed cards had a direct owner URL. Repeated copies of the same weapon are grouped after quantities are summed from repeated item images, explicit stack counts such as `x3` / `3x` / `×3`, and counts embedded in image alt labels. The scanner sends Telegram messages only for listings it has not successfully alerted before. A listing with an unknown Supreme item or a currently unprofitable value is **not** marked as completed: it is re-evaluated on later scans, so an API mapping/value update can still make it alert.
 
 ## Value data source
 
@@ -40,7 +40,7 @@ Never commit or share any of these secrets. The scanner never prints API keys or
 - Workflow triggers: staggered schedules, manual `workflow_dispatch`, and code updates to `scanner.py`, tests, or the scan workflow.
 - Concurrency: one workflow at a time; queued runs are not cancelled.
 - The scanner workflow has `contents: read` only; the separate monthly keepalive workflow alone has `contents: write`.
-- Alert state stores only listings whose Telegram alert was successfully sent. Existing alert history is used to migrate prior sent IDs; non-profitable and unrecognized listings remain eligible for re-evaluation.
+- Alert state stores only listings whose profit alert was successfully sent. A separate review state suppresses repeated manual-review warnings, without preventing future profit alerts. Existing alert history is used to migrate prior sent IDs; non-profitable and unrecognized listings remain eligible for re-evaluation.
 - Alerted IDs retain the newest 5,000. State, values cache, failure counter, and history writes use atomic replace operations.
 - IDs use normalized owner identity, stable card/ad identifiers when exposed, listing path/query identity, and sorted item names and quantities; relative-time labels are ignored.
 - Telegram messages are capped at 4,000 characters. Calculated margins at or above 200% include a warning to manually verify item names and values.
