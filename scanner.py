@@ -1158,17 +1158,31 @@ def load_supreme_values():
                         "name": name, "value": source_value, "secondary_value": secondary
                     }
                     existing = all_values.get(key)
-                    if existing is None or source_value > float(existing["value"]):
-                        if existing is not None:
-                            print(
-                                f"[supreme] Duplicate normalized name {name!r}: "
-                                f"keeping higher value {source_value:g} over {float(existing['value']):g}"
-                            )
+                    if existing is None:
+                        candidate["variants"] = [candidate.copy()]
                         all_values[key] = candidate
-                    elif source_value < float(existing["value"]):
+                    else:
+                        variants = existing.get("variants") or [{
+                            "name": existing.get("name", name),
+                            "value": float(existing["value"]),
+                            "secondary_value": existing.get("secondary_value"),
+                        }]
+                        if not any(
+                            float(variant.get("value", 0)) == source_value
+                            and normalize_name(variant.get("name", "")) == normalize_name(name)
+                            for variant in variants
+                        ):
+                            variants.append(candidate.copy())
+                        existing["variants"] = variants
+                        high = max(float(variant["value"]) for variant in variants)
+                        low = min(float(variant["value"]) for variant in variants)
+                        existing["value"] = high
+                        high_variant = next(variant for variant in variants if float(variant["value"]) == high)
+                        existing["name"] = high_variant.get("name", name)
+                        existing["secondary_value"] = high_variant.get("secondary_value")
                         print(
                             f"[supreme] Duplicate normalized name {name!r}: "
-                            f"ignoring lower value {source_value:g}; keeping {float(existing['value']):g}"
+                            f"preserving range {low:g}..{high:g}; give uses {high:g}, receive uses {low:g}"
                         )
             offset += len(items)
             if len(items) < page_size:
