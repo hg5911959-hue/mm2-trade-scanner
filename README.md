@@ -47,7 +47,7 @@ Items without a numeric Supreme value are not partially valued. Brew and Drool r
 
 The scanner uses RBLXValue API v2 and calculates all trade totals from `value_source_b` (Supreme Values). `value_source_a` is secondary information only and is never blended into Supreme totals.
 
-- A successful Supreme snapshot is reused for **5 minutes**. Once expired, the scanner must refresh from the API; if refresh fails or the API key is missing, it fails closed rather than using stale values.
+- A successful Supreme snapshot is reused for **5 minutes**. Once expired, the scanner conditionally revalidates each cached API page with its HTTP `ETag` (`If-None-Match`); unchanged pages are reused only after a matching `304 Not Modified`. Pages without a stored ETag are fetched normally. If refresh/revalidation fails, a 304 has no matching cached page, or the API key is missing, it fails closed rather than using stale values.
 - The site item catalogue is loaded from `https://api.bloxswaps.com/items` and cached for **1 hour**.
 - The first BloxSwaps page is read from its HTML/RSC payload, then every new RSC post is converted through the site's item catalogue—even if its HTML card could not be parsed. Parsed HTML is cross-checked for quantity and contributes visible-price/raw-text diagnostics. Further pages are fetched from `https://api.bloxswaps.com/trade-posts` with `cursor` and `pageSize=20`.
 - Pagination continues through recent pages until a previously seen ad ID is reached. The default safety cap is 50 pages; reaching it with a cursor remaining raises a maintenance warning rather than claiming complete coverage.
