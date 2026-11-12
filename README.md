@@ -1,6 +1,6 @@
 # MM2 Trade Scanner
 
-Automated scanner for public **BloxSwaps MM2 P2P listings**, with Telegram alerts. The GitHub Actions job runs a 50-minute scan loop, checking approximately every 45 seconds. The 5-minute cron and `repository_dispatch` event remain backup entry points. Concurrency prevents overlapping scanner jobs.
+Automated scanner for public **BloxSwaps MM2 P2P listings**, with concise Telegram alerts. GitHub Actions performs one scan per scheduled run, every 15 minutes; it no longer polls continuously.
 
 ## Trade evaluation
 
@@ -31,7 +31,7 @@ If a quantity is uncertain, the scanner computes a conservative best/worst profi
 - If only the best-case profit is positive, it sends a separate **MANUAL VERIFICATION REQUIRED** alert.
 - If even the best-case profit is not positive, it does not send a trade alert.
 
-Telegram messages include quantity source, the raw item excerpt, and visible listed price for diagnostics only. A warning is added for a margin of **100% or more** or a quantity of **5 or more**.
+Telegram alerts show only the owner/listing links, up to 8 item lines per side, totals, Supreme profit, and result. Uncertain quantities, large stacks, and suspiciously high profit retain short safety warnings. Parser provenance, raw excerpts, and HTML/API diagnostics stay in GitHub Actions logs.
 
 ### Item names and duplicate values
 
@@ -67,21 +67,21 @@ Never commit or share these secrets. The scanner does not print API keys or Tele
 
 ## Runtime, deduplication, and persistence
 
-- Scanner job: 50-minute loop, approximately every 45 seconds, with a 55-minute job timeout.
-- Backup triggers: GitHub cron every 5 minutes, manual `workflow_dispatch`, and `repository_dispatch` event type `mm2-scan`.
-- Concurrency: one scanner workflow at a time; a new scheduled run does not cancel the active scan.
+- Scanner job: one feed scan per run, scheduled every 15 minutes, with a 14-minute timeout.
+- Triggers: GitHub cron every 15 minutes, manual `workflow_dispatch`, and `repository_dispatch` event type `mm2-scan`.
+- Concurrency: one scanner workflow at a time; a newer scheduled run cancels a stale overlapping run rather than building a backlog.
 - The first run with missing seen-ad state creates a baseline from the current first page and does **not** replay the historical feed backlog. Subsequent scans process new posts until the seen boundary.
 - `data/seen_ads.json` tracks processed BloxSwaps ad IDs. Unmatched or malformed listings remain eligible for rechecking; successful alerts and intentionally excluded Ajout posts are marked seen.
 - Alerted IDs, uncertain Telegram deliveries, seen IDs, history, failure counters, Supreme snapshot, BloxSwaps item catalogue, unmatched names, and maintenance-alert throttles are stored on the dedicated **`state` branch**. That branch is updated only when state files change.
 - The workflow retains a one-time legacy Actions Cache restore path for migration. The state branch becomes authoritative after it exists.
 - A corrupt or unreadable state file fails closed instead of silently resetting deduplication.
 - Alerted IDs retain the newest 5,000 in insertion order; writes use atomic replace operations.
-- `MAX_ALERTS_PER_RUN` defaults to 10 and `ALERT_DELAY_SECONDS` defaults to 1 second. Deferred opportunities remain unalerted for a later scan.
+- `MAX_ALERTS_PER_RUN` defaults to 3 and `ALERT_DELAY_SECONDS` defaults to 2 seconds. Deferred opportunities remain unalerted for a later scan. Deferred opportunities remain unalerted for a later scan.
 - A definite Telegram API rejection clears its pre-send guard so the offer can be retried later. A timeout, connection failure, invalid response, or HTTP 5xx is treated as **uncertain delivery**: the listing is quarantined and is not automatically resent. Check Telegram before manually clearing its entry in `data/telegram_uncertain.json`.
 - A failed Telegram message does not stop later opportunities in the same batch.
-- Any unparsed or malformed card triggers a maintenance alert in long-loop mode; a persisted one-hour cooldown prevents spam even when only one card fails. Unmatched item names are summarized once per name and rechecked on later scans.
-- The watchdog checks successful scan runs every 15 minutes. It recognizes an active 50-minute scan loop and suppresses false stale-success alerts while that job is running; it uses `GITHUB_REPOSITORY`, not a hard-coded repository path.
-- Recommended independent monitoring: configure Healthchecks.io and store its ping URL as `HEALTHCHECKS_PING_URL`. The workflow pings when the long scan job finishes.
+- Any unparsed or malformed card triggers a maintenance alert; a persisted one-hour cooldown prevents spam even when only one card fails. Unmatched item names are summarized once per name and rechecked on later scans.
+- The watchdog checks successful scan runs every 15 minutes and suppresses false stale-success alerts while a scanner run is active; it uses `GITHUB_REPOSITORY`, not a hard-coded repository path.
+- Recommended independent monitoring: configure Healthchecks.io and store its ping URL as `HEALTHCHECKS_PING_URL`. The workflow pings when the scan job finishes.
 
 ## Logs and manual operations
 
@@ -95,6 +95,6 @@ Never commit or share these secrets. The scanner does not print API keys or Tele
 
 - BloxSwaps' public RSC/API contract and HTML markup can change. The live fixture and regression tests protect known layouts, not every future layout.
 - The scanner uses a maximum of 50 cursor pages per scan. If there are more than 1,000 new posts before a seen boundary, the maintenance warning indicates that the scan was capped.
-- GitHub cron starts can be delayed. The long-running loop reduces missed short-lived offers but cannot guarantee detection before another trader accepts them.
+- GitHub cron starts can be delayed. A 15-minute schedule can miss short-lived offers; it cannot guarantee detection before another trader accepts them.
 - Supreme Values are estimates delivered by a third-party provider. A fresh RBLXValue response does not guarantee Supreme itself has just changed its upstream data.
 - No Roblox password, browser cookie, or account session token is needed.
