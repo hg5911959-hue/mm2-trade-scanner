@@ -2192,6 +2192,14 @@ def qualifies(result, min_diff=None, min_percent=None):
     return metric > 0 and metric >= min_diff and result["margin"] >= min_percent
 
 
+def should_alert_malformed_cards(issue_count):
+    """Any malformed card is actionable; rate limits belong to the persisted cooldown."""
+    try:
+        return int(issue_count) > 0
+    except (TypeError, ValueError):
+        return False
+
+
 def write_step_summary(line):
     path = os.environ.get("GITHUB_STEP_SUMMARY")
     if path:
@@ -2320,7 +2328,7 @@ def scan_once():
             f"HTML warning IDs: {', '.join(stats.get('html_parse_warning_ids', [])[:10])}"
         )
         ratio = issue_count / max(1, stats.get("candidate_count", 0))
-        if os.environ.get("MM2_SCAN_LOOP") == "1" and (issue_count >= 3 or ratio >= 0.05):
+        if os.environ.get("MM2_SCAN_LOOP") == "1" and should_alert_malformed_cards(issue_count):
             samples = " | ".join(stats.get("malformed_samples", [])[:3])
             send_maintenance_alert(
                 "malformed-feed-cards",
