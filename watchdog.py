@@ -42,8 +42,39 @@ def latest_success_age_minutes(token):
     return age, runs[0]
 
 
+def latest_active_scan_age_minutes(token):
+    repository = os.environ.get("GITHUB_REPOSITORY", "").strip()
+    if not repository or repository.count("/") != 1:
+        raise RuntimeError("GITHUB_REPOSITORY must be set to owner/repository.")
+    url = (
+        f"https://api.github.com/repos/{repository}/actions/workflows/scan.yml/runs"
+        "?status=in_progress&per_page=1"
+    )
+    request = Request(url, headers={
+        "Accept": "application/vnd.github+json",
+        "Authorization": "Bearer " + token,
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "MM2-Scanner-Watchdog",
+    })
+    raw = scanner.request_with_retry(request, 20, "GitHub active scan run")
+    payload = json.loads(raw.decode("utf-8"))
+    runs = payload.get("workflow_runs", [])
+    if not runs:
+        return None, None
+    created = datetime.fromisoformat(runs[0]["created_at"].replace("Z", "+00:00"))
+    age = max(0.0, (datetime.now(timezone.utc) - created).total_seconds() / 60.0)
+    return age, runs[0]
+
+
 def main():
     token = os.environ.get("GITHUB_TOKEN", "").strip()
+    active_age, active_run = latest_active_scan_age_minutes(token)
+    if active_run and active_age < 55:
+        print(
+            f"[watchdog] Scan loop is currently active ({active_age:.1f} minutes); "
+            "suppressing stale-success alert."
+        )
+        return
     age, run = latest_success_age_minutes(token)
     print(f"[watchdog] Latest successful scan age: {age:.1f} minutes")
     if should_alert(age):
