@@ -37,7 +37,7 @@ Telegram alerts show only the owner/listing links, up to 8 item lines per side, 
 
 - Exact normalized Supreme names are preferred.
 - `aliases.json` contains reviewed manual aliases (alias → canonical Supreme name).
-- Singular/plural normalization is supported. Fuzzy matching is deliberately strict (similarity at least 0.97, with a clear gap from the next candidate); ambiguous matches are rejected.
+- Exact normalized names and reviewed aliases are supported. Automatic singular/plural and fuzzy name matching are disabled; ambiguous identities are rejected rather than guessed.
 - A new unmatched name is reported through a cooldown-controlled maintenance alert and is rechecked. `python tools/suggest_aliases.py` compares BloxSwaps catalogue names with Supreme names and produces review-only candidates; it never writes suggestions automatically. Apply only a manually reviewed JSON mapping with `--approve reviewed-aliases.json`.
 - If several Supreme source rows normalize to the same name, all numeric variants are retained. The scanner uses the **higher** value when you give an item and the **lower** value when you receive it, avoiding optimistic duplicate-name valuation.
 

@@ -2708,7 +2708,7 @@ def scan_once():
 
     print("[stage] Checking RBLXValue API credential")
     if not RBLXVALUE_API_KEY:
-        print("[supreme] API key missing; only a fresh schema-v2 Supreme cache can be used")
+        print("[supreme] API key missing; only a fresh schema-v3 Supreme cache can be used")
     elif not RBLXVALUE_API_KEY.startswith("rbx_"):
         print("[supreme] API key format looks invalid; cached values will be used if available")
     else:
