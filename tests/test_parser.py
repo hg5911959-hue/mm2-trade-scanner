@@ -107,6 +107,16 @@ class ParserTests(unittest.TestCase):
         listing = parse_listings(html)[0]
         self.assertEqual(listing["receive_items"], [{"name": "Chroma Gemstone", "quantity": 2}])
 
+    def test_non_finite_or_non_positive_values_are_treated_as_unknown(self):
+        items = [{"name": "Bad Value Knife", "quantity": 1}]
+        for invalid in (float("nan"), float("inf"), 0, -5):
+            total, breakdown, missing = calculate_side(
+                items, {"bad value knife": {"name": "Bad Value Knife", "value": invalid}}
+            )
+            self.assertEqual(total, 0)
+            self.assertEqual(breakdown, [])
+            self.assertEqual(missing, ["Bad Value Knife"])
+
     def test_items_without_numeric_supreme_value_are_ignored(self):
         items = [
             {"name": "Brew", "quantity": 1},
