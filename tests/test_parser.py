@@ -233,6 +233,18 @@ class ReliabilityTests(unittest.TestCase):
         self.assertIn("OPEN OWNER PROFILE: https://bloxswaps.com/fr/users/12345", message)
         self.assertLess(message.index("OPEN OWNER PROFILE"), message.index("Listing details"))
 
+    def test_unvalued_trade_message_is_explicit_and_links_owner(self):
+        listing = {
+            "give_items": [{"name": "Knife A", "quantity": 2}],
+            "receive_items": [{"name": "Knife B", "quantity": 1}],
+            "owner_url": "https://bloxswaps.com/fr/users/123",
+            "url": "https://bloxswaps.com/fr/trade-mm2?ad=abc",
+        }
+        message = scanner.format_unvalued_message(listing, ["Knife B"])
+        self.assertIn("Knife A x2", message)
+        self.assertIn("PROFIT: NOT CALCULATED", message)
+        self.assertIn("OPEN OWNER PROFILE: https://bloxswaps.com/fr/users/123", message)
+
     def test_main_retries_unmatched_offer_after_value_mapping_becomes_available(self):
         html = """
         <article>
@@ -252,6 +264,7 @@ class ReliabilityTests(unittest.TestCase):
             ]
             with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), \
                  patch("scanner.ALERTED_FILE", root / "alerted.json"), \
+                 patch("scanner.REVIEWED_FILE", root / "reviewed.json"), \
                  patch("scanner.FAILURE_FILE", root / "failure.json"), \
                  patch("scanner.HISTORY_FILE", root / "history.csv"), \
                  patch("scanner.load_supreme_values", side_effect=value_sets), \
@@ -260,8 +273,11 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.compare_secondary_values", return_value=""):
                 scanner.main()
                 scanner.main()
-            self.assertEqual(len(sent), 1)
+            self.assertEqual(len(sent), 2)
+            self.assertIn("MANUAL VALUE CHECK", sent[0])
+            self.assertIn("SUPREME TRADE SCANNER", sent[1])
             self.assertTrue((root / "alerted.json").exists())
+            self.assertTrue((root / "reviewed.json").exists())
 
     def test_main_alerts_visible_qualifying_offers_once(self):
         def html(ad_ids):
@@ -283,6 +299,7 @@ class ReliabilityTests(unittest.TestCase):
             with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), \
                  patch("scanner.SEEN_FILE", root / "seen.json"), \
                  patch("scanner.ALERTED_FILE", root / "alerted.json"), \
+                 patch("scanner.REVIEWED_FILE", root / "reviewed.json"), \
                  patch("scanner.FAILURE_FILE", root / "failure.json"), \
                  patch("scanner.HISTORY_FILE", root / "history.csv"), \
                  patch("scanner.load_supreme_values", return_value={
