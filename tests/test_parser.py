@@ -749,6 +749,22 @@ class ReliabilityTests(unittest.TestCase):
 
 
 
+class LiveBloxSwapsFixtureTests(unittest.TestCase):
+    def test_redacted_real_bloxswaps_card_matches_rsc_quantities(self):
+        fixture = Path(__file__).parent / "fixtures" / "bloxswaps-live-sample.html"
+        html = fixture.read_text(encoding="utf-8")
+        listings, stats = parse_page(html)
+        self.assertEqual(len(listings), 1)
+        self.assertEqual(stats["structured_matched_count"], 1)
+        listing = listings[0]
+        self.assertTrue(listing["source_ad_id"])
+        self.assertEqual(listing["structured_trade_post_id"], listing["source_ad_id"])
+        for item in listing["receive_items"] + listing["give_items"]:
+            self.assertEqual(item["quantity_source"], "structured")
+            self.assertGreaterEqual(item["quantity"], 1)
+            self.assertLessEqual(item["quantity"], 100)
+
+
 class StructuredQuantityTests(unittest.TestCase):
     @staticmethod
     def _html_with_rsc(trade_items, wildcards=None, visible_badge=""):
