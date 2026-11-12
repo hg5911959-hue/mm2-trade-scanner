@@ -255,10 +255,14 @@ def _item_wrapper(image_node):
 
 
 def _structured_quantity_from_nodes(image_node, wrapper):
-    """Read explicit data-* counts only from the image or its isolated item wrapper."""
+    """Read data-* counts along the isolated image-to-wrapper ancestor path."""
     nodes = [image_node]
-    if wrapper is not None and wrapper is not image_node:
-        nodes.append(wrapper)
+    current = image_node.parent
+    while current is not None:
+        nodes.append(current)
+        if current is wrapper:
+            break
+        current = current.parent
     found = []
     for node in nodes:
         for key in ("data-quantity", "data-count", "data-amount", "data-stack", "data-stack-count"):
@@ -409,6 +413,7 @@ def _item_quantity_details(image_node, segment_text):
         return None, "uncertain", _listed_price(local_text), local_text[:240], lower, None, "ambiguous quantity marker"
     if structured is not None:
         if explicit and any(value != structured for value in explicit):
+            candidates = [structured, *explicit]
             return None, "uncertain", _listed_price(local_text), local_text[:240], min(candidates), max(candidates), "HTML/structured quantity disagreement"
         return structured, "structured", _listed_price(local_text), local_text[:240], structured, structured, ""
     if explicit:
