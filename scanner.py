@@ -209,20 +209,42 @@ def listing_links(node):
     return discussion_url or BLOXSWAPS_URL, owner_url
 
 
-def parse_listings(html):
+def _identity_items(items):
+    grouped = {}
+    for item in items:
+        key = normalize_name(item["name"])
+        grouped[key] = grouped.get(key, 0) + max(1, int(item.get("quantity", 1)))
+    return sorted((name, quantity) for name, quantity in grouped.items())
+
+
+def stable_listing_id(owner_url, receive_items, give_items, listing_url=""):
+    identity = {
+        "owner": (owner_url or listing_url or "").split("?", 1)[0].rstrip("/").casefold(),
+        "receive": _identity_items(receive_items),
+        "give": _identity_items(give_items),
+    }
+    payload = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
+
+
+def parse_page(html):
     parser = PageTree()
     parser.feed(html)
     candidates = smallest_matching_nodes(parser.root, has_trade_sides)
     listings = []
+    additions = 0
+    malformed = 0
     for node in candidates:
         text = node_text(node)
         if has_addition_marker(node):
+            additions += 1
             continue
         received, requested = extract_side_items(node)
         if not received or not requested:
+            malformed += 1
             continue
         link, owner_url = listing_links(node)
-        stable = hashlib.sha256((text + "|" + link).encode("utf-8")).hexdigest()[:20]
+        stable = stable_listing_id(owner_url, received, requested, link)
         listings.append({
             "id": stable,
             "receive_items": received,
@@ -232,7 +254,15 @@ def parse_listings(html):
             "source_text": text[:700],
         })
     unique = {item["id"]: item for item in listings}
-    return list(unique.values())
+    return list(unique.values()), {
+        "candidate_count": len(candidates),
+        "addition_count": additions,
+        "malformed_count": malformed,
+    }
+
+
+def parse_listings(html):
+    return parse_page(html)[0]
 
 
 def request_with_retry(req, timeout, label, attempts=4):
@@ -305,56 +335,67 @@ def api_get_json(path, params=None):
         raise RuntimeError("[rblxvalue] Invalid JSON response") from exc
 
 
+def _read_values_cache():
+    try:
+        cached = json.loads(VALUES_FILE.read_text(encoding="utf-8"))
+        values = cached.get("values", {})
+        if isinstance(values, dict) and len(values) >= 100:
+            age = max(0, int(time.time() - float(cached.get("fetched_at", 0))))
+            return values, age
+    except (ValueError, OSError, json.JSONDecodeError, AttributeError, TypeError):
+        pass
+    return None, None
+
+
 def load_supreme_values():
-    if VALUES_FILE.exists():
-        try:
-            cached = json.loads(VALUES_FILE.read_text(encoding="utf-8"))
-            age = time.time() - float(cached.get("fetched_at", 0))
-            values = cached.get("values", {})
-            if age < VALUES_TTL_SECONDS and len(values) >= 100:
-                print(f"[supreme] Using cached source_b values: {len(values)} items; age {int(age / 60)} min")
-                return values
-        except (ValueError, OSError, json.JSONDecodeError, AttributeError):
-            pass
+    cached_values, cached_age = _read_values_cache()
+    if cached_values is not None and cached_age < VALUES_TTL_SECONDS:
+        print(f"[supreme] Using cached source_b values: {len(cached_values)} items; age {cached_age // 60} min")
+        return cached_values
 
     all_values = {}
-    offset = 0
-    page_size = 100
-    total = None
-    while total is None or offset < total:
-        payload = api_get_json("/items", {"limit": page_size, "offset": offset})
-        items = payload.get("items")
-        if not isinstance(items, list) or not items:
-            if offset == 0:
-                raise RuntimeError("[supreme] API returned no item list; no trade values will be guessed")
-            break
-        total = int(payload.get("total", len(items)))
-        for item in items:
-            name = item.get("name")
-            source_value = item.get("value_source_b")
-            if not name or source_value is None:
-                continue
-            try:
-                source_value = float(source_value)
-            except (TypeError, ValueError):
-                continue
-            # A zero source value means Supreme has no numeric value for this item.
-            if source_value > 0:
-                secondary = item.get("value_source_a")
+    try:
+        offset = 0
+        page_size = 100
+        total = None
+        while total is None or offset < total:
+            payload = api_get_json("/items", {"limit": page_size, "offset": offset})
+            items = payload.get("items")
+            if not isinstance(items, list) or not items:
+                if offset == 0:
+                    raise RuntimeError("[supreme] API returned no item list; no trade values will be guessed")
+                break
+            total = int(payload.get("total", len(items)))
+            for item in items:
+                name = item.get("name")
+                source_value = item.get("value_source_b")
+                if not name or source_value is None:
+                    continue
                 try:
-                    secondary = float(secondary) if secondary is not None else None
+                    source_value = float(source_value)
                 except (TypeError, ValueError):
-                    secondary = None
-                all_values[normalize_name(name)] = {
-                    "name": name, "value": source_value, "secondary_value": secondary
-                }
-        offset += len(items)
-        if len(items) < page_size:
-            break
-        time.sleep(0.25)
+                    continue
+                if source_value > 0:
+                    secondary = item.get("value_source_a")
+                    try:
+                        secondary = float(secondary) if secondary is not None else None
+                    except (TypeError, ValueError):
+                        secondary = None
+                    all_values[normalize_name(name)] = {
+                        "name": name, "value": source_value, "secondary_value": secondary
+                    }
+            offset += len(items)
+            if len(items) < page_size:
+                break
+            time.sleep(0.25)
+        if len(all_values) < 100:
+            raise RuntimeError(f"[supreme] Only {len(all_values)} numeric source_b values loaded; refusing to calculate")
+    except Exception as exc:
+        if cached_values is not None:
+            print(f"[supreme] API refresh failed ({type(exc).__name__}); using stale cache ({cached_age // 3600}h old)")
+            return cached_values
+        raise
 
-    if len(all_values) < 100:
-        raise RuntimeError(f"[supreme] Only {len(all_values)} numeric source_b values loaded; refusing to calculate")
     VALUES_FILE.parent.mkdir(parents=True, exist_ok=True)
     VALUES_FILE.write_text(json.dumps({
         "fetched_at": time.time(),
@@ -407,17 +448,23 @@ def send_telegram(message):
         "text": message,
         "disable_web_page_preview": True,
     }).encode()
-    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=20) as response:
-            result = json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        detail = exc.read(1000).decode("utf-8", errors="replace")
-        raise RuntimeError(f"[telegram] HTTP {exc.code}: {detail[:500]}") from exc
-    except URLError as exc:
-        raise RuntimeError(f"[telegram] Network error: {exc.reason}") from exc
-    if not result.get("ok"):
+    for attempt in range(4):
+        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+        raw = request_with_retry(req, 20, "Telegram sendMessage", attempts=4)
+        try:
+            result = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise RuntimeError("[telegram] Invalid JSON response") from exc
+        if result.get("ok"):
+            return
+        if int(result.get("error_code", 0) or 0) == 429 and attempt < 3:
+            retry_after = result.get("parameters", {}).get("retry_after", 2 ** (attempt + 1))
+            delay = min(60, max(1, int(retry_after)))
+            print(f"[retry] Telegram rate limit; waiting {delay}s")
+            time.sleep(delay)
+            continue
         raise RuntimeError(f"[telegram] API rejected message: {result.get('description', 'unknown error')}")
+    raise RuntimeError("[telegram] Rate limit persisted after retries")
 
 
 def load_seen():
@@ -428,6 +475,14 @@ def load_seen():
         return data.get("seen", []) if isinstance(data, dict) else []
     except (json.JSONDecodeError, OSError):
         return []
+
+
+def save_seen(seen_list):
+    SEEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SEEN_FILE.write_text(
+        json.dumps({"seen": seen_list[-MAX_SEEN:]}, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def format_trade_message(listing, give_total, give_lines, receive_total, receive_lines, difference):
@@ -471,43 +526,50 @@ def main():
     values = load_supreme_values()
     print("[stage] Fetching BloxSwaps listings")
     html = fetch_bloxswaps()
-    listings = parse_listings(html)
+    listings, stats = parse_page(html)
     if not listings:
-        markers = ("propose", "recherche")
-        if not all(marker in html.casefold() for marker in markers):
-            raise RuntimeError("[bloxswaps] Page structure changed or blocked: trade-side markers missing.")
-        raise RuntimeError("[bloxswaps] Trade-side markers exist but no cards parsed; possible HTML change.")
+        if stats["candidate_count"] > 0 and stats["addition_count"] == stats["candidate_count"]:
+            print(f"[bloxswaps] No eligible listings: all {stats['addition_count']} candidate cards contained Ajouts.")
+            record_success()
+            return
+        if stats["candidate_count"] == 0:
+            raise RuntimeError("[bloxswaps] No trade cards parsed; page structure may have changed or feed is empty.")
+        raise RuntimeError(f"[bloxswaps] Parser could not read {stats['malformed_count']} non-Ajouts cards.")
     print(f"[bloxswaps] Eligible listings after Ajouts filter: {len(listings)}")
 
-    seen_list = load_seen()
-    seen = set(seen_list)
-    evaluated_ids = []
+    seen = set(load_seen())
     skipped_unknown = 0
+    sent = 0
+    evaluated = 0
     opportunities = []
-
     for listing in listings:
         trade_id = listing["id"]
         if trade_id in seen:
             continue
-        evaluated_ids.append(trade_id)
         give_total, give_lines, give_missing = calculate_side(listing["give_items"], values)
         receive_total, receive_lines, receive_missing = calculate_side(listing["receive_items"], values)
         missing = give_missing + receive_missing
         if missing:
             skipped_unknown += 1
             print(f"[skip] Unmatched Supreme item(s): {', '.join(missing)}")
+            seen.add(trade_id)
+            save_seen(list(seen))
+            evaluated += 1
             continue
         difference = receive_total - give_total
         margin = (difference / give_total * 100.0) if give_total > 0 else (100.0 if difference > 0 else 0.0)
-        if difference >= MIN_DIFF and margin >= MIN_PROFIT_PERCENT:
-            opportunities.append({
-                "listing": listing, "give_total": give_total, "give_lines": give_lines,
-                "receive_total": receive_total, "receive_lines": receive_lines,
-                "difference": difference, "margin": margin,
-            })
+        if difference < MIN_DIFF or margin < MIN_PROFIT_PERCENT:
+            seen.add(trade_id)
+            save_seen(list(seen))
+            evaluated += 1
+            continue
+        opportunities.append({
+            "listing": listing, "give_total": give_total, "give_lines": give_lines,
+            "receive_total": receive_total, "receive_lines": receive_lines,
+            "difference": difference, "margin": margin,
+        })
 
     opportunities.sort(key=lambda x: (x["difference"], x["margin"]), reverse=True)
-    sent = 0
     for op in opportunities:
         listing = op["listing"]
         message = format_trade_message(
@@ -515,20 +577,18 @@ def main():
             op["receive_total"], op["receive_lines"], op["difference"]
         )
         message += f"\nPROFIT MARGIN: {op['margin']:.2f}%"
-        secondary_note = compare_secondary_values(
-            listing["give_items"] + listing["receive_items"], values
-        )
+        secondary_note = compare_secondary_values(listing["give_items"] + listing["receive_items"], values)
         if secondary_note:
             message += "\nSECOND-SOURCE CHECK (MM2Values): " + secondary_note
         print(f"[telegram] Sending ranked trade; profit={op['difference']:g}")
         send_telegram(message)
         append_history(listing, op)
+        seen.add(listing["id"])
+        save_seen(list(seen))
         sent += 1
+        evaluated += 1
 
-    updated_seen = (seen_list + evaluated_ids)[-MAX_SEEN:]
-    SEEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-    SEEN_FILE.write_text(json.dumps({"seen": updated_seen}, indent=2) + "\n", encoding="utf-8")
-    print(f"[summary] Parsed={len(listings)} | evaluated={len(evaluated_ids)} | unmatched={skipped_unknown} | qualified={len(opportunities)} | alerts={sent}")
+    print(f"[summary] Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | qualified={len(opportunities)} | alerts={sent}")
     record_success()
 
 
@@ -581,7 +641,10 @@ def record_failure(error):
     state["consecutive_failures"] = count
     FAILURE_FILE.write_text(json.dumps(state, indent=2) + "\n")
     print(f"[failure] Consecutive failures: {count}")
-    if count >= FAILURE_THRESHOLD and (count == FAILURE_THRESHOLD or count % 5 == 0):
+    if count >= FAILURE_THRESHOLD and (
+        count == FAILURE_THRESHOLD or
+        (count > FAILURE_THRESHOLD and (count - FAILURE_THRESHOLD) % 5 == 0)
+    ):
         safe_error = re.sub(r"https://api\.telegram\.org/bot[^/\s]+", "https://api.telegram.org/bot[REDACTED]", str(error))
         try:
             send_telegram(
