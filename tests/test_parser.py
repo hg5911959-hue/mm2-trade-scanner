@@ -1790,3 +1790,77 @@ class LegacyAlertStateMigrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HardeningRegressionTests(unittest.TestCase):
+    def test_refreshed_seen_post_at_feed_head_does_not_hide_new_posts_below(self):
+        refreshed = CursorPaginationTests._post("seen-refreshed")
+        refreshed["lastRefreshedAt"] = "2026-11-12T12:00:00Z"
+        page = {
+            "items": [refreshed],
+            "meta": {"cursor": "cursor-after-refreshed"},
+        }
+        payload = json.dumps({"initialPage": page}, separators=(",", ":"))
+        html = (
+            '<script>self.__next_f.push([1,' + json.dumps(payload) + ']);</script>'
+        )
+        responses = [{
+            "items": [
+                CursorPaginationTests._post("new-below-1"),
+                CursorPaginationTests._post("new-below-2"),
+            ],
+            "meta": {"cursor": None},
+        }]
+        with (
+            patch("scanner.fetch_bloxswaps", return_value=html),
+            patch("scanner.fetch_bloxswaps_items_map", return_value={
+                "a-id": {"id": "a-id", "displayName": "Knife A"},
+                "b-id": {"id": "b-id", "displayName": "Knife B"},
+            }),
+            patch("scanner.bloxswaps_api_get_json", side_effect=responses) as api,
+        ):
+            listings, stats, discovered = scanner.fetch_bloxswaps_all({"seen-refreshed"})
+        self.assertEqual(api.call_count, 1)
+        self.assertEqual(
+            [item["source_ad_id"] for item in listings],
+            ["new-below-1", "new-below-2"],
+        )
+        self.assertIn("seen-refreshed", stats.get("seen_ids_skipped", []))
+
+    def test_html_rsc_merge_matches_by_item_id_not_list_position(self):
+        api_listing = {
+            "id": "api", "owner_url": "owner", "source_text": "api",
+            "receive_items": [
+                {"name": "Knife A", "structured_item_id": "a-id", "quantity": 2,
+                 "quantity_source": "structured", "quantity_min": 2, "quantity_max": 2},
+                {"name": "Knife B", "structured_item_id": "b-id", "quantity": 4,
+                 "quantity_source": "structured", "quantity_min": 4, "quantity_max": 4},
+            ],
+            "give_items": [{"name": "Knife C", "structured_item_id": "c-id", "quantity": 1,
+                            "quantity_source": "structured", "quantity_min": 1, "quantity_max": 1}],
+        }
+        html_listing = {
+            "id": "html", "owner_url": "html-owner", "source_text": "html",
+            "receive_items": [
+                {"name": "Knife B", "structured_item_id": "b-id", "quantity": 4,
+                 "quantity_source": "explicit", "listed_price": 4, "raw_excerpt": "B x4"},
+                {"name": "Knife A", "structured_item_id": "a-id", "quantity": 2,
+                 "quantity_source": "explicit", "listed_price": 2, "raw_excerpt": "A x2"},
+            ],
+            "give_items": [{"name": "Knife C", "structured_item_id": "c-id", "quantity": 1,
+                            "quantity_source": "explicit", "listed_price": 1, "raw_excerpt": "C x1"}],
+        }
+        merged = scanner._merge_html_quantity_diagnostics(api_listing, html_listing)
+        self.assertEqual(
+            [(item["name"], item["quantity"], item["quantity_source"])
+             for item in merged["receive_items"]],
+            [("Knife A", 2, "structured"), ("Knife B", 4, "structured")],
+        )
+
+    def test_missing_rsc_data_fails_closed_without_loop_environment_flag(self):
+        html = "<html><body><article>Propose <img alt='Knife B'> Recherche <img alt='Knife A'></article></body></html>"
+        with patch.dict(os.environ, {}, clear=True), patch(
+            "scanner.fetch_bloxswaps", return_value=html
+        ):
+            with self.assertRaisesRegex(RuntimeError, "RSC"):
+                scanner.fetch_bloxswaps_all(set())
