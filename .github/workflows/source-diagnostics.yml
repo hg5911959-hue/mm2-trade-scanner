@@ -303,11 +303,26 @@ jobs:
           page_items = second.get("items", [])
           if len(page_items) != scanner.BLOXSWAPS_PAGE_SIZE:
               raise SystemExit(f"Expected {scanner.BLOXSWAPS_PAGE_SIZE} API items; got {len(page_items)}")
-          seen_boundary = str(page_items[-1]["id"])
+          cursor2 = (second.get("meta") or {}).get("cursor")
+          if not cursor2:
+              raise SystemExit("Second API page did not provide a next cursor")
+          third = scanner.bloxswaps_api_get_json(
+              "/trade-posts", {"cursor": cursor2, "pageSize": scanner.BLOXSWAPS_PAGE_SIZE}
+          )
+          third_items = third.get("items", [])
+          if len(third_items) != scanner.BLOXSWAPS_PAGE_SIZE:
+              raise SystemExit(f"Expected {scanner.BLOXSWAPS_PAGE_SIZE} third-page items; got {len(third_items)}")
+          seen_boundary = str(third_items[-1]["id"])
           listings, stats, _ = scanner.fetch_bloxswaps_all({seen_boundary})
           all_items = [item for listing in listings for item in listing["receive_items"] + listing["give_items"]]
           unknown_ids = [item.get("unmatched_item_id") for item in all_items if item.get("unmatched_item_id")]
           uncertain = [item for item in all_items if item.get("quantity_source") == "uncertain"]
+          stacked = [
+              {"ad": listing.get("source_ad_id"), "name": item["name"], "quantity": item["quantity"]}
+              for listing in listings
+              for item in listing["receive_items"] + listing["give_items"]
+              if item.get("quantity") and item["quantity"] > 1
+          ]
           print("LIVE_PARSER_SUMMARY", {
               "listings": len(listings),
               "pages": stats.get("pagination_pages"),
@@ -315,12 +330,15 @@ jobs:
               "rsc_matches": stats.get("structured_matched_count"),
               "owner_links": stats.get("owner_link_count"),
               "item_count": len(all_items),
+              "stacked_items": len(stacked),
+              "stacked_examples": stacked[:10],
               "unknown_item_ids": len(unknown_ids),
               "uncertain_quantities": len(uncertain),
+              "html_parse_warnings": stats.get("html_parse_warning_count"),
               "seen_boundary": stats.get("seen_boundary_reached"),
           })
-          if stats.get("pagination_pages") != 2 or not stats.get("seen_boundary_reached"):
-              raise SystemExit("Cursor scan did not stop at the requested seen boundary")
+          if stats.get("pagination_pages") != 3 or not stats.get("seen_boundary_reached"):
+              raise SystemExit("Cursor scan did not stop at the requested third-page seen boundary")
           if not listings:
               raise SystemExit("No listings parsed from live page")
           PY
