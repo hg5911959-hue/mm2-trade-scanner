@@ -225,7 +225,7 @@ jobs:
                   for field, replacement in (("robloxDisplayName", "Fixture Owner"), ("robloxUsername", "fixture_user")):
                       private_label = str(user_data.get(field) or "")
                       if private_label:
-                          selected_article = selected_article.replace(private_label, replacement)
+                          selected_article = selected_article.replace(">" + private_label + "<", ">" + replacement + "<")
                   def redact_link(match):
                       href = match.group(1)
                       if "/users/" in href:
