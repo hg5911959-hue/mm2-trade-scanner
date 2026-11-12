@@ -1463,5 +1463,27 @@ class QuantityIncidentReproductionTests(unittest.TestCase):
         self.assertEqual(result["difference"], 10)
 
 
+class StructuredHtmlConflictRegressionTests(unittest.TestCase):
+    def test_data_quantity_conflicting_with_visible_badge_is_uncertain_not_crash(self):
+        html = """
+        <article>
+          <div>Propose
+            <div class="item-card" data-quantity="2">
+              <img alt="Snowcannon">
+              <span class="quantity-badge">x3</span>
+            </div>
+          </div>
+          <div>Recherche <img alt="Spirit"></div>
+          <a href="/fr/trade-mm2?ad=structured-html-conflict">Discussion</a>
+          <a href="/fr/users/123">Owner</a>
+        </article>
+        """
+        listing = parse_listings(html)[0]
+        item = listing["receive_items"][0]
+        self.assertIsNone(item["quantity"])
+        self.assertEqual(item["quantity_source"], "uncertain")
+        self.assertEqual((item["quantity_min"], item["quantity_max"]), (2, 3))
+
+
 if __name__ == "__main__":
     unittest.main()
