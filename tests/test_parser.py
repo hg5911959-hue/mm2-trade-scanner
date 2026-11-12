@@ -1097,10 +1097,14 @@ class LiveBloxSwapsFixtureTests(unittest.TestCase):
         listing = listings[0]
         self.assertTrue(listing["source_ad_id"])
         self.assertEqual(listing["structured_trade_post_id"], listing["source_ad_id"])
-        for item in listing["receive_items"] + listing["give_items"]:
+        all_items = listing["receive_items"] + listing["give_items"]
+        for item in all_items:
             self.assertEqual(item["quantity_source"], "structured")
             self.assertGreaterEqual(item["quantity"], 1)
             self.assertLessEqual(item["quantity"], 100)
+        self.assertEqual(sorted(item["quantity"] for item in all_items), [1, 2, 2])
+        self.assertIn(625.0, [item.get("listed_price") for item in all_items])
+        self.assertTrue(any("625.0" in item.get("raw_excerpt", "") for item in all_items))
 
 
 class StructuredQuantityTests(unittest.TestCase):
