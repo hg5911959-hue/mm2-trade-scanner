@@ -1,0 +1,64 @@
+name: Telegram Connection Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  telegram-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Send a safe Telegram test message
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+          from datetime import datetime, timezone
+
+          token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+          chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+          if not token or not chat_id:
+              raise SystemExit("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID secret.")
+
+          url = "https://api.telegram.org/bot" + token + "/sendMessage"
+          payload = {
+              "chat_id": chat_id,
+              "text": "MM2 Trade Scanner: Telegram connection test successful.\nUTC: "
+                      + datetime.now(timezone.utc).isoformat(timespec="seconds")
+          }
+          request = urllib.request.Request(
+              url,
+              data=json.dumps(payload).encode("utf-8"),
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  result = json.loads(response.read().decode("utf-8"))
+          except urllib.error.HTTPError as exc:
+              try:
+                  result = json.loads(exc.read(1000).decode("utf-8"))
+                  detail = result.get("description", "Telegram rejected the request")
+                  code = result.get("error_code", exc.code)
+              except Exception:
+                  detail, code = "Telegram returned an unreadable error", exc.code
+              raise SystemExit(f"Telegram test failed (HTTP/API {code}): {detail}")
+          except Exception as exc:
+              raise SystemExit(f"Telegram test failed due to network error: {type(exc).__name__}")
+
+          if not result.get("ok"):
+              raise SystemExit(
+                  f"Telegram test failed (API {result.get('error_code', 'unknown')}): "
+                  f"{result.get('description', 'unknown error')}"
+              )
+          print("Telegram test message delivered successfully.")
+          print("Telegram message_id:", result.get("result", {}).get("message_id", "unknown"))
+          PY
