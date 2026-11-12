@@ -720,6 +720,56 @@ class ReliabilityTests(unittest.TestCase):
 
 
 
+class StructuredQuantityTests(unittest.TestCase):
+    @staticmethod
+    def _html_with_rsc(trade_items, wildcards=None, visible_badge=""):
+        page = {
+            "items": [{
+                "id": "structured-ad-1",
+                "tradePostItems": trade_items,
+                "requestedWildcards": wildcards or [],
+            }],
+            "meta": {"cursor": None},
+        }
+        payload = json.dumps({"initialPage": page}, ensure_ascii=False, separators=(",", ":"))
+        return (
+            '<script>self.__next_f.push([1,' + json.dumps(payload) + ']);</script>'
+            '<article><div>Propose <img alt="Knife B">' + visible_badge + '</div>'
+            '<div>Recherche <img alt="Knife A"></div>'
+            '<a href="/fr/trade-mm2?ad=structured-ad-1">Discussion</a>'
+            '<a href="/fr/users/123">Owner</a></article>'
+        )
+
+    def test_rsc_quantity_overrides_implicit_html_single(self):
+        html = self._html_with_rsc([
+            {"itemDetailsId": "b-id", "quantity": 2, "tradeRole": "OFFERED"},
+            {"itemDetailsId": "a-id", "quantity": 1, "tradeRole": "REQUESTED"},
+        ])
+        listing = parse_listings(html)[0]
+        self.assertEqual(listing["receive_items"][0]["quantity"], 2)
+        self.assertEqual(listing["receive_items"][0]["quantity_source"], "structured")
+        self.assertEqual(listing["give_items"][0]["quantity"], 1)
+        self.assertEqual(listing["give_items"][0]["quantity_source"], "structured")
+
+    def test_rsc_and_explicit_html_quantity_disagreement_becomes_uncertain(self):
+        html = self._html_with_rsc([
+            {"itemDetailsId": "b-id", "quantity": 1, "tradeRole": "OFFERED"},
+            {"itemDetailsId": "a-id", "quantity": 1, "tradeRole": "REQUESTED"},
+        ], visible_badge='<span>x2</span>')
+        listing = parse_listings(html)[0]
+        self.assertIsNone(listing["receive_items"][0]["quantity"])
+        self.assertEqual(listing["receive_items"][0]["quantity_source"], "uncertain")
+
+    def test_structured_add_wildcard_excludes_card_even_without_visible_ajout_text(self):
+        html = self._html_with_rsc([
+            {"itemDetailsId": "b-id", "quantity": 1, "tradeRole": "OFFERED"},
+            {"itemDetailsId": "a-id", "quantity": 1, "tradeRole": "REQUESTED"},
+        ], wildcards=["ADD"])
+        listings, stats = parse_page(html)
+        self.assertEqual(listings, [])
+        self.assertEqual(stats["addition_count"], 1)
+
+
 class QuantityIncidentReproductionTests(unittest.TestCase):
     def test_explicit_quantity_regex_accepts_split_text_nodes(self):
         self.assertEqual(scanner._explicit_stack_quantities("Snowcannon 750.0 x 2"), [2])
