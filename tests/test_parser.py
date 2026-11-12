@@ -1054,6 +1054,7 @@ class ReliabilityTests(unittest.TestCase):
                 patch("scanner.SEEN_FILE", root / "seen_ads.json"),
                  patch("scanner.PENDING_FILE", root / "pending.json"),
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
+                patch("scanner.WATCH_FILE", root / "watch.json"),
                 patch("scanner.load_supreme_values", return_value=values),
                 patch("scanner.fetch_bloxswaps", return_value=with_rsc(page)),
                 patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)),
