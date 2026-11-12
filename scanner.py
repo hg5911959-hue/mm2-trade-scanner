@@ -10,6 +10,7 @@ import os
 import re
 import sys
 import time
+import signal
 import unicodedata
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -32,6 +33,8 @@ MIN_DIFF = float(os.environ.get("MIN_VALUE_DIFFERENCE", "0"))
 MIN_PROFIT_PERCENT = float(os.environ.get("MIN_PROFIT_PERCENT", "5"))
 FAILURE_THRESHOLD = int(os.environ.get("FAILURE_ALERT_THRESHOLD", "3"))
 MAX_ALERTS_PER_RUN = max(1, int(os.environ.get("MAX_ALERTS_PER_RUN", "3")))
+_SESSION_ALERTS_SENT = 0
+_SESSION_ALERT_LIMIT = MAX_ALERTS_PER_RUN
 ALERT_DELAY_SECONDS = max(0.0, float(os.environ.get("ALERT_DELAY_SECONDS", "1")) )
 VALUES_FILE = Path("data/supreme_values.json")
 FAILURE_FILE = Path("data/failure_state.json")
@@ -42,6 +45,8 @@ UNCERTAIN_FILE = Path("data/telegram_uncertain.json")
 SEEN_FILE = Path("data/seen_ads.json")
 PENDING_FILE = Path("data/pending_recheck.json")
 FIRST_SEEN_FILE = Path("data/first_seen_ads.json")
+LAST_SUCCESS_FILE = Path("data/last_successful_scan.json")
+WATCH_FILE = Path("data/watch_ads.json")
 ALIASES_FILE = Path("aliases.json")
 UNMATCHED_FILE = Path("data/unmatched_names.json")
 MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
@@ -54,6 +59,7 @@ UNCERTAIN_TTL_SECONDS = max(3600, int(os.environ.get("UNCERTAIN_TTL_SECONDS", st
 BLOXSWAPS_ITEMS_FILE = Path("data/bloxswaps_items.json")
 SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "100"))
 TELEGRAM_MAX_CHARS = 4000
+_LAST_ITEMS_FORCE_REFRESH_AT = 0.0
 
 # Items without a numeric Supreme value are excluded from valuation.
 IGNORED_VALUE_ITEMS = {"brew", "drool"}
@@ -778,73 +784,85 @@ def _ad_id_from_url(url):
         return ""
 
 
-def _apply_structured_quantities(listing, structured):
-    trade_items = structured.get("tradePostItems")
-    if not isinstance(trade_items, list):
-        return False
-    roles = {
-        "receive_items": "OFFERED",
-        "give_items": "REQUESTED",
-    }
-    for field, role in roles.items():
-        rows = [row for row in trade_items if isinstance(row, dict) and str(row.get("tradeRole", "")).upper() == role]
+def _match_by_identity(left, right):
+    """Match by unique IDs first, then unique normalized names for remaining rows."""
+    def item_id(item): return str(item.get('structured_item_id') or '')
+    def name_key(item): return normalize_name(str(item.get('name') or ''))
+    pairs, used_left, used_right = [], set(), set()
+    left_ids, right_ids = {}, {}
+    for i, item in enumerate(left):
+        value = item_id(item)
+        if value: left_ids.setdefault(value, []).append(i)
+    for i, item in enumerate(right):
+        value = item_id(item)
+        if value: right_ids.setdefault(value, []).append(i)
+    for value, li in left_ids.items():
+        ri = right_ids.get(value, [])
+        if len(li) == 1 and len(ri) == 1:
+            pairs.append((li[0], ri[0]))
+            used_left.add(li[0])
+            used_right.add(ri[0])
+    left_names, right_names = {}, {}
+    for i, item in enumerate(left):
+        key = name_key(item)
+        if i not in used_left and key: left_names.setdefault(key, []).append(i)
+    for i, item in enumerate(right):
+        key = name_key(item)
+        if i not in used_right and key: right_names.setdefault(key, []).append(i)
+    for key, li in left_names.items():
+        ri = right_names.get(key, [])
+        if len(li) == 1 and len(ri) == 1:
+            pairs.append((li[0], ri[0]))
+            used_left.add(li[0])
+            used_right.add(ri[0])
+    return pairs
+
+def _uncertain_quantity(item, reason):
+    item['quantity'] = None
+    item['quantity_source'] = 'uncertain'
+    item['quantity_min'] = item.get('quantity_min') or 1
+    item['quantity_max'] = None
+    item['quantity_reason'] = reason
+
+def _apply_structured_quantities(listing, structured, item_map=None):
+    trade_items = structured.get('tradePostItems')
+    if not isinstance(trade_items, list): return False
+    for field, role in (('receive_items', 'OFFERED'), ('give_items', 'REQUESTED')):
+        rows = [row for row in trade_items if isinstance(row, dict) and str(row.get('tradeRole', '')).upper() == role]
         items = listing.get(field, [])
-        if len(rows) != len(items):
-            for item in items:
-                item["html_quantity"] = item.get("quantity")
-                item["html_quantity_source"] = item.get("quantity_source", "implicit_single")
-                item["quantity"] = None
-                item["quantity_source"] = "uncertain"
-                item["quantity_min"] = 1
-                item["quantity_max"] = None
-                item["quantity_reason"] = "structured/HTML item count mismatch"
-            continue
-        for item, row in zip(items, rows):
-            html_source = item.get("quantity_source", "implicit_single")
-            html_quantity = item.get("quantity")
-            item["html_quantity"] = html_quantity
-            item["html_quantity_source"] = html_source
-            try:
-                quantity = int(row.get("quantity"))
-            except (TypeError, ValueError):
-                quantity = None
+        row_items = []
+        for row in rows:
+            item_id = str(row.get('itemDetailsId') or '')
+            details = (item_map or {}).get(item_id) or {}
+            row_items.append({'name': str(details.get('displayName') or row.get('displayName') or row.get('name') or '')})
+        pairs = _match_by_identity(items, row_items)
+        matched_items = {i for i, _ in pairs}
+        if len(pairs) != len(items) or len(pairs) != len(rows):
+            for i, item in enumerate(items):
+                if i not in matched_items: _uncertain_quantity(item, 'RSC/HTML item identity is missing or ambiguous')
+        for item_i, row_i in pairs:
+            item, row = items[item_i], rows[row_i]
+            item['structured_item_id'] = str(row.get('itemDetailsId') or '')
+            html_source, html_quantity = item.get('quantity_source', 'implicit_single'), item.get('quantity')
+            item['html_quantity'], item['html_quantity_source'] = html_quantity, html_source
+            try: quantity = int(row.get('quantity'))
+            except (TypeError, ValueError): quantity = None
             if quantity is None or not 1 <= quantity <= 100:
-                item["quantity"] = None
-                item["quantity_source"] = "uncertain"
-                item["quantity_min"] = 1
-                item["quantity_max"] = None
-                item["quantity_reason"] = "invalid structured quantity"
-                continue
-            item["structured_quantity"] = quantity
-            if html_source == "uncertain":
-                item["quantity"] = None
-                item["quantity_source"] = "uncertain"
-                item["quantity_min"] = item.get("quantity_min", 1)
-                item["quantity_max"] = item.get("quantity_max")
-                item["quantity_reason"] = "HTML quantity marker is ambiguous; structured data cannot override the conflict"
+                _uncertain_quantity(item, 'invalid structured quantity')
+            elif html_source == 'uncertain':
+                _uncertain_quantity(item, 'HTML quantity marker is ambiguous; structured data cannot override the conflict')
             elif html_quantity != quantity:
-                known = [
-                    int(value) for value in (html_quantity, quantity)
-                    if value is not None and str(value).isdigit() and 1 <= int(value) <= 100
-                ]
-                item["quantity"] = None
-                item["quantity_source"] = "uncertain"
-                item["quantity_min"] = min(known) if known else 1
-                item["quantity_max"] = max(known) if known else None
-                item["quantity_reason"] = f"HTML ({html_source}) says {html_quantity}; structured data says {quantity}"
+                known = [int(v) for v in (html_quantity, quantity) if v is not None and str(v).isdigit() and 1 <= int(v) <= 100]
+                _uncertain_quantity(item, f'HTML ({html_source}) says {html_quantity}; structured data says {quantity}')
+                item['quantity_min'] = min(known) if known else 1
+                item['quantity_max'] = max(known) if known else None
             else:
-                item["quantity"] = quantity
-                item["quantity_source"] = "structured"
-                item["quantity_min"] = quantity
-                item["quantity_max"] = quantity
-                item["quantity_reason"] = ""
-                item["structured_item_id"] = str(row.get("itemDetailsId", ""))
-    listing["structured_trade_post_id"] = str(structured.get("id", ""))
-    listing["requested_wildcards"] = list(structured.get("requestedWildcards") or [])
+                item.update({'quantity': quantity, 'quantity_source': 'structured', 'quantity_min': quantity, 'quantity_max': quantity, 'quantity_reason': ''})
+    listing['structured_trade_post_id'] = str(structured.get('id', ''))
+    listing['requested_wildcards'] = list(structured.get('requestedWildcards') or [])
     return True
 
-
-def parse_page(html):
+def parse_page(html, item_map=None):
     parser = PageTree()
     parser.feed(html)
     candidates = smallest_matching_nodes(parser.root, has_trade_sides)
@@ -889,7 +907,7 @@ def parse_page(html):
             "source_text": text[:700],
             "source_ad_id": source_ad_id,
         }
-        if structured and _apply_structured_quantities(listing, structured):
+        if structured and _apply_structured_quantities(listing, structured, item_map):
             structured_matched += 1
         listings.append(listing)
     unique = {item["id"]: item for item in listings}
@@ -1011,17 +1029,33 @@ def bloxswaps_api_get_json(path, params=None):
     return payload.get("data", payload) if isinstance(payload, dict) else payload
 
 
-def fetch_bloxswaps_items_map():
+def fetch_bloxswaps_items_map(force_refresh=False):
+    global _LAST_ITEMS_FORCE_REFRESH_AT
+    force_allowed = True
+    if force_refresh:
+        now = time.time()
+        force_allowed = now - _LAST_ITEMS_FORCE_REFRESH_AT >= 60
+        if force_allowed:
+            _LAST_ITEMS_FORCE_REFRESH_AT = now
+        else:
+            print("[bloxswaps] Unknown item ID refresh is cooling down; retaining safe unmatched status")
     if BLOXSWAPS_ITEMS_FILE.exists():
         try:
             cache = json.loads(BLOXSWAPS_ITEMS_FILE.read_text(encoding="utf-8"))
             age = max(0, int(time.time() - float(cache.get("fetched_at", 0))))
             cached = cache.get("items")
-            if age <= BLOXSWAPS_ITEMS_TTL_SECONDS and isinstance(cached, dict) and cached:
+            if isinstance(cached, dict) and cached and force_refresh and not force_allowed:
+                print(f"[bloxswaps] Catalogue force-refresh suppressed by 60-second cooldown; reusing {len(cached)} cached names")
+                return cached
+            if not force_refresh and age <= BLOXSWAPS_ITEMS_TTL_SECONDS and isinstance(cached, dict) and cached:
                 print(f"[bloxswaps] Using fresh item catalogue ({len(cached)} names; age {age}s)")
                 return cached
+            if force_refresh and not force_allowed:
+                raise RuntimeError("[bloxswaps] Catalogue refresh is rate-limited and no cached catalogue is available.")
         except (OSError, ValueError, TypeError):
             print("[bloxswaps] Item catalogue cache is unreadable; attempting live refresh")
+    if force_refresh and not force_allowed:
+        raise RuntimeError("[bloxswaps] Catalogue refresh is rate-limited and no cached catalogue is available.")
     payload = bloxswaps_api_get_json("/items")
     if isinstance(payload, dict):
         payload = payload.get("items", payload.get("data", []))
@@ -1062,7 +1096,7 @@ def _api_trade_post_to_listing(post, item_map):
             continue
         item_id = str(row.get("itemDetailsId") or "")
         details = item_map.get(item_id)
-        name = str(details.get("displayName")) if details else f"Unknown item ID {item_id}"
+        name = str(details.get("displayName")) if details else str(row.get("displayName") or row.get("name") or f"Unknown item ID {item_id}")
         try:
             quantity = int(row.get("quantity"))
         except (TypeError, ValueError):
@@ -1106,83 +1140,246 @@ def _api_trade_post_to_listing(post, item_map):
 
 
 def _merge_html_quantity_diagnostics(api_listing, html_listing):
-    """Keep RSC names/quantities but mark any HTML disagreement as uncertain."""
-    api_listing["id"] = html_listing.get("id") or api_listing["id"]
-    api_listing["legacy_id"] = html_listing.get("legacy_id") or api_listing.get("legacy_id")
-    api_listing["owner_url"] = html_listing.get("owner_url") or api_listing.get("owner_url")
-    api_listing["source_text"] = html_listing.get("source_text", api_listing.get("source_text", ""))
-    for field in ("receive_items", "give_items"):
-        api_items = api_listing.get(field, [])
-        html_items = html_listing.get(field, [])
-        if len(api_items) != len(html_items):
-            for item in api_items:
-                item["quantity"] = None
-                item["quantity_source"] = "uncertain"
-                item["quantity_min"] = 1
-                item["quantity_max"] = None
-                item["quantity_reason"] = "HTML/RSC item count mismatch"
-            continue
-        for api_item, html_item in zip(api_items, html_items):
-            api_item["listed_price"] = html_item.get("listed_price")
-            api_item["raw_excerpt"] = html_item.get("raw_excerpt", api_item.get("raw_excerpt", ""))
-            html_source = html_item.get("html_quantity_source", html_item.get("quantity_source", "implicit_single"))
-            html_quantity = html_item.get("html_quantity", html_item.get("quantity"))
-            api_quantity = api_item.get("quantity")
-            api_item["structured_quantity"] = api_quantity
-            api_item["html_quantity"] = html_quantity
-            api_item["html_quantity_source"] = html_source
-            if html_source == "uncertain":
-                api_item["quantity"] = None
-                api_item["quantity_source"] = "uncertain"
-                api_item["quantity_min"] = html_item.get("quantity_min", 1)
-                api_item["quantity_max"] = html_item.get("quantity_max")
-                api_item["quantity_reason"] = html_item.get("quantity_reason", "ambiguous HTML quantity")
+    """Cross-check quantities only after identity matching; ambiguous pairs fail closed."""
+    api_listing['id'] = html_listing.get('id') or api_listing['id']
+    api_listing['legacy_id'] = html_listing.get('legacy_id') or api_listing.get('legacy_id')
+    api_listing['owner_url'] = html_listing.get('owner_url') or api_listing.get('owner_url')
+    api_listing['source_text'] = html_listing.get('source_text', api_listing.get('source_text', ''))
+    for field in ('receive_items', 'give_items'):
+        api_items, html_items = api_listing.get(field, []), html_listing.get(field, [])
+        pairs = _match_by_identity(api_items, html_items)
+        matched = {i for i, _ in pairs}
+        for i, item in enumerate(api_items):
+            if i not in matched: _uncertain_quantity(item, 'HTML/RSC item identity is missing or ambiguous')
+        for api_i, html_i in pairs:
+            api_item, html_item = api_items[api_i], html_items[html_i]
+            api_item['listed_price'] = html_item.get('listed_price')
+            api_item['raw_excerpt'] = html_item.get('raw_excerpt', api_item.get('raw_excerpt', ''))
+            html_source = html_item.get('html_quantity_source', html_item.get('quantity_source', 'implicit_single'))
+            html_quantity, api_quantity = html_item.get('html_quantity', html_item.get('quantity')), api_item.get('quantity')
+            api_item['structured_quantity'] = api_quantity
+            api_item['html_quantity'], api_item['html_quantity_source'] = html_quantity, html_source
+            if html_source == 'uncertain':
+                _uncertain_quantity(api_item, html_item.get('quantity_reason', 'ambiguous HTML quantity'))
+                api_item['quantity_min'], api_item['quantity_max'] = html_item.get('quantity_min', 1), html_item.get('quantity_max')
             elif html_quantity != api_quantity:
-                known = [
-                    int(value) for value in (html_quantity, api_quantity)
-                    if value is not None and str(value).isdigit() and 1 <= int(value) <= 100
-                ]
-                api_item["quantity"] = None
-                api_item["quantity_source"] = "uncertain"
-                api_item["quantity_min"] = min(known) if known else 1
-                api_item["quantity_max"] = max(known) if known else None
-                api_item["quantity_reason"] = f"HTML quantity {html_quantity} disagrees with RSC quantity {api_quantity}"
+                known = [int(v) for v in (html_quantity, api_quantity) if v is not None and str(v).isdigit() and 1 <= int(v) <= 100]
+                _uncertain_quantity(api_item, f'HTML quantity {html_quantity} disagrees with RSC quantity {api_quantity}')
+                api_item['quantity_min'] = min(known) if known else 1
+                api_item['quantity_max'] = max(known) if known else None
     return api_listing
 
+def _parse_feed_timestamp(raw):
+    if not raw:
+        return None
+    try:
+        value = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).timestamp()
+    except (TypeError, ValueError, OverflowError):
+        return None
 
-def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None):
+
+def _last_successful_scan_timestamp():
+    if not LAST_SUCCESS_FILE.exists():
+        return None
+    try:
+        state = json.loads(LAST_SUCCESS_FILE.read_text(encoding="utf-8"))
+        return _parse_feed_timestamp(state.get("completed_at_utc"))
+    except (OSError, ValueError, TypeError):
+        raise RuntimeError("[state] Last-success checkpoint is unreadable; refusing unsafe pagination boundary.")
+
+
+def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None):
     """Fetch recent RSC/API posts and recheck unresolved IDs beyond seen posts."""
     if seen_ad_ids is None and pending_ad_ids:
         seen_ad_ids = set()
     html = fetch_bloxswaps()
-    first_listings, stats = parse_page(html)
     initial_page = parse_structured_initial_page(html)
+    structured_rows = [
+        row for post in (initial_page.get("items") or []) if isinstance(post, dict)
+        for row in (post.get("tradePostItems") or []) if isinstance(row, dict)
+    ] if initial_page else []
+    needs_catalogue = any(
+        row.get("itemDetailsId")
+        for row in structured_rows
+    )
+    initial_item_map = fetch_bloxswaps_items_map() if needs_catalogue else {}
+    raw_first_items = initial_page.get("items") or [] if initial_page else []
+    first_page_unknown_ids = {
+        str(row.get("itemDetailsId") or "")
+        for post in raw_first_items if isinstance(post, dict)
+        for row in (post.get("tradePostItems") or []) if isinstance(row, dict)
+        if row.get("itemDetailsId")
+        and str(row.get("itemDetailsId")) not in initial_item_map
+    }
+    if first_page_unknown_ids:
+        try:
+            refreshed_map = fetch_bloxswaps_items_map(force_refresh=True)
+            if refreshed_map:
+                initial_item_map = refreshed_map
+            still_unknown = sorted(first_page_unknown_ids - set(initial_item_map.keys()))
+            if still_unknown:
+                send_maintenance_alert(
+                    "unknown-item-id-catalogue",
+                    "BloxSwaps returned itemDetailsId values absent from its catalogue: "
+                    + ", ".join(still_unknown[:12])
+                    + ". No item names or values were guessed; affected posts remain eligible for recheck.",
+                    cooldown_seconds=3600,
+                )
+        except Exception as exc:
+            send_maintenance_alert(
+                "unknown-item-id-catalogue-refresh-failed",
+                "Could not refresh the BloxSwaps item catalogue after an unknown itemDetailsId. "
+                f"Refresh failed safely ({type(exc).__name__}); no values were guessed.",
+                cooldown_seconds=3600,
+            )
+    first_listings, stats = parse_page(html, initial_item_map)
     if not initial_page:
         stats.update({
             "pagination_pages": 1, "pagination_complete": False,
             "pagination_source": "html-only", "addition_ids": [],
             "unparsed_ad_ids": [], "html_parse_warning_ids": [],
         })
-        if os.environ.get("MM2_SCAN_LOOP") == "1":
-            raise RuntimeError("[bloxswaps] RSC initialPage/cursor data missing; refusing a partial HTML-only production scan.")
-        return first_listings, stats, []
+        send_maintenance_alert(
+            "rsc-data-missing",
+            "BloxSwaps page is HTML-only: RSC initialPage/cursor data is missing. "
+            "The scan is treated as failed; no partial feed is trusted.",
+            cooldown_seconds=900,
+        )
+        raise RuntimeError("[bloxswaps] RSC initialPage/cursor data missing; refusing a partial HTML-only scan.")
 
-    raw_first_items = initial_page.get("items") or []
     if seen_ad_ids is None:
-        # Missing durable state must not replay a historical backlog.
-        seed_ids = [
-            str(item.get("id")) for item in raw_first_items
-            if isinstance(item, dict) and item.get("id")
-        ]
+        # Cold start: evaluate verifiably recent posts across cursor pages, then
+        # seed older posts. Undated and pinned posts never advance the age boundary.
+        now_ts = datetime.now(timezone.utc).timestamp()
+        cutoff = now_ts - 3600
+        seed_ids, recent_ids, recent_listings = [], [], []
+        addition_ids, unparsed_ids = [], []
+        additions = malformed = candidate_count = api_posts = 0
+        old_streak = page_count = 1
+        age_boundary = False
+        complete = False
+        seen_raw_ids = set()
+        page_items = raw_first_items
+        cursor = (initial_page.get('meta') or {}).get('cursor')
+        by_ad_id = {str(item.get('source_ad_id')): item for item in first_listings if item.get('source_ad_id')}
+
+        def refresh_catalogue_for_post(post):
+            nonlocal initial_item_map
+            unknown_ids = {
+                str(row.get('itemDetailsId') or '')
+                for row in (post.get('tradePostItems') or []) if isinstance(row, dict)
+                if row.get('itemDetailsId') and str(row.get('itemDetailsId')) not in initial_item_map
+            }
+            if not unknown_ids: return
+            try:
+                refreshed_map = fetch_bloxswaps_items_map(force_refresh=True)
+                if refreshed_map: initial_item_map = refreshed_map
+                still_unknown = sorted(unknown_ids - set(initial_item_map.keys()))
+                if still_unknown:
+                    send_maintenance_alert(
+                        'unknown-item-id-catalogue',
+                        'BloxSwaps returned itemDetailsId values absent from its catalogue: '
+                        + ', '.join(still_unknown[:12])
+                        + '. No item names or values were guessed; affected posts remain eligible for recheck.',
+                        cooldown_seconds=3600,
+                    )
+            except Exception as exc:
+                send_maintenance_alert(
+                    'unknown-item-id-catalogue-refresh-failed',
+                    'Could not refresh the BloxSwaps item catalogue after an unknown itemDetailsId. '
+                    f'Refresh failed safely ({type(exc).__name__}); no values were guessed.',
+                    cooldown_seconds=3600,
+                )
+
+        while True:
+            for post in page_items:
+                if not isinstance(post, dict) or not post.get('id'):
+                    malformed += 1
+                    continue
+                post_id = str(post['id'])
+                if post_id in seen_raw_ids: continue
+                seen_raw_ids.add(post_id)
+                refreshed_ts = _parse_feed_timestamp(
+                    post.get('lastRefreshedAt') or post.get('createdAt') or post.get('created_at')
+                )
+                is_pinned = bool(post.get('isPinned') or post.get('pinned'))
+                if refreshed_ts is None:
+                    seed_ids.append(post_id)
+                    old_streak = 0
+                    continue
+                if refreshed_ts < cutoff:
+                    seed_ids.append(post_id)
+                    old_streak = 0 if is_pinned else old_streak + 1
+                    if old_streak >= 25:
+                        age_boundary = True
+                        complete = True
+                        break
+                    continue
+                old_streak = 0
+                recent_ids.append(post_id)
+                candidate_count += 1
+                wildcards = post.get('requestedWildcards') or []
+                if any(str(value).casefold() in {'add', 'ajout', 'ajouts'} for value in wildcards):
+                    additions += 1
+                    addition_ids.append(post_id)
+                    continue
+                refresh_catalogue_for_post(post)
+                listing = _api_trade_post_to_listing(post, initial_item_map)
+                if listing:
+                    html_listing = by_ad_id.get(post_id)
+                    if html_listing: listing = _merge_html_quantity_diagnostics(listing, html_listing)
+                    recent_listings.append(listing)
+                else:
+                    malformed += 1
+                    unparsed_ids.append(post_id)
+            if age_boundary:
+                break
+            if not cursor:
+                complete = True
+                break
+            if page_count >= MAX_FEED_PAGES:
+                complete = False
+                break
+            page = bloxswaps_api_get_json('/trade-posts', {'cursor': cursor, 'pageSize': BLOXSWAPS_PAGE_SIZE})
+            if not isinstance(page, dict) or not isinstance(page.get('items'), list):
+                raise RuntimeError('[bloxswaps] Cursor API returned an invalid page during cold-start discovery.')
+            page_items = page.get('items') or []
+            api_posts += len(page_items)
+            page_count += 1
+            next_cursor = (page.get('meta') or {}).get('cursor')
+            if next_cursor and next_cursor == cursor:
+                raise RuntimeError('[bloxswaps] Cursor did not advance during cold-start discovery; refusing to seed an incomplete feed.')
+            cursor = next_cursor
+
         stats.update({
-            "pagination_pages": 1, "pagination_complete": False,
-            "pagination_source": "rsc-cold-start", "cold_start": True,
-            "addition_ids": [], "unparsed_ad_ids": [], "html_parse_warning_ids": [],
+            'pagination_pages': page_count,
+            'pagination_api_posts': api_posts,
+            'pagination_complete': complete,
+            'pagination_source': 'rsc-cold-start',
+            'seen_boundary_reached': age_boundary,
+            'seen_streak': old_streak,
+            'cold_start': True,
+            'cold_start_seed_ids': seed_ids,
+            'cold_start_recent_ids': recent_ids,
+            'candidate_count': candidate_count,
+            'addition_count': additions,
+            'malformed_count': malformed,
+            'addition_ids': addition_ids,
+            'unparsed_ad_ids': unparsed_ids,
+            'pending_remaining_ids': [],
+            'watch_remaining_ids': [],
+            'owner_link_count': sum(1 for item in recent_listings if item.get('owner_url')),
         })
-        return [], stats, seed_ids
+        discovered = seed_ids + recent_ids
+        return recent_listings, stats, discovered
 
     seen = set(str(value) for value in seen_ad_ids)
     pending_remaining = set(str(value) for value in (pending_ad_ids or []))
+    watch_ids = set(str(value) for value in (watch_ad_ids or []))
+    watch_remaining = set(watch_ids)
     pending_found_ids = []
     by_ad_id = {
         str(listing.get("source_ad_id")): listing
@@ -1196,27 +1393,48 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None):
     unparsed_samples = []
     html_parse_warning_ids = []
     boundary_reached = False
+    seen_streak = 0
+    seen_ids_skipped = []
+    last_success_ts = _last_successful_scan_timestamp()
     additions = 0
     malformed = 0
     api_listings_added = 0
     api_posts_scanned = 0
     candidate_count = 0
-    item_map = None
+    item_map = initial_item_map
 
     def consume_raw_posts(raw_posts, compare_html=False):
-        nonlocal boundary_reached, additions, malformed, api_listings_added, candidate_count, item_map
+        nonlocal boundary_reached, seen_streak, additions, malformed, api_listings_added, candidate_count, item_map, watch_remaining
         for raw in raw_posts:
             if not isinstance(raw, dict) or not raw.get("id"):
                 malformed += 1
                 continue
             post_id = str(raw["id"])
-            if post_id in seen and post_id not in pending_remaining:
-                if pending_remaining:
-                    # Keep paging past already-processed ads to find unresolved
-                    # listings that were deliberately left pending for recheck.
+            refreshed_ts = _parse_feed_timestamp(
+                raw.get("lastRefreshedAt") or raw.get("createdAt") or raw.get("created_at")
+            )
+            recently_refreshed = (
+                refreshed_ts is not None and last_success_ts is not None
+                and refreshed_ts >= last_success_ts - 90
+            )
+            is_pinned = bool(raw.get("isPinned") or raw.get("pinned"))
+            if post_id in watch_remaining:
+                watch_remaining.discard(post_id)
+            if post_id in seen and post_id not in pending_remaining and post_id not in watch_ids and not recently_refreshed:
+                seen_ids_skipped.append(post_id)
+                if is_pinned:
+                    seen_streak = 0
                     continue
-                boundary_reached = True
-                break
+                if pending_remaining or watch_remaining:
+                    # Pending and watched ads take priority over an early boundary.
+                    seen_streak = 0
+                    continue
+                seen_streak += 1
+                if seen_streak >= 25:
+                    boundary_reached = True
+                    break
+                continue
+            seen_streak = 0
             if post_id in pending_remaining:
                 pending_remaining.discard(post_id)
                 pending_found_ids.append(post_id)
@@ -1230,7 +1448,39 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None):
                 addition_ids.append(post_id)
                 continue
             if item_map is None:
-                item_map = fetch_bloxswaps_items_map()
+                needs_catalogue = any(
+                    isinstance(row, dict) and row.get("itemDetailsId")
+                    and not (row.get("displayName") or row.get("name"))
+                    for row in (raw.get("tradePostItems") or [])
+                )
+                item_map = fetch_bloxswaps_items_map() if needs_catalogue else {}
+            unknown_ids = {
+                str(row.get("itemDetailsId") or "")
+                for row in (raw.get("tradePostItems") or [])
+                if isinstance(row, dict) and row.get("itemDetailsId")
+                and str(row.get("itemDetailsId")) not in item_map
+            }
+            if unknown_ids:
+                try:
+                    refreshed_map = fetch_bloxswaps_items_map(force_refresh=True)
+                    if refreshed_map:
+                        item_map = refreshed_map
+                    still_unknown = sorted(unknown_ids - set(item_map.keys()))
+                    if still_unknown:
+                        send_maintenance_alert(
+                            "unknown-item-id-catalogue",
+                            "BloxSwaps returned itemDetailsId values absent from its catalogue: "
+                            + ", ".join(sorted(unknown_ids)[:12])
+                            + ". No item names or values were guessed; affected posts remain eligible for recheck.",
+                            cooldown_seconds=3600,
+                        )
+                except Exception as exc:
+                    send_maintenance_alert(
+                        "unknown-item-id-catalogue-refresh-failed",
+                        "Could not refresh the BloxSwaps item catalogue after an unknown itemDetailsId. "
+                        f"Refresh failed safely ({type(exc).__name__}); no values were guessed.",
+                        cooldown_seconds=3600,
+                    )
             listing = _api_trade_post_to_listing(raw, item_map)
             if listing and compare_html:
                 html_listing = by_ad_id.get(post_id)
@@ -1293,6 +1543,9 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None):
         "pagination_complete": pagination_complete,
         "pagination_source": "RSC + cursor API",
         "seen_boundary_reached": boundary_reached,
+        "seen_streak": seen_streak,
+        "seen_ids_skipped": seen_ids_skipped,
+        "watch_remaining_ids": sorted(watch_remaining),
         "pending_found_ids": pending_found_ids,
         "pending_remaining_ids": sorted(pending_remaining),
         "pending_complete": not pending_remaining,
@@ -2249,7 +2502,56 @@ def write_step_summary(line):
             pass
 
 
+def listing_watch_fingerprints(listing, values, aliases=None):
+    content, valuation = [], []
+    for side, field in (('give', 'give_items'), ('receive', 'receive_items')):
+        for item in listing.get(field, []):
+            name = str(item.get('name') or '')
+            content.append((side, normalize_name(name), str(item.get('structured_item_id') or ''), item.get('quantity'), item.get('quantity_min'), item.get('quantity_max')))
+            record, match_source, _ = resolve_value_record(name, values, aliases)
+            unit_value = None
+            if record: unit_value, _selected = _select_conservative_variant(record, side)
+            valuation.append((side, normalize_name(name), unit_value, match_source))
+    content_hash = hashlib.sha256(json.dumps(sorted(content, key=lambda row: json.dumps(row, sort_keys=True, default=str)), sort_keys=True, default=str).encode()).hexdigest()
+    values_hash = hashlib.sha256(json.dumps(sorted(valuation, key=lambda row: json.dumps(row, sort_keys=True, default=str)), sort_keys=True, default=str).encode()).hexdigest()
+    return content_hash, values_hash
+
+def load_watch_state():
+    if not WATCH_FILE.exists(): return {}
+    try: data = json.loads(WATCH_FILE.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as exc: raise RuntimeError('[state] Watch-window state is unreadable; refusing to lose re-evaluation coverage.') from exc
+    ads = data.get('ads') if isinstance(data, dict) else None
+    if not isinstance(ads, dict): raise RuntimeError('[state] Watch-window state has an invalid structure.')
+    now = time.time()
+    active = {}
+    for ad_id, entry in ads.items():
+        if not isinstance(entry, dict): raise RuntimeError('[state] Watch-window entry has an invalid structure.')
+        created = float(entry.get('created_at', 0) or 0)
+        if created > 0 and now - created <= 6 * 3600: active[str(ad_id)] = entry
+    if len(active) > 300: active = dict(sorted(active.items(), key=lambda pair: float(pair[1].get('updated_at', 0)))[-300:])
+    if len(active) != len(ads): save_watch_state(active)
+    return active
+
+def save_watch_state(ads):
+    now = time.time()
+    active = {str(k): v for k, v in ads.items() if isinstance(v, dict) and now - float(v.get('created_at', now)) <= 6 * 3600}
+    if len(active) > 300: active = dict(sorted(active.items(), key=lambda pair: float(pair[1].get('updated_at', 0)))[-300:])
+    atomic_write_text(WATCH_FILE, json.dumps({'version': 1, 'ads': active}, ensure_ascii=False, indent=2) + "\n")
+
+def update_watch_entry(watch_state, listing, values, aliases=None):
+    ad_id = str(listing.get('source_ad_id') or '')
+    if not ad_id: return False
+    content_hash, values_hash = listing_watch_fingerprints(listing, values, aliases)
+    now = time.time()
+    previous = watch_state.get(ad_id, {})
+    changed = bool(previous) and (previous.get('content_hash') != content_hash or previous.get('values_hash') != values_hash)
+    created = now if changed or not previous else float(previous.get('created_at', now))
+    watch_state[ad_id] = {'content_hash': content_hash, 'values_hash': values_hash, 'created_at': created, 'updated_at': now}
+    save_watch_state(watch_state)
+    return changed
+
 def scan_once():
+    global _SESSION_ALERTS_SENT
     if not BOT_TOKEN or not CHAT_ID:
         raise RuntimeError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in GitHub Actions secrets.")
 
@@ -2267,13 +2569,14 @@ def scan_once():
     print("[stage] Loading seen-offer and pending-recheck state")
     seen_ads = load_seen_ads()
     pending_ids = load_pending_ids()
+    watch_state = load_watch_state()
     # If the seen file was lost but pending items survive, do not cold-start:
     # search the feed for those unresolved IDs before establishing a baseline.
-    if seen_ads is None and pending_ids:
+    if seen_ads is None and (pending_ids or watch_state):
         seen_ads = set()
     print(f"[state] Pending listings queued for recheck: {len(pending_ids)}")
     print("[stage] Fetching BloxSwaps listings and cursor pages")
-    listings, stats, discovered_ids = fetch_bloxswaps_all(seen_ads, pending_ids.keys())
+    listings, stats, discovered_ids = fetch_bloxswaps_all(seen_ads, pending_ids.keys(), watch_state.keys())
     first_seen_ads = load_first_seen_ads()
     first_seen_changed = False
     observed_at = datetime.now(timezone.utc).isoformat()
@@ -2288,15 +2591,19 @@ def scan_once():
         source_ad_id = str(listing.get("source_ad_id") or "")
         listing["first_seen_at_utc"] = first_seen_ads.get(source_ad_id, observed_at)
     if stats.get("cold_start"):
-        save_seen_ads(discovered_ids)
+        seed_ids = set(str(value) for value in stats.get("cold_start_seed_ids", discovered_ids))
+        save_seen_ads(seed_ids)
+        seen_ads = seed_ids
         print(
-            f"[state] First-run feed baseline created with {len(discovered_ids)} current posts; "
-            "historical listings were marked seen without sending alerts."
+            f"[state] Cold-start baseline saved for {len(seed_ids)} historical posts; "
+            f"{len(stats.get('cold_start_recent_ids', []))} posts refreshed within 60 minutes will be evaluated."
         )
-        record_success()
-        write_step_summary("First-run baseline: existing feed posts marked as seen; new posts will be evaluated next scan.")
-        return
-    seen_ads = set(seen_ads or [])
+        if not listings:
+            record_success()
+            write_step_summary("Cold-start baseline saved; no verifiably recent post was eligible for evaluation.")
+            return
+    else:
+        seen_ads = set(seen_ads or [])
     pending_count_before = len(pending_ids)
     for ad_id in stats.get("unparsed_ad_ids", []):
         pending_ids.setdefault(str(ad_id), time.time())
@@ -2309,12 +2616,23 @@ def scan_once():
             pending_ids.pop(str(ad_id), None)
         save_seen_ads(seen_ads)
         save_pending_ids(pending_ids)
+    if stats.get("watch_remaining_ids") and stats.get("pagination_complete"):
+        missing_watch_ids = set(stats.get("watch_remaining_ids", []))
+        for ad_id in missing_watch_ids:
+            watch_state.pop(str(ad_id), None)
+        save_watch_state(watch_state)
+        send_maintenance_alert(
+            "watch-ads-not-found",
+            f"{len(missing_watch_ids)} watched listing(s) were no longer present in the complete recent feed; "
+            "they were removed from the six-hour watch window.",
+            cooldown_seconds=3600,
+        )
     if stats.get("pending_remaining_ids"):
         print(
             f"[pending] {len(stats['pending_remaining_ids'])} unresolved ad ID(s) "
             "were not found before the pagination boundary/cap."
         )
-        if os.environ.get("MM2_SCAN_LOOP") == "1" and stats.get("pagination_complete"):
+        if stats.get("pagination_complete"):
             send_maintenance_alert(
                 "pending-ads-not-found",
                 f"Could not locate {len(stats['pending_remaining_ids'])} pending listing(s) "
@@ -2367,7 +2685,7 @@ def scan_once():
             f"HTML warning IDs: {', '.join(stats.get('html_parse_warning_ids', [])[:10])}"
         )
         ratio = issue_count / max(1, stats.get("candidate_count", 0))
-        if os.environ.get("MM2_SCAN_LOOP") == "1" and should_alert_malformed_cards(issue_count):
+        if should_alert_malformed_cards(issue_count):
             samples = " | ".join(stats.get("malformed_samples", [])[:3])
             send_maintenance_alert(
                 "malformed-feed-cards",
@@ -2377,13 +2695,12 @@ def scan_once():
             )
     if not stats.get("pagination_complete", False):
         print("[maintenance] Feed pagination is incomplete; more recent posts may remain beyond the scan limit.")
-        if os.environ.get("MM2_SCAN_LOOP") == "1":
-            send_maintenance_alert(
-                "pagination-incomplete",
-                f"Cursor scan incomplete after {stats.get('pagination_pages', 1)} pages. "
-                "Newer posts may remain unscanned; inspect the latest GitHub Actions logs.",
-                cooldown_seconds=1800,
-            )
+        send_maintenance_alert(
+            "pagination-incomplete",
+            f"Cursor scan incomplete after {stats.get('pagination_pages', 1)} pages. "
+            "Newer posts may remain unscanned; inspect the latest GitHub Actions logs.",
+            cooldown_seconds=1800,
+        )
     # Runtime visibility for real-feed quantity validation: log only explicit stacks.
     for listing in listings:
         for side_label, field in (("Propose/receive", "receive_items"), ("Recherche/give", "give_items")):
@@ -2403,14 +2720,13 @@ def scan_once():
             f"[telegram] {len(expired_uncertain)} uncertain-delivery quarantine(s) expired; "
             "their feed IDs remain marked seen and will not be auto-resent."
         )
-        if os.environ.get("MM2_SCAN_LOOP") == "1":
-            send_maintenance_alert(
-                "telegram-quarantine-expired",
-                f"{len(expired_uncertain)} Telegram delivery quarantine(s) expired after "
-                f"{UNCERTAIN_TTL_SECONDS // 3600} hours. The listings remain marked seen; "
-                "check Telegram manually. No automatic resend was performed.",
-                cooldown_seconds=86400,
-            )
+        send_maintenance_alert(
+            "telegram-quarantine-expired",
+            f"{len(expired_uncertain)} Telegram delivery quarantine(s) expired after "
+            f"{UNCERTAIN_TTL_SECONDS // 3600} hours. The listings remain marked seen; "
+            "check Telegram manually. No automatic resend was performed.",
+            cooldown_seconds=86400,
+        )
     if uncertain_ids:
         print(
             f"[telegram] {len(uncertain_ids)} listing(s) have uncertain delivery status "
@@ -2421,6 +2737,7 @@ def scan_once():
         f"{len(uncertain_ids)} uncertain-delivery IDs."
     )
     already_alerted_skipped = 0
+    watch_unchanged_skipped = 0
     uncertain_skipped = 0
 
     def mark_alerted(trade_id):
@@ -2467,8 +2784,21 @@ def scan_once():
             mark_seen_ad(listing)
             uncertain_skipped += 1
             continue
-        if trade_id in alerted_set:
+        watch_id = str(listing.get("source_ad_id") or "")
+        previous_watch = watch_state.get(watch_id, {})
+        content_hash, values_hash = listing_watch_fingerprints(listing, values, aliases)
+        fingerprint_changed = bool(previous_watch) and (
+            previous_watch.get("content_hash") != content_hash
+            or previous_watch.get("values_hash") != values_hash
+        )
+        if trade_id in alerted_set and not fingerprint_changed:
+            if not previous_watch:
+                update_watch_entry(watch_state, listing, values, aliases)
             already_alerted_skipped += 1
+            mark_seen_ad(listing)
+            continue
+        if previous_watch and not fingerprint_changed and watch_id not in pending_ids:
+            watch_unchanged_skipped += 1
             mark_seen_ad(listing)
             continue
         if trade_id in uncertain_ids:
@@ -2484,35 +2814,45 @@ def scan_once():
                 f"{', '.join(missing)}"
             )
             mark_pending(listing)
-            if os.environ.get("MM2_SCAN_LOOP") == "1":
-                unknown_names = [
-                    str(value).split(" (", 1)[0]
-                    for value in missing
-                    if value and not str(value).startswith("one side has")
-                ]
-                if unknown_names:
-                    record_unmatched_names(unknown_names)
+            unknown_names = [
+                str(value).split(" (", 1)[0]
+                for value in missing
+                if value and not str(value).startswith("one side has")
+            ]
+            if unknown_names:
+                record_unmatched_names(unknown_names)
+            update_watch_entry(watch_state, listing, values, aliases)
             continue
         if not qualifies(result):
             if result.get("uncertain_items"):
                 mark_pending(listing)
             else:
                 mark_seen_ad(listing)
+            update_watch_entry(watch_state, listing, values, aliases)
             continue
         opportunities.append(result)
 
     opportunities.sort(key=lambda item: (item["difference"], item["margin"]), reverse=True)
-    selected_opportunities = opportunities[:MAX_ALERTS_PER_RUN]
+    remaining_session_alerts = max(0, _SESSION_ALERT_LIMIT - _SESSION_ALERTS_SENT)
+    selected_opportunities = opportunities[:min(MAX_ALERTS_PER_RUN, remaining_session_alerts)]
     deferred = max(0, len(opportunities) - len(selected_opportunities))
     for deferred_op in opportunities[len(selected_opportunities):]:
         mark_pending(deferred_op["listing"])
     for op in selected_opportunities:
         listing = op["listing"]
         trade_id = listing["id"]
-        # Re-check immediately before every non-idempotent send. This also
-        # protects against duplicates that enter through a future code path.
-        if trade_id in alerted_set or trade_id in uncertain_ids:
-            print(f"[dedupe] Skipping already guarded listing {trade_id} before Telegram send.")
+        # Re-check immediately before every non-idempotent send. A previously
+        # alerted stable ad may be sent again only when its content or value
+        # fingerprint changed; uncertain Telegram deliveries remain quarantined.
+        watch_id = str(listing.get("source_ad_id") or "")
+        previous_watch = watch_state.get(watch_id, {})
+        current_content_hash, current_values_hash = listing_watch_fingerprints(listing, values, aliases)
+        variant_changed = bool(previous_watch) and (
+            previous_watch.get("content_hash") != current_content_hash
+            or previous_watch.get("values_hash") != current_values_hash
+        )
+        if (trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids:
+            print(f"[dedupe] Skipping unchanged or uncertain listing {trade_id} before Telegram send.")
             continue
         listing["alert_attempted_at_utc"] = datetime.now(timezone.utc).isoformat()
         message = format_trade_message(
@@ -2556,6 +2896,7 @@ def scan_once():
         # It is cleared only after a definite success or definite API rejection.
         uncertain_ids.add(trade_id)
         save_uncertain_ids(uncertain_ids)
+        _SESSION_ALERTS_SENT += 1
         try:
             send_telegram(message)
         except TelegramDeliveryUncertain:
@@ -2576,15 +2917,24 @@ def scan_once():
             )
             continue
         mark_alerted(trade_id)
+        update_watch_entry(watch_state, listing, values, aliases)
         uncertain_ids.discard(trade_id)
         save_uncertain_ids(uncertain_ids)
         mark_seen_ad(listing)
         listing["alerted_at_utc"] = datetime.now(timezone.utc).isoformat()
         append_history(listing, op)
+        first_seen_ts = _parse_feed_timestamp(listing.get("first_seen_at_utc"))
+        alerted_ts = _parse_feed_timestamp(listing["alerted_at_utc"])
+        detection_latency = (
+            max(0.0, alerted_ts - first_seen_ts)
+            if first_seen_ts is not None and alerted_ts is not None else None
+        )
+        latency_label = f"{detection_latency:.2f}s" if detection_latency is not None else "unknown"
         print(
             f"[timing] listing={listing.get('source_ad_id') or trade_id} "
             f"first_seen={listing.get('first_seen_at_utc', 'unknown')} "
-            f"alerted={listing['alerted_at_utc']}"
+            f"alerted={listing['alerted_at_utc']} "
+            f"first_seen_to_alert={latency_label}"
         )
         sent += 1
         if sent < len(selected_opportunities) and ALERT_DELAY_SECONDS > 0:
@@ -2592,7 +2942,7 @@ def scan_once():
 
     summary = (
         f"Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | "
-        f"already_alerted={already_alerted_skipped} | uncertain_quarantined={uncertain_skipped} | "
+        f"already_alerted={already_alerted_skipped} | watch_unchanged={watch_unchanged_skipped} | uncertain_quarantined={uncertain_skipped} | "
         f"pending_recheck={len(pending_ids)} | qualified={len(opportunities)} | "
         f"alerts={sent} | deferred={deferred}"
     )
@@ -2656,7 +3006,14 @@ def append_history(listing, op):
 
 
 def record_success():
-    atomic_write_text(FAILURE_FILE, json.dumps({"consecutive_failures": 0}, indent=2) + "\n")
+    completed_at = datetime.now(timezone.utc).isoformat()
+    atomic_write_text(FAILURE_FILE, json.dumps({
+        "consecutive_failures": 0,
+        "last_success_at_utc": completed_at,
+    }, indent=2) + "\n")
+    atomic_write_text(LAST_SUCCESS_FILE, json.dumps({
+        "completed_at_utc": completed_at,
+    }, indent=2) + "\n")
 
 
 def record_failure(error):
@@ -2674,6 +3031,8 @@ def record_failure(error):
         (count > FAILURE_THRESHOLD and (count - FAILURE_THRESHOLD) % 5 == 0)
     ):
         safe_error = re.sub(r"https://api\.telegram\.org/bot[^/\s]+", "https://api.telegram.org/bot[REDACTED]", str(error))
+        safe_error = re.sub(r"rbx_[A-Za-z0-9_-]+", "rbx_[REDACTED]", safe_error)
+        safe_error = re.sub(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s]+", r"\1[REDACTED]", safe_error)
         try:
             send_telegram(
                 "MM2 Trade Scanner ALERT\n"
@@ -2685,15 +3044,80 @@ def record_failure(error):
             print(f"[telegram] Failure alert could not be sent: {type(notify_error).__name__}")
 
 
+def run_scan_loop(duration_seconds=720, interval_seconds=45):
+    """Poll repeatedly in one Actions job while preserving one alert budget per job."""
+    global _SESSION_ALERTS_SENT, _SESSION_ALERT_LIMIT
+    duration_seconds = max(1, int(duration_seconds))
+    interval_seconds = max(30, min(60, int(interval_seconds)))
+    _SESSION_ALERTS_SENT = 0
+    _SESSION_ALERT_LIMIT = max(1, int(os.environ.get("MAX_ALERTS_PER_SESSION", str(MAX_ALERTS_PER_RUN))))
+    started = time.monotonic()
+    deadline = started + duration_seconds
+    stop = {"requested": False}
+    previous_handlers = {}
+
+    def request_stop(signum, frame):
+        stop["requested"] = True
+        print(f"[loop] Graceful shutdown requested (signal={signum}); finishing current scan cycle.")
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            previous_handlers[sig] = signal.getsignal(sig)
+            signal.signal(sig, request_stop)
+        except (ValueError, OSError):
+            pass
+
+    cycles = 0
+    successful_cycles = 0
+    try:
+        while not stop["requested"] and time.monotonic() < deadline:
+            cycle_started = time.monotonic()
+            cycles += 1
+            print(f"[loop] Starting scan cycle {cycles}; elapsed={cycle_started - started:.1f}s")
+            try:
+                scan_once()
+                successful_cycles += 1
+            except Exception as exc:
+                print(f"[loop] Scan cycle {cycles} failed safely: {type(exc).__name__}; details are recorded with secret redaction.")
+                record_failure(exc)
+            cycle_elapsed = time.monotonic() - cycle_started
+            remaining = deadline - time.monotonic()
+            print(
+                f"[loop] Cycle {cycles} finished in {cycle_elapsed:.1f}s; "
+                f"alerts_this_session={_SESSION_ALERTS_SENT}/{_SESSION_ALERT_LIMIT}; "
+                f"remaining={max(0, remaining):.1f}s"
+            )
+            sleep_for = min(max(0.0, interval_seconds - cycle_elapsed), max(0.0, remaining))
+            sleep_until = time.monotonic() + sleep_for
+            while not stop["requested"] and time.monotonic() < sleep_until:
+                time.sleep(min(1.0, sleep_until - time.monotonic()))
+    finally:
+        for sig, handler in previous_handlers.items():
+            try:
+                signal.signal(sig, handler)
+            except (ValueError, OSError):
+                pass
+    elapsed = time.monotonic() - started
+    print(f"[loop] Finished: cycles={cycles}, successful={successful_cycles}, elapsed={elapsed:.1f}s")
+    if successful_cycles == 0:
+        raise RuntimeError("No scan cycle completed successfully during the scheduled polling window.")
+    return {"cycles": cycles, "successful_cycles": successful_cycles, "elapsed_seconds": elapsed}
+
+
 def main():
-    # One feed snapshot per workflow invocation; cadence is controlled by GitHub cron.
-    # Production cadence is deliberately bounded to prevent repeated Telegram alerts.
+    duration = int(os.environ.get("MM2_SCAN_DURATION_SECONDS", "0") or 0)
+    if duration > 0:
+        interval = int(os.environ.get("MM2_SCAN_INTERVAL_SECONDS", "45") or 45)
+        return run_scan_loop(duration, interval)
+    global _SESSION_ALERTS_SENT, _SESSION_ALERT_LIMIT
+    _SESSION_ALERTS_SENT = 0
+    _SESSION_ALERT_LIMIT = max(1, int(os.environ.get("MAX_ALERTS_PER_SESSION", str(MAX_ALERTS_PER_RUN))))
     return scan_once()
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        print(f"ERROR: {type(exc).__name__}; details are recorded with secret redaction.", file=sys.stderr)
         record_failure(exc)
         sys.exit(1)

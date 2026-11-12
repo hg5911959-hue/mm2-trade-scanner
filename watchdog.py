@@ -8,7 +8,7 @@ from urllib.request import Request
 import scanner
 
 
-def should_alert(age, threshold=30, interval=15, reminder=360):
+def should_alert(age, threshold=25, interval=5, reminder=360):
     """Alert in the first interval after threshold, then once per reminder window."""
     return (
         threshold <= age < threshold + interval
@@ -71,9 +71,9 @@ def latest_active_scan_age_minutes(token):
 def main():
     token = os.environ.get("GITHUB_TOKEN", "").strip()
     active_age, active_run = latest_active_scan_age_minutes(token)
-    if active_run and active_age < 55:
+    if active_run and active_age < 16:
         print(
-            f"[watchdog] Scan loop is currently active ({active_age:.1f} minutes); "
+            f"[watchdog] Scan job is active ({active_age:.1f} minutes); "
             "suppressing stale-success alert."
         )
         return

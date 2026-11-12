@@ -8,38 +8,36 @@ on:
     types: [mm2-scan]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: mm2-trade-scanner
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   scan:
     runs-on: ubuntu-latest
     timeout-minutes: 14
+    permissions:
+      contents: read
+      actions: read
     env:
       HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
+      MM2_SCAN_DURATION_SECONDS: "720"
+      MM2_SCAN_INTERVAL_SECONDS: "45"
+      MAX_ALERTS_PER_SESSION: "3"
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
 
-      - name: Restore scanner state
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            data/
-          key: mm2-state-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            mm2-state-
-
       - name: Restore durable state branch
         run: |
+          mkdir -p data
           if git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
             git fetch origin refs/heads/state:refs/remotes/origin/state
             rm -rf data
@@ -47,11 +45,11 @@ jobs:
             git archive origin/state data | tar -x
             echo "Restored scanner state from branch 'state'."
           else
-            echo "State branch not found; retaining legacy Actions Cache state for one-time migration."
+            echo "State branch not found; cold-start safety window will evaluate recent posts."
           fi
 
       - name: Test parser and value calculations
-        run: python -m unittest discover -s tests -q
+        run: python -m unittest discover -s tests
 
       - name: Record test failure
         if: failure()
@@ -68,6 +66,7 @@ jobs:
           MIN_PROFIT_PERCENT: "0"
           FAILURE_ALERT_THRESHOLD: "3"
           MAX_ALERTS_PER_RUN: "3"
+          MAX_ALERTS_PER_SESSION: "3"
           ALERT_DELAY_SECONDS: "2"
           MAX_FEED_PAGES: "50"
           VALUES_TTL_SECONDS: "300"
@@ -89,35 +88,69 @@ jobs:
             curl --fail --silent --show-error "$HEALTHCHECKS_PING_URL/fail"
           fi
 
+      - name: Prepare state artifact
+        if: always()
+        run: |
+          mkdir -p state-bundle/data
+          if [ -d data ]; then cp -a data/. state-bundle/data/; fi
+          printf '%s\n' "${GITHUB_SHA}" > state-bundle/source-commit.txt
+
+      - name: Upload durable state
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: mm2-scanner-state
+          path: state-bundle/
+          if-no-files-found: warn
+          retention-days: 1
+
       - name: Upload scanner diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: mm2-scanner-diagnostics
           path: scanner.log
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Persist durable state branch
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
+  persist-state:
+    needs: scan
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Download scanner state
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: mm2-scanner-state
+          path: state-artifact
+
+      - name: Persist state branch
+        if: steps.download.outcome == 'success'
         run: |
-          set -e
+          set -euo pipefail
+          if [ ! -d state-artifact/data ]; then
+            echo "No scanner data artifact found; leaving durable state unchanged."
+            exit 0
+          fi
           if git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
             git fetch origin refs/heads/state:refs/remotes/origin/state
-            git worktree add -B state /tmp/mm2-state origin/state
+            git checkout -B state origin/state
           else
-            git worktree add --detach /tmp/mm2-state HEAD
-            cd /tmp/mm2-state
             git checkout --orphan state
             git rm -rf . >/dev/null 2>&1 || true
-            cd -
           fi
-          rm -rf /tmp/mm2-state/data
-          mkdir -p /tmp/mm2-state/data
-          if [ -d data ]; then cp -a data/. /tmp/mm2-state/data/; fi
-          cd /tmp/mm2-state
+          rm -rf data
+          mkdir -p data
+          cp -a state-artifact/data/. data/
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A data
@@ -128,4 +161,3 @@ jobs:
             git push origin state
             echo "Updated durable scanner state branch."
           fi
-

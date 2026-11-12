@@ -4,10 +4,45 @@ import watchdog
 import json
 import re
 import tempfile
+import os
+import time
+from datetime import datetime, timezone
 from pathlib import Path
+from contextlib import ExitStack
 from unittest.mock import patch
 
 from scanner import parse_listings, parse_page, calculate_side, load_supreme_values
+
+def with_rsc(html):
+    """Attach explicit RSC item names to HTML fixtures so tests exercise identity matching."""
+    listings, _ = parse_page(html)
+    posts = []
+    for listing in listings:
+        rows = []
+        for field, role in (("receive_items", "OFFERED"), ("give_items", "REQUESTED")):
+            for item in listing.get(field, []):
+                quantity = item.get("quantity")
+                if quantity is None:
+                    quantity = 1
+                rows.append({
+                    "displayName": item["name"],
+                    "quantity": quantity,
+                    "tradeRole": role,
+                })
+        posts.append({
+            "id": listing["source_ad_id"],
+            "tradePostItems": rows,
+            "requestedWildcards": [],
+            "lastRefreshedAt": datetime.now(timezone.utc).isoformat(),
+            "user": {"robloxUserId": "123", "robloxUsername": "fixture", "robloxDisplayName": "Fixture"},
+        })
+    page = {"items": posts, "meta": {"cursor": None}}
+    payload = json.dumps({"initialPage": page}, ensure_ascii=False, separators=(",", ":"))
+    return '<script>self.__next_f.push([1,' + json.dumps(payload) + ']);</script>' + html
+
+
+def normalize_fixture_id(name):
+    return re.sub(r"[^a-z0-9]+", "-", str(name).casefold()).strip("-")
 
 
 class ParserTests(unittest.TestCase):
@@ -509,9 +544,10 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(reason, ["one side has no valued items"])
 
     def test_watchdog_should_alert_windows(self):
-        self.assertFalse(watchdog.should_alert(29))
-        self.assertTrue(watchdog.should_alert(30))
-        self.assertFalse(watchdog.should_alert(45))
+        self.assertFalse(watchdog.should_alert(24))
+        self.assertTrue(watchdog.should_alert(25))
+        self.assertTrue(watchdog.should_alert(29))
+        self.assertFalse(watchdog.should_alert(30))
         self.assertTrue(watchdog.should_alert(360))
         self.assertFalse(watchdog.should_alert(380))
 
@@ -701,7 +737,7 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.PENDING_FILE", root / "pending.json"),
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
                 patch("scanner.load_supreme_values", return_value=values),
-                patch("scanner.fetch_bloxswaps", return_value=html),
+                patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)),
                 patch("scanner.send_telegram", side_effect=[RuntimeError("rejected"), None]) as send,
                 patch("scanner.compare_secondary_values", return_value=""),
             ):
@@ -743,14 +779,15 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.PENDING_FILE", root / "pending.json"),
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
                 patch("scanner.load_supreme_values", return_value=values),
-                patch("scanner.fetch_bloxswaps", return_value=html),
+                patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)),
                 patch("scanner.send_telegram") as send,
                 patch("scanner.compare_secondary_values", return_value=""),
                 patch("scanner.MIN_PROFIT_PERCENT", 0),
             ):
                 scanner.main()
-            self.assertEqual(send.call_count, 1)
-            message = send.call_args.args[0]
+            trade_messages = [call.args[0] for call in send.call_args_list if "💎 MM2 TRADE" in call.args[0]]
+            self.assertEqual(len(trade_messages), 1)
+            message = trade_messages[0]
             self.assertIn("MANUAL CHECK", message)
             self.assertIn("POSSIBLE PROFIT RANGE: -∞ to 275", message)
             self.assertIn("Harvester x? (1..∞)", message)
@@ -783,7 +820,7 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.PENDING_FILE", root / "pending.json"),
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
                 patch("scanner.load_supreme_values", return_value=values),
-                patch("scanner.fetch_bloxswaps", return_value=html),
+                patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)),
                 patch("scanner.send_telegram", side_effect=scanner.TelegramDeliveryUncertain("unknown")),
                 patch("scanner.compare_secondary_values", return_value=""),
             ):
@@ -821,15 +858,15 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.PENDING_FILE", root / "pending.json"), \
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"), \
                  patch("scanner.load_supreme_values", side_effect=value_sets), \
-                 patch("scanner.fetch_bloxswaps", return_value=html), \
+                 patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)), \
                  patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)), \
                  patch("scanner.compare_secondary_values", return_value=""):
                 scanner.main()
                 scanner.main()
-            # Unknown-valued offers are silently excluded, then re-evaluated.
-            self.assertEqual(len(sent), 1)
-            self.assertIn("💎 MM2 TRADE", sent[0])
-            self.assertNotIn("MANUAL VALUE CHECK", "".join(sent))
+            # Unknown-valued offers generate a maintenance notice, remain pending, and are re-evaluated.
+            trade_messages = [message for message in sent if "💎 MM2 TRADE" in message]
+            self.assertEqual(len(trade_messages), 1)
+            self.assertNotIn("MANUAL VALUE CHECK", "".join(trade_messages))
             self.assertTrue((root / "alerted.json").exists())
 
     def test_main_caps_alerts_and_defers_remaining_offers_across_scans(self):
@@ -863,7 +900,7 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.PENDING_FILE", root / "pending.json"),
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
                 patch("scanner.load_supreme_values", return_value=values),
-                patch("scanner.fetch_bloxswaps", return_value=page),
+                patch("scanner.fetch_bloxswaps", return_value=with_rsc(page)),
                 patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)),
                 patch("scanner.compare_secondary_values", return_value=""),
                 patch("scanner.MAX_ALERTS_PER_RUN", 2),
@@ -905,13 +942,14 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.load_supreme_values", return_value={
                      "knife a": {"name": "Knife A", "value": 10},
                      "knife b": {"name": "Knife B", "value": 20},
-                 }), patch("scanner.fetch_bloxswaps", side_effect=sequence), \
+                 }), patch("scanner.fetch_bloxswaps", side_effect=[with_rsc(item) for item in sequence]), \
                  patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)), \
                  patch("scanner.compare_secondary_values", return_value=""):
                 scanner.main()
                 scanner.main()
                 scanner.main()
-            self.assertEqual(len(sent), 2)
+            trade_messages = [message for message in sent if "💎 MM2 TRADE" in message]
+            self.assertEqual(len(trade_messages), 2)
             self.assertTrue((root / "history.csv").exists())
             self.assertTrue((root / "alerted.json").exists())
 
@@ -1108,8 +1146,8 @@ class StructuredQuantityCrossCheckTests(unittest.TestCase):
             }],
         }
         structured = {"id": "ad", "tradePostItems": [
-            {"itemDetailsId": "snow", "quantity": 2, "tradeRole": "OFFERED"},
-            {"itemDetailsId": "spirit", "quantity": 1, "tradeRole": "REQUESTED"},
+            {"itemDetailsId": "snow", "displayName": "Snowcannon", "quantity": 2, "tradeRole": "OFFERED"},
+            {"itemDetailsId": "spirit", "displayName": "Spirit", "quantity": 1, "tradeRole": "REQUESTED"},
         ]}
         scanner._apply_structured_quantities(listing, structured)
         item = listing["receive_items"][0]
@@ -1129,8 +1167,8 @@ class StructuredQuantityCrossCheckTests(unittest.TestCase):
             }],
         }
         structured = {"id": "ad", "tradePostItems": [
-            {"itemDetailsId": "snow", "quantity": 2, "tradeRole": "OFFERED"},
-            {"itemDetailsId": "spirit", "quantity": 1, "tradeRole": "REQUESTED"},
+            {"itemDetailsId": "snow", "displayName": "Snowcannon", "quantity": 2, "tradeRole": "OFFERED"},
+            {"itemDetailsId": "spirit", "displayName": "Spirit", "quantity": 1, "tradeRole": "REQUESTED"},
         ]}
         scanner._apply_structured_quantities(listing, structured)
         self.assertEqual(listing["receive_items"][0]["quantity"], 2)
@@ -1241,7 +1279,7 @@ class CursorPaginationTests(unittest.TestCase):
     def test_cursor_pages_are_scanned_until_first_seen_ad(self):
         responses = [
             {"items": [self._post("post-2"), self._post("post-3")], "meta": {"cursor": "cursor-2"}},
-            {"items": [self._post("post-4"), self._post("seen-old"), self._post("after-boundary")], "meta": {"cursor": "cursor-3"}},
+            {"items": [self._post("post-4")] + [self._post(f"seen-old-{i}") for i in range(25)], "meta": {"cursor": None}},
         ]
         with (
             patch("scanner.fetch_bloxswaps", return_value=self._first_page_html()),
@@ -1249,15 +1287,16 @@ class CursorPaginationTests(unittest.TestCase):
                 "a-id": {"id": "a-id", "displayName": "Knife A"},
                 "b-id": {"id": "b-id", "displayName": "Knife B"},
             }),
+            patch("scanner._last_successful_scan_timestamp", return_value=datetime.now(timezone.utc).timestamp() - 60),
             patch("scanner.bloxswaps_api_get_json", side_effect=responses) as api,
         ):
-            listings, stats, discovered = scanner.fetch_bloxswaps_all({"seen-old"})
+            listings, stats, discovered = scanner.fetch_bloxswaps_all({"seen-old"} | {f"seen-old-{i}" for i in range(25)})
         self.assertEqual(api.call_count, 2)
         self.assertEqual([x["source_ad_id"] for x in listings], ["first-post", "post-2", "post-3", "post-4"])
         self.assertEqual(stats["pagination_pages"], 3)
         self.assertTrue(stats["pagination_complete"])
         self.assertTrue(stats["seen_boundary_reached"])
-        self.assertNotIn("after-boundary", [x["source_ad_id"] for x in listings])
+        self.assertEqual(len([x for x in listings if x["source_ad_id"].startswith("seen-old-")]), 0)
         self.assertEqual(listings[1]["receive_items"][0]["quantity_source"], "structured")
         self.assertEqual(listings[1]["receive_items"][0]["quantity"], 2)
         self.assertEqual(listings[1]["owner_url"], "https://bloxswaps.com/fr/users/123")
@@ -1283,12 +1322,19 @@ class CursorPaginationTests(unittest.TestCase):
         self.assertEqual([item["source_ad_id"] for item in listings], ["pending-post"])
         self.assertEqual(stats["pending_found_ids"], ["pending-post"])
         self.assertEqual(stats["pending_remaining_ids"], [])
-        self.assertTrue(stats["seen_boundary_reached"])
+        self.assertFalse(stats["seen_boundary_reached"])
+        self.assertTrue(stats["pagination_complete"])
         self.assertEqual(stats["pagination_pages"], 2)
 
 
     def test_missing_seen_state_seeds_current_page_without_replaying_history(self):
-        with patch("scanner.fetch_bloxswaps", return_value=self._first_page_html()):
+        with (
+            patch("scanner.fetch_bloxswaps", return_value=self._first_page_html()),
+            patch("scanner.fetch_bloxswaps_items_map", return_value={
+                "a-id": {"displayName": "Knife A"}, "b-id": {"displayName": "Knife B"}
+            }),
+            patch("scanner.bloxswaps_api_get_json", return_value={"items": [], "meta": {"cursor": None}}),
+        ):
             listings, stats, seed_ids = scanner.fetch_bloxswaps_all(None)
         self.assertEqual(listings, [])
         self.assertTrue(stats["cold_start"])
@@ -1323,7 +1369,11 @@ class LiveBloxSwapsFixtureTests(unittest.TestCase):
     def test_redacted_real_bloxswaps_card_matches_rsc_quantities(self):
         fixture = Path(__file__).parent / "fixtures" / "bloxswaps-live-sample.html"
         html = fixture.read_text(encoding="utf-8")
-        listings, stats = parse_page(html)
+        listings, stats = parse_page(html, {
+            "136e4b17-a761-4c2e-aa17-cb5ef7153148": {"displayName": "Emberbow"},
+            "cmazobvc2001enu708o9j9vtg": {"displayName": "Harvester"},
+            "cmazobw1m00linu70am6x8ca3": {"displayName": "Icepiercer"},
+        })
         self.assertEqual(len(listings), 1)
         self.assertEqual(stats["structured_matched_count"], 1)
         listing = listings[0]
@@ -1364,7 +1414,7 @@ class StructuredQuantityTests(unittest.TestCase):
             {"itemDetailsId": "b-id", "quantity": 2, "tradeRole": "OFFERED"},
             {"itemDetailsId": "a-id", "quantity": 1, "tradeRole": "REQUESTED"},
         ])
-        listing = parse_listings(html)[0]
+        listing = parse_page(html, {"b-id": {"displayName": "Knife B"}, "a-id": {"displayName": "Knife A"}})[0][0]
         self.assertIsNone(listing["receive_items"][0]["quantity"])
         self.assertEqual(listing["receive_items"][0]["quantity_source"], "uncertain")
         self.assertEqual(
@@ -1790,3 +1840,433 @@ class LegacyAlertStateMigrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HardeningRegressionTests(unittest.TestCase):
+    def test_refreshed_seen_post_at_feed_head_does_not_hide_new_posts_below(self):
+        refreshed = CursorPaginationTests._post("seen-refreshed")
+        refreshed["lastRefreshedAt"] = datetime.now(timezone.utc).isoformat()
+        refreshed["isPinned"] = True
+        page = {
+            "items": [refreshed],
+            "meta": {"cursor": "cursor-after-refreshed"},
+        }
+        payload = json.dumps({"initialPage": page}, separators=(",", ":"))
+        html = (
+            '<script>self.__next_f.push([1,' + json.dumps(payload) + ']);</script>'
+        )
+        responses = [{
+            "items": [
+                CursorPaginationTests._post("new-below-1"),
+                CursorPaginationTests._post("new-below-2"),
+            ],
+            "meta": {"cursor": None},
+        }]
+        with (
+            patch("scanner.fetch_bloxswaps", return_value=html),
+            patch("scanner.fetch_bloxswaps_items_map", return_value={
+                "a-id": {"id": "a-id", "displayName": "Knife A"},
+                "b-id": {"id": "b-id", "displayName": "Knife B"},
+            }),
+            patch("scanner._last_successful_scan_timestamp", return_value=datetime.now(timezone.utc).timestamp() - 60),
+            patch("scanner.bloxswaps_api_get_json", side_effect=responses) as api,
+        ):
+            listings, stats, discovered = scanner.fetch_bloxswaps_all({"seen-refreshed"})
+        self.assertEqual(api.call_count, 1)
+        found_ids = [item["source_ad_id"] for item in listings]
+        self.assertIn("seen-refreshed", found_ids)
+        self.assertIn("new-below-1", found_ids)
+        self.assertIn("new-below-2", found_ids)
+        self.assertNotIn("seen-refreshed", stats.get("seen_ids_skipped", []))
+
+    def test_html_rsc_merge_matches_by_item_id_not_list_position(self):
+        api_listing = {
+            "id": "api", "owner_url": "owner", "source_text": "api",
+            "receive_items": [
+                {"name": "Knife A", "structured_item_id": "a-id", "quantity": 2,
+                 "quantity_source": "structured", "quantity_min": 2, "quantity_max": 2},
+                {"name": "Knife B", "structured_item_id": "b-id", "quantity": 4,
+                 "quantity_source": "structured", "quantity_min": 4, "quantity_max": 4},
+            ],
+            "give_items": [{"name": "Knife C", "structured_item_id": "c-id", "quantity": 1,
+                            "quantity_source": "structured", "quantity_min": 1, "quantity_max": 1}],
+        }
+        html_listing = {
+            "id": "html", "owner_url": "html-owner", "source_text": "html",
+            "receive_items": [
+                {"name": "Knife B", "structured_item_id": "b-id", "quantity": 4,
+                 "quantity_source": "explicit", "listed_price": 4, "raw_excerpt": "B x4"},
+                {"name": "Knife A", "structured_item_id": "a-id", "quantity": 2,
+                 "quantity_source": "explicit", "listed_price": 2, "raw_excerpt": "A x2"},
+            ],
+            "give_items": [{"name": "Knife C", "structured_item_id": "c-id", "quantity": 1,
+                            "quantity_source": "explicit", "listed_price": 1, "raw_excerpt": "C x1"}],
+        }
+        merged = scanner._merge_html_quantity_diagnostics(api_listing, html_listing)
+        self.assertEqual(
+            [(item["name"], item["quantity"], item["quantity_source"])
+             for item in merged["receive_items"]],
+            [("Knife A", 2, "structured"), ("Knife B", 4, "structured")],
+        )
+
+    def test_missing_rsc_data_fails_closed_without_loop_environment_flag(self):
+        html = "<html><body><article>Propose <img alt='Knife B'> Recherche <img alt='Knife A'></article></body></html>"
+        with patch.dict(os.environ, {}, clear=True), patch(
+            "scanner.fetch_bloxswaps", return_value=html
+        ):
+            with self.assertRaisesRegex(RuntimeError, "RSC"):
+                scanner.fetch_bloxswaps_all(set())
+
+
+class WatchWindowRegressionTests(unittest.TestCase):
+    def _listing(self, receive_quantity=1):
+        return {
+            "source_ad_id": "watch-ad",
+            "receive_items": [{"name": "Knife A", "quantity": receive_quantity,
+                               "quantity_min": receive_quantity, "quantity_max": receive_quantity,
+                               "quantity_source": "structured"}],
+            "give_items": [{"name": "Knife B", "quantity": 1, "quantity_min": 1,
+                            "quantity_max": 1, "quantity_source": "structured"}],
+        }
+
+    def test_supreme_value_change_changes_watch_fingerprint(self):
+        listing = self._listing()
+        values_a = {
+            "knife a": {"name": "Knife A", "value": 100},
+            "knife b": {"name": "Knife B", "value": 110},
+        }
+        values_b = {
+            "knife a": {"name": "Knife A", "value": 150},
+            "knife b": {"name": "Knife B", "value": 110},
+        }
+        first = scanner.listing_watch_fingerprints(listing, values_a)
+        second = scanner.listing_watch_fingerprints(listing, values_b)
+        self.assertEqual(first[0], second[0])
+        self.assertNotEqual(first[1], second[1])
+
+    def test_owner_quantity_edit_changes_watch_fingerprint(self):
+        first = scanner.listing_watch_fingerprints(self._listing(1), {})
+        second = scanner.listing_watch_fingerprints(self._listing(3), {})
+        self.assertNotEqual(first[0], second[0])
+
+    def test_watch_state_round_trips_and_expires_after_six_hours(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "watch.json"
+            with patch("scanner.WATCH_FILE", path), patch("scanner.time.time", return_value=1000):
+                state = {"watch-ad": {"content_hash": "c", "values_hash": "v",
+                                      "created_at": 1000, "updated_at": 1000}}
+                scanner.save_watch_state(state)
+                self.assertEqual(scanner.load_watch_state(), state)
+            with patch("scanner.WATCH_FILE", path), patch("scanner.time.time", return_value=1000 + 6 * 3600 + 1):
+                self.assertEqual(scanner.load_watch_state(), {})
+
+
+class CatalogueRefreshRegressionTests(unittest.TestCase):
+    def test_unknown_item_catalogue_refresh_bypasses_hour_ttl_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "items.json"
+            with (
+                patch("scanner.BLOXSWAPS_ITEMS_FILE", path),
+                patch("scanner._LAST_ITEMS_FORCE_REFRESH_AT", 0),
+                patch("scanner.time.time", return_value=1000),
+                patch("scanner.bloxswaps_api_get_json", return_value=[
+                    {"id": "old", "displayName": "Old Item"}
+                ]) as api,
+            ):
+                first = scanner.fetch_bloxswaps_items_map()
+                with patch("scanner.time.time", return_value=1001), patch(
+                    "scanner.bloxswaps_api_get_json",
+                    return_value=[
+                        {"id": "old", "displayName": "Old Item"},
+                        {"id": "new", "displayName": "New Item"},
+                    ],
+                ):
+                    refreshed = scanner.fetch_bloxswaps_items_map(force_refresh=True)
+                self.assertIn("old", first)
+                self.assertIn("new", refreshed)
+
+
+class ColdStartRecentOfferTests(unittest.TestCase):
+    def test_cold_start_evaluates_recently_refreshed_post(self):
+        post = CursorPaginationTests._post("recent-cold-post")
+        post["lastRefreshedAt"] = datetime.now(timezone.utc).isoformat()
+        page = {"items": [post], "meta": {"cursor": None}}
+        payload = json.dumps({"initialPage": page}, separators=(",", ":"))
+        html = '<script>self.__next_f.push([1,' + json.dumps(payload) + ']);</script>'
+        with (
+            patch("scanner.fetch_bloxswaps", return_value=html),
+            patch("scanner.fetch_bloxswaps_items_map", return_value={
+                "a-id": {"id": "a-id", "displayName": "Knife A"},
+                "b-id": {"id": "b-id", "displayName": "Knife B"},
+            }),
+        ):
+            listings, stats, discovered = scanner.fetch_bloxswaps_all(None)
+        self.assertTrue(stats["cold_start"])
+        self.assertEqual([item["source_ad_id"] for item in listings], ["recent-cold-post"])
+        self.assertEqual(discovered, ["recent-cold-post"])
+
+
+class MaintenanceDefaultModeTests(unittest.TestCase):
+    def test_maintenance_paths_have_no_loop_environment_gate(self):
+        import inspect
+        self.assertNotIn("MM2_SCAN_LOOP", inspect.getsource(scanner.fetch_bloxswaps_all))
+        self.assertNotIn("MM2_SCAN_LOOP", inspect.getsource(scanner.scan_once))
+
+    def test_default_maintenance_alerts_send_with_cooldown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "maintenance.json"
+            with patch("scanner.MAINTENANCE_FILE", state_file), \
+                 patch("scanner.BOT_TOKEN", "test-token"), \
+                 patch("scanner.CHAT_ID", "123"), \
+                 patch("scanner.send_telegram") as send:
+                keys = [
+                    "malformed-feed-cards", "pagination-incomplete",
+                    "pending-ads-not-found", "unmatched:test",
+                    "telegram-quarantine-expired", "rsc-data-missing",
+                ]
+                for key in keys:
+                    self.assertTrue(scanner.send_maintenance_alert(key, "test notice", cooldown_seconds=3600))
+                self.assertFalse(scanner.send_maintenance_alert(keys[0], "duplicate notice", cooldown_seconds=3600))
+            self.assertEqual(send.call_count, len(keys))
+
+
+class PaginationFailureSafetyTests(unittest.TestCase):
+    def test_api_failure_does_not_mark_unscanned_posts_seen(self):
+        post = CursorPaginationTests._post("first-unseen-post")
+        page = {"items": [post], "meta": {"cursor": "cursor-more"}}
+        payload = json.dumps({"initialPage": page}, separators=(",", ":"))
+        html = '<script>self.__next_f.push([1,' + json.dumps(payload) + ']);</script>'
+        with (
+            patch("scanner.fetch_bloxswaps", return_value=html),
+            patch("scanner.fetch_bloxswaps_items_map", return_value={
+                "a-id": {"displayName": "Knife A"}, "b-id": {"displayName": "Knife B"}
+            }),
+            patch("scanner.bloxswaps_api_get_json", side_effect=RuntimeError("API pagination failed")),
+            patch("scanner.save_seen_ads") as save_seen,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "API pagination failed"):
+                scanner.fetch_bloxswaps_all(set())
+        save_seen.assert_not_called()
+
+
+class WatchValueReevaluationTests(unittest.TestCase):
+    def test_watched_unprofitable_offer_becomes_profitable_after_supreme_value_change(self):
+        listing = {
+            "id": "stable-ad-id", "source_ad_id": "same-ad",
+            "give_items": [{"name": "Knife A", "quantity": 1, "quantity_source": "structured",
+                            "quantity_min": 1, "quantity_max": 1}],
+            "receive_items": [{"name": "Knife B", "quantity": 1, "quantity_source": "structured",
+                               "quantity_min": 1, "quantity_max": 1}],
+        }
+        values_before = {
+            "knife a": {"name": "Knife A", "value": 20},
+            "knife b": {"name": "Knife B", "value": 10},
+        }
+        values_after = {
+            "knife a": {"name": "Knife A", "value": 20},
+            "knife b": {"name": "Knife B", "value": 30},
+        }
+        before, _ = scanner.evaluate_listing(listing, values_before)
+        self.assertFalse(scanner.qualifies(before))
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "scanner.WATCH_FILE", Path(directory) / "watch.json"
+        ):
+            state = {}
+            scanner.update_watch_entry(state, listing, values_before)
+            after, _ = scanner.evaluate_listing(listing, values_after)
+            self.assertTrue(scanner.qualifies(after))
+            self.assertTrue(scanner.update_watch_entry(state, listing, values_after))
+
+
+class PollingLoopTests(unittest.TestCase):
+    def test_loop_runs_a_scan_and_returns_before_job_timeout(self):
+        with patch("scanner.scan_once") as scan:
+            result = scanner.run_scan_loop(duration_seconds=1, interval_seconds=30)
+        scan.assert_called_once()
+        self.assertEqual(result["cycles"], 1)
+        self.assertEqual(result["successful_cycles"], 1)
+
+
+class AliasSuggestionToolTests(unittest.TestCase):
+    def test_ambiguous_candidates_are_suggestions_only(self):
+        from tools.suggest_aliases import build_suggestions
+        report = build_suggestions(
+            {"1": {"displayName": "Harvaster"}},
+            {"harvester": {"name": "Harvester", "value": 265},
+             "harvest": {"name": "Harvest", "value": 100}},
+        )
+        self.assertEqual(report[0]["status"], "ambiguous_manual_review")
+
+    def test_only_explicitly_approved_exact_catalogue_alias_is_written(self):
+        from tools.suggest_aliases import apply_reviewed_aliases
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "aliases.json"
+            count = apply_reviewed_aliases(
+                {"Snowcannon": "Snow Cannon"},
+                {"snow-id": {"displayName": "Snowcannon"}},
+                {"snow cannon": {"name": "Snow Cannon", "value": 750}},
+                path,
+            )
+            self.assertEqual(count, 1)
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"snowcannon": "Snow Cannon"})
+            with self.assertRaisesRegex(ValueError, "exact name"):
+                apply_reviewed_aliases(
+                    {"Snow Cannon?": "Snow Cannon"},
+                    {"snow-id": {"displayName": "Snowcannon"}},
+                    {"snow cannon": {"name": "Snow Cannon", "value": 750}},
+                    path,
+                )
+
+
+class WorkflowSecurityTests(unittest.TestCase):
+    def test_scan_and_state_jobs_have_separate_permissions_and_no_legacy_cache(self):
+        workflow = Path(".github/workflows/scan.yml").read_text(encoding="utf-8")
+        scan_job, state_job = workflow.split("  persist-state:", 1)
+        self.assertIn('cron: "*/15 * * * *"', workflow)
+        self.assertIn("cancel-in-progress: false", workflow)
+        self.assertIn('MM2_SCAN_DURATION_SECONDS: "720"', scan_job)
+        self.assertIn('MM2_SCAN_INTERVAL_SECONDS: "45"', scan_job)
+        self.assertIn("contents: read", scan_job)
+        self.assertNotIn("contents: write", scan_job)
+        self.assertIn("contents: write", state_job)
+        self.assertNotIn("actions/cache/restore", workflow)
+
+    def test_all_external_actions_are_pinned_to_full_commit_shas(self):
+        workflow_dir = Path(".github/workflows")
+        for path in workflow_dir.glob("*.yml"):
+            source = path.read_text(encoding="utf-8")
+            for line in source.splitlines():
+                if "uses:" not in line:
+                    continue
+                reference = line.split("uses:", 1)[1].strip()
+                self.assertIn("@", reference, msg=f"{path}: {reference}")
+                self.assertRegex(reference.rsplit("@", 1)[1], r"^[0-9a-f]{40}$", msg=f"{path}: {reference}")
+
+
+class WatchWindowPaginationTests(unittest.TestCase):
+    def test_pagination_passes_seen_streak_to_revisit_watched_ads(self):
+        seen_posts = [CursorPaginationTests._post(f"old-seen-{i}") for i in range(25)]
+        page = {"items": seen_posts, "meta": {"cursor": "cursor-to-watch"}}
+        payload = json.dumps({"initialPage": page}, separators=(",", ":"))
+        html = '<script>self.__next_f.push([1,' + json.dumps(payload) + ']);</script>'
+        watched = CursorPaginationTests._post("watch-later")
+        response = {"items": [watched], "meta": {"cursor": None}}
+        seen_ids = {post["id"] for post in seen_posts}
+        with (
+            patch("scanner.fetch_bloxswaps", return_value=html),
+            patch("scanner.fetch_bloxswaps_items_map", return_value={
+                "a-id": {"displayName": "Knife A"}, "b-id": {"displayName": "Knife B"}
+            }),
+            patch("scanner.bloxswaps_api_get_json", return_value=response),
+        ):
+            listings, stats, _ = scanner.fetch_bloxswaps_all(seen_ids, watch_ad_ids={"watch-later"})
+        self.assertIn("watch-later", [item["source_ad_id"] for item in listings])
+        self.assertEqual(stats["watch_remaining_ids"], [])
+        self.assertFalse(stats["seen_boundary_reached"])
+
+
+class ColdStartPaginationTests(unittest.TestCase):
+    def test_cold_start_paginates_recent_posts_and_ignores_pinned_old_boundary(self):
+        pinned = CursorPaginationTests._post("pinned-old")
+        pinned["lastRefreshedAt"] = "2026-11-12T00:00:00Z"
+        pinned["isPinned"] = True
+        recent_first = CursorPaginationTests._post("recent-first")
+        recent_first["lastRefreshedAt"] = datetime.now(timezone.utc).isoformat()
+        page = {"items": [pinned, recent_first], "meta": {"cursor": "cold-cursor"}}
+        payload = json.dumps({"initialPage": page}, separators=(",", ":"))
+        html = '<script>self.__next_f.push([1,' + json.dumps(payload) + ']);</script>'
+        recent_second = CursorPaginationTests._post("recent-second")
+        recent_second["lastRefreshedAt"] = datetime.now(timezone.utc).isoformat()
+        old_tail = []
+        for i in range(25):
+            post = CursorPaginationTests._post(f"cold-old-{i}")
+            post["lastRefreshedAt"] = "2026-11-12T00:00:00Z"
+            old_tail.append(post)
+        with (
+            patch("scanner.fetch_bloxswaps", return_value=html),
+            patch("scanner.fetch_bloxswaps_items_map", return_value={
+                "a-id": {"displayName": "Knife A"}, "b-id": {"displayName": "Knife B"}
+            }),
+            patch("scanner.bloxswaps_api_get_json", return_value={
+                "items": [recent_second] + old_tail, "meta": {"cursor": "still-more"}
+            }),
+        ):
+            listings, stats, discovered = scanner.fetch_bloxswaps_all(None)
+        found = [item["source_ad_id"] for item in listings]
+        self.assertIn("recent-first", found)
+        self.assertIn("recent-second", found)
+        self.assertIn("pinned-old", stats["cold_start_seed_ids"])
+        self.assertTrue(stats["seen_boundary_reached"])
+        self.assertTrue(stats["pagination_complete"])
+        self.assertEqual(stats["pagination_pages"], 2)
+        self.assertIn("cold-old-24", discovered)
+
+
+class RealAlertReevaluationIntegrationTests(unittest.TestCase):
+    def test_previously_alerted_ad_realerts_when_supreme_values_make_it_profitable(self):
+        listing = {
+            "id": "stable-ad-id", "source_ad_id": "same-source-ad",
+            "owner_url": "https://bloxswaps.com/fr/users/123",
+            "url": "https://bloxswaps.com/fr/trade-mm2?ad=same-source-ad",
+            "give_items": [{"name": "Knife A", "quantity": 1, "quantity_source": "structured",
+                            "quantity_min": 1, "quantity_max": 1}],
+            "receive_items": [{"name": "Knife B", "quantity": 1, "quantity_source": "structured",
+                               "quantity_min": 1, "quantity_max": 1}],
+        }
+        values_before = {
+            "knife a": {"name": "Knife A", "value": 20},
+            "knife b": {"name": "Knife B", "value": 10},
+        }
+        values_after = {
+            "knife a": {"name": "Knife A", "value": 20},
+            "knife b": {"name": "Knife B", "value": 30},
+        }
+        old_content, old_values = scanner.listing_watch_fingerprints(listing, values_before)
+        previous_watch = {
+            "same-source-ad": {
+                "content_hash": old_content, "values_hash": old_values,
+                "created_at": time.time() - 60, "updated_at": time.time() - 60,
+            }
+        }
+        stats = {
+            "cold_start": False, "pending_remaining_ids": [], "unparsed_ad_ids": [],
+            "addition_ids": [], "watch_remaining_ids": [], "pagination_complete": True,
+            "pagination_pages": 1, "pagination_api_posts": 0, "seen_boundary_reached": False,
+            "candidate_count": 1, "malformed_count": 0, "html_malformed_count": 0,
+            "html_parse_warning_count": 0, "html_parse_warning_ids": [],
+            "malformed_samples": [], "owner_link_count": 1,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sent = []
+            with ExitStack() as stack:
+                stack.enter_context(patch("scanner.BOT_TOKEN", "test-token"))
+                stack.enter_context(patch("scanner.CHAT_ID", "123"))
+                stack.enter_context(patch("scanner.ALERTED_FILE", root / "alerted.json"))
+                stack.enter_context(patch("scanner.SEEN_FILE", root / "seen.json"))
+                stack.enter_context(patch("scanner.PENDING_FILE", root / "pending.json"))
+                stack.enter_context(patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"))
+                stack.enter_context(patch("scanner.HISTORY_FILE", root / "history.csv"))
+                stack.enter_context(patch("scanner.WATCH_FILE", root / "watch.json"))
+                stack.enter_context(patch("scanner.FIRST_SEEN_FILE", root / "first-seen.json"))
+                stack.enter_context(patch("scanner.FAILURE_FILE", root / "failure.json"))
+                stack.enter_context(patch("scanner.load_supreme_values", return_value=values_after))
+                stack.enter_context(patch("scanner.load_aliases", return_value={}))
+                stack.enter_context(patch("scanner.load_seen_ads", return_value={"same-source-ad"}))
+                stack.enter_context(patch("scanner.load_pending_ids", return_value={}))
+                stack.enter_context(patch("scanner.load_watch_state", return_value=previous_watch))
+                stack.enter_context(patch("scanner.load_alerted", return_value={"stable-ad-id"}))
+                stack.enter_context(patch("scanner.load_uncertain_ids", return_value=set()))
+                stack.enter_context(patch("scanner.load_first_seen_ads", return_value={
+                    "same-source-ad": datetime.now(timezone.utc).isoformat()
+                }))
+                stack.enter_context(patch("scanner.fetch_bloxswaps_all", return_value=([listing], stats, ["same-source-ad"])))
+                stack.enter_context(patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)))
+                stack.enter_context(patch("scanner.compare_secondary_values", return_value=""))
+                stack.enter_context(patch("scanner.record_success"))
+                stack.enter_context(patch("scanner.write_step_summary"))
+                stack.enter_context(patch("scanner.ALERT_DELAY_SECONDS", 0))
+                scanner.main()
+        trade_messages = [message for message in sent if "💎 MM2 TRADE" in message]
+        self.assertEqual(len(trade_messages), 1)
+        self.assertIn("PROFIT: +10", trade_messages[0])
