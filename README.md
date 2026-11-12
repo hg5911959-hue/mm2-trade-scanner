@@ -28,7 +28,7 @@ BloxSwaps' page includes Next.js RSC `initialPage.items` data. The scanner uses 
 
 If a quantity is uncertain, the scanner computes a conservative best/worst profit interval:
 - If the worst-case profit is still positive, it can send a normal trade alert.
-- If only the best-case profit is positive, it sends a separate **MANUAL VERIFICATION REQUIRED** alert.
+- If only the best-case profit is positive, it sends a separate **MANUAL CHECK** alert.
 - If even the best-case profit is not positive, it does not send a trade alert.
 
 Telegram alerts show only the owner/listing links, up to 8 item lines per side, totals, Supreme profit, and result. Uncertain quantities, large stacks, and suspiciously high profit retain short safety warnings. Parser provenance, raw excerpts, and HTML/API diagnostics stay in GitHub Actions logs.
