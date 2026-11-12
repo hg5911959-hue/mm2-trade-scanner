@@ -681,6 +681,7 @@ class ReliabilityTests(unittest.TestCase):
                 patch("scanner.fetch_bloxswaps", return_value=html),
                 patch("scanner.send_telegram") as send,
                 patch("scanner.compare_secondary_values", return_value=""),
+                patch("scanner.MIN_PROFIT_PERCENT", 0),
             ):
                 scanner.main()
             self.assertEqual(send.call_count, 1)
