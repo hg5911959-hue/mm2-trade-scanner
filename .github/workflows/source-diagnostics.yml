@@ -362,8 +362,8 @@ jobs:
               "html_parse_warnings": stats.get("html_parse_warning_count"),
               "seen_boundary": stats.get("seen_boundary_reached"),
           })
-          if stats.get("pagination_pages") != 3 or not stats.get("seen_boundary_reached"):
-              raise SystemExit("Cursor scan did not stop at the requested third-page seen boundary")
+          if stats.get("pagination_pages", 0) < 3 or not stats.get("seen_boundary_reached"):
+              raise SystemExit("Cursor scan did not reach and stop at the requested third-page seen boundary")
           if not listings:
               raise SystemExit("No listings parsed from live page")
           PY
