@@ -12,9 +12,9 @@ It reads the values displayed on each listing itself; a separate item-values API
 
 Calculation:
 
-`value difference = requested value - offered value`
+`your value difference = offered value - requested value`
 
-The configured minimum difference is **0**, so listings where requested value is equal to or greater than offered value qualify for an alert. The alert includes the listing link and the displayed values.
+From your perspective as the person taking the listing, you give the items the poster requests and receive the items the poster proposes. The configured minimum difference is **0**, so a listing qualifies when the proposed items are worth at least as much as the requested items. The alert includes the listing link and both displayed values.
 
 ## Required Telegram setup
 
