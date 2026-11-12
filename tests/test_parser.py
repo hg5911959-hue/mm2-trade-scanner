@@ -478,15 +478,38 @@ class ReliabilityTests(unittest.TestCase):
 
     def test_telegram_message_is_truncated_before_request(self):
         captured = {}
-        def fake_request(req, timeout, label, attempts=4):
+        def fake_open(req, timeout):
             captured["payload"] = json.loads(req.data.decode())
-            return b'{"ok": true}'
+            from io import BytesIO
+            return BytesIO(b'{"ok": true}')
         with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
-            "scanner.request_with_retry", side_effect=fake_request
+            "scanner.urllib.request.urlopen", side_effect=fake_open
         ):
             scanner.send_telegram("x" * 5000)
         self.assertLessEqual(len(captured["payload"]["text"]), scanner.TELEGRAM_MAX_CHARS)
         self.assertTrue(captured["payload"]["text"].endswith("[message truncated]"))
+
+    def test_telegram_send_does_not_retry_uncertain_network_failure(self):
+        calls = []
+        def fail_open(req, timeout):
+            calls.append(req)
+            from urllib.error import URLError
+            raise URLError("connection reset after request")
+        with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
+            "scanner.urllib.request.urlopen", side_effect=fail_open
+        ):
+            with self.assertRaises(scanner.TelegramDeliveryUncertain):
+                scanner.send_telegram("test")
+        self.assertEqual(len(calls), 1)
+
+    def test_uncertain_telegram_delivery_ids_are_persisted_and_loaded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "telegram_uncertain.json"
+            with patch("scanner.UNCERTAIN_FILE", path):
+                scanner.save_uncertain_ids({"listing-a", "listing-b"})
+                self.assertEqual(
+                    scanner.load_uncertain_ids(), {"listing-a", "listing-b"}
+                )
 
     def test_history_write_is_atomic(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -528,11 +551,12 @@ class ReliabilityTests(unittest.TestCase):
         many_items = [f"• Item {i} — 1 each = 1" for i in range(500)]
         message = scanner.format_trade_message(listing, 500, many_items, 500, many_items, 0)
         captured = {}
-        def fake_request(req, timeout, label, attempts=4):
+        def fake_open(req, timeout):
             captured["text"] = json.loads(req.data.decode())["text"]
-            return b'{"ok": true}'
+            from io import BytesIO
+            return BytesIO(b'{"ok": true}')
         with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
-            "scanner.request_with_retry", side_effect=fake_request
+            "scanner.urllib.request.urlopen", side_effect=fake_open
         ):
             scanner.send_telegram(message)
         self.assertIn("OPEN OWNER PROFILE: https://bloxswaps.com/fr/users/12345", captured["text"])
