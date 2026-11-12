@@ -887,6 +887,67 @@ class SafeNameResolutionTests(unittest.TestCase):
         self.assertEqual(source, "unmatched")
 
 
+class StructuredFirstPageRecoveryTests(unittest.TestCase):
+    def test_rsc_recovers_offer_when_html_card_parser_misses_it(self):
+        post = {
+            "id": "rsc-only-post",
+            "user": {"robloxUserId": "321", "robloxUsername": "fixture", "robloxDisplayName": "Fixture"},
+            "tradePostItems": [
+                {"itemDetailsId": "b-id", "quantity": 2, "tradeRole": "OFFERED"},
+                {"itemDetailsId": "a-id", "quantity": 1, "tradeRole": "REQUESTED"},
+            ],
+            "requestedWildcards": [],
+        }
+        page = {"items": [post], "meta": {"cursor": None}}
+        payload = json.dumps({"initialPage": page}, separators=(",", ":"))
+        html = '<script>self.__next_f.push([1,' + json.dumps(payload) + ']);</script>'
+        with (
+            patch("scanner.fetch_bloxswaps", return_value=html),
+            patch("scanner.fetch_bloxswaps_items_map", return_value={
+                "a-id": {"id": "a-id", "displayName": "Knife A"},
+                "b-id": {"id": "b-id", "displayName": "Knife B"},
+            }),
+        ):
+            listings, stats, _ = scanner.fetch_bloxswaps_all(set())
+        self.assertEqual(len(listings), 1)
+        self.assertEqual(listings[0]["source_ad_id"], "rsc-only-post")
+        self.assertEqual(listings[0]["receive_items"][0]["quantity"], 2)
+        self.assertEqual(listings[0]["receive_items"][0]["quantity_source"], "structured")
+        self.assertEqual(stats["html_parse_warning_count"], 1)
+        self.assertTrue(listings[0]["html_card_parse_warning"])
+
+    def test_html_rsc_quantity_disagreement_becomes_uncertain(self):
+        api_listing = {
+            "id": "id", "owner_url": "owner", "source_text": "api",
+            "receive_items": [{
+                "name": "Snowcannon", "quantity": 2, "quantity_source": "structured",
+                "quantity_min": 2, "quantity_max": 2,
+            }],
+            "give_items": [{
+                "name": "Spirit", "quantity": 1, "quantity_source": "structured",
+                "quantity_min": 1, "quantity_max": 1,
+            }],
+        }
+        html_listing = {
+            "id": "html-id", "owner_url": "html-owner", "source_text": "html",
+            "receive_items": [{
+                "name": "Snowcannon", "quantity": 1, "quantity_source": "implicit_single",
+                "listed_price": 750.0, "raw_excerpt": "Snowcannon 750.0",
+            }],
+            "give_items": [{
+                "name": "Spirit", "quantity": 1, "quantity_source": "explicit",
+                "listed_price": 540.0, "raw_excerpt": "Spirit x1",
+            }],
+        }
+        merged = scanner._merge_html_quantity_diagnostics(api_listing, html_listing)
+        item = merged["receive_items"][0]
+        self.assertIsNone(item["quantity"])
+        self.assertEqual(item["quantity_source"], "uncertain")
+        self.assertEqual((item["quantity_min"], item["quantity_max"]), (1, 2))
+        self.assertEqual(item["listed_price"], 750.0)
+        self.assertEqual(merged["id"], "html-id")
+
+
 class CursorPaginationTests(unittest.TestCase):
     @staticmethod
     def _first_page_html():
