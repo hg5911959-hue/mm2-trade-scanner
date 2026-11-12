@@ -611,13 +611,13 @@ class ReliabilityTests(unittest.TestCase):
     def test_one_definite_telegram_failure_does_not_stop_later_alerts(self):
         html = """
         <article>
-          <div>Propose <img alt="Knife B"></div>
+          <div>Propose <img alt="Knife B x5"></div>
           <div>Recherche <img alt="Knife A"></div>
           <a href="/fr/trade-mm2?ad=offer-one">Discussion</a>
           <a href="/fr/users/123">Owner</a>
         </article>
         <article>
-          <div>Propose <img alt="Knife B"></div>
+          <div>Propose <img alt="Knife B x5"></div>
           <div>Recherche <img alt="Knife A"></div>
           <a href="/fr/trade-mm2?ad=offer-two">Discussion</a>
           <a href="/fr/users/456">Owner</a>
