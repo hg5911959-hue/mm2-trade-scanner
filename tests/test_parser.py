@@ -2129,6 +2129,7 @@ class WorkflowSecurityTests(unittest.TestCase):
         self.assertNotIn("Test parser and value calculations", scan_job)
         self.assertIn("git checkout --orphan state-new", state_job)
         self.assertIn("git push --force origin state-new:state", state_job)
+        self.assertIn("No scanner data files found", state_job)
         self.assertIn('MM2_SCAN_INTERVAL_SECONDS: "45"', scan_job)
         job_defaults = scan_job.split("    steps:", 1)[0]
         self.assertNotIn("MM2_SCAN_DURATION_SECONDS", job_defaults)
@@ -2140,6 +2141,8 @@ class WorkflowSecurityTests(unittest.TestCase):
 
     def test_all_external_actions_are_pinned_to_full_commit_shas(self):
         workflow_dir = Path(".github/workflows")
+        for path in workflow_dir.glob("*.yml"):
+            self.assertNotIn("11d5960a", path.read_text(encoding="utf-8"))
         for path in workflow_dir.glob("*.yml"):
             source = path.read_text(encoding="utf-8")
             for line in source.splitlines():

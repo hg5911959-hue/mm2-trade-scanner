@@ -130,6 +130,10 @@ jobs:
             echo "No scanner data artifact found; leaving durable state unchanged."
             exit 0
           fi
+          if ! find state-artifact/data -type f -print -quit | grep -q .; then
+            echo "No scanner data files found; leaving durable state unchanged."
+            exit 0
+          fi
           rm -rf /tmp/mm2-state-data
           mkdir -p /tmp/mm2-state-data
           cp -a state-artifact/data/. /tmp/mm2-state-data/
