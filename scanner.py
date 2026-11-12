@@ -509,7 +509,7 @@ def main():
             "لم يتم العثور على عرض جديد يحقق شروط الربح بعد التحقق من قيم جميع الأسلحة.\n\n"
             f"Listings checked: {len(listings)}\n"
             f"Unmatched listings skipped: {skipped_unknown}\n"
-            "Next scan: in approximately 5 minutes."
+            "Next scan: in approximately 15 minutes."
         )
         print("[telegram] No qualifying new trade; sending heartbeat")
         send_telegram(heartbeat)

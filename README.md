@@ -1,6 +1,6 @@
 # MM2 Trade Scanner
 
-Automated scanner for public **BloxSwaps MM2 P2P listings**, with Telegram alerts. GitHub Actions checks every 5 minutes.
+Automated scanner for public **BloxSwaps MM2 P2P listings**, with Telegram alerts. GitHub Actions checks every 15 minutes.
 
 ## How a trade is evaluated
 
@@ -36,7 +36,7 @@ Never commit or share any of these secrets. The scanner never prints the API key
 
 ## Run and diagnostics
 
-- Scheduled checks: every 5 minutes (GitHub Actions cron uses UTC).
+- Scheduled checks: every 15 minutes (GitHub Actions cron uses UTC).
 - Heartbeat: if no new qualifying trade is found in a scan, Telegram receives a “no good offers currently” status update. A successful qualifying trade replaces that heartbeat for the cycle.
 - GitHub Actions schedules are recurring checks, not a permanently running server; GitHub may occasionally delay scheduled starts.
 - Manual run: **Actions → MM2 Trade Scanner → Run workflow**.
