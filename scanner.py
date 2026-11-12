@@ -38,6 +38,9 @@ VALUES_TTL_SECONDS = 4 * 60 * 60
 SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "200"))
 TELEGRAM_MAX_CHARS = 4000
 
+# Items without a numeric Supreme value are excluded from valuation.
+IGNORED_VALUE_ITEMS = {"brew", "drool"}
+
 
 def atomic_write_text(path, content):
     path = Path(path)
@@ -501,6 +504,10 @@ def calculate_side(items, values):
     grouped = {}
     for item in items:
         key = normalize_name(item["name"])
+        # These have no numeric Supreme value; ignore them rather than
+        # blocking the calculation or reporting them as unmatched.
+        if key in IGNORED_VALUE_ITEMS:
+            continue
         if key not in grouped:
             grouped[key] = {"name": item["name"], "quantity": 0}
         grouped[key]["quantity"] += max(1, int(item.get("quantity", 1)))
