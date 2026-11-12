@@ -1054,6 +1054,8 @@ def fetch_bloxswaps_items_map(force_refresh=False):
                 raise RuntimeError("[bloxswaps] Catalogue refresh is rate-limited and no cached catalogue is available.")
         except (OSError, ValueError, TypeError):
             print("[bloxswaps] Item catalogue cache is unreadable; attempting live refresh")
+    if force_refresh and not force_allowed:
+        raise RuntimeError("[bloxswaps] Catalogue refresh is rate-limited and no cached catalogue is available.")
     payload = bloxswaps_api_get_json("/items")
     if isinstance(payload, dict):
         payload = payload.get("items", payload.get("data", []))
@@ -2404,8 +2406,8 @@ def listing_watch_fingerprints(listing, values, aliases=None):
             unit_value = None
             if record: unit_value, _selected = _select_conservative_variant(record, side)
             valuation.append((side, normalize_name(name), unit_value, match_source))
-    content_hash = hashlib.sha256(json.dumps(sorted(content), sort_keys=True, default=str).encode()).hexdigest()
-    values_hash = hashlib.sha256(json.dumps(sorted(valuation), sort_keys=True, default=str).encode()).hexdigest()
+    content_hash = hashlib.sha256(json.dumps(sorted(content, key=lambda row: json.dumps(row, sort_keys=True, default=str)), sort_keys=True, default=str).encode()).hexdigest()
+    values_hash = hashlib.sha256(json.dumps(sorted(valuation, key=lambda row: json.dumps(row, sort_keys=True, default=str)), sort_keys=True, default=str).encode()).hexdigest()
     return content_hash, values_hash
 
 def load_watch_state():
