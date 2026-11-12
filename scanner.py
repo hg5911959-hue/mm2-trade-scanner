@@ -315,10 +315,12 @@ def parse_page(html):
             "source_text": text[:700],
         })
     unique = {item["id"]: item for item in listings}
-    return list(unique.values()), {
+    parsed = list(unique.values())
+    return parsed, {
         "candidate_count": len(candidates),
         "addition_count": additions,
         "malformed_count": malformed,
+        "owner_link_count": sum(1 for item in parsed if item.get("owner_url")),
     }
 
 
@@ -696,6 +698,7 @@ def main():
             raise RuntimeError("[bloxswaps] No trade cards parsed; page structure may have changed or feed is empty.")
         raise RuntimeError(f"[bloxswaps] Parser could not read {stats['malformed_count']} non-Ajouts cards.")
     print(f"[bloxswaps] Eligible listings after Ajouts filter: {len(listings)}")
+    print(f"[bloxswaps] Direct owner profiles parsed: {stats.get('owner_link_count', 0)}/{len(listings)}")
 
     alerted = load_alerted()
     reviewed = load_reviewed()
