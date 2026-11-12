@@ -640,12 +640,18 @@ def stable_listing_id(owner_url, receive_items, give_items, listing_url="", list
         listing_key = {"path": listing.path, "query": sorted(stable_params)}
     else:
         listing_key = {"path": listing.path, "query": sorted(stable_params)}
-    identity = {
-        "owner": owner_identity,
-        "listing_key": listing_key,
-        "receive": _identity_items(receive_items),
-        "give": _identity_items(give_items),
-    }
+    # A source ad ID is the durable identity of a BloxSwaps post. Item
+    # quantities and card text can change while the post remains the same;
+    # including them here would create a fresh ID and resend an old alert.
+    if ad_values or listing_key_hint:
+        identity = {"owner": owner_identity, "listing_key": listing_key}
+    else:
+        identity = {
+            "owner": owner_identity,
+            "listing_key": listing_key,
+            "receive": _identity_items(receive_items),
+            "give": _identity_items(give_items),
+        }
     payload = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
 
@@ -853,6 +859,21 @@ def parse_page(html):
         "structured_matched_count": structured_matched,
         "structured_unmatched_count": max(0, len(structured_entries) - structured_matched),
     }
+
+
+def deduplicate_listings(listings):
+    """Keep the first parsed instance of each stable listing ID in one feed batch."""
+    unique = []
+    seen = set()
+    for listing in listings:
+        trade_id = str(listing.get("id") or "")
+        if not trade_id:
+            raise RuntimeError("[parser] Listing has no stable ID; refusing to evaluate it.")
+        if trade_id in seen:
+            continue
+        seen.add(trade_id)
+        unique.append(listing)
+    return unique
 
 
 def parse_listings(html):
@@ -2203,6 +2224,11 @@ def scan_once():
             raise RuntimeError("[bloxswaps] No trade cards parsed; page structure may have changed or feed is empty.")
         if stats["candidate_count"] == 0 and not stats.get("pagination_complete"):
             raise RuntimeError("[bloxswaps] No feed entries parsed and pagination could not be verified.")
+    parsed_count = len(listings)
+    listings = deduplicate_listings(listings)
+    duplicate_count = parsed_count - len(listings)
+    if duplicate_count:
+        print(f"[dedupe] Ignored {duplicate_count} duplicate listing row(s) in this scan batch.")
     print(f"[bloxswaps] Eligible listings after Ajouts filter: {len(listings)}")
     print(f"[bloxswaps] Direct owner profiles parsed: {stats.get('owner_link_count', 0)}/{len(listings)}")
     print(
@@ -2349,6 +2375,12 @@ def scan_once():
         mark_pending(deferred_op["listing"])
     for op in selected_opportunities:
         listing = op["listing"]
+        trade_id = listing["id"]
+        # Re-check immediately before every non-idempotent send. This also
+        # protects against duplicates that enter through a future code path.
+        if trade_id in alerted_set or trade_id in uncertain_ids:
+            print(f"[dedupe] Skipping already guarded listing {trade_id} before Telegram send.")
+            continue
         listing["alert_attempted_at_utc"] = datetime.now(timezone.utc).isoformat()
         message = format_trade_message(
             listing, op["give_total"], op["give_lines"],
