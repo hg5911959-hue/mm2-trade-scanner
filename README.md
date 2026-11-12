@@ -37,7 +37,7 @@ Never commit or share any of these secrets. The scanner never prints API keys or
 ## Run and diagnostics
 
 - Scheduled checks: GitHub cron requests a scan every 5 minutes (UTC; starts may be delayed or dropped during platform load).
-- Workflow triggers: 5-minute schedule, manual `workflow_dispatch`, external `repository_dispatch` events of type `mm2-scan`, and code updates to `scanner.py`, tests, or the scan workflow.
+- Workflow triggers: 5-minute schedule, manual `workflow_dispatch`, and external `repository_dispatch` events of type `mm2-scan`. Code pushes run the separate test workflow only; they do not launch an extra live scan.
 - Concurrency: one workflow at a time; queued runs are not cancelled.
 - The scanner workflow has `contents: read` only; the separate monthly keepalive workflow alone has `contents: write`.
 - Alert state stores only listings whose profit alert was successfully sent. Offers with unknown values are silently skipped and re-evaluated on later scans. Existing alert history is used to migrate prior sent IDs; non-profitable and unrecognized listings remain eligible for re-evaluation.
@@ -55,7 +55,7 @@ Never commit or share any of these secrets. The scanner never prints API keys or
 - Logs: open the workflow run and download the `mm2-scanner-diagnostics` artifact.
 - External scheduler fallback: the scanner accepts `repository_dispatch` event type `mm2-scan`. A scheduler such as cron-job.org can call GitHub’s repository-dispatch API every 5 minutes using a fine-grained token with Contents: read/write access to this repository. Store that token only in the scheduler service; never paste it into chat or commit it. The request body is `{"event_type":"mm2-scan"}`. This avoids depending exclusively on GitHub cron, but the external scheduler must still be configured by the repository owner.
 - Optional missed-schedule monitoring: create a free check at Healthchecks.io and save its ping URL as the repository secret `HEALTHCHECKS_PING_URL`. The workflow pings on successful scans and sends `/fail` on failures; the service can alert if scheduled pings stop arriving.
-- Processed IDs, Supreme cache, failure counter, and `history.csv` are persisted with GitHub Actions Cache. Runtime `data/` is git-ignored and is not tracked in `main`. A separate monthly keepalive workflow commits a tiny activity marker to reduce the risk of scheduled workflows being disabled for inactivity.
+- Processed IDs, Supreme cache, failure counter, and `history.csv` are persisted with GitHub Actions Cache. If an existing alerted-state or history file is unreadable/corrupt, the scanner now fails closed rather than silently starting with an empty deduplication list. Runtime `data/` is git-ignored and is not tracked in `main`. A separate monthly keepalive workflow commits a tiny activity marker to reduce the risk of scheduled workflows being disabled for inactivity.
 - `history.csv` records detected opportunities and their calculated values. It cannot confirm that a Roblox trade was accepted or completed.
 
 If the API returns HTTP 403, the key is invalid, inactive, unverified, expired, or suspended. Check its status at https://rblxvalue.com/developer, create/regenerate a key if needed, then replace the GitHub secret `RBLXVALUE_API_KEY`. A GitHub secret's name must remain exactly the same.
