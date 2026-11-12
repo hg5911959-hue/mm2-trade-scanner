@@ -1103,49 +1103,34 @@ def _api_trade_post_to_listing(post, item_map):
 
 
 def _merge_html_quantity_diagnostics(api_listing, html_listing):
-    """Keep RSC names/quantities but mark any HTML disagreement as uncertain."""
-    api_listing["id"] = html_listing.get("id") or api_listing["id"]
-    api_listing["legacy_id"] = html_listing.get("legacy_id") or api_listing.get("legacy_id")
-    api_listing["owner_url"] = html_listing.get("owner_url") or api_listing.get("owner_url")
-    api_listing["source_text"] = html_listing.get("source_text", api_listing.get("source_text", ""))
-    for field in ("receive_items", "give_items"):
-        api_items = api_listing.get(field, [])
-        html_items = html_listing.get(field, [])
-        if len(api_items) != len(html_items):
-            for item in api_items:
-                item["quantity"] = None
-                item["quantity_source"] = "uncertain"
-                item["quantity_min"] = 1
-                item["quantity_max"] = None
-                item["quantity_reason"] = "HTML/RSC item count mismatch"
-            continue
-        for api_item, html_item in zip(api_items, html_items):
-            api_item["listed_price"] = html_item.get("listed_price")
-            api_item["raw_excerpt"] = html_item.get("raw_excerpt", api_item.get("raw_excerpt", ""))
-            html_source = html_item.get("html_quantity_source", html_item.get("quantity_source", "implicit_single"))
-            html_quantity = html_item.get("html_quantity", html_item.get("quantity"))
-            api_quantity = api_item.get("quantity")
-            api_item["structured_quantity"] = api_quantity
-            api_item["html_quantity"] = html_quantity
-            api_item["html_quantity_source"] = html_source
-            if html_source == "uncertain":
-                api_item["quantity"] = None
-                api_item["quantity_source"] = "uncertain"
-                api_item["quantity_min"] = html_item.get("quantity_min", 1)
-                api_item["quantity_max"] = html_item.get("quantity_max")
-                api_item["quantity_reason"] = html_item.get("quantity_reason", "ambiguous HTML quantity")
+    """Cross-check quantities only after identity matching; ambiguous pairs fail closed."""
+    api_listing['id'] = html_listing.get('id') or api_listing['id']
+    api_listing['legacy_id'] = html_listing.get('legacy_id') or api_listing.get('legacy_id')
+    api_listing['owner_url'] = html_listing.get('owner_url') or api_listing.get('owner_url')
+    api_listing['source_text'] = html_listing.get('source_text', api_listing.get('source_text', ''))
+    for field in ('receive_items', 'give_items'):
+        api_items, html_items = api_listing.get(field, []), html_listing.get(field, [])
+        pairs = _match_by_identity(api_items, html_items)
+        matched = {i for i, _ in pairs}
+        for i, item in enumerate(api_items):
+            if i not in matched: _uncertain_quantity(item, 'HTML/RSC item identity is missing or ambiguous')
+        for api_i, html_i in pairs:
+            api_item, html_item = api_items[api_i], html_items[html_i]
+            api_item['listed_price'] = html_item.get('listed_price')
+            api_item['raw_excerpt'] = html_item.get('raw_excerpt', api_item.get('raw_excerpt', ''))
+            html_source = html_item.get('html_quantity_source', html_item.get('quantity_source', 'implicit_single'))
+            html_quantity, api_quantity = html_item.get('html_quantity', html_item.get('quantity')), api_item.get('quantity')
+            api_item['structured_quantity'] = api_quantity
+            api_item['html_quantity'], api_item['html_quantity_source'] = html_quantity, html_source
+            if html_source == 'uncertain':
+                _uncertain_quantity(api_item, html_item.get('quantity_reason', 'ambiguous HTML quantity'))
+                api_item['quantity_min'], api_item['quantity_max'] = html_item.get('quantity_min', 1), html_item.get('quantity_max')
             elif html_quantity != api_quantity:
-                known = [
-                    int(value) for value in (html_quantity, api_quantity)
-                    if value is not None and str(value).isdigit() and 1 <= int(value) <= 100
-                ]
-                api_item["quantity"] = None
-                api_item["quantity_source"] = "uncertain"
-                api_item["quantity_min"] = min(known) if known else 1
-                api_item["quantity_max"] = max(known) if known else None
-                api_item["quantity_reason"] = f"HTML quantity {html_quantity} disagrees with RSC quantity {api_quantity}"
+                known = [int(v) for v in (html_quantity, api_quantity) if v is not None and str(v).isdigit() and 1 <= int(v) <= 100]
+                _uncertain_quantity(api_item, f'HTML quantity {html_quantity} disagrees with RSC quantity {api_quantity}')
+                api_item['quantity_min'] = min(known) if known else 1
+                api_item['quantity_max'] = max(known) if known else None
     return api_listing
-
 
 def _parse_feed_timestamp(raw):
     if not raw:
@@ -1174,8 +1159,13 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None):
     if seen_ad_ids is None and pending_ad_ids:
         seen_ad_ids = set()
     html = fetch_bloxswaps()
-    first_listings, stats = parse_page(html)
     initial_page = parse_structured_initial_page(html)
+    has_structured_items = bool(initial_page and any(
+        isinstance(post, dict) and post.get('tradePostItems')
+        for post in (initial_page.get('items') or [])
+    ))
+    initial_item_map = fetch_bloxswaps_items_map() if has_structured_items else None
+    first_listings, stats = parse_page(html, initial_item_map)
     if not initial_page:
         stats.update({
             "pagination_pages": 1, "pagination_complete": False,
@@ -1228,7 +1218,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None):
     api_listings_added = 0
     api_posts_scanned = 0
     candidate_count = 0
-    item_map = None
+    item_map = initial_item_map
 
     def consume_raw_posts(raw_posts, compare_html=False):
         nonlocal boundary_reached, seen_streak, additions, malformed, api_listings_added, candidate_count, item_map
