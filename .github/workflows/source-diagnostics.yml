@@ -128,10 +128,10 @@ jobs:
                   rq = urllib.request.Request(script_url, headers=HEADERS)
                   with urllib.request.urlopen(rq, timeout=12) as response:
                       js = response.read(3_000_000).decode("utf-8", "replace")
-                  for term in ("/api/trade-posts?", "tradePosts.search", "getNextPageParam", "tradePostItems"):
-                      p = js.find(term)
-                      if p >= 0:
-                          print("TRADE_API_CONTEXT", term, script_url, re.sub(r"\\s+", " ", js[max(0,p-900):p+2100])[:3000])
+                  for term in ("/api/trade-posts?", "tradePosts.search", "useSearchTradePosts", "toSearchParams", "trade-type", "tradeType", "baseURL"):
+                      positions = [m.start() for m in re.finditer(re.escape(term), js)]
+                      for p in positions[:4]:
+                          print("TRADE_API_CONTEXT", term, script_url, re.sub(r"\\s+", " ", js[max(0,p-1100):p+1800])[:2900])
                   patterns = re.findall(r"""(?:"|')((?:/api/|/trpc/|/graphql)[^"'\\s]{0,160})(?:"|')""", js)
                   if patterns: print("BUNDLE_ENDPOINTS", script_url, patterns[:80])
               except Exception as e:
