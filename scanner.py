@@ -55,6 +55,7 @@ UNCERTAIN_TTL_SECONDS = max(3600, int(os.environ.get("UNCERTAIN_TTL_SECONDS", st
 BLOXSWAPS_ITEMS_FILE = Path("data/bloxswaps_items.json")
 SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "100"))
 TELEGRAM_MAX_CHARS = 4000
+_LAST_ITEMS_FORCE_REFRESH_AT = 0.0
 
 # Items without a numeric Supreme value are excluded from valuation.
 IGNORED_VALUE_ITEMS = {"brew", "drool"}
@@ -1008,13 +1009,22 @@ def bloxswaps_api_get_json(path, params=None):
     return payload.get("data", payload) if isinstance(payload, dict) else payload
 
 
-def fetch_bloxswaps_items_map():
+def fetch_bloxswaps_items_map(force_refresh=False):
+    global _LAST_ITEMS_FORCE_REFRESH_AT
+    force_allowed = True
+    if force_refresh:
+        now = time.time()
+        force_allowed = now - _LAST_ITEMS_FORCE_REFRESH_AT >= 60
+        if force_allowed:
+            _LAST_ITEMS_FORCE_REFRESH_AT = now
+        else:
+            print("[bloxswaps] Unknown item ID refresh is cooling down; retaining safe unmatched status")
     if BLOXSWAPS_ITEMS_FILE.exists():
         try:
             cache = json.loads(BLOXSWAPS_ITEMS_FILE.read_text(encoding="utf-8"))
             age = max(0, int(time.time() - float(cache.get("fetched_at", 0))))
             cached = cache.get("items")
-            if age <= BLOXSWAPS_ITEMS_TTL_SECONDS and isinstance(cached, dict) and cached:
+            if (not force_refresh or not force_allowed) and age <= BLOXSWAPS_ITEMS_TTL_SECONDS and isinstance(cached, dict) and cached:
                 print(f"[bloxswaps] Using fresh item catalogue ({len(cached)} names; age {age}s)")
                 return cached
         except (OSError, ValueError, TypeError):
@@ -1260,6 +1270,33 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None):
                 continue
             if item_map is None:
                 item_map = fetch_bloxswaps_items_map()
+            unknown_ids = {
+                str(row.get("itemDetailsId") or "")
+                for row in (raw.get("tradePostItems") or [])
+                if isinstance(row, dict) and row.get("itemDetailsId")
+                and str(row.get("itemDetailsId")) not in item_map
+            }
+            if unknown_ids:
+                try:
+                    refreshed_map = fetch_bloxswaps_items_map(force_refresh=True)
+                    if refreshed_map:
+                        item_map = refreshed_map
+                    still_unknown = sorted(unknown_ids.intersection(item_map.keys()))
+                    if still_unknown:
+                        send_maintenance_alert(
+                            "unknown-item-id-catalogue",
+                            "BloxSwaps returned itemDetailsId values absent from its catalogue: "
+                            + ", ".join(sorted(unknown_ids)[:12])
+                            + ". No item names or values were guessed; affected posts remain eligible for recheck.",
+                            cooldown_seconds=3600,
+                        )
+                except Exception as exc:
+                    send_maintenance_alert(
+                        "unknown-item-id-catalogue-refresh-failed",
+                        "Could not refresh the BloxSwaps item catalogue after an unknown itemDetailsId. "
+                        f"Refresh failed safely ({type(exc).__name__}); no values were guessed.",
+                        cooldown_seconds=3600,
+                    )
             listing = _api_trade_post_to_listing(raw, item_map)
             if listing and compare_html:
                 html_listing = by_ad_id.get(post_id)
