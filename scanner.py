@@ -2495,7 +2495,7 @@ def scan_once():
     watch_state = load_watch_state()
     # If the seen file was lost but pending items survive, do not cold-start:
     # search the feed for those unresolved IDs before establishing a baseline.
-    if seen_ads is None and pending_ids:
+    if seen_ads is None and (pending_ids or watch_state):
         seen_ads = set()
     print(f"[state] Pending listings queued for recheck: {len(pending_ids)}")
     print("[stage] Fetching BloxSwaps listings and cursor pages")
@@ -2539,6 +2539,17 @@ def scan_once():
             pending_ids.pop(str(ad_id), None)
         save_seen_ads(seen_ads)
         save_pending_ids(pending_ids)
+    if stats.get("watch_remaining_ids") and stats.get("pagination_complete"):
+        missing_watch_ids = set(stats.get("watch_remaining_ids", []))
+        for ad_id in missing_watch_ids:
+            watch_state.pop(str(ad_id), None)
+        save_watch_state(watch_state)
+        send_maintenance_alert(
+            "watch-ads-not-found",
+            f"{len(missing_watch_ids)} watched listing(s) were no longer present in the complete recent feed; "
+            "they were removed from the six-hour watch window.",
+            cooldown_seconds=3600,
+        )
     if stats.get("pending_remaining_ids"):
         print(
             f"[pending] {len(stats['pending_remaining_ids'])} unresolved ad ID(s) "
