@@ -467,7 +467,7 @@ def format_number(value):
 def send_telegram(message):
     message = str(message)
     if len(message) > TELEGRAM_MAX_CHARS:
-        message = message[:TELEGRAM_MAX_CHARS - 24] + "\\n[message truncated]"
+        message = message[:TELEGRAM_MAX_CHARS - 24] + "\n[message truncated]"
     url = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage"
     body = json.dumps({
         "chat_id": CHAT_ID,
