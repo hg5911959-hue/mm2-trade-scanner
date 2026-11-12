@@ -170,14 +170,14 @@ def _quantity_marker(raw):
     text = (raw or "").strip()
     if not text:
         return None
-    match = re.fullmatch(r"(?:x|×)\\s*(\\d{1,3})|(?:\\d{1,3})\\s*(?:x|×)", text, flags=re.I)
+    match = re.fullmatch(r"(?:x|×)\s*(\d{1,3})|(?:\d{1,3})\s*(?:x|×)", text, flags=re.I)
     if match:
-        number = re.search(r"\\d{1,3}", text)
+        number = re.search(r"\d{1,3}", text)
         return max(1, min(int(number.group()), 100))
     # Some BloxSwaps cards render the stack badge as a bare number.
-    if re.fullmatch(r"\\d{1,3}", text):
+    if re.fullmatch(r"\d{1,3}", text):
         return max(1, min(int(text), 100))
-    match = re.search(r"(?:[x×]\\s*(\\d{1,3})|(\\d{1,3})\\s*[x×])", text, flags=re.I)
+    match = re.search(r"(?:[x×]\s*(\d{1,3})|(\d{1,3})\s*[x×])", text, flags=re.I)
     if match:
         return max(1, min(int(match.group(1) or match.group(2)), 100))
     return None
