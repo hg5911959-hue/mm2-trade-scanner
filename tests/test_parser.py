@@ -1549,5 +1549,71 @@ class QuantityBadgeAttributeBoundaryTests(unittest.TestCase):
         self.assertEqual(item["quantity_source"], "explicit")
 
 
+
+
+class QuantityDomFuzzRegressionTests(unittest.TestCase):
+    def test_seeded_dom_layout_variants_keep_each_badge_with_its_own_weapon(self):
+        import random
+        rng = random.Random(20261112)
+        wrappers = [
+            ("<div class='item-wrap'>", "</div>"),
+            ("<section class='tile'><div class='inner'>", "</div></section>"),
+            ("<div><span class='content'>", "</span></div>"),
+            ("<div class='relative'><div class='absolute'>", "</div></div>"),
+        ]
+        badge_variants = [
+            '<span class="quantity-badge">x2</span>',
+            '<span class="quantity-badge"><b>x</b><!-- split --><i>2</i></span>',
+            '<span class="quantity-badge" title="×2"></span>',
+            '<span class="quantity-badge" data-quantity="2"></span>',
+        ]
+        for case in range(80):
+            open_a, close_a = rng.choice(wrappers)
+            open_b, close_b = rng.choice(wrappers)
+            badge_a = rng.choice(badge_variants)
+            badge_b = rng.choice([
+                "",
+                '<span class="quantity-badge">x4</span>',
+                '<span class="quantity-badge" aria-label="4x"></span>',
+            ])
+            before_a = rng.choice([True, False])
+            before_b = rng.choice([True, False])
+            tile_a = (
+                (badge_a if before_a else "")
+                + open_a + '<img alt="Knife A"><img alt="coin">'
+                + '<span class="price">750.0</span>'
+                + ("" if before_a else badge_a) + close_a
+            )
+            tile_b = (
+                (badge_b if before_b else "")
+                + open_b + '<img alt="Knife B">'
+                + ("" if before_b else badge_b) + close_b
+            )
+            html = f"""
+            <article>
+              <div>Propose {tile_a}</div>
+              <div>Recherche {tile_b}</div>
+              <a href="/fr/trade-mm2?ad=fuzz-{case}">Discussion</a>
+              <a href="/fr/users/123">Owner</a>
+            </article>
+            """
+            with self.subTest(case=case, before_a=before_a, before_b=before_b):
+                listing = parse_listings(html)[0]
+                self.assertEqual(listing["receive_items"][0]["quantity"], 2)
+                self.assertIn(
+                    listing["receive_items"][0]["quantity_source"],
+                    {"explicit", "structured"},
+                )
+                expected_b = 4 if badge_b else 1
+                self.assertEqual(listing["give_items"][0]["quantity"], expected_b)
+                self.assertEqual(
+                    listing["give_items"][0]["quantity_source"],
+                    "explicit" if badge_b and "data-quantity" not in badge_b else (
+                        "structured" if badge_b else "implicit_single"
+                    ),
+                )
+                self.assertEqual(listing["receive_items"][0]["listed_price"], 750.0)
+
+
 if __name__ == "__main__":
     unittest.main()
