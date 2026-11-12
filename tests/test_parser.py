@@ -1716,14 +1716,16 @@ class SupremeETagCacheTests(unittest.TestCase):
                 captured["request"].get_header("If-none-match"), etag
             )
 
-    def test_304_without_cached_page_is_rejected(self):
+    def test_conditional_helper_reports_304_for_caller_cache_validation(self):
         with patch("scanner.RBLXVALUE_API_KEY", "test-key"), patch(
             "scanner.request_with_retry", return_value=(None, {"ETag": '"missing"'})
         ):
-            with self.assertRaisesRegex(RuntimeError, "without a cached page"):
-                scanner.api_get_json_conditional(
-                    "/items", {"limit": 100, "offset": 0}, '"missing"'
-                )
+            payload, etag, not_modified = scanner.api_get_json_conditional(
+                "/items", {"limit": 100, "offset": 0}, '"missing"'
+            )
+        self.assertIsNone(payload)
+        self.assertEqual(etag, '"missing"')
+        self.assertTrue(not_modified)
 
 
 if __name__ == "__main__":
