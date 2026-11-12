@@ -33,6 +33,7 @@ jobs:
           MIN_VALUE_DIFFERENCE: "0"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RBLXVALUE_API_KEY: ${{ secrets.RBLXVALUE_API_KEY }}
         run: |
           set -o pipefail
           python -u scanner.py 2>&1 | tee scanner.log
