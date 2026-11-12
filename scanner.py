@@ -1169,6 +1169,85 @@ def calculate_side(items, values):
     return total, breakdown, missing
 
 
+def calculate_side_bounds(items, values):
+    """Calculate conservative lower/upper totals without inventing an unknown stack count."""
+    grouped = {}
+    missing = []
+    uncertain = []
+    for item in items:
+        key = normalize_name(item["name"])
+        if key in IGNORED_VALUE_ITEMS:
+            continue
+        entry = grouped.setdefault(key, {
+            "name": item["name"], "min_quantity": 0,
+            "max_quantity": 0, "unbounded": False, "sources": [],
+        })
+        quantity = item.get("quantity")
+        source = item.get("quantity_source", "implicit_single")
+        qmin = item.get("quantity_min")
+        qmax = item.get("quantity_max")
+        if qmin is None:
+            qmin = quantity if quantity is not None else 1
+        if qmax is None and quantity is not None and source != "uncertain":
+            qmax = quantity
+        try:
+            qmin = int(qmin)
+            qmax = int(qmax) if qmax is not None else None
+        except (TypeError, ValueError):
+            qmin, qmax = 1, None
+        if qmin < 1 or qmin > 100 or (qmax is not None and (qmax < qmin or qmax > 100)):
+            qmin, qmax = 1, None
+            source = "uncertain"
+        entry["min_quantity"] += qmin
+        if qmax is None:
+            entry["unbounded"] = True
+        elif not entry["unbounded"]:
+            entry["max_quantity"] += qmax
+        entry["sources"].append(source)
+        if source == "uncertain":
+            uncertain.append({
+                "name": item["name"], "quantity_min": qmin, "quantity_max": qmax,
+                "quantity_source": source, "quantity_reason": item.get("quantity_reason", ""),
+                "listed_price": item.get("listed_price"), "raw_excerpt": item.get("raw_excerpt", ""),
+            })
+
+    total_min = 0.0
+    total_max = 0.0
+    unbounded_total = False
+    breakdown = []
+    for key, item in grouped.items():
+        record = values.get(key)
+        if not record:
+            missing.append(item["name"])
+            continue
+        try:
+            unit_value = float(record["value"])
+        except (KeyError, TypeError, ValueError):
+            missing.append(item["name"])
+            continue
+        if not math.isfinite(unit_value) or unit_value <= 0:
+            missing.append(item["name"])
+            continue
+        low = item["min_quantity"]
+        high = None if item["unbounded"] else item["max_quantity"]
+        low_total = unit_value * low
+        total_min += low_total
+        if high is None:
+            unbounded_total = True
+            quantity_label = f"x? ({low}..∞)"
+            total_label = f"{low_total:g}..∞"
+        else:
+            high_total = unit_value * high
+            total_max += high_total
+            quantity_label = f"x{low}" if low == high else f"x? ({low}..{high})"
+            total_label = f"{low_total:g}" if low == high else f"{low_total:g}..{high_total:g}"
+        breakdown.append(
+            f"• {record.get('name', item['name'])} {quantity_label} — "
+            f"{unit_value:g} each = {total_label}"
+        )
+    return total_min, (math.inf if unbounded_total else total_max), breakdown, missing, uncertain
+
+
 def format_number(value):
     if float(value).is_integer():
         return f"{int(value):,}"
@@ -1398,28 +1477,51 @@ def format_unvalued_message(listing, missing):
 
 
 def evaluate_listing(listing, values):
-    give_total, give_lines, give_missing = calculate_side(listing["give_items"], values)
-    receive_total, receive_lines, receive_missing = calculate_side(listing["receive_items"], values)
+    give_min, give_max, give_lines, give_missing, give_uncertain = calculate_side_bounds(listing["give_items"], values)
+    receive_min, receive_max, receive_lines, receive_missing, receive_uncertain = calculate_side_bounds(listing["receive_items"], values)
     missing = give_missing + receive_missing
     if missing:
         return None, missing
-    # Never report a trade if either side has no numerically valued items.
-    # This prevents ignored/unvalued-only sides from becoming false 0-value trades.
     if not give_lines or not receive_lines:
         return None, ["one side has no valued items"]
-    difference = receive_total - give_total
-    margin = (difference / give_total * 100.0) if give_total > 0 else (100.0 if difference > 0 else 0.0)
+    uncertain_items = (
+        [{"side": "Recherche/give", **item} for item in give_uncertain]
+        + [{"side": "Propose/receive", **item} for item in receive_uncertain]
+    )
+    profit_worst = -math.inf if math.isinf(give_max) else receive_min - give_max
+    profit_best = math.inf if math.isinf(receive_max) else receive_max - give_min
+    manual_review = bool(uncertain_items and profit_worst <= 0 < profit_best)
+    if uncertain_items and not manual_review and profit_worst > 0:
+        difference = profit_worst
+        give_total = give_max
+        receive_total = receive_min
+        margin = (difference / give_total * 100.0) if give_total > 0 else 0.0
+    elif manual_review:
+        difference = profit_best
+        give_total = give_min
+        receive_total = receive_max
+        margin = (difference / give_total * 100.0) if give_total > 0 and math.isfinite(difference) else math.inf
+    else:
+        difference = receive_min - give_min
+        give_total = give_min
+        receive_total = receive_min
+        margin = (difference / give_total * 100.0) if give_total > 0 else (100.0 if difference > 0 else 0.0)
     return {
         "listing": listing, "give_total": give_total, "give_lines": give_lines,
         "receive_total": receive_total, "receive_lines": receive_lines,
         "difference": difference, "margin": margin,
+        "profit_worst": profit_worst, "profit_best": profit_best,
+        "manual_review": manual_review, "uncertain_items": uncertain_items,
+        "give_total_min": give_min, "give_total_max": give_max,
+        "receive_total_min": receive_min, "receive_total_max": receive_max,
     }, []
 
 
 def qualifies(result, min_diff=None, min_percent=None):
     min_diff = MIN_DIFF if min_diff is None else min_diff
     min_percent = MIN_PROFIT_PERCENT if min_percent is None else min_percent
-    return result["difference"] > 0 and result["difference"] >= min_diff and result["margin"] >= min_percent
+    metric = result["profit_best"] if result.get("manual_review") else result["profit_worst"]
+    return metric > 0 and metric >= min_diff and result["margin"] >= min_percent
 
 
 def write_step_summary(line):
