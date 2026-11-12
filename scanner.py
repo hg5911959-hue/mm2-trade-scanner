@@ -1251,56 +1251,130 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
         raise RuntimeError("[bloxswaps] RSC initialPage/cursor data missing; refusing a partial HTML-only scan.")
 
     if seen_ad_ids is None:
-        # Cold start: baseline the historical feed, but evaluate posts refreshed
-        # within the last hour instead of silently discarding all current offers.
+        # Cold start: evaluate verifiably recent posts across cursor pages, then
+        # seed older posts. Undated and pinned posts never advance the age boundary.
         now_ts = datetime.now(timezone.utc).timestamp()
         cutoff = now_ts - 3600
-        seed_ids, recent_ids, recent_listings, additions, malformed = [], [], [], [], 0
-        for post in raw_first_items:
-            if not isinstance(post, dict) or not post.get("id"):
-                malformed += 1
-                continue
-            post_id = str(post["id"])
-            refreshed_ts = _parse_feed_timestamp(
-                post.get("lastRefreshedAt") or post.get("createdAt") or post.get("created_at")
-            )
-            if refreshed_ts is None or refreshed_ts < cutoff:
-                seed_ids.append(post_id)
-                continue
-            recent_ids.append(post_id)
-            wildcards = post.get("requestedWildcards") or []
-            if any(str(value).casefold() in {"add", "ajout", "ajouts"} for value in wildcards):
-                additions += 1
-                continue
-            listing = _api_trade_post_to_listing(post, initial_item_map)
-            if listing:
-                html_listing = next(
-                    (entry for entry in first_listings if entry.get("source_ad_id") == post_id),
-                    None,
+        seed_ids, recent_ids, recent_listings = [], [], []
+        addition_ids, unparsed_ids = [], []
+        additions = malformed = candidate_count = api_posts = 0
+        old_streak = page_count = 1
+        age_boundary = False
+        complete = False
+        seen_raw_ids = set()
+        page_items = raw_first_items
+        cursor = (initial_page.get('meta') or {}).get('cursor')
+        by_ad_id = {str(item.get('source_ad_id')): item for item in first_listings if item.get('source_ad_id')}
+
+        def refresh_catalogue_for_post(post):
+            nonlocal initial_item_map
+            unknown_ids = {
+                str(row.get('itemDetailsId') or '')
+                for row in (post.get('tradePostItems') or []) if isinstance(row, dict)
+                if row.get('itemDetailsId') and str(row.get('itemDetailsId')) not in initial_item_map
+            }
+            if not unknown_ids: return
+            try:
+                refreshed_map = fetch_bloxswaps_items_map(force_refresh=True)
+                if refreshed_map: initial_item_map = refreshed_map
+                still_unknown = sorted(unknown_ids - set(initial_item_map.keys()))
+                if still_unknown:
+                    send_maintenance_alert(
+                        'unknown-item-id-catalogue',
+                        'BloxSwaps returned itemDetailsId values absent from its catalogue: '
+                        + ', '.join(still_unknown[:12])
+                        + '. No item names or values were guessed; affected posts remain eligible for recheck.',
+                        cooldown_seconds=3600,
+                    )
+            except Exception as exc:
+                send_maintenance_alert(
+                    'unknown-item-id-catalogue-refresh-failed',
+                    'Could not refresh the BloxSwaps item catalogue after an unknown itemDetailsId. '
+                    f'Refresh failed safely ({type(exc).__name__}); no values were guessed.',
+                    cooldown_seconds=3600,
                 )
-                if html_listing:
-                    listing = _merge_html_quantity_diagnostics(listing, html_listing)
-                recent_listings.append(listing)
-            else:
-                malformed += 1
+
+        while True:
+            for post in page_items:
+                if not isinstance(post, dict) or not post.get('id'):
+                    malformed += 1
+                    continue
+                post_id = str(post['id'])
+                if post_id in seen_raw_ids: continue
+                seen_raw_ids.add(post_id)
+                refreshed_ts = _parse_feed_timestamp(
+                    post.get('lastRefreshedAt') or post.get('createdAt') or post.get('created_at')
+                )
+                is_pinned = bool(post.get('isPinned') or post.get('pinned'))
+                if refreshed_ts is None:
+                    seed_ids.append(post_id)
+                    old_streak = 0
+                    continue
+                if refreshed_ts < cutoff:
+                    seed_ids.append(post_id)
+                    old_streak = 0 if is_pinned else old_streak + 1
+                    if old_streak >= 25:
+                        age_boundary = True
+                        complete = True
+                        break
+                    continue
+                old_streak = 0
+                recent_ids.append(post_id)
+                candidate_count += 1
+                wildcards = post.get('requestedWildcards') or []
+                if any(str(value).casefold() in {'add', 'ajout', 'ajouts'} for value in wildcards):
+                    additions += 1
+                    addition_ids.append(post_id)
+                    continue
+                refresh_catalogue_for_post(post)
+                listing = _api_trade_post_to_listing(post, initial_item_map)
+                if listing:
+                    html_listing = by_ad_id.get(post_id)
+                    if html_listing: listing = _merge_html_quantity_diagnostics(listing, html_listing)
+                    recent_listings.append(listing)
+                else:
+                    malformed += 1
+                    unparsed_ids.append(post_id)
+            if age_boundary:
+                break
+            if not cursor:
+                complete = True
+                break
+            if page_count >= MAX_FEED_PAGES:
+                complete = False
+                break
+            page = bloxswaps_api_get_json('/trade-posts', {'cursor': cursor, 'pageSize': BLOXSWAPS_PAGE_SIZE})
+            if not isinstance(page, dict) or not isinstance(page.get('items'), list):
+                raise RuntimeError('[bloxswaps] Cursor API returned an invalid page during cold-start discovery.')
+            page_items = page.get('items') or []
+            api_posts += len(page_items)
+            page_count += 1
+            next_cursor = (page.get('meta') or {}).get('cursor')
+            if next_cursor and next_cursor == cursor:
+                raise RuntimeError('[bloxswaps] Cursor did not advance during cold-start discovery; refusing to seed an incomplete feed.')
+            cursor = next_cursor
+
         stats.update({
-            "pagination_pages": 1, "pagination_complete": False,
-            "pagination_source": "rsc-cold-start", "cold_start": True,
-            "cold_start_seed_ids": seed_ids,
-            "cold_start_recent_ids": recent_ids,
-            "candidate_count": len(recent_ids),
-            "addition_count": additions,
-            "malformed_count": malformed,
-            "addition_ids": [
-                str(post.get("id")) for post in raw_first_items
-                if isinstance(post, dict) and post.get("id")
-                and any(str(value).casefold() in {"add", "ajout", "ajouts"}
-                        for value in (post.get("requestedWildcards") or []))
-            ],
-            "unparsed_ad_ids": [], "html_parse_warning_ids": [],
-            "pending_remaining_ids": [],
+            'pagination_pages': page_count,
+            'pagination_api_posts': api_posts,
+            'pagination_complete': complete,
+            'pagination_source': 'rsc-cold-start',
+            'seen_boundary_reached': age_boundary,
+            'seen_streak': old_streak,
+            'cold_start': True,
+            'cold_start_seed_ids': seed_ids,
+            'cold_start_recent_ids': recent_ids,
+            'candidate_count': candidate_count,
+            'addition_count': additions,
+            'malformed_count': malformed,
+            'addition_ids': addition_ids,
+            'unparsed_ad_ids': unparsed_ids,
+            'pending_remaining_ids': [],
+            'watch_remaining_ids': [],
+            'owner_link_count': sum(1 for item in recent_listings if item.get('owner_url')),
         })
-        return recent_listings, stats, seed_ids + recent_ids
+        discovered = seed_ids + recent_ids
+        return recent_listings, stats, discovered
 
     seen = set(str(value) for value in seen_ad_ids)
     pending_remaining = set(str(value) for value in (pending_ad_ids or []))
