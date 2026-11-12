@@ -25,21 +25,20 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run scanner
+      - name: Run BloxSwaps scanner
         env:
-          MM2_VALUES_URL: ${{ vars.MM2_VALUES_URL }}
-          MM2_TRADES_URL: ${{ vars.MM2_TRADES_URL }}
+          BLOXSWAPS_URL: "https://bloxswaps.com/fr/trade-mm2?trade-type=P2P"
           MIN_VALUE_DIFFERENCE: "0"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python scanner.py
 
-      - name: Save processed trade IDs
+      - name: Save processed listing IDs
         run: |
           if ! git diff --quiet -- data/seen.json; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add data/seen.json
-            git commit -m "Update processed MM2 trades"
+            git commit -m "Update processed BloxSwaps listings"
             git push
           fi
