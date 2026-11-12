@@ -1187,8 +1187,9 @@ def _merge_html_quantity_diagnostics(api_listing, html_listing):
     """Cross-check quantities only after identity matching; ambiguous pairs fail closed."""
     api_listing['id'] = html_listing.get('id') or api_listing['id']
     api_listing['legacy_id'] = html_listing.get('legacy_id') or api_listing.get('legacy_id')
-    # The API listing URL and owner URL are built from the same robloxUserId.
-    # Do not overwrite that identity with an independently scraped HTML profile link.
+    # BloxSwaps profile URLs use the site's profile ID, while the listing query
+    # uses robloxUserId. The HTML owner link is the canonical profile destination.
+    api_listing['owner_url'] = html_listing.get('owner_url') or api_listing.get('owner_url')
     api_listing['source_text'] = html_listing.get('source_text', api_listing.get('source_text', ''))
     for field in ('receive_items', 'give_items'):
         api_items, html_items = api_listing.get(field, []), html_listing.get(field, [])
