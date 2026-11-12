@@ -301,11 +301,9 @@ class ParserTests(unittest.TestCase):
 
 
 class ReliabilityTests(unittest.TestCase):
-    def test_duplicate_normalized_names_keep_highest_supreme_value(self):
-        # The same display name can describe two distinct MM2 items (e.g.
-        # Rainbow Gun godly vs. Rainbow (Gun), valued as 4 T1 uncommons).
-        # The API may return either record first; keep the largest numeric
-        # Supreme value_source_b and its matching secondary value.
+    def test_duplicate_normalized_names_use_conservative_value_by_trade_side(self):
+        # Same normalized display names can describe different items. Preserve
+        # both source_b records: give uses the higher value; receive the lower.
         for duplicate_rows in (
             [
                 {"name": "Rainbow Gun", "value_source_b": 4, "value_source_a": 3},
@@ -329,7 +327,15 @@ class ReliabilityTests(unittest.TestCase):
                 ):
                     values = load_supreme_values()
             self.assertEqual(values["rainbow gun"]["value"], 400)
-            self.assertEqual(values["rainbow gun"]["secondary_value"], 410)
+            self.assertEqual(
+                sorted(variant["value"] for variant in values["rainbow gun"]["variants"]),
+                [4, 400],
+            )
+            item = [{"name": "Rainbow Gun", "quantity": 1}]
+            give_total, _, _ = scanner.calculate_side(item, values, side="give")
+            receive_total, _, _ = scanner.calculate_side(item, values, side="receive")
+            self.assertEqual(give_total, 400)
+            self.assertEqual(receive_total, 4)
 
     def test_non_numeric_tier_notation_does_not_override_numeric_godly_value(self):
         items = [
