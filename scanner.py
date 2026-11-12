@@ -1963,8 +1963,11 @@ def scan_once():
         write_step_summary("First-run baseline: existing feed posts marked as seen; new posts will be evaluated next scan.")
         return
     seen_ads = set(seen_ads or [])
+    pending_count_before = len(pending_ids)
     for ad_id in stats.get("unparsed_ad_ids", []):
         pending_ids.setdefault(str(ad_id), time.time())
+    if len(pending_ids) != pending_count_before:
+        save_pending_ids(pending_ids)
     addition_ids = set(stats.get("addition_ids", []))
     if addition_ids:
         seen_ads.update(addition_ids)
@@ -2081,7 +2084,6 @@ def scan_once():
 
     def mark_seen_ad(listing):
         source_id = str(listing.get("source_ad_id") or "")
-        changed = False
         if source_id and source_id not in seen_ads:
             seen_ads.add(source_id)
             save_seen_ads(seen_ads)
