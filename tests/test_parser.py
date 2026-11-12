@@ -2134,3 +2134,25 @@ class WorkflowSecurityTests(unittest.TestCase):
                 reference = line.split("uses:", 1)[1].strip()
                 self.assertIn("@", reference, msg=f"{path}: {reference}")
                 self.assertRegex(reference.rsplit("@", 1)[1], r"^[0-9a-f]{40}$", msg=f"{path}: {reference}")
+
+
+class WatchWindowPaginationTests(unittest.TestCase):
+    def test_pagination_passes_seen_streak_to_revisit_watched_ads(self):
+        seen_posts = [CursorPaginationTests._post(f"old-seen-{i}") for i in range(25)]
+        page = {"items": seen_posts, "meta": {"cursor": "cursor-to-watch"}}
+        payload = json.dumps({"initialPage": page}, separators=(",", ":"))
+        html = '<script>self.__next_f.push([1,' + json.dumps(payload) + ']);</script>'
+        watched = CursorPaginationTests._post("watch-later")
+        response = {"items": [watched], "meta": {"cursor": None}}
+        seen_ids = {post["id"] for post in seen_posts}
+        with (
+            patch("scanner.fetch_bloxswaps", return_value=html),
+            patch("scanner.fetch_bloxswaps_items_map", return_value={
+                "a-id": {"displayName": "Knife A"}, "b-id": {"displayName": "Knife B"}
+            }),
+            patch("scanner.bloxswaps_api_get_json", return_value=response),
+        ):
+            listings, stats, _ = scanner.fetch_bloxswaps_all(seen_ids, watch_ad_ids={"watch-later"})
+        self.assertIn("watch-later", [item["source_ad_id"] for item in listings])
+        self.assertEqual(stats["watch_remaining_ids"], [])
+        self.assertFalse(stats["seen_boundary_reached"])
