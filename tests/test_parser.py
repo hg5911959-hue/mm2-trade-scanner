@@ -1521,7 +1521,25 @@ class QuantityBadgeAttributeBoundaryTests(unittest.TestCase):
     def test_data_quantity_on_badge_sibling_is_not_ignored(self):
         item = self._listing('<span class="stack-badge" data-quantity="2"></span>')
         self.assertEqual(item["quantity"], 2, repr(item))
-        self.assertEqual(item["quantity_source"], "explicit")
+        self.assertEqual(item["quantity_source"], "structured")
+
+    def test_data_quantity_badge_does_not_leak_across_propose_recherche_boundary(self):
+        html = """
+        <article>
+          <div class="flat-trade-card">
+            <span>Propose</span><img alt="Knife A">
+            <span class="stack-badge" data-quantity="2"></span>
+            <span>Recherche</span><img alt="Knife B">
+          </div>
+          <a href="/fr/trade-mm2?ad=data-boundary">Discussion</a>
+          <a href="/fr/users/123">Owner</a>
+        </article>
+        """
+        listing = parse_listings(html)[0]
+        self.assertEqual(listing["receive_items"][0]["quantity"], 2)
+        self.assertEqual(listing["receive_items"][0]["quantity_source"], "structured")
+        self.assertEqual(listing["give_items"][0]["quantity"], 1)
+        self.assertEqual(listing["give_items"][0]["quantity_source"], "implicit_single")
 
     def test_nested_split_badge_after_price_with_comment_is_two_not_one(self):
         item = self._listing(
