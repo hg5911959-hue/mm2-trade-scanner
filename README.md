@@ -14,7 +14,7 @@ From the scanner user's perspective:
 - Minimum profit defaults to **0**, so fair trades are included.
 - If even one item cannot be matched to a numeric Supreme Values entry, the whole listing is skipped. The scanner never guesses or sends partial totals.
 
-Telegram alerts include both item lists, quantities, per-item values, both totals, calculated profit, result, and source link.
+Telegram alerts include both item lists, quantities, per-item values, both totals, calculated profit, result, and source link. Repeated copies of the same weapon are grouped and their quantities are added together; explicit BloxSwaps xN stack labels are also applied. When a scan finds no new fully verified listing meeting the profit threshold, Telegram receives a status message: “لا توجد عروض جيدة حاليًا.”
 
 ## Value data source
 
@@ -37,6 +37,8 @@ Never commit or share any of these secrets. The scanner never prints the API key
 ## Run and diagnostics
 
 - Scheduled checks: every 15 minutes (GitHub Actions cron uses UTC).
+- Heartbeat: if no new qualifying trade is found in a scan, Telegram receives a “no good offers currently” status update. A successful qualifying trade replaces that heartbeat for the cycle.
+- GitHub Actions schedules are recurring checks, not a permanently running server; GitHub may occasionally delay scheduled starts.
 - Manual run: **Actions → MM2 Trade Scanner → Run workflow**.
 - Logs: open the workflow run and download the `mm2-scanner-diagnostics` artifact.
 - Processed listing IDs and the Supreme cache are stored under `data/`.
