@@ -2083,11 +2083,13 @@ def main():
     interval = max(30, min(60, int(os.environ.get("MM2_SCAN_INTERVAL_SECONDS", "45"))))
     deadline = time.monotonic() + duration
     cycle = 0
+    successful_cycles = 0
     while time.monotonic() < deadline:
         cycle += 1
         print(f"[loop] Starting scan cycle {cycle}; interval={interval}s")
         try:
             scan_once()
+            successful_cycles += 1
         except Exception as exc:
             print(f"[loop] Scan cycle {cycle} failed: {type(exc).__name__}: {str(exc)[:300]}")
             try:
@@ -2098,7 +2100,9 @@ def main():
         if remaining <= 0:
             break
         time.sleep(min(interval, remaining))
-    print(f"[loop] Completed {cycle} scan cycles within the {duration}s job window.")
+    print(f"[loop] Completed {cycle} scan cycles; successful={successful_cycles} within {duration}s.")
+    if successful_cycles == 0:
+        raise RuntimeError("No scan cycle completed successfully during the loop window.")
 
 
 if __name__ == "__main__":
