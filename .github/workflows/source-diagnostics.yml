@@ -214,8 +214,15 @@ jobs:
                   if not post: continue
                   if any(str(value).casefold() in {"add", "ajout", "ajouts"} for value in (post.get("requestedWildcards") or [])):
                       continue
-                  roles = {str(row.get("tradeRole", "")).upper() for row in (post.get("tradePostItems") or [])}
+                  trade_rows = post.get("tradePostItems") or []
+                  roles = {str(row.get("tradeRole", "")).upper() for row in trade_rows}
                   if not {"OFFERED", "REQUESTED"}.issubset(roles):
+                      continue
+                  if not any(int(row.get("quantity") or 1) > 1 for row in trade_rows):
+                      continue
+                  if not re.search(r"(?:x|×)\s*(?:<!--.*?-->\s*)?[2-9]\d*|[2-9]\d*\s*(?:x|×)", article_decoded, flags=re.I | re.S):
+                      continue
+                  if not re.search(r"\b\d+\.\d{1,2}\b", article_decoded):
                       continue
                   selected_article, selected_id = article_decoded, candidate_id
                   break
