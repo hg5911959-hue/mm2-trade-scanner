@@ -11,7 +11,7 @@ From the scanner user's perspective:
 - Any listing containing **Ajout / Ajouts** is excluded completely.
 - The scanner ignores BloxSwaps' own Win/Loss label.
 - Profit = total Supreme Values of received items minus total Supreme Values of given items.
-- Minimum absolute profit defaults to **0**, and minimum profit percentage is set to **5%** in the scheduled workflow, filtering out fair trades. Qualified offers are sorted by highest absolute Supreme profit before alerts are sent.
+- Minimum absolute profit defaults to **0**, and minimum profit percentage is set to **0%** in the scheduled workflow, so fair (zero-profit) trades are also reported; negative-profit trades are not reported. Qualified offers are sorted by highest absolute Supreme profit before alerts are sent.
 - If even one item cannot be matched to a numeric Supreme Values entry, the scanner does not calculate or guess a partial total. It sends one **MANUAL VALUE CHECK** Telegram alert for that listing, then keeps retrying the listing on future scans so a later API mapping can still produce a full profit alert.
 
 Telegram alerts include both item lists, quantities, per-item values, both totals, calculated profit, result, and source links. The **OPEN OWNER PROFILE** link is shown first when the card exposes a BloxSwaps user URL; the listing/discussion URL is secondary. The scan log reports how many parsed cards had a direct owner URL. Repeated copies of the same weapon are grouped after quantities are summed from repeated item images, explicit stack counts such as `x3` / `3x` / `×3`, and counts embedded in image alt labels. The scanner sends Telegram messages only for listings it has not successfully alerted before. A listing with an unknown Supreme item or a currently unprofitable value is **not** marked as completed: it is re-evaluated on later scans, so an API mapping/value update can still make it alert.
@@ -37,7 +37,7 @@ Never commit or share any of these secrets. The scanner never prints API keys or
 ## Run and diagnostics
 
 - Scheduled checks: two staggered cron schedules nominally start 2–3 minutes apart (GitHub Actions cron uses UTC; starts may be delayed or dropped during platform load). Each individual cron expression follows GitHub's 5-minute minimum.
-- Workflow triggers: staggered schedules, manual `workflow_dispatch`, and code updates to `scanner.py`, tests, or the scan workflow.
+- Workflow triggers: staggered schedules, manual `workflow_dispatch`, external `repository_dispatch` events of type `mm2-scan`, and code updates to `scanner.py`, tests, or the scan workflow.
 - Concurrency: one workflow at a time; queued runs are not cancelled.
 - The scanner workflow has `contents: read` only; the separate monthly keepalive workflow alone has `contents: write`.
 - Alert state stores only listings whose profit alert was successfully sent. A separate review state suppresses repeated manual-review warnings, without preventing future profit alerts. Existing alert history is used to migrate prior sent IDs; non-profitable and unrecognized listings remain eligible for re-evaluation.
@@ -49,6 +49,7 @@ Never commit or share any of these secrets. The scanner never prints API keys or
 - Manual run: **Actions → MM2 Trade Scanner → Run workflow**.
 - Telegram connection test: **Actions → Telegram Connection Test → Run workflow**. This sends one explicit test message without changing scanner state or triggering a trade scan; the job fails with a safe API error if Telegram rejects it.
 - Logs: open the workflow run and download the `mm2-scanner-diagnostics` artifact.
+- External scheduler fallback: the scanner accepts `repository_dispatch` event type `mm2-scan`. A scheduler such as cron-job.org can call GitHub’s repository-dispatch API every 5 minutes using a fine-grained token with Contents: read/write access to this repository. Store that token only in the scheduler service; never paste it into chat or commit it. The request body is `{"event_type":"mm2-scan"}`. This avoids depending exclusively on GitHub cron, but the external scheduler must still be configured by the repository owner.
 - Optional missed-schedule monitoring: create a free check at Healthchecks.io and save its ping URL as the repository secret `HEALTHCHECKS_PING_URL`. The workflow pings on successful scans and sends `/fail` on failures; the service can alert if scheduled pings stop arriving.
 - Processed IDs, Supreme cache, failure counter, and `history.csv` are persisted with GitHub Actions Cache. Runtime `data/` is git-ignored and is not tracked in `main`. A separate monthly keepalive workflow commits a tiny activity marker to reduce the risk of scheduled workflows being disabled for inactivity.
 - `history.csv` records detected opportunities and their calculated values. It cannot confirm that a Roblox trade was accepted or completed.
