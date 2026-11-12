@@ -1837,6 +1837,7 @@ class HardeningRegressionTests(unittest.TestCase):
     def test_refreshed_seen_post_at_feed_head_does_not_hide_new_posts_below(self):
         refreshed = CursorPaginationTests._post("seen-refreshed")
         refreshed["lastRefreshedAt"] = "2026-11-12T12:00:00Z"
+        refreshed["isPinned"] = True
         page = {
             "items": [refreshed],
             "meta": {"cursor": "cursor-after-refreshed"},
@@ -1993,3 +1994,84 @@ class ColdStartRecentOfferTests(unittest.TestCase):
         self.assertTrue(stats["cold_start"])
         self.assertEqual([item["source_ad_id"] for item in listings], ["recent-cold-post"])
         self.assertEqual(discovered, ["recent-cold-post"])
+
+
+class MaintenanceDefaultModeTests(unittest.TestCase):
+    def test_maintenance_paths_have_no_loop_environment_gate(self):
+        import inspect
+        self.assertNotIn("MM2_SCAN_LOOP", inspect.getsource(scanner.fetch_bloxswaps_all))
+        self.assertNotIn("MM2_SCAN_LOOP", inspect.getsource(scanner.scan_once))
+
+    def test_default_maintenance_alerts_send_with_cooldown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "maintenance.json"
+            with patch("scanner.MAINTENANCE_FILE", state_file), \
+                 patch("scanner.BOT_TOKEN", "test-token"), \
+                 patch("scanner.CHAT_ID", "123"), \
+                 patch("scanner.send_telegram") as send:
+                keys = [
+                    "malformed-feed-cards", "pagination-incomplete",
+                    "pending-ads-not-found", "unmatched:test",
+                    "telegram-quarantine-expired", "rsc-data-missing",
+                ]
+                for key in keys:
+                    self.assertTrue(scanner.send_maintenance_alert(key, "test notice", cooldown_seconds=3600))
+                self.assertFalse(scanner.send_maintenance_alert(keys[0], "duplicate notice", cooldown_seconds=3600))
+            self.assertEqual(send.call_count, len(keys))
+
+
+class PaginationFailureSafetyTests(unittest.TestCase):
+    def test_api_failure_does_not_mark_unscanned_posts_seen(self):
+        post = CursorPaginationTests._post("first-unseen-post")
+        page = {"items": [post], "meta": {"cursor": "cursor-more"}}
+        payload = json.dumps({"initialPage": page}, separators=(",", ":"))
+        html = '<script>self.__next_f.push([1,' + json.dumps(payload) + ']);</script>'
+        with (
+            patch("scanner.fetch_bloxswaps", return_value=html),
+            patch("scanner.fetch_bloxswaps_items_map", return_value={
+                "a-id": {"displayName": "Knife A"}, "b-id": {"displayName": "Knife B"}
+            }),
+            patch("scanner.bloxswaps_api_get_json", side_effect=RuntimeError("API pagination failed")),
+            patch("scanner.save_seen_ads") as save_seen,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "API pagination failed"):
+                scanner.fetch_bloxswaps_all(set())
+        save_seen.assert_not_called()
+
+
+class WatchValueReevaluationTests(unittest.TestCase):
+    def test_watched_unprofitable_offer_becomes_profitable_after_supreme_value_change(self):
+        listing = {
+            "id": "stable-ad-id", "source_ad_id": "same-ad",
+            "give_items": [{"name": "Knife A", "quantity": 1, "quantity_source": "structured",
+                            "quantity_min": 1, "quantity_max": 1}],
+            "receive_items": [{"name": "Knife B", "quantity": 1, "quantity_source": "structured",
+                               "quantity_min": 1, "quantity_max": 1}],
+        }
+        values_before = {
+            "knife a": {"name": "Knife A", "value": 20},
+            "knife b": {"name": "Knife B", "value": 10},
+        }
+        values_after = {
+            "knife a": {"name": "Knife A", "value": 20},
+            "knife b": {"name": "Knife B", "value": 30},
+        }
+        before, _ = scanner.evaluate_listing(listing, values_before)
+        self.assertFalse(scanner.qualifies(before))
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "scanner.WATCH_FILE", Path(directory) / "watch.json"
+        ):
+            state = {}
+            scanner.update_watch_entry(state, listing, values_before)
+            after, _ = scanner.evaluate_listing(listing, values_after)
+            self.assertTrue(scanner.qualifies(after))
+            self.assertTrue(scanner.update_watch_entry(state, listing, values_after))
+
+
+class PollingLoopTests(unittest.TestCase):
+    def test_loop_runs_a_scan_and_returns_before_job_timeout(self):
+        with patch("scanner.scan_once") as scan:
+            result = scanner.run_scan_loop(duration_seconds=1, interval_seconds=30)
+        scan.assert_called_once()
+        self.assertEqual(result["cycles"], 1)
+        self.assertEqual(result["successful_cycles"], 1)
