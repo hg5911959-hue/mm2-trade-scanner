@@ -2199,3 +2199,74 @@ class ColdStartPaginationTests(unittest.TestCase):
         self.assertTrue(stats["pagination_complete"])
         self.assertEqual(stats["pagination_pages"], 2)
         self.assertIn("cold-old-24", discovered)
+
+
+class RealAlertReevaluationIntegrationTests(unittest.TestCase):
+    def test_previously_alerted_ad_realerts_when_supreme_values_make_it_profitable(self):
+        listing = {
+            "id": "stable-ad-id", "source_ad_id": "same-source-ad",
+            "owner_url": "https://bloxswaps.com/fr/users/123",
+            "url": "https://bloxswaps.com/fr/trade-mm2?ad=same-source-ad",
+            "give_items": [{"name": "Knife A", "quantity": 1, "quantity_source": "structured",
+                            "quantity_min": 1, "quantity_max": 1}],
+            "receive_items": [{"name": "Knife B", "quantity": 1, "quantity_source": "structured",
+                               "quantity_min": 1, "quantity_max": 1}],
+        }
+        values_before = {
+            "knife a": {"name": "Knife A", "value": 20},
+            "knife b": {"name": "Knife B", "value": 10},
+        }
+        values_after = {
+            "knife a": {"name": "Knife A", "value": 20},
+            "knife b": {"name": "Knife B", "value": 30},
+        }
+        old_content, old_values = scanner.listing_watch_fingerprints(listing, values_before)
+        previous_watch = {
+            "same-source-ad": {
+                "content_hash": old_content, "values_hash": old_values,
+                "created_at": time.time() - 60, "updated_at": time.time() - 60,
+            }
+        }
+        stats = {
+            "cold_start": False, "pending_remaining_ids": [], "unparsed_ad_ids": [],
+            "addition_ids": [], "watch_remaining_ids": [], "pagination_complete": True,
+            "pagination_pages": 1, "pagination_api_posts": 0, "seen_boundary_reached": False,
+            "candidate_count": 1, "malformed_count": 0, "html_malformed_count": 0,
+            "html_parse_warning_count": 0, "html_parse_warning_ids": [],
+            "unparsed_ad_ids": [], "malformed_samples": [], "owner_link_count": 1,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sent = []
+            with (
+                patch("scanner.BOT_TOKEN", "test-token"),
+                patch("scanner.CHAT_ID", "123"),
+                patch("scanner.ALERTED_FILE", root / "alerted.json"),
+                patch("scanner.SEEN_FILE", root / "seen.json"),
+                patch("scanner.PENDING_FILE", root / "pending.json"),
+                patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
+                patch("scanner.HISTORY_FILE", root / "history.csv"),
+                patch("scanner.WATCH_FILE", root / "watch.json"),
+                patch("scanner.FIRST_SEEN_FILE", root / "first-seen.json"),
+                patch("scanner.FAILURE_FILE", root / "failure.json"),
+                patch("scanner.load_supreme_values", return_value=values_after),
+                patch("scanner.load_aliases", return_value={}),
+                patch("scanner.load_seen_ads", return_value={"same-source-ad"}),
+                patch("scanner.load_pending_ids", return_value={}),
+                patch("scanner.load_watch_state", return_value=previous_watch),
+                patch("scanner.load_alerted", return_value={"stable-ad-id"}),
+                patch("scanner.load_uncertain_ids", return_value=set()),
+                patch("scanner.load_first_seen_ads", return_value={
+                    "same-source-ad": datetime.now(timezone.utc).isoformat()
+                }),
+                patch("scanner.fetch_bloxswaps_all", return_value=([listing], stats, ["same-source-ad"])),
+                patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)),
+                patch("scanner.compare_secondary_values", return_value=""),
+                patch("scanner.record_success"),
+                patch("scanner.write_step_summary"),
+                patch("scanner.ALERT_DELAY_SECONDS", 0),
+            ):
+                scanner.main()
+        trade_messages = [message for message in sent if "💎 MM2 TRADE" in message]
+        self.assertEqual(len(trade_messages), 1)
+        self.assertIn("Supreme Profit: +10", trade_messages[0])
