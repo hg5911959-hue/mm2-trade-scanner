@@ -1417,10 +1417,14 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                 refreshed_ts is not None and last_success_ts is not None
                 and refreshed_ts >= last_success_ts - 90
             )
+            is_pinned = bool(raw.get("isPinned") or raw.get("pinned"))
             if post_id in watch_remaining:
                 watch_remaining.discard(post_id)
             if post_id in seen and post_id not in pending_remaining and post_id not in watch_ids and not recently_refreshed:
                 seen_ids_skipped.append(post_id)
+                if is_pinned:
+                    seen_streak = 0
+                    continue
                 if pending_remaining or watch_remaining:
                     # Pending and watched ads take priority over an early boundary.
                     seen_streak = 0
