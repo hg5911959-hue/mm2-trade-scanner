@@ -1647,7 +1647,7 @@ def save_pending_ids(pending):
     ordered = dict(sorted(
         ((str(ad_id), float(timestamp)) for ad_id, timestamp in pending.items()),
         key=lambda row: row[1],
-    )[-10000:])
+    ))
     atomic_write_text(PENDING_FILE, json.dumps({
         "version": 1, "pending": ordered,
     }, indent=2) + "\n")
