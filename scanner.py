@@ -707,17 +707,13 @@ def parse_page(html):
     structured_entries = parse_structured_trade_data(html)
     listings = []
     additions = 0
+    addition_ids = []
     malformed = 0
     malformed_samples = []
     structured_matched = 0
     for node in candidates:
         context = listing_context(node)
         text = node_text(context)
-        received, requested = extract_side_items(node)
-        if not received or not requested:
-            malformed += 1
-            malformed_samples.append(text[:240])
-            continue
         link, owner_url = listing_links(context)
         source_ad_id = _ad_id_from_url(link) or listing_identifier(context)
         structured = structured_entries.get(source_ad_id)
@@ -727,8 +723,17 @@ def parse_page(html):
                 for value in (structured.get("requestedWildcards") or [])
             )
         )
+        # Check the single-card context before attempting side parsing. Never
+        # inspect the whole feed container for an Ajout marker.
         if has_addition_marker(context) or structured_add:
             additions += 1
+            if source_ad_id:
+                addition_ids.append(source_ad_id)
+            continue
+        received, requested = extract_side_items(node)
+        if not received or not requested:
+            malformed += 1
+            malformed_samples.append(text[:240])
             continue
         listing = {
             "id": stable_listing_id(owner_url, received, requested, link, listing_identifier(context)),
@@ -747,6 +752,7 @@ def parse_page(html):
     return parsed, {
         "candidate_count": len(candidates),
         "addition_count": additions,
+        "addition_ids": addition_ids,
         "malformed_count": malformed,
         "malformed_samples": malformed_samples[:5],
         "owner_link_count": sum(1 for item in parsed if item.get("owner_url")),
@@ -1013,6 +1019,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None):
         str(listing.get("source_ad_id")): listing
         for listing in first_listings if listing.get("source_ad_id")
     }
+    html_addition_ids = set(str(value) for value in stats.get("addition_ids", []))
     collected = []
     discovered_ids = []
     addition_ids = []
@@ -1042,7 +1049,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None):
             discovered_ids.append(post_id)
             candidate_count += 1
             wildcards = raw.get("requestedWildcards") or []
-            if any(str(value).casefold() in {"add", "ajout", "ajouts"} for value in wildcards):
+            if post_id in html_addition_ids or any(str(value).casefold() in {"add", "ajout", "ajouts"} for value in wildcards):
                 additions += 1
                 addition_ids.append(post_id)
                 continue
