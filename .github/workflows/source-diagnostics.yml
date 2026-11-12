@@ -2,7 +2,7 @@ name: BloxSwaps Source Diagnostics - final quantity regression validation
 
 on:
   push:
-    branches: [hardening/staged-audit-2026-11-12]
+    branches: [hardening/staged-audit-2026-11-12, fix/full-hardening-2026-11-12]
     paths:
       - ".github/workflows/source-diagnostics.yml"
       - "scanner.py"
