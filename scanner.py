@@ -11,18 +11,14 @@ import urllib.request
 from urllib.error import HTTPError, URLError
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlencode
 
 BLOXSWAPS_URL = os.environ.get(
     "BLOXSWAPS_URL",
     "https://bloxswaps.com/fr/trade-mm2?trade-type=P2P"
 ).strip()
-SUPREME_BASE = "https://supremevalues.com/mm2/"
-SUPREME_CATEGORIES = (
-    "sets", "uniques", "evos", "ancients", "vintages", "chromas",
-    "godlies", "legendaries", "rares", "uncommons", "commons",
-    "pets", "misc", "untradables",
-)
+RBLXVALUE_API_BASE = "https://api.rblxvalue.com/v2"
+RBLXVALUE_API_KEY = os.environ.get("RBLXVALUE_API_KEY", "").strip()
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 MIN_DIFF = float(os.environ.get("MIN_VALUE_DIFFERENCE", "0"))
@@ -244,44 +240,29 @@ def normalize_name(name):
     return " ".join(value.split())
 
 
-def extract_supreme_value_cards(html):
-    parser = PageTree()
-    parser.feed(html)
-    value_pattern = re.compile(r"\bValue\s*-\s*([0-9][0-9,]*(?:\.\d+)?)", re.I)
-    cards = smallest_matching_nodes(
-        parser.root, lambda text: bool(value_pattern.search(text))
-    )
-    values = {}
-    for card in cards:
-        text = node_text(card)
-        match = value_pattern.search(text)
-        if not match:
-            continue
-        number = float(match.group(1).replace(",", ""))
-        names = []
-        for child in walk_nodes(card):
-            if child.tag == "a":
-                candidate = clean_item_name(node_text(child))
-                if candidate and not candidate.casefold().startswith("image"):
-                    names.append(candidate)
-        # Item cards commonly have two links: image and the visible item title.
-        names = [
-            candidate for candidate in names
-            if "corrected" not in candidate.casefold()
-            and "item stability" not in candidate.casefold()
-            and "value history" not in candidate.casefold()
-            and "similar items" not in candidate.casefold()
-        ]
-        name = names[-1] if names else ""
-        if not name:
-            for child in walk_nodes(card):
-                if child.tag == "img":
-                    name = clean_item_name(child.attrs.get("alt", ""))
-                    if name:
-                        break
-        if name:
-            values[normalize_name(name)] = {"name": name, "value": number}
-    return values
+def api_get_json(path, params=None):
+    if not RBLXVALUE_API_KEY:
+        raise RuntimeError(
+            "Missing RBLXVALUE_API_KEY secret. Supreme Values blocks direct GitHub Actions requests; "
+            "use the documented JSON API value_source_b field instead."
+        )
+    query = "?" + urlencode(params or {}) if params else ""
+    url = RBLXVALUE_API_BASE + path + query
+    req = urllib.request.Request(url, headers={
+        "X-Api-Key": RBLXVALUE_API_KEY,
+        "Accept": "application/json",
+        "User-Agent": "MM2TradeScanner/2.0",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            print(f"[rblxvalue] HTTP {response.status} {url}")
+            return data
+    except HTTPError as exc:
+        detail = exc.read(1000).decode("utf-8", errors="replace")
+        raise RuntimeError(f"[rblxvalue] HTTP {exc.code}: {detail[:500]}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"[rblxvalue] Network error: {exc.reason}") from exc
 
 
 def load_supreme_values():
@@ -291,38 +272,49 @@ def load_supreme_values():
             age = time.time() - float(cached.get("fetched_at", 0))
             values = cached.get("values", {})
             if age < VALUES_TTL_SECONDS and len(values) >= 100:
-                print(f"[supreme] Using cached verified values: {len(values)} items; age {int(age / 60)} min")
+                print(f"[supreme] Using cached source_b values: {len(values)} items; age {int(age / 60)} min")
                 return values
         except (ValueError, OSError, json.JSONDecodeError, AttributeError):
             pass
 
     all_values = {}
-    successful_pages = 0
-    for category in SUPREME_CATEGORIES:
-        url = urljoin(SUPREME_BASE, category)
-        html = http_get(url)
-        category_values = extract_supreme_value_cards(html)
-        if not category_values:
-            raise RuntimeError(
-                f"[supreme] No values extracted from {url}; refusing to calculate trades"
-            )
-        all_values.update(category_values)
-        successful_pages += 1
-        print(f"[supreme] {category}: {len(category_values)} items")
+    offset = 0
+    page_size = 100
+    total = None
+    while total is None or offset < total:
+        payload = api_get_json("/items", {"limit": page_size, "offset": offset})
+        items = payload.get("items")
+        if not isinstance(items, list) or not items:
+            if offset == 0:
+                raise RuntimeError("[supreme] API returned no item list; no trade values will be guessed")
+            break
+        total = int(payload.get("total", len(items)))
+        for item in items:
+            name = item.get("name")
+            source_value = item.get("value_source_b")
+            if not name or source_value is None:
+                continue
+            try:
+                source_value = float(source_value)
+            except (TypeError, ValueError):
+                continue
+            # A zero source value means Supreme has no numeric value for this item.
+            if source_value > 0:
+                all_values[normalize_name(name)] = {"name": name, "value": source_value}
+        offset += len(items)
+        if len(items) < page_size:
+            break
+        time.sleep(0.25)
 
-    if successful_pages != len(SUPREME_CATEGORIES) or len(all_values) < 100:
-        raise RuntimeError(
-            f"[supreme] Incomplete values list: {len(all_values)} items from "
-            f"{successful_pages}/{len(SUPREME_CATEGORIES)} pages"
-        )
-
+    if len(all_values) < 100:
+        raise RuntimeError(f"[supreme] Only {len(all_values)} numeric source_b values loaded; refusing to calculate")
     VALUES_FILE.parent.mkdir(parents=True, exist_ok=True)
     VALUES_FILE.write_text(json.dumps({
         "fetched_at": time.time(),
-        "source": "Supreme Values",
+        "source": "Supreme Values via RBLXValue API value_source_b",
         "values": all_values,
     }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(f"[supreme] Refreshed {len(all_values)} verified item values")
+    print(f"[supreme] Loaded {len(all_values)} numeric Supreme source_b values via API")
     return all_values
 
 
@@ -398,7 +390,7 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
         f"SUPREME PROFIT: {difference:+,.2f}".replace(".00", ""),
         f"CALCULATED RESULT: {result}",
         "",
-        "Values checked against Supreme Values.",
+        "Values: Supreme Values source_b via RBLXValue API (Data from rblxvalue.com).",
         f"Source: {listing['url']}",
     ]
     return "\n".join(lines)
