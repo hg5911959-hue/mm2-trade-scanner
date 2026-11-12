@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import urllib.request
+from urllib.error import HTTPError, URLError
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urljoin
@@ -169,10 +170,18 @@ def fetch_page():
             "Accept-Language": "fr,en;q=0.8"
         }
     )
-    with urllib.request.urlopen(req, timeout=30) as response:
-        if response.status != 200:
-            raise RuntimeError(f"BloxSwaps returned HTTP {response.status}")
-        return response.read().decode("utf-8", errors="replace")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            if response.status != 200:
+                raise RuntimeError(f"BloxSwaps returned HTTP {response.status}")
+            html = response.read().decode("utf-8", errors="replace")
+            print(f"[bloxswaps] HTTP {response.status}; downloaded {len(html)} characters")
+            return html
+    except HTTPError as exc:
+        detail = exc.read(1200).decode("utf-8", errors="replace")
+        raise RuntimeError(f"[bloxswaps] HTTP {exc.code} {exc.reason}; response: {detail[:800]}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"[bloxswaps] network error: {exc.reason}") from exc
 
 
 def send_telegram(message):
@@ -183,10 +192,16 @@ def send_telegram(message):
         "disable_web_page_preview": True
     }).encode()
     req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=20) as response:
-        result = json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=20) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        detail = exc.read(1200).decode("utf-8", errors="replace")
+        raise RuntimeError(f"[telegram] HTTP {exc.code} {exc.reason}; API response: {detail[:800]}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"[telegram] network error: {exc.reason}") from exc
     if not result.get("ok"):
-        raise RuntimeError("Telegram rejected the message")
+        raise RuntimeError(f"[telegram] API rejected message: {result.get('description', 'unknown error')}")
 
 
 def load_seen():
@@ -203,8 +218,11 @@ def main():
     if not BOT_TOKEN or not CHAT_ID:
         raise RuntimeError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in GitHub Actions secrets.")
 
+    print("[stage] Fetching BloxSwaps P2P page")
     html = fetch_page()
+    print("[stage] Parsing BloxSwaps listings")
     listings = parse_listings(html)
+    print(f"[bloxswaps] Parsed {len(listings)} listings")
     if not listings:
         raise RuntimeError(
             "No BloxSwaps P2P listings could be parsed. The page may have changed "
@@ -235,6 +253,7 @@ def main():
                 f"Listing items: {', '.join(listing['give_names'][:8]) or 'Open listing'}\n"
                 f"Source: {listing['url']}"
             )
+            print(f"[stage] Sending Telegram alert for listing {trade_id}")
             send_telegram(message)
             sent += 1
 
