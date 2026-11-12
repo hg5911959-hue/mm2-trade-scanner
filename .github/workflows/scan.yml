@@ -46,12 +46,12 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Save processed listing IDs
+      - name: Save scanner state and Supreme cache
         run: |
-          if ! git diff --quiet -- data/seen.json; then
+          git add data/seen.json data/supreme_values.json
+          if ! git diff --cached --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add data/seen.json
-            git commit -m "Update processed BloxSwaps listings"
+            git commit -m "Update scanner state and Supreme values cache"
             git push
           fi
