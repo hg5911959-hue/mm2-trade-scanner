@@ -679,8 +679,7 @@ def stable_listing_id(owner_url, receive_items, give_items, listing_url="", list
     if listing_key_hint:
         listing_key = {"hint": listing_key_hint}
     elif ad_values:
-        # Preserve the pre-upgrade ID for cards with a stable ad query so the
-        # migration does not re-alert trades already present in history.csv.
+        # Prefer the source post ID; item contents and quantities can change.
         listing_key = sorted(ad_values)
     elif owner_url:
         listing_key = {"path": listing.path, "query": sorted(stable_params)}
