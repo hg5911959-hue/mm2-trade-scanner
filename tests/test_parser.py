@@ -947,7 +947,7 @@ class PendingRecheckStateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "pending.json"
             pending = {"ad-one": 100.0, "ad-two": 200.0}
-            with patch("scanner.PENDING_FILE", path):
+            with patch("scanner.PENDING_FILE", path), patch("scanner.time.time", return_value=200):
                 scanner.save_pending_ids(pending)
                 self.assertEqual(scanner.load_pending_ids(), pending)
 
