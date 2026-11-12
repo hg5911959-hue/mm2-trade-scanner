@@ -19,9 +19,11 @@ def should_alert(age, threshold=30, interval=15, reminder=360):
 def latest_success_age_minutes(token):
     if not token:
         raise RuntimeError("Missing GitHub Actions token.")
+    repository = os.environ.get("GITHUB_REPOSITORY", "").strip()
+    if not repository or repository.count("/") != 1:
+        raise RuntimeError("GITHUB_REPOSITORY must be set to owner/repository.")
     url = (
-        "https://api.github.com/repos/"
-        "hg5911959-hue/mm2-trade-scanner/actions/workflows/scan.yml/runs"
+        f"https://api.github.com/repos/{repository}/actions/workflows/scan.yml/runs"
         "?status=success&per_page=1"
     )
     request = Request(url, headers={
