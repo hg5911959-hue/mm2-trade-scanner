@@ -217,6 +217,12 @@ jobs:
                   selected_article, selected_id = article_decoded, candidate_id
                   break
               if selected_article:
+                  selected_post = next(x for x in captured_page["items"] if str(x.get("id")) == selected_id)
+                  user_data = selected_post.get("user") or {}
+                  for field, replacement in (("robloxDisplayName", "Fixture Owner"), ("robloxUsername", "fixture_user")):
+                      private_label = str(user_data.get(field) or "")
+                      if private_label:
+                          selected_article = selected_article.replace(private_label, replacement)
                   def redact_link(match):
                       href = match.group(1)
                       if "/users/" in href:
@@ -226,7 +232,6 @@ jobs:
                       href = re.sub(r"([?&])name=[^&]+", r"\1name=Fixture", href)
                       return 'href="' + html_escape(href, quote=True) + '"'
                   selected_article = re.sub(r'href="([^"]+)"', redact_link, selected_article)
-                  selected_post = next(x for x in captured_page["items"] if str(x.get("id")) == selected_id)
                   fixture_post = {
                       "id": selected_id,
                       "tradePostItems": selected_post.get("tradePostItems", []),
