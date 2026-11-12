@@ -490,7 +490,10 @@ def extract_side_items(node):
             if next_kind == "text":
                 suffix.append(next_value)
             elif next_kind == "element":
-                segment_nodes.append(next_value)
+                # Do not inherit metadata from a wrapper that contains a later
+                # weapon image (often the opposite side or a neighboring tile).
+                if not collect_images_in_order(next_value):
+                    segment_nodes.append(next_value)
             end += 1
         quantity, source, price, raw_excerpt, quantity_min, quantity_max, reason = _item_quantity_details(
             value["node"], " ".join(suffix), segment_nodes
