@@ -1,6 +1,10 @@
 import unittest
+import json
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 
-from scanner import parse_listings, parse_page, calculate_side
+from scanner import parse_listings, parse_page, calculate_side, load_supreme_values
 
 
 class ParserTests(unittest.TestCase):
@@ -91,6 +95,20 @@ class ParserTests(unittest.TestCase):
         """
         listing = parse_listings(html)[0]
         self.assertEqual(listing["receive_items"][0]["quantity"], 3)
+
+    def test_stale_supreme_cache_is_used_when_api_fails(self):
+        values = {
+            f"item {i}": {"name": f"Item {i}", "value": i + 1, "secondary_value": None}
+            for i in range(100)
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            cache_path = Path(directory) / "supreme_values.json"
+            cache_path.write_text(json.dumps({"fetched_at": 1, "values": values}), encoding="utf-8")
+            with patch("scanner.VALUES_FILE", cache_path), patch(
+                "scanner.api_get_json", side_effect=RuntimeError("API unavailable")
+            ):
+                loaded = load_supreme_values()
+        self.assertEqual(len(loaded), 100)
 
 
 if __name__ == "__main__":
