@@ -994,7 +994,9 @@ def _merge_html_quantity_diagnostics(api_listing, html_listing):
 
 
 def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None):
-    """Fetch all recent RSC/API posts up to the first previously seen ad ID."""
+    """Fetch recent RSC/API posts and recheck unresolved IDs beyond seen posts."""
+    if seen_ad_ids is None and pending_ad_ids:
+        seen_ad_ids = set()
     html = fetch_bloxswaps()
     first_listings, stats = parse_page(html)
     initial_page = parse_structured_initial_page(html)
