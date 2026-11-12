@@ -1864,15 +1864,22 @@ def scan_once():
         write_step_summary("First-run baseline: existing feed posts marked as seen; new posts will be evaluated next scan.")
         return
     seen_ads = set(seen_ads or [])
+    addition_ids = set(stats.get("addition_ids", []))
+    if addition_ids:
+        seen_ads.update(addition_ids)
+        save_seen_ads(seen_ads)
     if not listings:
-        if stats.get("seen_boundary_reached"):
+        html_issue_count = max(
+            int(stats.get("html_malformed_count", 0)),
+            int(stats.get("html_parse_warning_count", 0)),
+        )
+        if stats.get("seen_boundary_reached") and not stats.get("malformed_count") and not html_issue_count:
             print("[bloxswaps] Feed is current: first visible offers were already processed.")
             record_success()
             write_step_summary("Feed current: no new trade posts before the seen cursor boundary.")
             return
         if stats["candidate_count"] > 0 and stats["addition_count"] == stats["candidate_count"]:
             print(f"[bloxswaps] No eligible listings: all {stats['addition_count']} candidate cards contained Ajouts.")
-            save_seen_ads(seen_ads | set(stats.get("addition_ids", [])))
             record_success()
             write_step_summary("Successful scan: all current candidates excluded for Ajouts.")
             return
@@ -1888,22 +1895,25 @@ def scan_once():
         f"complete={stats.get('pagination_complete', False)} "
         f"seen_boundary={stats.get('seen_boundary_reached', False)}"
     )
-    addition_ids = set(stats.get("addition_ids", []))
-    if addition_ids:
-        seen_ads.update(addition_ids)
-        save_seen_ads(seen_ads)
     malformed_count = int(stats.get("malformed_count", 0))
-    if malformed_count:
+    html_issue_count = max(
+        int(stats.get("html_malformed_count", 0)),
+        int(stats.get("html_parse_warning_count", 0)),
+    )
+    issue_count = malformed_count + html_issue_count
+    if issue_count:
         print(
-            f"[maintenance] {malformed_count} card(s) could not be parsed; "
-            f"unparsed IDs: {', '.join(stats.get('unparsed_ad_ids', [])[:10])}"
+            f"[maintenance] feed issues: api_unparsed={malformed_count}, "
+            f"html_unparsed_or_malformed={html_issue_count}; "
+            f"unparsed IDs: {', '.join(stats.get('unparsed_ad_ids', [])[:10])}; "
+            f"HTML warning IDs: {', '.join(stats.get('html_parse_warning_ids', [])[:10])}"
         )
-        ratio = malformed_count / max(1, stats.get("candidate_count", 0))
-        if os.environ.get("MM2_SCAN_LOOP") == "1" and (malformed_count >= 3 or ratio >= 0.05):
+        ratio = issue_count / max(1, stats.get("candidate_count", 0))
+        if os.environ.get("MM2_SCAN_LOOP") == "1" and (issue_count >= 3 or ratio >= 0.05):
             samples = " | ".join(stats.get("malformed_samples", [])[:3])
             send_maintenance_alert(
                 "malformed-feed-cards",
-                f"Unparsed cards: {malformed_count}/{stats.get('candidate_count', 0)} "
+                f"Cards needing parser review: {issue_count}/{stats.get('candidate_count', 0)} "
                 f"({ratio:.1%}). Samples: {samples[:700]}",
                 cooldown_seconds=3600,
             )
