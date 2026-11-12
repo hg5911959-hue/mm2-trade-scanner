@@ -2405,7 +2405,7 @@ def listing_watch_fingerprints(listing, values, aliases=None):
     for side, field in (('give', 'give_items'), ('receive', 'receive_items')):
         for item in listing.get(field, []):
             name = str(item.get('name') or '')
-            content.append((side, normalize_name(name), str(item.get('structured_item_id') or ''), item.get('quantity'), item.get('quantity_min'), item.get('quantity_max'), item.get('quantity_source')))
+            content.append((side, normalize_name(name), str(item.get('structured_item_id') or ''), item.get('quantity'), item.get('quantity_min'), item.get('quantity_max')))
             record, match_source, _ = resolve_value_record(name, values, aliases)
             unit_value = None
             if record: unit_value, _selected = _select_conservative_variant(record, side)
@@ -2624,6 +2624,7 @@ def scan_once():
         f"{len(uncertain_ids)} uncertain-delivery IDs."
     )
     already_alerted_skipped = 0
+    watch_unchanged_skipped = 0
     uncertain_skipped = 0
 
     def mark_alerted(trade_id):
@@ -2681,6 +2682,10 @@ def scan_once():
             if not previous_watch:
                 update_watch_entry(watch_state, listing, values, aliases)
             already_alerted_skipped += 1
+            mark_seen_ad(listing)
+            continue
+        if previous_watch and not fingerprint_changed and watch_id not in pending_ids:
+            watch_unchanged_skipped += 1
             mark_seen_ad(listing)
             continue
         if trade_id in uncertain_ids:
@@ -2816,7 +2821,7 @@ def scan_once():
 
     summary = (
         f"Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | "
-        f"already_alerted={already_alerted_skipped} | uncertain_quarantined={uncertain_skipped} | "
+        f"already_alerted={already_alerted_skipped} | watch_unchanged={watch_unchanged_skipped} | uncertain_quarantined={uncertain_skipped} | 
         f"pending_recheck={len(pending_ids)} | qualified={len(opportunities)} | "
         f"alerts={sent} | deferred={deferred}"
     )
