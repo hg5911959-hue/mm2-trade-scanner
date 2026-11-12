@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 14
     permissions:
       contents: read
-      actions: write
+      actions: read
     env:
       HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
       MM2_SCAN_DURATION_SECONDS: "720"
