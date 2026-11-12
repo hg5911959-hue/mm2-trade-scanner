@@ -234,6 +234,50 @@ class ParserTests(unittest.TestCase):
 
 
 class ReliabilityTests(unittest.TestCase):
+    def test_duplicate_normalized_names_keep_highest_supreme_value(self):
+        # The same display name can describe two distinct MM2 items (e.g.
+        # Rainbow Gun godly vs. Rainbow (Gun), valued as 4 T1 uncommons).
+        # The API may return either record first; keep the largest numeric
+        # Supreme value_source_b and its matching secondary value.
+        for duplicate_rows in (
+            [
+                {"name": "Rainbow Gun", "value_source_b": 4, "value_source_a": 3},
+                {"name": "Rainbow Gun", "value_source_b": 400, "value_source_a": 410},
+            ],
+            [
+                {"name": "Rainbow Gun", "value_source_b": 400, "value_source_a": 410},
+                {"name": "Rainbow Gun", "value_source_b": 4, "value_source_a": 3},
+            ],
+        ):
+            items = duplicate_rows + [
+                {"name": f"Test Item {i}", "value_source_b": i + 1, "value_source_a": None}
+                for i in range(98)
+            ]
+            with tempfile.TemporaryDirectory() as directory:
+                cache_path = Path(directory) / "supreme_values.json"
+                with patch("scanner.VALUES_FILE", cache_path), \\
+                     patch("scanner.api_get_json", return_value={"items": items, "total": len(items)}), \\
+                     patch("scanner.time.sleep"):
+                    values = load_supreme_values()
+            self.assertEqual(values["rainbow gun"]["value"], 400)
+            self.assertEqual(values["rainbow gun"]["secondary_value"], 410)
+
+    def test_non_numeric_tier_notation_does_not_override_numeric_godly_value(self):
+        items = [
+            {"name": "Rainbow Gun", "value_source_b": "4T1", "value_source_a": None},
+            {"name": "Rainbow Gun", "value_source_b": 400, "value_source_a": 410},
+        ] + [
+            {"name": f"Test Item {i}", "value_source_b": i + 1, "value_source_a": None}
+            for i in range(98)
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            cache_path = Path(directory) / "supreme_values.json"
+            with patch("scanner.VALUES_FILE", cache_path), \\
+                 patch("scanner.api_get_json", return_value={"items": items, "total": len(items)}), \\
+                 patch("scanner.time.sleep"):
+                values = load_supreme_values()
+        self.assertEqual(values["rainbow gun"]["value"], 400)
+
     def test_stable_id_uses_ad_id_to_distinguish_identical_owner_offers(self):
         items = [{"name": "Chroma Gemstone", "quantity": 1}]
         first = scanner.stable_listing_id("https://bloxswaps.com/fr/users/1", items, items,
