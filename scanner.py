@@ -779,73 +779,69 @@ def _ad_id_from_url(url):
         return ""
 
 
-def _apply_structured_quantities(listing, structured):
-    trade_items = structured.get("tradePostItems")
-    if not isinstance(trade_items, list):
-        return False
-    roles = {
-        "receive_items": "OFFERED",
-        "give_items": "REQUESTED",
-    }
-    for field, role in roles.items():
-        rows = [row for row in trade_items if isinstance(row, dict) and str(row.get("tradeRole", "")).upper() == role]
+def _match_by_identity(left, right):
+    def key(item):
+        item_id = str(item.get('structured_item_id') or '')
+        return ('id', item_id) if item_id else ('name', normalize_name(str(item.get('name') or '')))
+    left_map, right_map = {}, {}
+    for i, item in enumerate(left):
+        k = key(item)
+        if k[1]: left_map.setdefault(k, []).append(i)
+    for i, item in enumerate(right):
+        k = key(item)
+        if k[1]: right_map.setdefault(k, []).append(i)
+    pairs = []
+    for k, li in left_map.items():
+        ri = right_map.get(k, [])
+        if len(li) == 1 and len(ri) == 1: pairs.append((li[0], ri[0]))
+    return pairs
+
+def _uncertain_quantity(item, reason):
+    item['quantity'] = None
+    item['quantity_source'] = 'uncertain'
+    item['quantity_min'] = item.get('quantity_min') or 1
+    item['quantity_max'] = None
+    item['quantity_reason'] = reason
+
+def _apply_structured_quantities(listing, structured, item_map=None):
+    trade_items = structured.get('tradePostItems')
+    if not isinstance(trade_items, list): return False
+    for field, role in (('receive_items', 'OFFERED'), ('give_items', 'REQUESTED')):
+        rows = [row for row in trade_items if isinstance(row, dict) and str(row.get('tradeRole', '')).upper() == role]
         items = listing.get(field, [])
-        if len(rows) != len(items):
-            for item in items:
-                item["html_quantity"] = item.get("quantity")
-                item["html_quantity_source"] = item.get("quantity_source", "implicit_single")
-                item["quantity"] = None
-                item["quantity_source"] = "uncertain"
-                item["quantity_min"] = 1
-                item["quantity_max"] = None
-                item["quantity_reason"] = "structured/HTML item count mismatch"
-            continue
-        for item, row in zip(items, rows):
-            html_source = item.get("quantity_source", "implicit_single")
-            html_quantity = item.get("quantity")
-            item["html_quantity"] = html_quantity
-            item["html_quantity_source"] = html_source
-            try:
-                quantity = int(row.get("quantity"))
-            except (TypeError, ValueError):
-                quantity = None
+        row_items = []
+        for row in rows:
+            item_id = str(row.get('itemDetailsId') or '')
+            details = (item_map or {}).get(item_id) or {}
+            row_items.append({'name': str(details.get('displayName') or row.get('displayName') or row.get('name') or ''), 'structured_item_id': item_id})
+        pairs = _match_by_identity(items, row_items)
+        matched_items = {i for i, _ in pairs}
+        if len(pairs) != len(items) or len(pairs) != len(rows):
+            for i, item in enumerate(items):
+                if i not in matched_items: _uncertain_quantity(item, 'RSC/HTML item identity is missing or ambiguous')
+        for item_i, row_i in pairs:
+            item, row = items[item_i], rows[row_i]
+            item['structured_item_id'] = str(row.get('itemDetailsId') or '')
+            html_source, html_quantity = item.get('quantity_source', 'implicit_single'), item.get('quantity')
+            item['html_quantity'], item['html_quantity_source'] = html_quantity, html_source
+            try: quantity = int(row.get('quantity'))
+            except (TypeError, ValueError): quantity = None
             if quantity is None or not 1 <= quantity <= 100:
-                item["quantity"] = None
-                item["quantity_source"] = "uncertain"
-                item["quantity_min"] = 1
-                item["quantity_max"] = None
-                item["quantity_reason"] = "invalid structured quantity"
-                continue
-            item["structured_quantity"] = quantity
-            if html_source == "uncertain":
-                item["quantity"] = None
-                item["quantity_source"] = "uncertain"
-                item["quantity_min"] = item.get("quantity_min", 1)
-                item["quantity_max"] = item.get("quantity_max")
-                item["quantity_reason"] = "HTML quantity marker is ambiguous; structured data cannot override the conflict"
+                _uncertain_quantity(item, 'invalid structured quantity')
+            elif html_source == 'uncertain':
+                _uncertain_quantity(item, 'HTML quantity marker is ambiguous; structured data cannot override the conflict')
             elif html_quantity != quantity:
-                known = [
-                    int(value) for value in (html_quantity, quantity)
-                    if value is not None and str(value).isdigit() and 1 <= int(value) <= 100
-                ]
-                item["quantity"] = None
-                item["quantity_source"] = "uncertain"
-                item["quantity_min"] = min(known) if known else 1
-                item["quantity_max"] = max(known) if known else None
-                item["quantity_reason"] = f"HTML ({html_source}) says {html_quantity}; structured data says {quantity}"
+                known = [int(v) for v in (html_quantity, quantity) if v is not None and str(v).isdigit() and 1 <= int(v) <= 100]
+                _uncertain_quantity(item, f'HTML ({html_source}) says {html_quantity}; structured data says {quantity}')
+                item['quantity_min'] = min(known) if known else 1
+                item['quantity_max'] = max(known) if known else None
             else:
-                item["quantity"] = quantity
-                item["quantity_source"] = "structured"
-                item["quantity_min"] = quantity
-                item["quantity_max"] = quantity
-                item["quantity_reason"] = ""
-                item["structured_item_id"] = str(row.get("itemDetailsId", ""))
-    listing["structured_trade_post_id"] = str(structured.get("id", ""))
-    listing["requested_wildcards"] = list(structured.get("requestedWildcards") or [])
+                item.update({'quantity': quantity, 'quantity_source': 'structured', 'quantity_min': quantity, 'quantity_max': quantity, 'quantity_reason': ''})
+    listing['structured_trade_post_id'] = str(structured.get('id', ''))
+    listing['requested_wildcards'] = list(structured.get('requestedWildcards') or [])
     return True
 
-
-def parse_page(html):
+def parse_page(html, item_map=None):
     parser = PageTree()
     parser.feed(html)
     candidates = smallest_matching_nodes(parser.root, has_trade_sides)
@@ -890,7 +886,7 @@ def parse_page(html):
             "source_text": text[:700],
             "source_ad_id": source_ad_id,
         }
-        if structured and _apply_structured_quantities(listing, structured):
+        if structured and _apply_structured_quantities(listing, structured, item_map):
             structured_matched += 1
         listings.append(listing)
     unique = {item["id"]: item for item in listings}
