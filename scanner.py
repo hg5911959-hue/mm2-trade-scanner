@@ -132,7 +132,7 @@ def split_item_label(raw):
             name = name[len(prefix):]
     name = re.sub(r"\s+(dans|in) Murder Mystery 2$", "", name, flags=re.I)
     name = re.sub(r"\s+", " ", name).strip()
-    quantity = 1
+    quantity = None
     match = re.search(r"(?:[x×]\s*(\d{1,3})|(\d{1,3})\s*[x×])\s*$", name, flags=re.I)
     if match:
         quantity = max(1, min(int(match.group(1) or match.group(2)), 100))
@@ -143,7 +143,7 @@ def split_item_label(raw):
         "downgrades", "upgrades", "murder mystery 2", "mm2", "image"
     }
     if not name or name.casefold() in ignored:
-        return "", 1
+        return "", None
     return name, quantity
 
 
@@ -183,13 +183,21 @@ def _quantity_marker(raw):
     return None
 
 
+def _explicit_stack_quantity(raw):
+    """Read an explicit xN/×N marker; bare prices and numbers are never counts."""
+    text = (raw or "").strip()
+    match = re.search(r"(?<![A-Za-z0-9])(?:x|×)\s*(\d{1,3})(?!\d)|(?<!\d)(\d{1,3})\s*[x×](?![A-Za-z0-9])", text, flags=re.I)
+    if not match:
+        return None
+    return max(1, min(int(match.group(1) or match.group(2)), 100))
+
+
 def quantity_from_image_node(image_node):
-    """Read explicit stack counts, including overlay badges placed before an icon."""
-    name, alt_quantity = split_item_label(image_node.attrs.get("alt", ""))
-    if alt_quantity > 1:
+    """Read stack counts from the image, its wrappers, or a nearby quantity badge."""
+    _, alt_quantity = split_item_label(image_node.attrs.get("alt", ""))
+    if alt_quantity is not None:
         return alt_quantity
 
-    # Check the image and its nearest wrappers for semantic quantity attributes.
     ancestors = []
     current = image_node
     for _ in range(4):
@@ -197,21 +205,25 @@ def quantity_from_image_node(image_node):
             break
         ancestors.append(current)
         current = current.parent
+
+    # Structured data attributes are authoritative and may contain a bare integer.
     for node in ancestors:
         for key in ("data-quantity", "data-count", "data-amount", "data-stack",
-                    "data-stack-count", "aria-label", "title"):
+                    "data-stack-count"):
             quantity = _quantity_marker(node.attrs.get(key, ""))
-            if quantity:
+            if quantity is not None:
+                return quantity
+        # Accessibility labels/titles must contain an explicit count marker;
+        # a price such as "750" must never be mistaken for a stack quantity.
+        for key in ("aria-label", "title"):
+            quantity = _explicit_stack_quantity(node.attrs.get(key, ""))
+            if quantity is not None:
                 return quantity
 
-    # BloxSwaps can render ×2 as an absolutely-positioned badge before the
-    # weapon image. It may be a sibling of the image's immediate wrapper,
-    # rather than a direct child of image.parent. Walk only nearby wrappers.
-    # Explicit xN/×N markers are safe; a bare number is accepted only when
-    # its element has a quantity/count-like semantic class or attribute.
+    # Badges may precede or follow the weapon image in a nearby wrapper.
     branch = image_node
     ancestor = image_node.parent
-    for depth in range(3):
+    for _ in range(4):
         if ancestor is None:
             break
         for kind, sibling in ancestor.events:
@@ -222,13 +234,16 @@ def quantity_from_image_node(image_node):
                 sibling.attrs.get("aria-label", ""), sibling.attrs.get("data-testid", "")
             )).casefold()
             marker_text = node_text(sibling)
-            explicit = _quantity_marker(marker_text)
+            explicit = _explicit_stack_quantity(marker_text)
             semantic = bool(re.search(r"quant|count|amount|stack|badge|counter", classes))
-            if explicit and (semantic or re.search(r"(?:x|×)\s*\d|\d\s*(?:x|×)", marker_text, re.I)):
+            bare = _quantity_marker(marker_text) if semantic else None
+            if explicit is not None:
                 return explicit
+            if bare is not None:
+                return bare
         branch = ancestor
         ancestor = ancestor.parent
-    return 1
+    return None
 
 
 def collect_ordered_events(node):
@@ -266,18 +281,21 @@ def extract_side_items(node):
         elif kind == "img" and value and value["name"] and side:
             # Quantity may be embedded in alt text or rendered nearby as x3, 3x, ×3.
             quantity = value["quantity"]
-            if quantity == 1:
+            # BloxSwaps can place the stack marker AFTER the item name,
+            # coin icon and displayed price (e.g. "Snowcannon 750.0 x2").
+            # Scan the whole item segment; decorative coin images do not end it.
+            if quantity is None:
                 for next_kind, next_value in events[i + 1:]:
                     if next_kind == "img" and next_value and next_value["name"]:
                         break
                     if next_kind == "text":
-                        match = re.search(
-                            r"(?:[x×]\s*(\d{1,3})|(\d{1,3})\s*x)\b",
-                            next_value, flags=re.I
-                        )
-                        if match:
-                            quantity = max(1, min(int(match.group(1) or match.group(2)), 100))
+                        quantity = _explicit_stack_quantity(next_value)
+                        if quantity is not None:
                             break
+            # The normal single-item card has no count badge. Apply 1 only
+            # after the complete item segment has been checked for a stack badge.
+            if quantity is None:
+                quantity = 1
             target = received if side == "receive" else requested
             target.append({"name": value["name"], "quantity": quantity})
     return received, requested
@@ -329,7 +347,7 @@ def _identity_items(items):
     grouped = {}
     for item in items:
         key = normalize_name(item["name"])
-        grouped[key] = grouped.get(key, 0) + max(1, int(item.get("quantity", 1)))
+        grouped[key] = grouped.get(key, 0) + max(1, int(item.get("quantity") or 1))
     return sorted((name, quantity) for name, quantity in grouped.items())
 
 
@@ -595,7 +613,11 @@ def calculate_side(items, values):
             continue
         if key not in grouped:
             grouped[key] = {"name": item["name"], "quantity": 0}
-        grouped[key]["quantity"] += max(1, int(item.get("quantity", 1)))
+        quantity = item.get("quantity")
+        if quantity is None:
+            missing.append(f"{item['name']} (quantity unreadable)")
+            continue
+        grouped[key]["quantity"] += max(1, int(quantity))
 
     for key, item in grouped.items():
         record = values.get(key)
