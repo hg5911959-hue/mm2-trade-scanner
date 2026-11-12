@@ -1123,14 +1123,18 @@ class StructuredQuantityTests(unittest.TestCase):
             '<a href="/fr/users/123">Owner</a></article>'
         )
 
-    def test_rsc_quantity_overrides_implicit_html_single(self):
+    def test_rsc_quantity_disagreement_with_implicit_html_single_is_uncertain(self):
         html = self._html_with_rsc([
             {"itemDetailsId": "b-id", "quantity": 2, "tradeRole": "OFFERED"},
             {"itemDetailsId": "a-id", "quantity": 1, "tradeRole": "REQUESTED"},
         ])
         listing = parse_listings(html)[0]
-        self.assertEqual(listing["receive_items"][0]["quantity"], 2)
-        self.assertEqual(listing["receive_items"][0]["quantity_source"], "structured")
+        self.assertIsNone(listing["receive_items"][0]["quantity"])
+        self.assertEqual(listing["receive_items"][0]["quantity_source"], "uncertain")
+        self.assertEqual(
+            (listing["receive_items"][0]["quantity_min"], listing["receive_items"][0]["quantity_max"]),
+            (1, 2),
+        )
         self.assertEqual(listing["give_items"][0]["quantity"], 1)
         self.assertEqual(listing["give_items"][0]["quantity_source"], "structured")
 
