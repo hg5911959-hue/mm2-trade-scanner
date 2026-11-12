@@ -244,6 +244,22 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(listing["receive_items"], [{"name": "Snowcannon", "quantity": 2}])
         self.assertEqual(listing["give_items"], [{"name": "Spirit", "quantity": 1}])
 
+    def test_quantity_badge_does_not_leak_from_next_item(self):
+        html = """
+        <article>
+          <div>Propose
+            <div class="item-wrap"><img alt="Knife A"></div>
+            <div class="item-wrap"><img alt="Knife B"><span>x2</span></div>
+          </div>
+          <div>Recherche <img alt="Knife C"></div>
+        </article>
+        """
+        listing = parse_listings(html)[0]
+        self.assertEqual(
+            listing["receive_items"],
+            [{"name": "Knife A", "quantity": 1}, {"name": "Knife B", "quantity": 2}],
+        )
+
     def test_displayed_price_is_never_used_as_stack_quantity(self):
         html = """
         <article>
