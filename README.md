@@ -49,7 +49,7 @@ The scanner uses RBLXValue API v2 and calculates all trade totals from `value_so
 
 - A successful Supreme snapshot is reused for **5 minutes**. Once expired, the scanner must refresh from the API; if refresh fails or the API key is missing, it fails closed rather than using stale values.
 - The site item catalogue is loaded from `https://api.bloxswaps.com/items` and cached for **1 hour**.
-- The first BloxSwaps page is read from its HTML/RSC payload. Further pages are fetched from `https://api.bloxswaps.com/trade-posts` with `cursor` and `pageSize=20`.
+- The first BloxSwaps page is read from its HTML/RSC payload, then every new RSC post is converted through the site's item catalogue—even if its HTML card could not be parsed. Parsed HTML is cross-checked for quantity and contributes visible-price/raw-text diagnostics. Further pages are fetched from `https://api.bloxswaps.com/trade-posts` with `cursor` and `pageSize=20`.
 - Pagination continues through recent pages until a previously seen ad ID is reached. The default safety cap is 50 pages; reaching it with a cursor remaining raises a maintenance warning rather than claiming complete coverage.
 - Structured item IDs are mapped to BloxSwaps display names through the site catalogue. Unknown IDs are not assigned guessed names or values.
 - Cloudflare/CAPTCHA challenge pages and HTTP 403 access denials are reported explicitly rather than treated as an empty feed.
