@@ -41,6 +41,7 @@ ALERTED_FILE = Path("data/alerted.json")
 UNCERTAIN_FILE = Path("data/telegram_uncertain.json")
 SEEN_FILE = Path("data/seen_ads.json")
 PENDING_FILE = Path("data/pending_recheck.json")
+FIRST_SEEN_FILE = Path("data/first_seen_ads.json")
 ALIASES_FILE = Path("aliases.json")
 UNMATCHED_FILE = Path("data/unmatched_names.json")
 MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
@@ -1745,6 +1746,38 @@ def save_seen_ads(ad_ids):
     }, indent=2) + "\n")
 
 
+def load_first_seen_ads():
+    """Load first-observed timestamps without resetting corrupt state."""
+    if not FIRST_SEEN_FILE.exists():
+        return {}
+    try:
+        data = json.loads(FIRST_SEEN_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("[state] First-seen listing timestamps are unreadable; refusing a silent reset.") from exc
+    entries = data.get("first_seen") if isinstance(data, dict) else None
+    if not isinstance(entries, dict):
+        raise RuntimeError("[state] First-seen listing timestamp state has an invalid structure.")
+    result = {}
+    for ad_id, timestamp in entries.items():
+        if not isinstance(ad_id, str) or not ad_id or not isinstance(timestamp, str):
+            raise RuntimeError("[state] First-seen listing timestamp entry is invalid.")
+        try:
+            datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise RuntimeError("[state] First-seen listing timestamp is invalid.") from exc
+        result[ad_id] = timestamp
+    return result
+
+
+def save_first_seen_ads(entries):
+    ordered = dict(list(entries.items())[-50000:])
+    atomic_write_text(FIRST_SEEN_FILE, json.dumps({
+        "version": 1,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "first_seen": ordered,
+    }, ensure_ascii=False, indent=2) + "\n")
+
+
 def load_alerted():
     """Load sent IDs; tolerate missing first-run files but never reset on corruption."""
     ordered = []
@@ -1936,6 +1969,8 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
         "MM2 SUPREME TRADE SCANNER",
         f"OPEN OWNER PROFILE: {owner_link}",
         *( [f"Listing details: {listing['url']}"] if listing.get("url") and listing.get("url") != owner_link else [] ),
+        *( [f"FIRST SEEN UTC: {listing['first_seen_at_utc']}"] if listing.get("first_seen_at_utc") else [] ),
+        *( [f"ALERT ATTEMPT UTC: {listing['alert_attempted_at_utc']}"] if listing.get("alert_attempted_at_utc") else [] ),
         "",
         "YOU GIVE (BloxSwaps: Recherche):",
         *(give_lines or ["• No items"]),
@@ -2102,6 +2137,19 @@ def scan_once():
     print(f"[state] Pending listings queued for recheck: {len(pending_ids)}")
     print("[stage] Fetching BloxSwaps listings and cursor pages")
     listings, stats, discovered_ids = fetch_bloxswaps_all(seen_ads, pending_ids.keys())
+    first_seen_ads = load_first_seen_ads()
+    first_seen_changed = False
+    observed_at = datetime.now(timezone.utc).isoformat()
+    for ad_id in discovered_ids:
+        key = str(ad_id)
+        if key and key not in first_seen_ads:
+            first_seen_ads[key] = observed_at
+            first_seen_changed = True
+    if first_seen_changed:
+        save_first_seen_ads(first_seen_ads)
+    for listing in listings:
+        source_ad_id = str(listing.get("source_ad_id") or "")
+        listing["first_seen_at_utc"] = first_seen_ads.get(source_ad_id, observed_at)
     if stats.get("cold_start"):
         save_seen_ads(discovered_ids)
         print(
@@ -2301,6 +2349,7 @@ def scan_once():
         mark_pending(deferred_op["listing"])
     for op in selected_opportunities:
         listing = op["listing"]
+        listing["alert_attempted_at_utc"] = datetime.now(timezone.utc).isoformat()
         message = format_trade_message(
             listing, op["give_total"], op["give_lines"],
             op["receive_total"], op["receive_lines"], op["difference"]
@@ -2366,7 +2415,13 @@ def scan_once():
         uncertain_ids.discard(trade_id)
         save_uncertain_ids(uncertain_ids)
         mark_seen_ad(listing)
+        listing["alerted_at_utc"] = datetime.now(timezone.utc).isoformat()
         append_history(listing, op)
+        print(
+            f"[timing] listing={listing.get('source_ad_id') or trade_id} "
+            f"first_seen={listing.get('first_seen_at_utc', 'unknown')} "
+            f"alerted={listing['alerted_at_utc']}"
+        )
         sent += 1
         if sent < len(selected_opportunities) and ALERT_DELAY_SECONDS > 0:
             time.sleep(ALERT_DELAY_SECONDS)
@@ -2396,24 +2451,35 @@ def compare_secondary_values(items, values):
 
 def append_history(listing, op):
     from io import StringIO
-    fieldnames = ["detected_at_utc", "listing_id", "profit_supreme", "profit_margin_percent", "you_give", "you_receive", "listing_url", "owner_url"]
+    fieldnames = [
+        "detected_at_utc", "first_seen_at_utc", "alert_attempted_at_utc",
+        "alerted_at_utc", "listing_id", "profit_supreme",
+        "profit_margin_percent", "you_give", "you_receive", "listing_url", "owner_url",
+    ]
     buffer = StringIO(newline="")
     writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+    existing_rows = []
     if HISTORY_FILE.exists():
         try:
             with HISTORY_FILE.open("r", newline="", encoding="utf-8") as handle:
                 reader = csv.DictReader(handle)
-                if reader.fieldnames == fieldnames:
-                    writer.writeheader()
-                    writer.writerows(reader)
-                else:
-                    writer.writeheader()
+                if reader.fieldnames and "listing_id" in reader.fieldnames:
+                    existing_rows = list(reader)
         except (OSError, csv.Error):
-            writer.writeheader()
-    else:
-        writer.writeheader()
+            raise RuntimeError("[state] History file could not be migrated safely; refusing to overwrite it.")
+    writer.writeheader()
+    for old_row in existing_rows:
+        migrated = {key: old_row.get(key, "") for key in fieldnames}
+        migrated["first_seen_at_utc"] = migrated["first_seen_at_utc"] or ""
+        migrated["alert_attempted_at_utc"] = migrated["alert_attempted_at_utc"] or old_row.get("detected_at_utc", "")
+        migrated["alerted_at_utc"] = migrated["alerted_at_utc"] or old_row.get("detected_at_utc", "")
+        writer.writerow(migrated)
+    alerted_at = listing.get("alerted_at_utc") or datetime.now(timezone.utc).isoformat()
     writer.writerow({
-        "detected_at_utc": datetime.now(timezone.utc).isoformat(),
+        "detected_at_utc": alerted_at,
+        "first_seen_at_utc": listing.get("first_seen_at_utc", ""),
+        "alert_attempted_at_utc": listing.get("alert_attempted_at_utc", alerted_at),
+        "alerted_at_utc": alerted_at,
         "listing_id": listing["id"],
         "profit_supreme": round(op["difference"], 2),
         "profit_margin_percent": round(op["margin"], 2),
