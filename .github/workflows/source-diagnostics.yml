@@ -214,6 +214,9 @@ jobs:
                   if not post: continue
                   if any(str(value).casefold() in {"add", "ajout", "ajouts"} for value in (post.get("requestedWildcards") or [])):
                       continue
+                  roles = {str(row.get("tradeRole", "")).upper() for row in (post.get("tradePostItems") or [])}
+                  if not {"OFFERED", "REQUESTED"}.issubset(roles):
+                      continue
                   selected_article, selected_id = article_decoded, candidate_id
                   break
               if selected_article:
