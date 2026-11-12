@@ -1192,55 +1192,71 @@ def load_supreme_values():
     return all_values
 
 
-def calculate_side(items, values):
+def _select_conservative_variant(record, side):
+    variants = record.get("variants") if isinstance(record, dict) else None
+    variants = variants if isinstance(variants, list) and variants else [record]
+    valid = []
+    for variant in variants:
+        try:
+            value = float(variant["value"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if math.isfinite(value) and value > 0:
+            valid.append((value, variant))
+    if not valid:
+        return None, None
+    value, selected = (max(valid, key=lambda row: row[0]) if side == "give"
+                       else min(valid, key=lambda row: row[0]))
+    return value, selected
+
+
+def calculate_side(items, values, aliases=None, side="give"):
     total = 0.0
     breakdown = []
     missing = []
-
-    # Aggregate repeated copies of the same weapon instead of collapsing them
-    # to one. Also combine explicit xN stack counts with repeated image entries.
     grouped = {}
     for item in items:
         key = normalize_name(item["name"])
-        # These have no numeric Supreme value; ignore them rather than
-        # blocking the calculation or reporting them as unmatched.
         if key in IGNORED_VALUE_ITEMS:
             continue
-        if key not in grouped:
-            grouped[key] = {"name": item["name"], "quantity": 0}
+        record, match_source, candidates = resolve_value_record(item["name"], values, aliases)
+        if not record:
+            suffix = f" (ambiguous: {', '.join(candidates)})" if candidates else ""
+            missing.append(f"{item['name']}{suffix}")
+            continue
+        unit_value, selected = _select_conservative_variant(record, side)
+        if unit_value is None:
+            missing.append(item["name"])
+            continue
+        if match_source != "exact":
+            item["value_match_source"] = match_source
+            item["resolved_value_name"] = selected.get("name", record.get("name", item["name"]))
+        resolved_key = normalize_name(record.get("name", item["name"]))
+        entry = grouped.setdefault(resolved_key, {
+            "name": selected.get("name", record.get("name", item["name"])),
+            "quantity": 0, "unit_value": unit_value,
+        })
         quantity = item.get("quantity")
         if quantity is None or item.get("quantity_source") == "uncertain":
             missing.append(f"{item['name']} (quantity uncertain)")
             continue
-        if int(quantity) < 1 or int(quantity) > 100:
+        if not 1 <= int(quantity) <= 100:
             missing.append(f"{item['name']} (quantity outside supported range)")
             continue
-        grouped[key]["quantity"] += int(quantity)
+        entry["quantity"] += int(quantity)
 
-    for key, item in grouped.items():
-        record = values.get(key)
-        if not record:
-            missing.append(item["name"])
-            continue
-        try:
-            unit_value = float(record["value"])
-        except (KeyError, TypeError, ValueError):
-            missing.append(item["name"])
-            continue
-        if not math.isfinite(unit_value) or unit_value <= 0:
-            missing.append(item["name"])
-            continue
+    for item in grouped.values():
         quantity = item["quantity"]
-        item_total = unit_value * quantity
+        item_total = item["unit_value"] * quantity
         total += item_total
         suffix = f" x{quantity}" if quantity > 1 else ""
         breakdown.append(
-            f"• {record.get('name', item['name'])}{suffix} — {unit_value:g} each = {item_total:g}"
+            f"• {item['name']}{suffix} — {item['unit_value']:g} each = {item_total:g}"
         )
     return total, breakdown, missing
 
 
-def calculate_side_bounds(items, values):
+def calculate_side_bounds(items, values, aliases=None, side="give"):
     """Calculate conservative lower/upper totals without inventing an unknown stack count."""
     grouped = {}
     missing = []
@@ -1249,9 +1265,23 @@ def calculate_side_bounds(items, values):
         key = normalize_name(item["name"])
         if key in IGNORED_VALUE_ITEMS:
             continue
-        entry = grouped.setdefault(key, {
-            "name": item["name"], "min_quantity": 0,
-            "max_quantity": 0, "unbounded": False, "sources": [],
+        record, match_source, candidates = resolve_value_record(item["name"], values, aliases)
+        if not record:
+            suffix = f" (ambiguous: {', '.join(candidates)})" if candidates else ""
+            missing.append(f"{item['name']}{suffix}")
+            continue
+        unit_value, selected = _select_conservative_variant(record, side)
+        if unit_value is None:
+            missing.append(item["name"])
+            continue
+        if match_source != "exact":
+            item["value_match_source"] = match_source
+            item["resolved_value_name"] = selected.get("name", record.get("name", item["name"]))
+        resolved_key = normalize_name(record.get("name", item["name"]))
+        entry = grouped.setdefault(resolved_key, {
+            "name": selected.get("name", record.get("name", item["name"])),
+            "min_quantity": 0, "max_quantity": 0, "unbounded": False,
+            "unit_value": unit_value,
         })
         quantity = item.get("quantity")
         source = item.get("quantity_source", "implicit_single")
@@ -1274,11 +1304,11 @@ def calculate_side_bounds(items, values):
             entry["unbounded"] = True
         elif not entry["unbounded"]:
             entry["max_quantity"] += qmax
-        entry["sources"].append(source)
         if source == "uncertain":
             uncertain.append({
-                "name": item["name"], "quantity_min": qmin, "quantity_max": qmax,
-                "quantity_source": source, "quantity_reason": item.get("quantity_reason", ""),
+                "side": side, "name": item["name"], "quantity_min": qmin,
+                "quantity_max": qmax, "quantity_source": source,
+                "quantity_reason": item.get("quantity_reason", ""),
                 "listed_price": item.get("listed_price"), "raw_excerpt": item.get("raw_excerpt", ""),
             })
 
@@ -1286,35 +1316,23 @@ def calculate_side_bounds(items, values):
     total_max = 0.0
     unbounded_total = False
     breakdown = []
-    for key, item in grouped.items():
-        record = values.get(key)
-        if not record:
-            missing.append(item["name"])
-            continue
-        try:
-            unit_value = float(record["value"])
-        except (KeyError, TypeError, ValueError):
-            missing.append(item["name"])
-            continue
-        if not math.isfinite(unit_value) or unit_value <= 0:
-            missing.append(item["name"])
-            continue
+    for item in grouped.values():
         low = item["min_quantity"]
         high = None if item["unbounded"] else item["max_quantity"]
-        low_total = unit_value * low
+        low_total = item["unit_value"] * low
         total_min += low_total
         if high is None:
             unbounded_total = True
             quantity_label = f"x? ({low}..∞)"
             total_label = f"{low_total:g}..∞"
         else:
-            high_total = unit_value * high
+            high_total = item["unit_value"] * high
             total_max += high_total
             quantity_label = f"x{low}" if low == high else f"x? ({low}..{high})"
             total_label = f"{low_total:g}" if low == high else f"{low_total:g}..{high_total:g}"
         breakdown.append(
-            f"• {record.get('name', item['name'])} {quantity_label} — "
-            f"{unit_value:g} each = {total_label}"
+            f"• {item['name']} {quantity_label} — "
+            f"{item['unit_value']:g} each = {total_label}"
         )
     return total_min, (math.inf if unbounded_total else total_max), breakdown, missing, uncertain
 
