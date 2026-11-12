@@ -666,7 +666,8 @@ class ReliabilityTests(unittest.TestCase):
             "scanner.urllib.request.urlopen", side_effect=fake_open
         ):
             scanner.send_telegram(message)
-        self.assertIn("👤 https://bloxswaps.com/fr/users/12345", captured["text"])\n        self.assertIn("and 492 more items", captured["text"])
+        self.assertIn("👤 https://bloxswaps.com/fr/users/12345", captured["text"])
+        self.assertIn("and 492 more items", captured["text"])
 
     def test_one_definite_telegram_failure_does_not_stop_later_alerts(self):
         html = """
