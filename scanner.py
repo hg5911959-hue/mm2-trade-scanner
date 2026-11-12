@@ -166,87 +166,139 @@ def collect_images_in_order(node):
     return images
 
 
+ARABIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+
+
+def _normalize_quantity_text(raw):
+    return (str(raw or "").translate(ARABIC_DIGITS)
+            .replace("\u00a0", " ").replace("\u202f", " ")
+            .replace("\u2009", " ").replace("\u2007", " ")
+            .replace("\u2212", "-"))
+
+
 def _quantity_marker(raw):
-    """Parse only explicit stack/count labels; never infer quantity from value text."""
-    text = (raw or "").strip()
-    if not text:
-        return None
-    match = re.fullmatch(r"(?:x|×)\s*(\d{1,3})|(?:\d{1,3})\s*(?:x|×)", text, flags=re.I)
+    """Parse a whole explicit marker or structured numeric quantity."""
+    text = _normalize_quantity_text(raw).strip()
+    match = re.fullmatch(r"(?:x|×)\\s*(\\d{1,3})|(?:\\d{1,3})\\s*(?:x|×)", text, flags=re.I)
     if match:
-        number = re.search(r"\d{1,3}", text)
+        number = re.search(r"\\d{1,3}", text)
         return max(1, min(int(number.group()), 100))
-    # Some BloxSwaps cards render the stack badge as a bare number.
-    if re.fullmatch(r"\d{1,3}", text):
+    if re.fullmatch(r"\\d{1,3}", text):
         return max(1, min(int(text), 100))
-    match = re.search(r"(?:[x×]\s*(\d{1,3})|(\d{1,3})\s*[x×])", text, flags=re.I)
-    if match:
-        return max(1, min(int(match.group(1) or match.group(2)), 100))
     return None
 
 
+def _explicit_stack_quantities(raw):
+    """Return all explicit xN/×N/Nx markers; never parse bare prices as counts."""
+    text = _normalize_quantity_text(raw)
+    pattern = r"(?<![A-Za-z0-9])(?:x|×)\\s*(\\d{1,3})(?!\\d)|(?<!\\d)(\\d{1,3})\\s*(?:x|×)(?![A-Za-z0-9])"
+    return [
+        max(1, min(int(match.group(1) or match.group(2)), 100))
+        for match in re.finditer(pattern, text, flags=re.I)
+    ]
+
+
 def _explicit_stack_quantity(raw):
-    """Read an explicit xN/×N marker; bare prices and numbers are never counts."""
-    text = (raw or "").strip()
-    match = re.search(r"(?<![A-Za-z0-9])(?:x|×)\s*(\d{1,3})(?!\d)|(?<!\d)(\d{1,3})\s*[x×](?![A-Za-z0-9])", text, flags=re.I)
-    if not match:
+    quantities = _explicit_stack_quantities(raw)
+    return quantities[0] if quantities else None
+
+
+def _side_marker_count(text):
+    return len(re.findall(
+        r"\\b(?:propose|offering|offer|recherche|looking\\s+for|request)\\b",
+        text or "", flags=re.I
+    ))
+
+
+def _item_wrapper(image_node):
+    """Find the largest ancestor that contains exactly this weapon and no side boundary."""
+    wrapper = None
+    ancestor = image_node.parent
+    while ancestor is not None:
+        if len(collect_images_in_order(ancestor)) != 1:
+            break
+        if _side_marker_count(node_text(ancestor)):
+            break
+        wrapper = ancestor
+        ancestor = ancestor.parent
+    return wrapper
+
+
+def _structured_quantity_from_nodes(image_node, wrapper):
+    """Read explicit data-* counts only from the image or its isolated item wrapper."""
+    nodes = [image_node]
+    if wrapper is not None and wrapper is not image_node:
+        nodes.append(wrapper)
+    found = []
+    for node in nodes:
+        for key in ("data-quantity", "data-count", "data-amount", "data-stack", "data-stack-count"):
+            raw = node.attrs.get(key)
+            if raw is not None:
+                quantity = _quantity_marker(raw)
+                if quantity is None:
+                    return None, True
+                found.append(quantity)
+        for key in ("aria-label", "title"):
+            raw = node.attrs.get(key, "")
+            quantities = _explicit_stack_quantities(raw)
+            if quantities:
+                found.extend(quantities)
+            elif raw and re.search(r"(?:^|\\s)(?:x|×)\\s*(?:$|[^0-9])", _normalize_quantity_text(raw), re.I):
+                return None, True
+    if found and len(set(found)) != 1:
+        return None, True
+    return (found[0], False) if found else (None, False)
+
+
+def _has_unreadable_quantity_hint(raw, wrapper=None):
+    text = _normalize_quantity_text(raw)
+    if re.search(r"(?<![A-Za-z0-9])(?:x|×)\\s*(?:$|[^0-9\\s])", text, flags=re.I):
+        return True
+    if wrapper is not None:
+        for node in walk_nodes(wrapper):
+            classes = " ".join((
+                node.attrs.get("class", ""), node.attrs.get("id", ""),
+                node.attrs.get("data-testid", "")
+            )).casefold()
+            if re.search(r"quant|count|amount|stack|badge|counter", classes):
+                label = node_text(node).strip()
+                if label and not _explicit_stack_quantities(label) and _quantity_marker(label) is None:
+                    return True
+            for key in ("data-quantity", "data-count", "data-amount", "data-stack", "data-stack-count"):
+                if key in node.attrs and _quantity_marker(node.attrs.get(key)) is None:
+                    return True
+    return False
+
+
+def _listed_price(raw):
+    """Parse a visible decimal listing price for diagnostics only."""
+    text = _normalize_quantity_text(raw)
+    matches = re.findall(r"(?<![A-Za-z0-9])([0-9]+(?:[.,][0-9]+))\\s*([KMB])?(?![A-Za-z0-9])", text, flags=re.I)
+    if not matches:
         return None
-    return max(1, min(int(match.group(1) or match.group(2)), 100))
+    number, suffix = matches[0]
+    value = float(number.replace(",", "."))
+    multiplier = {"K": 1_000, "M": 1_000_000, "B": 1_000_000_000}.get(suffix.upper(), 1)
+    return value * multiplier
 
 
 def quantity_from_image_node(image_node):
-    """Read explicit stack counts from the image or its own semantic attributes."""
-    _, alt_quantity = split_item_label(image_node.attrs.get("alt", ""))
+    """Compatibility helper: return a quantity only when a local source proves it."""
+    name, alt_quantity = split_item_label(image_node.attrs.get("alt", ""))
     if alt_quantity is not None:
         return alt_quantity
-
-    current = image_node
-    for _ in range(3):
-        if current is None:
-            break
-        # Structured item data is authoritative; bare numeric counts are safe here.
-        for key in ("data-quantity", "data-count", "data-amount", "data-stack",
-                    "data-stack-count"):
-            quantity = _quantity_marker(current.attrs.get(key, ""))
-            if quantity is not None:
-                return quantity
-        # Accessibility labels/titles need an explicit xN marker to avoid
-        # mistaking an item's market price for its quantity.
-        for key in ("aria-label", "title"):
-            quantity = _explicit_stack_quantity(current.attrs.get(key, ""))
-            if quantity is not None:
-                return quantity
-        current = current.parent
-
-    # Inspect only the immediate item wrapper and its parent wrapper for
-    # sibling badges. Never walk higher into a whole offer/card where a badge
-    # belonging to another weapon or the opposite side could be picked up.
-    branch = image_node
-    ancestor = image_node.parent
-    for _ in range(2):
-        if ancestor is None:
-            break
-        for kind, sibling in ancestor.events:
-            if kind != "node" or sibling is branch:
-                continue
-            if any(
-                child.tag == "img" and clean_item_name(child.attrs.get("alt", ""))
-                for child in walk_nodes(sibling)
-            ):
-                continue
-            classes = " ".join((
-                sibling.attrs.get("class", ""), sibling.attrs.get("id", ""),
-                sibling.attrs.get("aria-label", ""), sibling.attrs.get("data-testid", "")
-            )).casefold()
-            marker_text = node_text(sibling)
-            explicit = _explicit_stack_quantity(marker_text)
-            semantic = bool(re.search(r"quant|count|amount|stack|badge|counter", classes))
-            bare = _quantity_marker(marker_text) if semantic else None
-            if explicit is not None:
-                return explicit
-            if bare is not None:
-                return bare
-        branch = ancestor
-        ancestor = ancestor.parent
+    wrapper = _item_wrapper(image_node)
+    structured, invalid = _structured_quantity_from_nodes(image_node, wrapper)
+    if invalid:
+        return None
+    if structured is not None:
+        return structured
+    local_text = node_text(wrapper) if wrapper is not None else ""
+    explicit = _explicit_stack_quantities(local_text)
+    if len(set(explicit)) == 1:
+        return explicit[0]
+    if len(set(explicit)) > 1 or _has_unreadable_quantity_hint(local_text, wrapper):
+        return None
     return None
 
 
@@ -258,7 +310,11 @@ def collect_ordered_events(node):
                 result.append(("text", value))
             elif value.tag == "img":
                 name, _ = split_item_label(value.attrs.get("alt", ""))
-                result.append(("img", {"name": name, "quantity": quantity_from_image_node(value)}))
+                if name:
+                    result.append(("img", {"name": name, "node": value}))
+                else:
+                    # Coin/decoration images are not item boundaries.
+                    continue
             else:
                 visit(value)
     visit(node)
@@ -267,7 +323,31 @@ def collect_ordered_events(node):
 
 def has_addition_marker(node):
     text = node_text(node).casefold()
-    return bool(re.search(r"\bajout(?:s)?\b", text))
+    return bool(re.search(r"\\bajout(?:s)?\\b", text))
+
+
+def _item_quantity_details(image_node, segment_text):
+    wrapper = _item_wrapper(image_node)
+    wrapper_text = node_text(wrapper) if wrapper is not None else ""
+    alt_name, alt_quantity = split_item_label(image_node.attrs.get("alt", ""))
+    structured, invalid_structured = _structured_quantity_from_nodes(image_node, wrapper)
+    local_text = " ".join(part for part in (wrapper_text, segment_text) if part)
+    explicit = _explicit_stack_quantities(local_text)
+    unreadable = _has_unreadable_quantity_hint(local_text, wrapper)
+    if alt_quantity is not None:
+        explicit.append(alt_quantity)
+
+    if invalid_structured or len(set(explicit)) > 1:
+        return None, "uncertain", _listed_price(local_text), local_text[:240]
+    if structured is not None:
+        if explicit and any(value != structured for value in explicit):
+            return None, "uncertain", _listed_price(local_text), local_text[:240]
+        return structured, "structured", _listed_price(local_text), local_text[:240]
+    if explicit:
+        return explicit[0], "explicit", _listed_price(local_text), local_text[:240]
+    if unreadable:
+        return None, "uncertain", _listed_price(local_text), local_text[:240]
+    return 1, "implicit_single", _listed_price(local_text), local_text[:240]
 
 
 def extract_side_items(node):
@@ -278,40 +358,38 @@ def extract_side_items(node):
     for i, (kind, value) in enumerate(events):
         if kind == "text":
             low = value.casefold()
-            if re.search(r"\bpropose\b|\boffering\b|\boffer\b", low):
+            if re.search(r"\\bpropose\\b|\\boffering\\b|\\boffer\\b", low):
                 side = "receive"
-            elif re.search(r"\brecherche\b|\blooking for\b|\brequest\b", low):
+            elif re.search(r"\\brecherche\\b|\\blooking\\s+for\\b|\\brequest\\b", low):
                 side = "give"
-        elif kind == "img" and value and value["name"] and side:
-            # Quantity may be embedded in alt text or rendered nearby as x3, 3x, ×3.
-            quantity = value["quantity"]
-            # A badge may be before or after the icon. Associate it only inside
-            # this item's segment, bounded by adjacent weapon images and side labels.
-            if quantity is None:
-                for prev_kind, prev_value in reversed(events[:i]):
-                    if prev_kind == "img" and prev_value and prev_value["name"]:
-                        break
-                    if prev_kind == "text":
-                        if re.search(r"\b(?:propose|offering|offer|recherche|looking for|request)\b", prev_value, re.I):
-                            break
-                        quantity = _explicit_stack_quantity(prev_value)
-                        if quantity is not None:
-                            break
-            if quantity is None:
-                for next_kind, next_value in events[i + 1:]:
-                    if next_kind == "img" and next_value and next_value["name"]:
-                        break
-                    if next_kind == "text":
-                        if re.search(r"\b(?:propose|offering|offer|recherche|looking for|request)\b", next_value, re.I):
-                            break
-                        quantity = _explicit_stack_quantity(next_value)
-                        if quantity is not None:
-                            break
-            # On BloxSwaps a plain item card means one copy when no xN badge exists.
-            if quantity is None:
-                quantity = 1
-            target = received if side == "receive" else requested
-            target.append({"name": value["name"], "quantity": quantity})
+            continue
+        if kind != "img" or not value or not side:
+            continue
+        end = i + 1
+        suffix = []
+        while end < len(events):
+            next_kind, next_value = events[end]
+            if next_kind == "img" and next_value and next_value.get("name"):
+                break
+            if next_kind == "text" and re.search(
+                r"\\b(?:propose|offering|offer|recherche|looking\\s+for|request)\\b",
+                next_value, flags=re.I
+            ):
+                break
+            if next_kind == "text":
+                suffix.append(next_value)
+            end += 1
+        quantity, source, price, raw_excerpt = _item_quantity_details(
+            value["node"], " ".join(suffix)
+        )
+        target = received if side == "receive" else requested
+        target.append({
+            "name": value["name"],
+            "quantity": quantity,
+            "quantity_source": source,
+            "listed_price": price,
+            "raw_excerpt": raw_excerpt,
+        })
     return received, requested
 
 
