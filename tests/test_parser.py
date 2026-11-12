@@ -1,6 +1,6 @@
 import unittest
 
-from scanner import parse_listings, calculate_side
+from scanner import parse_listings, parse_page, calculate_side
 
 
 class ParserTests(unittest.TestCase):
@@ -67,6 +67,30 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(total, 30)
         self.assertEqual(missing, [])
         self.assertIn("x3", breakdown[0])
+
+    def test_all_ajouts_is_distinguished_from_parser_failure(self):
+        html = """
+        <article>
+          <div>Propose <img alt="Chroma Gemstone"></div>
+          <div>Recherche <img alt="Chroma Laser"></div>
+          <span>Ajouts</span>
+        </article>
+        """
+        listings, stats = parse_page(html)
+        self.assertEqual(listings, [])
+        self.assertEqual(stats["candidate_count"], 1)
+        self.assertEqual(stats["addition_count"], 1)
+
+    def test_explicit_stack_quantity_is_parsed(self):
+        html = """
+        <article>
+          <div>Propose <img alt="Chroma Gemstone"><span>x3</span></div>
+          <div>Recherche <img alt="Chroma Laser"></div>
+          <a href="/fr/users/12345">Owner</a>
+        </article>
+        """
+        listing = parse_listings(html)[0]
+        self.assertEqual(listing["receive_items"][0]["quantity"], 3)
 
 
 if __name__ == "__main__":
