@@ -926,6 +926,16 @@ class CacheTTLTests(unittest.TestCase):
             api.assert_not_called()
 
 
+class PendingRecheckStateTests(unittest.TestCase):
+    def test_pending_ids_round_trip_with_first_seen_timestamps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "pending.json"
+            pending = {"ad-one": 100.0, "ad-two": 200.0}
+            with patch("scanner.PENDING_FILE", path):
+                scanner.save_pending_ids(pending)
+                self.assertEqual(scanner.load_pending_ids(), pending)
+
+
 class SeenAdStateTests(unittest.TestCase):
     def test_seen_state_round_trips_and_corruption_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:
