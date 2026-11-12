@@ -44,7 +44,7 @@ Never commit or share any of these secrets. The scanner never prints API keys or
 - Manual run: **Actions → MM2 Trade Scanner → Run workflow**.
 - Logs: open the workflow run and download the `mm2-scanner-diagnostics` artifact.
 - Optional missed-schedule monitoring: create a free check at Healthchecks.io and save its ping URL as the repository secret `HEALTHCHECKS_PING_URL`. The workflow pings on successful scans and sends `/fail` on failures; the service can alert if scheduled pings stop arriving.
-- Processed IDs, Supreme cache, failure counter, and `history.csv` are persisted with GitHub Actions Cache; `data/` is ignored and is not committed to `main`. A separate monthly keepalive workflow commits a tiny activity marker to reduce the risk of scheduled workflows being disabled for inactivity.
+- Processed IDs, Supreme cache, failure counter, and `history.csv` are persisted with GitHub Actions Cache. The first successful run seeds the cache from the existing state, then automatically removes the legacy tracked `data/` files from `main`; afterwards `data/` remains ignored. A separate monthly keepalive workflow commits a tiny activity marker to reduce the risk of scheduled workflows being disabled for inactivity.
 - `history.csv` records detected opportunities and their calculated values. It cannot confirm that a Roblox trade was accepted or completed.
 
 If the API returns HTTP 403, the key is invalid, inactive, unverified, expired, or suspended. Check its status at https://rblxvalue.com/developer, create/regenerate a key if needed, then replace the GitHub secret `RBLXVALUE_API_KEY`. A GitHub secret's name must remain exactly the same.
