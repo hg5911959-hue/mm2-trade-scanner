@@ -1070,7 +1070,7 @@ def _api_trade_post_to_listing(post, item_map):
             continue
         item_id = str(row.get("itemDetailsId") or "")
         details = item_map.get(item_id)
-        name = str(details.get("displayName")) if details else f"Unknown item ID {item_id}"
+        name = str(details.get("displayName")) if details else str(row.get("displayName") or row.get("name") or f"Unknown item ID {item_id}")
         try:
             quantity = int(row.get("quantity"))
         except (TypeError, ValueError):
@@ -1171,11 +1171,15 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
         seen_ad_ids = set()
     html = fetch_bloxswaps()
     initial_page = parse_structured_initial_page(html)
-    has_structured_items = bool(initial_page and any(
-        isinstance(post, dict) and post.get('tradePostItems')
-        for post in (initial_page.get('items') or [])
-    ))
-    initial_item_map = fetch_bloxswaps_items_map() if has_structured_items else None
+    structured_rows = [
+        row for post in (initial_page.get("items") or []) if isinstance(post, dict)
+        for row in (post.get("tradePostItems") or []) if isinstance(row, dict)
+    ] if initial_page else []
+    needs_catalogue = any(
+        row.get("itemDetailsId") and not (row.get("displayName") or row.get("name"))
+        for row in structured_rows
+    )
+    initial_item_map = fetch_bloxswaps_items_map() if needs_catalogue else {}
     first_listings, stats = parse_page(html, initial_item_map)
     if not initial_page:
         stats.update({
