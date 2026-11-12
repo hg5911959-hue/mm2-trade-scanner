@@ -265,6 +265,13 @@ def extract_supreme_value_cards(html):
                 if candidate and not candidate.casefold().startswith("image"):
                     names.append(candidate)
         # Item cards commonly have two links: image and the visible item title.
+        names = [
+            candidate for candidate in names
+            if "corrected" not in candidate.casefold()
+            and "item stability" not in candidate.casefold()
+            and "value history" not in candidate.casefold()
+            and "similar items" not in candidate.casefold()
+        ]
         name = names[-1] if names else ""
         if not name:
             for child in walk_nodes(card):
