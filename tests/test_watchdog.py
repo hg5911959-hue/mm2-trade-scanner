@@ -1,0 +1,30 @@
+import json
+import os
+import unittest
+from datetime import datetime, timezone
+from unittest.mock import patch
+
+import watchdog
+
+
+class WatchdogRepositoryTests(unittest.TestCase):
+    def test_active_run_lookup_uses_github_repository_environment(self):
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        payload = {"workflow_runs": [{"id": 123, "created_at": now}]}
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "example/mm2-test"}), patch(
+            "watchdog.scanner.request_with_retry",
+            return_value=json.dumps(payload).encode("utf-8"),
+        ) as request:
+            age, run = watchdog.latest_active_scan_age_minutes("test-token")
+        self.assertIsNotNone(age)
+        self.assertEqual(run["id"], 123)
+        self.assertIn("example/mm2-test", request.call_args.args[0].full_url)
+
+    def test_missing_repository_environment_fails_clearly(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "GITHUB_REPOSITORY"):
+                watchdog.latest_active_scan_age_minutes("test-token")
+
+
+if __name__ == "__main__":
+    unittest.main()
