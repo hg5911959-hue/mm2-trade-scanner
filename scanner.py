@@ -164,12 +164,15 @@ def extract_side_items(node):
             # BloxSwaps shows an optional xN stack count after the item name.
             quantity = 1
             for next_kind, next_value in events[i + 1:]:
-                if next_kind == "img":
+                # Coin/value icons are represented as empty image events; they
+                # must not stop the search for the xN stack label after the price.
+                if next_kind == "img" and next_value:
                     break
-                match = re.search(r"\bx\s*(\d+)\b", next_value, flags=re.I)
-                if match:
-                    quantity = max(1, min(int(match.group(1)), 100))
-                    break
+                if next_kind == "text":
+                    match = re.search(r"\bx\s*(\d+)\b", next_value, flags=re.I)
+                    if match:
+                        quantity = max(1, min(int(match.group(1)), 100))
+                        break
             target = received if side == "receive" else requested
             target.append({"name": value, "quantity": quantity})
     return received, requested
@@ -337,8 +340,17 @@ def calculate_side(items, values):
     total = 0.0
     breakdown = []
     missing = []
+
+    # Aggregate repeated copies of the same weapon instead of collapsing them
+    # to one. Also combine explicit xN stack counts with repeated image entries.
+    grouped = {}
     for item in items:
         key = normalize_name(item["name"])
+        if key not in grouped:
+            grouped[key] = {"name": item["name"], "quantity": 0}
+        grouped[key]["quantity"] += max(1, int(item.get("quantity", 1)))
+
+    for key, item in grouped.items():
         record = values.get(key)
         if not record:
             missing.append(item["name"])
@@ -470,9 +482,23 @@ def main():
     SEEN_FILE.write_text(
         json.dumps({"seen": updated_seen}, indent=2) + "\n", encoding="utf-8"
     )
+    if sent == 0:
+        # A heartbeat every scheduled scan confirms that the scanner is alive
+        # and no NEW fully verified trade met the configured profit threshold.
+        heartbeat = (
+            "MM2 SUPREME TRADE SCANNER\n\n"
+            "لا توجد عروض جيدة حاليًا.\n"
+            "لم يتم العثور على عرض جديد يحقق شروط الربح بعد التحقق من قيم جميع الأسلحة.\n\n"
+            f"Listings checked: {len(listings)}\n"
+            f"Unmatched listings skipped: {skipped_unknown}\n"
+            "Next scan: in approximately 15 minutes."
+        )
+        print("[telegram] No qualifying new trade; sending heartbeat")
+        send_telegram(heartbeat)
+
     print(
         f"[summary] Parsed={len(listings)} | evaluated={len(evaluated_ids)} | "
-        f"unmatched_skipped={skipped_unknown} | alerts={sent}"
+        f"unmatched_skipped={skipped_unknown} | alerts={sent} | heartbeat={sent == 0}"
     )
 
 
