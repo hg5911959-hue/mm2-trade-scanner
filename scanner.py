@@ -254,8 +254,8 @@ def _item_wrapper(image_node):
     return wrapper
 
 
-def _structured_quantity_from_nodes(image_node, wrapper):
-    """Read data-* counts along the isolated image-to-wrapper ancestor path."""
+def _structured_quantity_from_nodes(image_node, wrapper, segment_nodes=()):
+    """Read data-* counts only from the image ancestry and its own DOM segment."""
     nodes = [image_node]
     current = image_node.parent
     while current is not None:
@@ -263,6 +263,8 @@ def _structured_quantity_from_nodes(image_node, wrapper):
         if current is wrapper:
             break
         current = current.parent
+    known = {id(node) for node in nodes}
+    nodes.extend(node for node in segment_nodes if id(node) not in known)
     found = []
     for node in nodes:
         for key in ("data-quantity", "data-count", "data-amount", "data-stack", "data-stack-count"):
@@ -295,7 +297,7 @@ def _semantic_badge_quantity(wrapper):
     return None
 
 
-def _has_unreadable_quantity_hint(raw, wrapper=None):
+def _has_unreadable_quantity_hint(raw, wrapper=None, segment_nodes=()):
     text = _normalize_quantity_text(raw)
     has_explicit_in_segment = bool(_explicit_stack_quantities(text))
     invalid_numeric_marker = re.search(
@@ -308,8 +310,11 @@ def _has_unreadable_quantity_hint(raw, wrapper=None):
             return True
     if re.search(r"(?<![A-Za-z0-9])(?:x|×)\s*(?:$|[^0-9\s])", text, flags=re.I):
         return True
-    if wrapper is not None:
-        for node in walk_nodes(wrapper):
+    if wrapper is not None or segment_nodes:
+        nodes = list(walk_nodes(wrapper)) if wrapper is not None else []
+        known = {id(node) for node in nodes}
+        nodes.extend(node for node in segment_nodes if id(node) not in known)
+        for node in nodes:
             for key in ("aria-label", "title"):
                 label = node.attrs.get(key, "")
                 if label and re.search(r"(?:^|\s)(?:x|×)\s*(?:$|[^0-9])", _normalize_quantity_text(label), re.I):
@@ -361,6 +366,7 @@ def quantity_from_image_node(image_node):
 
 
 def collect_ordered_events(node):
+    """Flatten DOM events while retaining element nodes for segment-scoped metadata."""
     result = []
     def visit(n):
         for kind, value in n.events:
@@ -370,10 +376,9 @@ def collect_ordered_events(node):
                 name, _ = split_item_label(value.attrs.get("alt", ""))
                 if name:
                     result.append(("img", {"name": name, "node": value}))
-                else:
-                    # Coin/decoration images are not item boundaries.
-                    continue
+                # Coin/decoration images are not item boundaries.
             else:
+                result.append(("element", value))
                 visit(value)
     visit(node)
     return result
@@ -384,20 +389,55 @@ def has_addition_marker(node):
     return bool(re.search(r"\bajout(?:s)?\b", text))
 
 
-def _item_quantity_details(image_node, segment_text):
+def _item_quantity_details(image_node, segment_text, segment_nodes=()):
     wrapper = _item_wrapper(image_node)
     wrapper_text = node_text(wrapper) if wrapper is not None else ""
     alt_name, alt_quantity = split_item_label(image_node.attrs.get("alt", ""))
-    structured, invalid_structured = _structured_quantity_from_nodes(image_node, wrapper)
-    local_text = " ".join(part for part in (wrapper_text, segment_text) if part)
+    structured, invalid_structured = _structured_quantity_from_nodes(
+        image_node, wrapper, segment_nodes
+    )
+    # The text used to infer a stack is restricted to the image's own segment:
+    # after this weapon image and before the next weapon or side marker. Ancestor
+    # text is retained only for diagnostic price extraction, never quantity.
+    quantity_attribute_nodes = [image_node]
+    current = image_node.parent
+    while current is not None:
+        quantity_attribute_nodes.append(current)
+        if current is wrapper:
+            break
+        current = current.parent
+    quantity_attribute_nodes.extend(segment_nodes)
+    seen_nodes = set()
+    quantity_attribute_nodes = [
+        node for node in quantity_attribute_nodes
+        if not (id(node) in seen_nodes or seen_nodes.add(id(node)))
+    ]
     attribute_text = " ".join(
         str(node.attrs.get(key, ""))
-        for node in ([image_node] + (list(walk_nodes(wrapper)) if wrapper is not None else []))
+        for node in quantity_attribute_nodes
         for key in ("aria-label", "title")
     )
+    local_text = " ".join(part for part in (alt_name, segment_text) if part)
+    diagnostic_text = " ".join(part for part in (wrapper_text, local_text) if part)
     explicit = _explicit_stack_quantities(local_text + " " + attribute_text)
-    semantic_quantity = _semantic_badge_quantity(wrapper)
-    unreadable = _has_unreadable_quantity_hint(local_text + " " + attribute_text, wrapper)
+    semantic_quantities = []
+    for node in segment_nodes:
+        classes = " ".join((
+            node.attrs.get("class", ""), node.attrs.get("id", ""),
+            node.attrs.get("data-testid", "")
+        )).casefold()
+        if re.search(r"quant|count|amount|stack|badge|counter", classes):
+            quantity = _quantity_marker(node_text(node))
+            if quantity is not None:
+                semantic_quantities.append(quantity)
+    semantic_quantity = (
+        semantic_quantities[0]
+        if semantic_quantities and len(set(semantic_quantities)) == 1
+        else None
+    )
+    unreadable = _has_unreadable_quantity_hint(
+        local_text + " " + attribute_text, wrapper, segment_nodes
+    )
     if alt_quantity is not None:
         explicit.append(alt_quantity)
     if semantic_quantity is not None:
@@ -405,20 +445,20 @@ def _item_quantity_details(image_node, segment_text):
 
     if invalid_structured:
         lower = min(explicit) if explicit else 1
-        return None, "uncertain", _listed_price(local_text), local_text[:240], lower, None, "invalid structured quantity marker"
+        return None, "uncertain", _listed_price(diagnostic_text), local_text[:240], lower, None, "invalid structured quantity marker"
     if len(set(explicit)) > 1:
-        return None, "uncertain", _listed_price(local_text), local_text[:240], min(explicit), max(explicit), "conflicting explicit quantity markers"
+        return None, "uncertain", _listed_price(diagnostic_text), local_text[:240], min(explicit), max(explicit), "conflicting explicit quantity markers"
     if unreadable:
         lower = min(explicit) if explicit else 1
-        return None, "uncertain", _listed_price(local_text), local_text[:240], lower, None, "ambiguous quantity marker"
+        return None, "uncertain", _listed_price(diagnostic_text), local_text[:240], lower, None, "ambiguous quantity marker"
     if structured is not None:
         if explicit and any(value != structured for value in explicit):
             candidates = [structured, *explicit]
-            return None, "uncertain", _listed_price(local_text), local_text[:240], min(candidates), max(candidates), "HTML/structured quantity disagreement"
-        return structured, "structured", _listed_price(local_text), local_text[:240], structured, structured, ""
+            return None, "uncertain", _listed_price(diagnostic_text), local_text[:240], min(candidates), max(candidates), "HTML/structured quantity disagreement"
+        return structured, "structured", _listed_price(diagnostic_text), local_text[:240], structured, structured, ""
     if explicit:
-        return explicit[0], "explicit", _listed_price(local_text), local_text[:240], explicit[0], explicit[0], ""
-    return 1, "implicit_single", _listed_price(local_text), local_text[:240], 1, 1, ""
+        return explicit[0], "explicit", _listed_price(diagnostic_text), local_text[:240], explicit[0], explicit[0], ""
+    return 1, "implicit_single", _listed_price(diagnostic_text), local_text[:240], 1, 1, ""
 
 def extract_side_items(node):
     events = collect_ordered_events(node)
@@ -437,6 +477,7 @@ def extract_side_items(node):
             continue
         end = i + 1
         suffix = []
+        segment_nodes = []
         while end < len(events):
             next_kind, next_value = events[end]
             if next_kind == "img" and next_value and next_value.get("name"):
@@ -448,9 +489,11 @@ def extract_side_items(node):
                 break
             if next_kind == "text":
                 suffix.append(next_value)
+            elif next_kind == "element":
+                segment_nodes.append(next_value)
             end += 1
         quantity, source, price, raw_excerpt, quantity_min, quantity_max, reason = _item_quantity_details(
-            value["node"], " ".join(suffix)
+            value["node"], " ".join(suffix), segment_nodes
         )
         target = received if side == "receive" else requested
         target.append({
