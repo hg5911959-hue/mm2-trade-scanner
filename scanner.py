@@ -281,6 +281,14 @@ def _semantic_badge_quantity(wrapper):
 
 def _has_unreadable_quantity_hint(raw, wrapper=None):
     text = _normalize_quantity_text(raw)
+    invalid_numeric_marker = re.search(
+        r"(?<![A-Za-z0-9])(?:x|×)\s*(\d+)(?!\d)|(?<!\d)(\d+)\s*(?:x|×)(?![A-Za-z0-9])",
+        text, flags=re.I
+    )
+    if invalid_numeric_marker:
+        parsed = int(invalid_numeric_marker.group(1) or invalid_numeric_marker.group(2))
+        if not 1 <= parsed <= 100:
+            return True
     if re.search(r"(?<![A-Za-z0-9])(?:x|×)\s*(?:$|[^0-9\s])", text, flags=re.I):
         return True
     if wrapper is not None:
