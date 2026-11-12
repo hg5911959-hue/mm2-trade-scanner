@@ -1576,7 +1576,7 @@ def send_maintenance_alert(key, message, cooldown_seconds=3600):
         raise RuntimeError("[state] Maintenance alert state has an invalid structure.")
     now = time.time()
     last_sent = float(state.get(key, 0) or 0)
-    if now - last_sent < cooldown_seconds:
+    if last_sent and now - last_sent < cooldown_seconds:
         return False
     # Persist the guard before the non-idempotent Telegram call.
     state[key] = now
