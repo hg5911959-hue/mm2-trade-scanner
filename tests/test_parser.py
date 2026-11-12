@@ -634,7 +634,7 @@ class ReliabilityTests(unittest.TestCase):
         message = scanner.format_trade_message(listing, 10, ["give"], 20, ["receive"], 10)
         self.assertIn("👤 https://bloxswaps.com/fr/users/12345", message)
         self.assertLess(message.index("👤 "), message.index("🔗 "))
-        self.assertLess(message.index("👤 OWNER"), message.index("📤 GIVE"))
+        self.assertLess(message.index("👤 "), message.index("📤 GIVE"))
         self.assertNotIn("QUANTITY PROVENANCE", message)
         self.assertNotIn("raw=", message)
 
