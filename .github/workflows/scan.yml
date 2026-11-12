@@ -1,14 +1,12 @@
 name: MM2 Trade Scanner
 
 on:
-  push:
-    branches: [main]
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: mm2-trade-scanner
@@ -17,7 +15,7 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -27,14 +25,29 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Restore scanner state
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/seen.json
+            data/supreme_values.json
+            data/failure_state.json
+            data/history.csv
+          key: mm2-state-\${{ github.run_id }}-\${{ github.run_attempt }}
+          restore-keys: |
+            mm2-state-
+
       - name: Run BloxSwaps scanner
         env:
           BLOXSWAPS_URL: "https://bloxswaps.com/fr/trade-mm2?trade-type=P2P"
           MIN_VALUE_DIFFERENCE: "0"
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          RBLXVALUE_API_KEY: ${{ secrets.RBLXVALUE_API_KEY }}
+          MIN_PROFIT_PERCENT: "0"
+          FAILURE_ALERT_THRESHOLD: "3"
+          TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: \${{ secrets.TELEGRAM_CHAT_ID }}
+          RBLXVALUE_API_KEY: \${{ secrets.RBLXVALUE_API_KEY }}
         run: |
+          mkdir -p data
           set -o pipefail
           python -u scanner.py 2>&1 | tee scanner.log
 
@@ -47,35 +60,13 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Save scanner state and Supreme cache
-        run: |
-          # Merge state with the latest main so concurrent/manual reruns cannot
-          # overwrite already-seen listing IDs or a newer values cache.
-          git fetch origin main
-          git show origin/main:data/seen.json > /tmp/remote_seen.json 2>/dev/null || echo '{"seen":[]}' > /tmp/remote_seen.json
-          git show origin/main:data/supreme_values.json > /tmp/remote_values.json 2>/dev/null || echo '{"fetched_at":0,"values":{}}' > /tmp/remote_values.json
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          local_seen_path = Path("data/seen.json")
-          remote_seen = json.loads(Path("/tmp/remote_seen.json").read_text())
-          local_seen = json.loads(local_seen_path.read_text()) if local_seen_path.exists() else {"seen": []}
-          merged_seen = list(dict.fromkeys(remote_seen.get("seen", []) + local_seen.get("seen", [])))[-5000:]
-          local_seen_path.parent.mkdir(parents=True, exist_ok=True)
-          local_seen_path.write_text(json.dumps({"seen": merged_seen}, indent=2) + "\n")
-
-          local_values_path = Path("data/supreme_values.json")
-          remote_values = json.loads(Path("/tmp/remote_values.json").read_text())
-          local_values = json.loads(local_values_path.read_text()) if local_values_path.exists() else {"fetched_at": 0, "values": {}}
-          if float(remote_values.get("fetched_at", 0)) > float(local_values.get("fetched_at", 0)):
-              local_values_path.write_text(json.dumps(remote_values, ensure_ascii=False, indent=2) + "\n")
-          PY
-          git reset --soft origin/main
-          git add -A data/
-          if ! git diff --cached --quiet; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit -m "Update scanner state and Supreme values cache"
-            git push
-          fi
+      - name: Save scanner state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/seen.json
+            data/supreme_values.json
+            data/failure_state.json
+            data/history.csv
+          key: mm2-state-\${{ github.run_id }}-\${{ github.run_attempt }}
