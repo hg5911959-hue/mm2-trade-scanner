@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   watchdog:
+    if: false # TEMPORARY: scanner state migration pause
     runs-on: ubuntu-latest
     timeout-minutes: 3
     env:
