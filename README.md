@@ -1,6 +1,6 @@
 # MM2 Trade Scanner
 
-Automated scanner for public **BloxSwaps MM2 P2P listings**, with Telegram alerts. GitHub Actions checks every 5 minutes.
+Automated scanner for public **BloxSwaps MM2 P2P listings**, with Telegram alerts. GitHub Actions uses staggered scheduled checks and also scans after scanner-code updates.
 
 ## How a trade is evaluated
 
@@ -37,7 +37,7 @@ Never commit or share any of these secrets. The scanner never prints API keys or
 ## Run and diagnostics
 
 - Scheduled checks: two staggered cron schedules nominally start 2–3 minutes apart (GitHub Actions cron uses UTC; starts may be delayed or dropped during platform load). Each individual cron expression follows GitHub's 5-minute minimum.
-- Workflow triggers: schedule and manual `workflow_dispatch` only; pushes do not start scans.
+- Workflow triggers: staggered schedules, manual `workflow_dispatch`, and code updates to `scanner.py`, tests, or the scan workflow.
 - Concurrency: one workflow at a time; queued runs are not cancelled.
 - The scanner workflow has `contents: read` only; the separate monthly keepalive workflow alone has `contents: write`.
 - Alert state stores only listings whose Telegram alert was successfully sent. Existing alert history is used to migrate prior sent IDs; non-profitable and unrecognized listings remain eligible for re-evaluation.
