@@ -1482,7 +1482,7 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
 
 def format_number(value):
     if math.isinf(float(value)):
-        return "∞"
+        return "-∞" if float(value) < 0 else "∞"
     if math.isnan(float(value)):
         return "uncertain"
     if float(value).is_integer():
