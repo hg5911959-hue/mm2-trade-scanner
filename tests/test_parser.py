@@ -8,6 +8,7 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from contextlib import ExitStack
 from unittest.mock import patch
 
 from scanner import parse_listings, parse_page, calculate_side, load_supreme_values
@@ -2233,39 +2234,38 @@ class RealAlertReevaluationIntegrationTests(unittest.TestCase):
             "pagination_pages": 1, "pagination_api_posts": 0, "seen_boundary_reached": False,
             "candidate_count": 1, "malformed_count": 0, "html_malformed_count": 0,
             "html_parse_warning_count": 0, "html_parse_warning_ids": [],
-            "unparsed_ad_ids": [], "malformed_samples": [], "owner_link_count": 1,
+            "malformed_samples": [], "owner_link_count": 1,
         }
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             sent = []
-            with (
-                patch("scanner.BOT_TOKEN", "test-token"),
-                patch("scanner.CHAT_ID", "123"),
-                patch("scanner.ALERTED_FILE", root / "alerted.json"),
-                patch("scanner.SEEN_FILE", root / "seen.json"),
-                patch("scanner.PENDING_FILE", root / "pending.json"),
-                patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
-                patch("scanner.HISTORY_FILE", root / "history.csv"),
-                patch("scanner.WATCH_FILE", root / "watch.json"),
-                patch("scanner.FIRST_SEEN_FILE", root / "first-seen.json"),
-                patch("scanner.FAILURE_FILE", root / "failure.json"),
-                patch("scanner.load_supreme_values", return_value=values_after),
-                patch("scanner.load_aliases", return_value={}),
-                patch("scanner.load_seen_ads", return_value={"same-source-ad"}),
-                patch("scanner.load_pending_ids", return_value={}),
-                patch("scanner.load_watch_state", return_value=previous_watch),
-                patch("scanner.load_alerted", return_value={"stable-ad-id"}),
-                patch("scanner.load_uncertain_ids", return_value=set()),
-                patch("scanner.load_first_seen_ads", return_value={
+            with ExitStack() as stack:
+                stack.enter_context(patch("scanner.BOT_TOKEN", "test-token"))
+                stack.enter_context(patch("scanner.CHAT_ID", "123"))
+                stack.enter_context(patch("scanner.ALERTED_FILE", root / "alerted.json"))
+                stack.enter_context(patch("scanner.SEEN_FILE", root / "seen.json"))
+                stack.enter_context(patch("scanner.PENDING_FILE", root / "pending.json"))
+                stack.enter_context(patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"))
+                stack.enter_context(patch("scanner.HISTORY_FILE", root / "history.csv"))
+                stack.enter_context(patch("scanner.WATCH_FILE", root / "watch.json"))
+                stack.enter_context(patch("scanner.FIRST_SEEN_FILE", root / "first-seen.json"))
+                stack.enter_context(patch("scanner.FAILURE_FILE", root / "failure.json"))
+                stack.enter_context(patch("scanner.load_supreme_values", return_value=values_after))
+                stack.enter_context(patch("scanner.load_aliases", return_value={}))
+                stack.enter_context(patch("scanner.load_seen_ads", return_value={"same-source-ad"}))
+                stack.enter_context(patch("scanner.load_pending_ids", return_value={}))
+                stack.enter_context(patch("scanner.load_watch_state", return_value=previous_watch))
+                stack.enter_context(patch("scanner.load_alerted", return_value={"stable-ad-id"}))
+                stack.enter_context(patch("scanner.load_uncertain_ids", return_value=set()))
+                stack.enter_context(patch("scanner.load_first_seen_ads", return_value={
                     "same-source-ad": datetime.now(timezone.utc).isoformat()
-                }),
-                patch("scanner.fetch_bloxswaps_all", return_value=([listing], stats, ["same-source-ad"])),
-                patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)),
-                patch("scanner.compare_secondary_values", return_value=""),
-                patch("scanner.record_success"),
-                patch("scanner.write_step_summary"),
-                patch("scanner.ALERT_DELAY_SECONDS", 0),
-            ):
+                }))
+                stack.enter_context(patch("scanner.fetch_bloxswaps_all", return_value=([listing], stats, ["same-source-ad"])))
+                stack.enter_context(patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)))
+                stack.enter_context(patch("scanner.compare_secondary_values", return_value=""))
+                stack.enter_context(patch("scanner.record_success"))
+                stack.enter_context(patch("scanner.write_step_summary"))
+                stack.enter_context(patch("scanner.ALERT_DELAY_SECONDS", 0))
                 scanner.main()
         trade_messages = [message for message in sent if "💎 MM2 TRADE" in message]
         self.assertEqual(len(trade_messages), 1)
