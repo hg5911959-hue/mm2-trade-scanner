@@ -2190,7 +2190,27 @@ class TelegramDeliveryUncertain(RuntimeError):
 def send_telegram(message):
     message = str(message)
     if len(message) > TELEGRAM_MAX_CHARS:
-        message = message[:TELEGRAM_MAX_CHARS - 24] + "\n[message truncated]"
+        # Telegram has a hard per-message limit. Split at line boundaries instead
+        # of truncating the tail, because that tail may contain weapon values.
+        chunks, current = [], ""
+        for line in message.splitlines():
+            candidate = (current + "\n" + line) if current else line
+            if len(candidate) <= TELEGRAM_MAX_CHARS - 32:
+                current = candidate
+                continue
+            if current:
+                chunks.append(current)
+                current = ""
+            while len(line) > TELEGRAM_MAX_CHARS - 32:
+                chunks.append(line[:TELEGRAM_MAX_CHARS - 32])
+                line = line[TELEGRAM_MAX_CHARS - 32:]
+            current = line
+        if current:
+            chunks.append(current)
+        total_chunks = len(chunks)
+        for index, chunk in enumerate(chunks, start=1):
+            send_telegram(f"💎 MM2 TRADE DETAILS ({index}/{total_chunks})\\n{chunk}")
+        return
     url = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage"
     body = json.dumps({
         "chat_id": CHAT_ID,
