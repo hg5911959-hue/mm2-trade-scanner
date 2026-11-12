@@ -782,11 +782,13 @@ def load_uncertain_ids():
         raise RuntimeError(
             "[state] Telegram uncertain-delivery file is unreadable; refusing to risk duplicate alerts."
         ) from exc
-    if not isinstance(data, list):
-        raise RuntimeError(
-            "[state] Telegram uncertain-delivery file has an invalid structure; refusing duplicate-risk sends."
-        )
-    return {str(value) for value in data}
+    if isinstance(data, dict) and isinstance(data.get("ids"), list):
+        return {str(value) for value in data["ids"]}
+    if isinstance(data, list):
+        return {str(value) for value in data}
+    raise RuntimeError(
+        "[state] Telegram uncertain-delivery file has an invalid structure; refusing duplicate-risk sends."
+    )
 
 
 def save_uncertain_ids(ids):
