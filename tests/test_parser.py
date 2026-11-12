@@ -24,7 +24,6 @@ def with_rsc(html):
                 if quantity is None:
                     quantity = 1
                 rows.append({
-                    "itemDetailsId": normalize_fixture_id(item["name"]),
                     "displayName": item["name"],
                     "quantity": quantity,
                     "tradeRole": role,
