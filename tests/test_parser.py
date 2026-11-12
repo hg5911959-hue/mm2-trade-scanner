@@ -708,5 +708,108 @@ class ReliabilityTests(unittest.TestCase):
             self.assertTrue((root / "alerted.json").exists())
 
 
+
+class QuantityIncidentReproductionTests(unittest.TestCase):
+    def test_split_x_and_digit_after_price_is_quantity_two(self):
+        html = """
+        <article>
+          <div>Propose
+            <div class="item-card">
+              <img alt="Snowcannon">
+              <span class="item-name">Snowcannon</span>
+              <img alt="coin">
+              <span class="price">750.0</span>
+              <span class="quantity-prefix">x</span><span class="quantity-value">2</span>
+            </div>
+          </div>
+          <div>Recherche <img alt="Spirit"></div>
+          <a href="/fr/trade-mm2?ad=split-x2">Discussion</a>
+          <a href="/fr/users/123">Owner</a>
+        </article>
+        """
+        listing = parse_listings(html)[0]
+        item = listing["receive_items"][0]
+        self.assertEqual(item["quantity"], 2)
+        self.assertEqual(item["quantity_source"], "explicit")
+        self.assertEqual(item["listed_price"], 750.0)
+
+    def test_flat_shared_container_badge_never_leaks_to_opposite_side(self):
+        html = """
+        <article>
+          <div class="flat-trade-card">
+            <span>Propose</span>
+            <img alt="Knife A">
+            <span class="quantity-badge">x2</span>
+            <span>Recherche</span>
+            <img alt="Knife B">
+          </div>
+          <a href="/fr/trade-mm2?ad=flat-isolation">Discussion</a>
+          <a href="/fr/users/123">Owner</a>
+        </article>
+        """
+        listing = parse_listings(html)[0]
+        self.assertEqual(listing["receive_items"][0]["quantity"], 2)
+        self.assertEqual(listing["give_items"][0]["quantity"], 1)
+        self.assertEqual(listing["give_items"][0]["quantity_source"], "implicit_single")
+
+    def test_unreadable_quantity_marker_is_uncertain_not_silently_one(self):
+        html = """
+        <article>
+          <div>Propose
+            <div class="item-card">
+              <img alt="Harvester">
+              <span class="quantity-badge">x?</span>
+            </div>
+          </div>
+          <div>Recherche <img alt="Spirit"></div>
+        </article>
+        """
+        listing = parse_listings(html)[0]
+        item = listing["receive_items"][0]
+        self.assertIsNone(item["quantity"])
+        self.assertEqual(item["quantity_source"], "uncertain")
+
+    def test_decimal_price_is_diagnostic_only_and_single_is_explicitly_implicit(self):
+        html = """
+        <article>
+          <div>Propose
+            <div class="item-card">
+              <img alt="Snowcannon">
+              <span class="price">750.0</span>
+            </div>
+          </div>
+          <div>Recherche <img alt="Spirit"></div>
+        </article>
+        """
+        listing = parse_listings(html)[0]
+        item = listing["receive_items"][0]
+        self.assertEqual(item["quantity"], 1)
+        self.assertEqual(item["quantity_source"], "implicit_single")
+        self.assertEqual(item["listed_price"], 750.0)
+
+    def test_harvester_two_for_spirit_profit_is_ten_when_badge_is_split(self):
+        html = """
+        <article>
+          <div>Propose <img alt="Spirit"></div>
+          <div>Recherche
+            <div class="item-card">
+              <img alt="Harvester">
+              <span class="quantity-prefix">x</span><span class="quantity-value">2</span>
+            </div>
+          </div>
+        </article>
+        """
+        listing = parse_listings(html)[0]
+        values = {
+            "harvester": {"name": "Harvester", "value": 265},
+            "spirit": {"name": "Spirit", "value": 540},
+        }
+        result, missing = scanner.evaluate_listing(listing, values)
+        self.assertEqual(missing, [])
+        self.assertEqual(result["give_total"], 530)
+        self.assertEqual(result["receive_total"], 540)
+        self.assertEqual(result["difference"], 10)
+
+
 if __name__ == "__main__":
     unittest.main()
