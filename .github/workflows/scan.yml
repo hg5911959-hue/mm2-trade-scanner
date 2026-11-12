@@ -54,5 +54,8 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git commit -m "Update scanner state and Supreme values cache"
+            # A documentation/code commit may land while this scan is running.
+            # Rebase the generated state commit on the latest main before pushing.
+            git pull --rebase origin main
             git push
           fi
