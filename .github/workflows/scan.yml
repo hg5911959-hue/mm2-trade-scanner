@@ -11,6 +11,8 @@ on:
     - cron: "1,6,11,16,21,26,31,36,41,46,51,56 * * * *"
     - cron: "3,8,13,18,23,28,33,38,43,48,53,58 * * * *"
   workflow_dispatch:
+  repository_dispatch:
+    types: [mm2-scan]
 
 permissions:
   contents: read
@@ -58,7 +60,7 @@ jobs:
         env:
           BLOXSWAPS_URL: "https://bloxswaps.com/fr/trade-mm2?trade-type=P2P"
           MIN_VALUE_DIFFERENCE: "0"
-          MIN_PROFIT_PERCENT: "5"
+          MIN_PROFIT_PERCENT: "0"
           FAILURE_ALERT_THRESHOLD: "3"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
