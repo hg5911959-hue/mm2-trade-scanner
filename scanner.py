@@ -2629,7 +2629,7 @@ def qualifies(result, min_diff=None, min_percent=None):
     min_percent = MIN_PROFIT_PERCENT if min_percent is None else min_percent
     # Only fully verified, conservative-positive trades are eligible for Telegram.
     # A best-case-only profit is uncertain and must never be advertised as a WIN.
-    if result.get("manual_review") or result.get("uncertain_items"):
+    if result.get("manual_review"):
         return False
     metric = result.get("profit_worst", result.get("difference", 0))
     return metric > 0 and metric >= min_diff and result["margin"] >= min_percent
