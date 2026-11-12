@@ -660,6 +660,8 @@ class ReliabilityTests(unittest.TestCase):
                 patch("scanner.FAILURE_FILE", root / "failure.json"),
                 patch("scanner.HISTORY_FILE", root / "history.csv"),
                 patch("scanner.SEEN_FILE", root / "seen_ads.json"),
+                 patch("scanner.PENDING_FILE", root / "pending.json"),
+                 patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
                 patch("scanner.load_supreme_values", return_value=values),
                 patch("scanner.fetch_bloxswaps", return_value=html),
                 patch("scanner.send_telegram", side_effect=[RuntimeError("rejected"), None]) as send,
@@ -700,6 +702,8 @@ class ReliabilityTests(unittest.TestCase):
                 patch("scanner.FAILURE_FILE", root / "failure.json"),
                 patch("scanner.HISTORY_FILE", root / "history.csv"),
                 patch("scanner.SEEN_FILE", root / "seen_ads.json"),
+                 patch("scanner.PENDING_FILE", root / "pending.json"),
+                 patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
                 patch("scanner.load_supreme_values", return_value=values),
                 patch("scanner.fetch_bloxswaps", return_value=html),
                 patch("scanner.send_telegram") as send,
@@ -738,6 +742,8 @@ class ReliabilityTests(unittest.TestCase):
                 patch("scanner.FAILURE_FILE", root / "failure.json"),
                 patch("scanner.HISTORY_FILE", root / "history.csv"),
                 patch("scanner.SEEN_FILE", root / "seen_ads.json"),
+                 patch("scanner.PENDING_FILE", root / "pending.json"),
+                 patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
                 patch("scanner.load_supreme_values", return_value=values),
                 patch("scanner.fetch_bloxswaps", return_value=html),
                 patch("scanner.send_telegram", side_effect=scanner.TelegramDeliveryUncertain("unknown")),
@@ -773,7 +779,9 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.ALERTED_FILE", root / "alerted.json"), \
                  patch("scanner.FAILURE_FILE", root / "failure.json"), \
                  patch("scanner.HISTORY_FILE", root / "history.csv"), \
-                 patch("scanner.SEEN_FILE", root / "seen_ads.json"), \
+                 patch("scanner.SEEN_FILE", root / "seen_ads.json"),
+                 patch("scanner.PENDING_FILE", root / "pending.json"),
+                 patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"), \
                  patch("scanner.load_supreme_values", side_effect=value_sets), \
                  patch("scanner.fetch_bloxswaps", return_value=html), \
                  patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)), \
@@ -814,6 +822,8 @@ class ReliabilityTests(unittest.TestCase):
                 patch("scanner.FAILURE_FILE", root / "failure.json"),
                 patch("scanner.HISTORY_FILE", root / "history.csv"),
                 patch("scanner.SEEN_FILE", root / "seen_ads.json"),
+                 patch("scanner.PENDING_FILE", root / "pending.json"),
+                 patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
                 patch("scanner.load_supreme_values", return_value=values),
                 patch("scanner.fetch_bloxswaps", return_value=page),
                 patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)),
@@ -851,7 +861,9 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.ALERTED_FILE", root / "alerted.json"), \
                  patch("scanner.FAILURE_FILE", root / "failure.json"), \
                  patch("scanner.HISTORY_FILE", root / "history.csv"), \
-                 patch("scanner.SEEN_FILE", root / "seen_ads.json"), \
+                 patch("scanner.SEEN_FILE", root / "seen_ads.json"),
+                 patch("scanner.PENDING_FILE", root / "pending.json"),
+                 patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"), \
                  patch("scanner.load_supreme_values", return_value={
                      "knife a": {"name": "Knife A", "value": 10},
                      "knife b": {"name": "Knife B", "value": 20},
