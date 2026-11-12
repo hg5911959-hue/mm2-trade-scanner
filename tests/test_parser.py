@@ -1146,7 +1146,7 @@ class CacheTTLTests(unittest.TestCase):
                 patch("scanner.time.time", return_value=1000),
                 patch("scanner.RBLXVALUE_API_KEY", ""),
             ):
-                with self.assertRaisesRegex(RuntimeError, "fresh cached source_b snapshot")
+                with self.assertRaisesRegex(RuntimeError, "fresh cached source_b snapshot"):
                     scanner.load_supreme_values()
 
     def test_fresh_bloxswaps_item_catalogue_is_reused(self):
