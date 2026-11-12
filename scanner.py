@@ -40,6 +40,7 @@ MAX_ALERTED = 5000
 ALERTED_FILE = Path("data/alerted.json")
 UNCERTAIN_FILE = Path("data/telegram_uncertain.json")
 SEEN_FILE = Path("data/seen_ads.json")
+PENDING_FILE = Path("data/pending_recheck.json")
 ALIASES_FILE = Path("aliases.json")
 UNMATCHED_FILE = Path("data/unmatched_names.json")
 MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
@@ -1580,6 +1581,39 @@ def load_seen_ads():
     raise RuntimeError(
         f"[state] Seen-ad state has an unsupported structure ({SEEN_FILE}); refusing to replay old feed pages."
     )
+
+
+def load_pending_ids():
+    data = _load_json_state(PENDING_FILE, {}, "pending recheck state")
+    if isinstance(data, list):
+        # Legacy list has no timestamps; retain every ID for re-evaluation.
+        return {str(value): time.time() for value in data if value}
+    if not isinstance(data, dict):
+        raise RuntimeError("[state] Pending recheck state has an invalid structure.")
+    pending = data.get("pending", {})
+    if isinstance(pending, list):
+        return {str(value): time.time() for value in pending if value}
+    if isinstance(pending, dict):
+        result = {}
+        for ad_id, timestamp in pending.items():
+            try:
+                result[str(ad_id)] = float(timestamp)
+            except (TypeError, ValueError):
+                raise RuntimeError("[state] Pending recheck timestamp is invalid.")
+        return result
+    raise RuntimeError("[state] Pending recheck state has an invalid structure.")
+
+
+def save_pending_ids(pending):
+    if isinstance(pending, set):
+        pending = {str(value): time.time() for value in pending}
+    ordered = dict(sorted(
+        ((str(ad_id), float(timestamp)) for ad_id, timestamp in pending.items()),
+        key=lambda row: row[1],
+    )[-10000:])
+    atomic_write_text(PENDING_FILE, json.dumps({
+        "version": 1, "pending": ordered,
+    }, indent=2) + "\n")
 
 
 def save_seen_ads(ad_ids):
