@@ -2422,6 +2422,7 @@ def update_watch_entry(watch_state, listing, values, aliases=None):
     return changed
 
 def scan_once():
+    global _SESSION_ALERTS_SENT
     if not BOT_TOKEN or not CHAT_ID:
         raise RuntimeError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in GitHub Actions secrets.")
 
@@ -2769,10 +2770,18 @@ def scan_once():
         mark_seen_ad(listing)
         listing["alerted_at_utc"] = datetime.now(timezone.utc).isoformat()
         append_history(listing, op)
+        first_seen_ts = _parse_feed_timestamp(listing.get("first_seen_at_utc"))
+        alerted_ts = _parse_feed_timestamp(listing["alerted_at_utc"])
+        detection_latency = (
+            max(0.0, alerted_ts - first_seen_ts)
+            if first_seen_ts is not None and alerted_ts is not None else None
+        )
+        latency_label = f"{detection_latency:.2f}s" if detection_latency is not None else "unknown"
         print(
             f"[timing] listing={listing.get('source_ad_id') or trade_id} "
             f"first_seen={listing.get('first_seen_at_utc', 'unknown')} "
-            f"alerted={listing['alerted_at_utc']}"
+            f"alerted={listing['alerted_at_utc']} "
+            f"first_seen_to_alert={latency_label}"
         )
         sent += 1
         if sent < len(selected_opportunities) and ALERT_DELAY_SECONDS > 0:
