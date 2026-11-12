@@ -785,20 +785,36 @@ def _ad_id_from_url(url):
 
 
 def _match_by_identity(left, right):
-    def key(item):
-        item_id = str(item.get('structured_item_id') or '')
-        return ('id', item_id) if item_id else ('name', normalize_name(str(item.get('name') or '')))
-    left_map, right_map = {}, {}
+    """Match by unique IDs first, then unique normalized names for remaining rows."""
+    def item_id(item): return str(item.get('structured_item_id') or '')
+    def name_key(item): return normalize_name(str(item.get('name') or ''))
+    pairs, used_left, used_right = [], set(), set()
+    left_ids, right_ids = {}, {}
     for i, item in enumerate(left):
-        k = key(item)
-        if k[1]: left_map.setdefault(k, []).append(i)
+        value = item_id(item)
+        if value: left_ids.setdefault(value, []).append(i)
     for i, item in enumerate(right):
-        k = key(item)
-        if k[1]: right_map.setdefault(k, []).append(i)
-    pairs = []
-    for k, li in left_map.items():
-        ri = right_map.get(k, [])
-        if len(li) == 1 and len(ri) == 1: pairs.append((li[0], ri[0]))
+        value = item_id(item)
+        if value: right_ids.setdefault(value, []).append(i)
+    for value, li in left_ids.items():
+        ri = right_ids.get(value, [])
+        if len(li) == 1 and len(ri) == 1:
+            pairs.append((li[0], ri[0]))
+            used_left.add(li[0])
+            used_right.add(ri[0])
+    left_names, right_names = {}, {}
+    for i, item in enumerate(left):
+        key = name_key(item)
+        if i not in used_left and key: left_names.setdefault(key, []).append(i)
+    for i, item in enumerate(right):
+        key = name_key(item)
+        if i not in used_right and key: right_names.setdefault(key, []).append(i)
+    for key, li in left_names.items():
+        ri = right_names.get(key, [])
+        if len(li) == 1 and len(ri) == 1:
+            pairs.append((li[0], ri[0]))
+            used_left.add(li[0])
+            used_right.add(ri[0])
     return pairs
 
 def _uncertain_quantity(item, reason):
@@ -1028,9 +1044,14 @@ def fetch_bloxswaps_items_map(force_refresh=False):
             cache = json.loads(BLOXSWAPS_ITEMS_FILE.read_text(encoding="utf-8"))
             age = max(0, int(time.time() - float(cache.get("fetched_at", 0))))
             cached = cache.get("items")
-            if (not force_refresh or not force_allowed) and age <= BLOXSWAPS_ITEMS_TTL_SECONDS and isinstance(cached, dict) and cached:
+            if isinstance(cached, dict) and cached and force_refresh and not force_allowed:
+                print(f"[bloxswaps] Catalogue force-refresh suppressed by 60-second cooldown; reusing {len(cached)} cached names")
+                return cached
+            if not force_refresh and age <= BLOXSWAPS_ITEMS_TTL_SECONDS and isinstance(cached, dict) and cached:
                 print(f"[bloxswaps] Using fresh item catalogue ({len(cached)} names; age {age}s)")
                 return cached
+            if force_refresh and not force_allowed:
+                raise RuntimeError("[bloxswaps] Catalogue refresh is rate-limited and no cached catalogue is available.")
         except (OSError, ValueError, TypeError):
             print("[bloxswaps] Item catalogue cache is unreadable; attempting live refresh")
     payload = bloxswaps_api_get_json("/items")
@@ -1337,7 +1358,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                     refreshed_map = fetch_bloxswaps_items_map(force_refresh=True)
                     if refreshed_map:
                         item_map = refreshed_map
-                    still_unknown = sorted(unknown_ids.intersection(item_map.keys()))
+                    still_unknown = sorted(unknown_ids - set(item_map.keys()))
                     if still_unknown:
                         send_maintenance_alert(
                             "unknown-item-id-catalogue",
