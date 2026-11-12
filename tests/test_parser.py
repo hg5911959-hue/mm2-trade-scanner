@@ -955,6 +955,21 @@ class CacheTTLTests(unittest.TestCase):
 
 
 class PendingRecheckStateTests(unittest.TestCase):
+    def test_expired_pending_ids_are_reported_before_removal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "pending.json"
+            with patch("scanner.PENDING_FILE", path), patch("scanner.time.time", return_value=1000):
+                scanner.save_pending_ids({"old-ad": 100.0})
+            with (
+                patch("scanner.PENDING_FILE", path),
+                patch("scanner.time.time", return_value=1000 + scanner.PENDING_TTL_SECONDS + 1),
+                patch("scanner.send_maintenance_alert") as alert,
+            ):
+                self.assertEqual(scanner.load_pending_ids(), {})
+            alert.assert_called_once()
+            self.assertIn("old-ad", alert.call_args.args[1])
+
+
     def test_pending_ids_round_trip_with_first_seen_timestamps(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "pending.json"
