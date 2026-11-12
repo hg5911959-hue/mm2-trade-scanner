@@ -1187,7 +1187,8 @@ def _merge_html_quantity_diagnostics(api_listing, html_listing):
     """Cross-check quantities only after identity matching; ambiguous pairs fail closed."""
     api_listing['id'] = html_listing.get('id') or api_listing['id']
     api_listing['legacy_id'] = html_listing.get('legacy_id') or api_listing.get('legacy_id')
-    api_listing['owner_url'] = html_listing.get('owner_url') or api_listing.get('owner_url')
+    # The API listing URL and owner URL are built from the same robloxUserId.
+    # Do not overwrite that identity with an independently scraped HTML profile link.
     api_listing['source_text'] = html_listing.get('source_text', api_listing.get('source_text', ''))
     for field in ('receive_items', 'give_items'):
         api_items, html_items = api_listing.get(field, []), html_listing.get(field, [])
@@ -2095,32 +2096,30 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
             qmin, qmax, source = 1, None, "uncertain"
         entry["min_quantity"] += qmin
         if qmax is None:
-            entry["unbounded"] = True
-        elif not entry["unbounded"]:
-            entry["max_quantity"] += qmax
-        if source == "uncertain":
+            # An unknown stack is not a mathematical infinity. It is not safe to
+            # calculate any profit until BloxSwaps supplies a finite quantity.
+            missing.append(f"{item['name']} (quantity unknown/unbounded)")
+            qmax = qmin  # finite placeholder; evaluate_listing rejects via missing
+        entry["max_quantity"] += qmax
+        if source == "uncertain" or item.get("quantity") is None:
             uncertain.append({
                 "name": item["name"], "quantity_min": qmin, "quantity_max": qmax,
                 "quantity_source": source, "quantity_reason": item.get("quantity_reason", ""),
                 "listed_price": item.get("listed_price"), "raw_excerpt": item.get("raw_excerpt", ""),
             })
 
-    total_min, total_max, unbounded_total, breakdown = 0.0, 0.0, False, []
+    total_min, total_max, breakdown = 0.0, 0.0, []
     for entry in grouped.values():
-        low, high = entry["min_quantity"], None if entry["unbounded"] else entry["max_quantity"]
+        low, high = entry["min_quantity"], entry["max_quantity"]
         low_total = entry["unit_value_min"] * low
+        high_total = entry["unit_value_max"] * high
         total_min += low_total
-        if high is None:
-            unbounded_total = True
-            quantity_label, total_label = f"x? ({low}..∞)", f"{low_total:g}..∞"
-        else:
-            high_total = entry["unit_value_max"] * high
-            total_max += high_total
-            quantity_label = f"x{low}" if low == high else f"x? ({low}..{high})"
-            total_label = f"{low_total:g}" if low == high and entry["unit_value_min"] == entry["unit_value_max"] else f"{low_total:g}..{high_total:g}"
+        total_max += high_total
+        quantity_label = f"x{low}" if low == high else f"x? ({low}..{high})"
+        total_label = f"{low_total:g}" if low == high and entry["unit_value_min"] == entry["unit_value_max"] else f"{low_total:g}..{high_total:g}"
         value_label = f"{entry['unit_value_min']:g}" if entry["unit_value_min"] == entry["unit_value_max"] else f"{entry['unit_value_min']:g}..{entry['unit_value_max']:g}"
         breakdown.append(f"• {entry['name']} {quantity_label} — {value_label} each = {total_label}")
-    return total_min, (math.inf if unbounded_total else total_max), breakdown, missing, uncertain
+    return total_min, total_max, breakdown, missing, uncertain
 
 
 def format_number(value):
@@ -2544,7 +2543,10 @@ def format_unvalued_message(listing, missing):
             if quantity is None:
                 low = item.get("quantity_min", 1)
                 high = item.get("quantity_max")
-                label = f" x? ({low}..{high if high is not None else '∞'})"
+                label = (
+                    f" x? ({low}..{high})" if high is not None
+                    else f" x? (quantity unknown; at least {low})"
+                )
             else:
                 label = f" x{quantity}" if quantity > 1 else ""
             lines.append(f"• {item['name']}{label}")
@@ -2968,7 +2970,10 @@ def scan_once():
             unknown_names = [
                 str(value).split(" (", 1)[0]
                 for value in missing
-                if value and not str(value).startswith("one side has")
+                if value
+                and not str(value).startswith("one side has")
+                and "quantity unknown" not in str(value).casefold()
+                and "quantity uncertain" not in str(value).casefold()
             ]
             if unknown_names:
                 record_unmatched_names(unknown_names)
