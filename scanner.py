@@ -58,6 +58,7 @@ class Node:
         self.attrs = dict(attrs or [])
         self.parent = parent
         self.events = []
+        self._text_cache = None
 
 
 class PageTree(HTMLParser):
@@ -97,6 +98,8 @@ def walk_nodes(node):
 
 
 def node_text(node):
+    if node._text_cache is not None:
+        return node._text_cache
     parts = []
     for kind, value in node.events:
         if kind == "text":
@@ -105,7 +108,8 @@ def node_text(node):
             if value.tag == "img" and value.attrs.get("alt"):
                 parts.append(value.attrs["alt"])
             parts.append(node_text(value))
-    return " ".join(parts)
+    node._text_cache = " ".join(parts)
+    return node._text_cache
 
 
 def has_trade_sides(text):
@@ -460,8 +464,16 @@ def _identity_items(items):
     grouped = {}
     for item in items:
         key = normalize_name(item["name"])
-        grouped[key] = grouped.get(key, 0) + max(1, int(item.get("quantity") or 1))
-    return sorted((name, quantity) for name, quantity in grouped.items())
+        entry = grouped.setdefault(key, {"quantity": 0, "uncertain": False})
+        quantity = item.get("quantity")
+        if quantity is None or item.get("quantity_source") == "uncertain":
+            entry["uncertain"] = True
+        elif not entry["uncertain"]:
+            entry["quantity"] += int(quantity)
+    return sorted(
+        (name, None if entry["uncertain"] else entry["quantity"])
+        for name, entry in grouped.items()
+    )
 
 
 def listing_identifier(node):
@@ -727,10 +739,13 @@ def calculate_side(items, values):
         if key not in grouped:
             grouped[key] = {"name": item["name"], "quantity": 0}
         quantity = item.get("quantity")
-        if quantity is None:
-            missing.append(f"{item['name']} (quantity unreadable)")
+        if quantity is None or item.get("quantity_source") == "uncertain":
+            missing.append(f"{item['name']} (quantity uncertain)")
             continue
-        grouped[key]["quantity"] += max(1, int(quantity))
+        if int(quantity) < 1 or int(quantity) > 100:
+            missing.append(f"{item['name']} (quantity outside supported range)")
+            continue
+        grouped[key]["quantity"] += int(quantity)
 
     for key, item in grouped.items():
         record = values.get(key)
