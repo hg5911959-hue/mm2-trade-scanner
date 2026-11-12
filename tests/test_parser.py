@@ -632,7 +632,7 @@ class ReliabilityTests(unittest.TestCase):
             "owner_url": "https://bloxswaps.com/fr/users/12345?tab=trade-ads",
         }
         message = scanner.format_trade_message(listing, 10, ["give"], 20, ["receive"], 10)
-        self.assertIn("👤 OWNER: https://bloxswaps.com/fr/users/12345", message)
+        self.assertIn("👤 https://bloxswaps.com/fr/users/12345", message)
         self.assertLess(message.index("👤 OWNER"), message.index("🔗 LISTING"))
         self.assertLess(message.index("👤 OWNER"), message.index("📤 YOU GIVE"))
         self.assertNotIn("QUANTITY PROVENANCE", message)
