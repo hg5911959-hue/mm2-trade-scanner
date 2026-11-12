@@ -219,8 +219,8 @@ def listing_context(node):
     while current.parent is not None:
         parent = current.parent
         parent_text = node_text(parent)
-        receive_markers = len(re.findall(r"\\bpropose\\b|\\boffering\\b|\\boffer\\b", parent_text, flags=re.I))
-        give_markers = len(re.findall(r"\\brecherche\\b|\\blooking for\\b|\\brequest\\b", parent_text, flags=re.I))
+        receive_markers = len(re.findall(r"\bpropose\b|\boffering\b|\boffer\b", parent_text, flags=re.I))
+        give_markers = len(re.findall(r"\brecherche\b|\blooking for\b|\brequest\b", parent_text, flags=re.I))
         has_link = any(
             child.tag == "a" and child.attrs.get("href")
             for child in walk_nodes(parent)
