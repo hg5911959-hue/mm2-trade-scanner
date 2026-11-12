@@ -2686,36 +2686,8 @@ def record_failure(error):
 
 
 def main():
-    if os.environ.get("MM2_SCAN_LOOP") != "1":
-        return scan_once()
-    duration = max(60, min(3300, int(os.environ.get("MM2_SCAN_DURATION_SECONDS", "3000"))))
-    interval = max(30, min(60, int(os.environ.get("MM2_SCAN_INTERVAL_SECONDS", "45"))))
-    deadline = time.monotonic() + duration
-    cycle = 0
-    successful_cycles = 0
-    while time.monotonic() < deadline:
-        cycle += 1
-        cycle_started = time.monotonic()
-        print(f"[loop] Starting scan cycle {cycle}; target start-to-start interval={interval}s")
-        try:
-            scan_once()
-            successful_cycles += 1
-        except Exception as exc:
-            print(f"[loop] Scan cycle {cycle} failed: {type(exc).__name__}: {str(exc)[:300]}")
-            try:
-                record_failure(exc)
-            except Exception as state_exc:
-                print(f"[loop] Could not record cycle failure: {type(state_exc).__name__}")
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
-        elapsed = time.monotonic() - cycle_started
-        wait_seconds = max(0.0, interval - elapsed)
-        time.sleep(min(wait_seconds, remaining))
-    print(f"[loop] Completed {cycle} scan cycles; successful={successful_cycles} within {duration}s.")
-    if successful_cycles == 0:
-        raise RuntimeError("No scan cycle completed successfully during the loop window.")
-
+    # One feed snapshot per workflow invocation; cadence is controlled by GitHub cron.
+    return scan_once()
 
 if __name__ == "__main__":
     try:
