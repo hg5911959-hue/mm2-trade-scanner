@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """BloxSwaps MM2 scanner with verified Supreme Values calculations."""
+import csv
 import hashlib
 import json
 import os
@@ -7,6 +8,8 @@ import re
 import sys
 import time
 import unicodedata
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import urllib.request
 from urllib.error import HTTPError, URLError
 from html.parser import HTMLParser
@@ -22,8 +25,12 @@ RBLXVALUE_API_KEY = os.environ.get("RBLXVALUE_API_KEY", "").strip()
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 MIN_DIFF = float(os.environ.get("MIN_VALUE_DIFFERENCE", "0"))
+MIN_PROFIT_PERCENT = float(os.environ.get("MIN_PROFIT_PERCENT", "0"))
+FAILURE_THRESHOLD = int(os.environ.get("FAILURE_ALERT_THRESHOLD", "3"))
 SEEN_FILE = Path("data/seen.json")
 VALUES_FILE = Path("data/supreme_values.json")
+FAILURE_FILE = Path("data/failure_state.json")
+HISTORY_FILE = Path("data/history.csv")
 MAX_SEEN = 5000
 VALUES_TTL_SECONDS = 4 * 60 * 60
 
@@ -228,23 +235,47 @@ def parse_listings(html):
     return list(unique.values())
 
 
+def request_with_retry(req, timeout, label, attempts=4):
+    """Retry transient failures with exponential backoff and respect Retry-After."""
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                body = response.read()
+                print(f"[http] {label}: HTTP {response.status} ({len(body)} bytes)")
+                return body
+        except HTTPError as exc:
+            detail = exc.read(400).decode("utf-8", errors="replace")
+            retryable = exc.code == 429 or 500 <= exc.code <= 599
+            if not retryable or attempt == attempts - 1:
+                raise RuntimeError(f"{label}: HTTP {exc.code}: {detail[:200]}") from exc
+            delay = min(30, 2 ** (attempt + 1))
+            retry_after = exc.headers.get("Retry-After", "")
+            if retry_after:
+                try:
+                    delay = min(60, max(1, int(retry_after)))
+                except ValueError:
+                    try:
+                        delay = min(60, max(1, int((parsedate_to_datetime(retry_after) -
+                            datetime.now(timezone.utc)).total_seconds())))
+                    except Exception:
+                        pass
+            print(f"[retry] {label}: HTTP {exc.code}; waiting {delay}s")
+            time.sleep(delay)
+        except (URLError, TimeoutError) as exc:
+            if attempt == attempts - 1:
+                raise RuntimeError(f"{label}: network failure after {attempts} attempts: {exc}") from exc
+            delay = min(30, 2 ** (attempt + 1))
+            print(f"[retry] {label}: network error; waiting {delay}s")
+            time.sleep(delay)
+
+
 def http_get(url, timeout=35):
     req = urllib.request.Request(url, headers={
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/json",
         "Accept-Language": "en-US,en;q=0.9,fr;q=0.8",
     })
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            body = response.read().decode("utf-8", errors="replace")
-            print(f"[http] {response.status} {url} ({len(body)} chars)")
-            return body
-    except HTTPError as exc:
-        detail = exc.read(1000).decode("utf-8", errors="replace")
-        raise RuntimeError(f"HTTP {exc.code} for {url}: {detail[:500]}") from exc
-    except URLError as exc:
-        raise RuntimeError(f"Network error for {url}: {exc.reason}") from exc
-
+    return request_with_retry(req, timeout, "BloxSwaps page").decode("utf-8", errors="replace")
 
 def fetch_bloxswaps():
     return http_get(BLOXSWAPS_URL)
@@ -259,42 +290,19 @@ def normalize_name(name):
 
 def api_get_json(path, params=None):
     if not RBLXVALUE_API_KEY:
-        raise RuntimeError(
-            "Missing RBLXVALUE_API_KEY secret. Supreme Values blocks direct GitHub Actions requests; "
-            "use the documented JSON API value_source_b field instead."
-        )
+        raise RuntimeError("Missing RBLXVALUE_API_KEY GitHub Actions secret.")
     query = "?" + urlencode(params or {}) if params else ""
     url = RBLXVALUE_API_BASE + path + query
     req = urllib.request.Request(url, headers={
         "X-Api-Key": RBLXVALUE_API_KEY,
         "Accept": "application/json",
-        "User-Agent": "MM2TradeScanner/2.0",
+        "User-Agent": "MM2TradeScanner/2.1",
     })
+    raw = request_with_retry(req, 30, "RBLXValue API")
     try:
-        with urllib.request.urlopen(req, timeout=30) as response:
-            data = json.loads(response.read().decode("utf-8"))
-            print(f"[rblxvalue] HTTP {response.status} {url}")
-            return data
-    except HTTPError as exc:
-        detail = exc.read(1000).decode("utf-8", errors="replace")
-        if exc.code == 403:
-            raise RuntimeError(
-                "[rblxvalue] HTTP 403: the API key was rejected or is inactive. "
-                "Open https://rblxvalue.com/developer, confirm the key belongs to your account, "
-                "complete any email verification, and check that the key status is active. "
-                "If needed, create/regenerate a FREE key, then replace the GitHub Actions secret "
-                "RBLXVALUE_API_KEY with the new value (paste the raw key only, without quotes/spaces). "
-                "The key must start with 'rbx_'. The secret value is never printed by this scanner. "
-                f"Provider response: {detail[:300]}"
-            ) from exc
-        if exc.code == 429:
-            raise RuntimeError(
-                "[rblxvalue] HTTP 429: API rate limit reached. Wait 60 seconds and retry; "
-                "the scanner is designed to use one paginated values refresh and a local cache."
-            ) from exc
-        raise RuntimeError(f"[rblxvalue] HTTP {exc.code}: {detail[:500]}") from exc
-    except URLError as exc:
-        raise RuntimeError(f"[rblxvalue] Network error: {exc.reason}") from exc
+        return json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("[rblxvalue] Invalid JSON response") from exc
 
 
 def load_supreme_values():
@@ -332,7 +340,14 @@ def load_supreme_values():
                 continue
             # A zero source value means Supreme has no numeric value for this item.
             if source_value > 0:
-                all_values[normalize_name(name)] = {"name": name, "value": source_value}
+                secondary = item.get("value_source_a")
+                try:
+                    secondary = float(secondary) if secondary is not None else None
+                except (TypeError, ValueError):
+                    secondary = None
+                all_values[normalize_name(name)] = {
+                    "name": name, "value": source_value, "secondary_value": secondary
+                }
         offset += len(items)
         if len(items) < page_size:
             break
@@ -457,67 +472,126 @@ def main():
     print("[stage] Fetching BloxSwaps listings")
     html = fetch_bloxswaps()
     listings = parse_listings(html)
+    if not listings:
+        markers = ("propose", "recherche")
+        if not all(marker in html.casefold() for marker in markers):
+            raise RuntimeError("[bloxswaps] Page structure changed or blocked: trade-side markers missing.")
+        raise RuntimeError("[bloxswaps] Trade-side markers exist but no cards parsed; possible HTML change.")
     print(f"[bloxswaps] Eligible listings after Ajouts filter: {len(listings)}")
 
     seen_list = load_seen()
     seen = set(seen_list)
     evaluated_ids = []
-    sent = 0
     skipped_unknown = 0
+    opportunities = []
 
     for listing in listings:
         trade_id = listing["id"]
         if trade_id in seen:
             continue
-
-        # Mark this listing as processed exactly once, including listings with
-        # unmatched items, so the same listing is not repeatedly re-analysed.
         evaluated_ids.append(trade_id)
-
-        # BloxSwaps Propose = what the poster offers (you receive).
-        # BloxSwaps Recherche = what the poster wants (you give).
         give_total, give_lines, give_missing = calculate_side(listing["give_items"], values)
         receive_total, receive_lines, receive_missing = calculate_side(listing["receive_items"], values)
         missing = give_missing + receive_missing
         if missing:
             skipped_unknown += 1
-            print(f"[skip] Unmatched Supreme item(s), no value/alert: {', '.join(missing)}")
+            print(f"[skip] Unmatched Supreme item(s): {', '.join(missing)}")
             continue
-
         difference = receive_total - give_total
+        margin = (difference / give_total * 100.0) if give_total > 0 else (100.0 if difference > 0 else 0.0)
+        if difference >= MIN_DIFF and margin >= MIN_PROFIT_PERCENT:
+            opportunities.append({
+                "listing": listing, "give_total": give_total, "give_lines": give_lines,
+                "receive_total": receive_total, "receive_lines": receive_lines,
+                "difference": difference, "margin": margin,
+            })
 
-        # Zero-profit trades are intentionally included. Negative results are not sent as opportunities.
-        if difference >= MIN_DIFF:
-            message = format_trade_message(
-                listing, give_total, give_lines, receive_total, receive_lines, difference
-            )
-            print(f"[telegram] Sending verified trade; profit={difference:g}")
-            send_telegram(message)
-            sent += 1
+    opportunities.sort(key=lambda x: (x["difference"], x["margin"]), reverse=True)
+    sent = 0
+    for op in opportunities:
+        listing = op["listing"]
+        message = format_trade_message(
+            listing, op["give_total"], op["give_lines"],
+            op["receive_total"], op["receive_lines"], op["difference"]
+        )
+        message += f"\nPROFIT MARGIN: {op['margin']:.2f}%"
+        secondary_note = compare_secondary_values(
+            listing["give_items"] + listing["receive_items"], values
+        )
+        if secondary_note:
+            message += "\nSECOND-SOURCE CHECK (MM2Values): " + secondary_note
+        print(f"[telegram] Sending ranked trade; profit={op['difference']:g}")
+        send_telegram(message)
+        append_history(listing, op)
+        sent += 1
 
     updated_seen = (seen_list + evaluated_ids)[-MAX_SEEN:]
     SEEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-    SEEN_FILE.write_text(
-        json.dumps({"seen": updated_seen}, indent=2) + "\n", encoding="utf-8"
-    )
-    if sent == 0:
-        # A heartbeat every scheduled scan confirms that the scanner is alive
-        # and no NEW fully verified trade met the configured profit threshold.
-        heartbeat = (
-            "MM2 SUPREME TRADE SCANNER\n\n"
-            "لا توجد عروض جيدة حاليًا.\n"
-            "لم يتم العثور على عرض جديد يحقق شروط الربح بعد التحقق من قيم جميع الأسلحة.\n\n"
-            f"Listings checked: {len(listings)}\n"
-            f"Unmatched listings skipped: {skipped_unknown}\n"
-            "Next scan: in approximately 5 minutes."
-        )
-        print("[telegram] No qualifying new trade; sending heartbeat")
-        send_telegram(heartbeat)
+    SEEN_FILE.write_text(json.dumps({"seen": updated_seen}, indent=2) + "\n", encoding="utf-8")
+    print(f"[summary] Parsed={len(listings)} | evaluated={len(evaluated_ids)} | unmatched={skipped_unknown} | qualified={len(opportunities)} | alerts={sent}")
+    record_success()
 
-    print(
-        f"[summary] Parsed={len(listings)} | evaluated={len(evaluated_ids)} | "
-        f"unmatched_skipped={skipped_unknown} | alerts={sent} | heartbeat={sent == 0}"
-    )
+
+def compare_secondary_values(items, values):
+    differences = []
+    for item in items:
+        record = values.get(normalize_name(item["name"]), {})
+        primary, secondary = record.get("value"), record.get("secondary_value")
+        if primary and secondary and primary > 0:
+            pct = abs(primary - secondary) / primary * 100.0
+            if pct >= 30:
+                differences.append(f"{record.get('name', item['name'])}: {pct:.0f}%")
+    return ", ".join(differences[:5])
+
+
+def append_history(listing, op):
+    HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    exists = HISTORY_FILE.exists()
+    with HISTORY_FILE.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=[
+            "detected_at_utc", "listing_id", "profit_supreme", "profit_margin_percent",
+            "you_give", "you_receive", "listing_url", "owner_url"
+        ])
+        if not exists:
+            writer.writeheader()
+        writer.writerow({
+            "detected_at_utc": datetime.now(timezone.utc).isoformat(),
+            "listing_id": listing["id"],
+            "profit_supreme": round(op["difference"], 2),
+            "profit_margin_percent": round(op["margin"], 2),
+            "you_give": round(op["give_total"], 2),
+            "you_receive": round(op["receive_total"], 2),
+            "listing_url": listing["url"],
+            "owner_url": listing.get("owner_url", ""),
+        })
+
+
+def record_success():
+    FAILURE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    FAILURE_FILE.write_text(json.dumps({"consecutive_failures": 0}, indent=2) + "\n")
+
+
+def record_failure(error):
+    FAILURE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        state = json.loads(FAILURE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        state = {"consecutive_failures": 0}
+    count = int(state.get("consecutive_failures", 0)) + 1
+    state["consecutive_failures"] = count
+    FAILURE_FILE.write_text(json.dumps(state, indent=2) + "\n")
+    print(f"[failure] Consecutive failures: {count}")
+    if count >= FAILURE_THRESHOLD and (count == FAILURE_THRESHOLD or count % 5 == 0):
+        safe_error = re.sub(r"https://api\.telegram\.org/bot[^/\s]+", "https://api.telegram.org/bot[REDACTED]", str(error))
+        try:
+            send_telegram(
+                "MM2 Trade Scanner ALERT\n"
+                f"Failed {count} consecutive runs.\nLatest error: {safe_error[:600]}\n"
+                "See GitHub Actions diagnostics."
+            )
+            print("[telegram] Repeated-failure alert sent")
+        except Exception as notify_error:
+            print(f"[telegram] Failure alert could not be sent: {type(notify_error).__name__}")
 
 
 if __name__ == "__main__":
@@ -525,4 +599,5 @@ if __name__ == "__main__":
         main()
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
+        record_failure(exc)
         sys.exit(1)
