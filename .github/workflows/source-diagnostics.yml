@@ -1,0 +1,117 @@
+name: BloxSwaps Source Diagnostics
+
+on:
+  push:
+    branches: [hardening/staged-audit-2026-11-12]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Inspect public page data and pagination
+        run: |
+          python - <<'PY'
+          import json, re, urllib.request
+          from html.parser import HTMLParser
+          from urllib.parse import urljoin, urlsplit
+
+          URL = "https://bloxswaps.com/fr/trade-mm2?trade-type=P2P"
+          HEADERS = {
+              "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36",
+              "Accept": "text/html,application/xhtml+xml,application/json",
+              "Accept-Language": "en-US,en;q=0.9,fr;q=0.8",
+          }
+          class Capture(HTMLParser):
+              def __init__(self):
+                  super().__init__(convert_charrefs=True)
+                  self.scripts, self.links, self.images = [], [], []
+                  self.current = None
+              def handle_starttag(self, tag, attrs):
+                  a = dict(attrs)
+                  if tag == "script":
+                      self.current = {"attrs": a, "text": ""}
+                      self.scripts.append(self.current)
+                  elif tag == "a" and a.get("href"):
+                      self.links.append(a["href"])
+                  elif tag == "img":
+                      self.images.append(a)
+              def handle_data(self, data):
+                  if self.current is not None:
+                      self.current["text"] += data
+              def handle_endtag(self, tag):
+                  if tag == "script":
+                      self.current = None
+
+          req = urllib.request.Request(URL, headers=HEADERS)
+          with urllib.request.urlopen(req, timeout=25) as response:
+              raw = response.read()
+              final_url = response.geturl()
+              print("PAGE_STATUS", response.status, "CONTENT_TYPE", response.headers.get("Content-Type"))
+          html = raw.decode("utf-8", "replace")
+          print("PAGE_BYTES", len(raw), "FINAL_URL", final_url)
+          low = html.casefold()
+          for marker in ("cloudflare", "captcha", "challenge-platform", "__next_data__", "__next_f.push", "self.__next_f.push"):
+              print("MARKER", marker, low.find(marker))
+          parser = Capture()
+          parser.feed(html)
+          print("SCRIPT_COUNT", len(parser.scripts), "LINK_COUNT", len(parser.links), "IMAGE_COUNT", len(parser.images))
+          print("SCRIPT_TAGS")
+          for i, s in enumerate(parser.scripts):
+              a = s["attrs"]
+              print(i, "type=", a.get("type"), "id=", a.get("id"), "src=", a.get("src"), "chars=", len(s["text"]))
+              if a.get("id") == "__NEXT_DATA__" or "application/json" in a.get("type", ""):
+                  try:
+                      obj = json.loads(s["text"])
+                      print("JSON_SCRIPT", i, "TOP_KEYS", list(obj)[:40])
+                      def scan(o, path="$", depth=0):
+                          if depth > 7: return
+                          if isinstance(o, dict):
+                              keys = set(o)
+                              if keys.intersection({"quantity","count","amount","stack","items","tradeItems","offering","requesting"}):
+                                  sample = {k:o[k] for k in o if k in {"id","name","title","quantity","count","amount","stack","items","tradeItems","offering","requesting","page","pageInfo","nextCursor","hasNextPage"}}
+                                  print("JSON_CANDIDATE", path, json.dumps(sample, ensure_ascii=False)[:1200])
+                              for k,v in list(o.items())[:300]: scan(v, path+"."+str(k), depth+1)
+                          elif isinstance(o, list):
+                              for j,v in enumerate(o[:300]): scan(v, path+f"[{j}]", depth+1)
+                      scan(obj)
+                  except Exception as e:
+                      print("JSON_SCRIPT_PARSE_ERROR", i, type(e).__name__)
+              if "__next_f.push" in s["text"]:
+                  print("RSC_SCRIPT_SAMPLE", re.sub(r"\\s+", " ", s["text"])[:1800])
+          print("PAGINATION_LINKS", [x for x in parser.links if re.search(r"page|cursor|offset|next", x, re.I)][:80])
+          print("PAGE_QUERY_HINTS", sorted(set(re.findall(r"(?i)(?:page|cursor|offset|limit|take|skip)[A-Za-z0-9_]*", html)))[:80])
+          print("APP_DATA_MARKERS", [m for m in re.findall(r"(?i)(?:/api/|graphql|trades|listings)[^\\\"'\\s]{0,140}", html)[:80]])
+          scripts = [urljoin(final_url, s["attrs"]["src"]) for s in parser.scripts if s["attrs"].get("src")]
+          print("SCRIPT_URLS", scripts[:80])
+          for script_url in scripts[:25]:
+              try:
+                  rq = urllib.request.Request(script_url, headers=HEADERS)
+                  with urllib.request.urlopen(rq, timeout=12) as response:
+                      js = response.read(2_000_000).decode("utf-8", "replace")
+                  patterns = re.findall(r"""(?:"|')((?:/api/|/trpc/|/graphql)[^"'\\s]{0,160})(?:"|')""", js)
+                  page_terms = sorted(set(re.findall(r"(?i)(?:page|cursor|offset|limit|take|skip)[A-Za-z0-9_]*", js)))
+                  if patterns or page_terms:
+                      print("BUNDLE_HINT", script_url, "ENDPOINTS", patterns[:40], "PAGE_TERMS", page_terms[:40])
+              except Exception as e:
+                  print("BUNDLE_FETCH_ERROR", script_url, type(e).__name__)
+          with open("bloxswaps-live.html", "wb") as f:
+              f.write(raw)
+          with open("bloxswaps-page-metadata.json", "w", encoding="utf-8") as f:
+              json.dump({"final_url": final_url, "scripts": parser.scripts, "links": parser.links, "images": parser.images}, f, ensure_ascii=False, indent=2)
+          PY
+      - name: Upload public page snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: bloxswaps-source-diagnostics
+          path: |
+            bloxswaps-live.html
+            bloxswaps-page-metadata.json
+          retention-days: 3
