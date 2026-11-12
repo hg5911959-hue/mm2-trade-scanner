@@ -346,6 +346,22 @@ class ReliabilityTests(unittest.TestCase):
                                            "https://bloxswaps.com/fr/trade-mm2?ad=two")
         self.assertNotEqual(first, second)
 
+    def test_corrupt_alerted_state_fails_closed_instead_of_resending(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "alerted.json"
+            history = Path(directory) / "history.csv"
+            path.write_text("{broken json", encoding="utf-8")
+            with patch("scanner.ALERTED_FILE", path), patch("scanner.HISTORY_FILE", history):
+                with self.assertRaisesRegex(RuntimeError, "refusing to send potentially duplicated alerts"):
+                    scanner.load_alerted()
+
+    def test_missing_first_run_state_files_are_allowed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "alerted.json"
+            history = Path(directory) / "history.csv"
+            with patch("scanner.ALERTED_FILE", path), patch("scanner.HISTORY_FILE", history):
+                self.assertEqual(scanner.load_alerted(), [])
+
     def test_alerted_keeps_newest_ids_in_insertion_order(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "alerted.json"
