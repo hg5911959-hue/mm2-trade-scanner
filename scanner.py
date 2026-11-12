@@ -697,6 +697,7 @@ def parse_page(html):
     listings = []
     additions = 0
     malformed = 0
+    malformed_samples = []
     structured_matched = 0
     for node in candidates:
         context = listing_context(node)
@@ -704,6 +705,7 @@ def parse_page(html):
         received, requested = extract_side_items(node)
         if not received or not requested:
             malformed += 1
+            malformed_samples.append(text[:240])
             continue
         link, owner_url = listing_links(context)
         source_ad_id = _ad_id_from_url(link) or listing_identifier(context)
@@ -735,6 +737,7 @@ def parse_page(html):
         "candidate_count": len(candidates),
         "addition_count": additions,
         "malformed_count": malformed,
+        "malformed_samples": malformed_samples[:5],
         "owner_link_count": sum(1 for item in parsed if item.get("owner_url")),
         "structured_entry_count": len(structured_entries),
         "structured_matched_count": structured_matched,
@@ -930,6 +933,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None):
     discovered_ids = []
     addition_ids = []
     unparsed_ids = []
+    unparsed_samples = []
     boundary_reached = False
     additions = 0
     malformed = 0
@@ -964,6 +968,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None):
             else:
                 malformed += 1
                 unparsed_ids.append(post_id)
+                unparsed_samples.append(json.dumps(raw, ensure_ascii=False)[:240])
 
     consume_raw_posts(raw_first_items)
     cursor = (initial_page.get("meta") or {}).get("cursor")
@@ -1010,6 +1015,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None):
         "api_listings_added": api_listings_added,
         "addition_ids": addition_ids,
         "unparsed_ad_ids": unparsed_ids,
+        "malformed_samples": (stats.get("malformed_samples", []) + unparsed_samples)[:5],
     })
     if not pagination_complete:
         print(f"[maintenance] Pagination stopped at MAX_FEED_PAGES={MAX_FEED_PAGES} with a cursor remaining.")
@@ -1802,8 +1808,24 @@ def main():
             f"[maintenance] {malformed_count} card(s) could not be parsed; "
             f"unparsed IDs: {', '.join(stats.get('unparsed_ad_ids', [])[:10])}"
         )
-    if not stats.get("pagination_complete", False) and stats.get("pagination_source") != "html-only":
+        ratio = malformed_count / max(1, stats.get("candidate_count", 0))
+        if os.environ.get("MM2_SCAN_LOOP") == "1" and (malformed_count >= 3 or ratio >= 0.05):
+            samples = " | ".join(stats.get("malformed_samples", [])[:3])
+            send_maintenance_alert(
+                "malformed-feed-cards",
+                f"Unparsed cards: {malformed_count}/{stats.get('candidate_count', 0)} "
+                f"({ratio:.1%}). Samples: {samples[:700]}",
+                cooldown_seconds=3600,
+            )
+    if not stats.get("pagination_complete", False):
         print("[maintenance] Feed pagination is incomplete; more recent posts may remain beyond the scan limit.")
+        if os.environ.get("MM2_SCAN_LOOP") == "1":
+            send_maintenance_alert(
+                "pagination-incomplete",
+                f"Cursor scan incomplete after {stats.get('pagination_pages', 1)} pages. "
+                "Newer posts may remain unscanned; inspect the latest GitHub Actions logs.",
+                cooldown_seconds=1800,
+            )
     # Runtime visibility for real-feed quantity validation: log only explicit stacks.
     for listing in listings:
         for side_label, field in (("Propose/receive", "receive_items"), ("Recherche/give", "give_items")):
@@ -1860,11 +1882,17 @@ def main():
         if result is None:
             skipped_unknown += 1
             print(
-                f"[skip-unknown] Listing excluded; missing/unvalued items: "
+                f"[skip-unknown] Listing retained for recheck; missing/unvalued items: "
                 f"{', '.join(missing)}"
             )
-            # Do not send MANUAL VALUE CHECK alerts. Recheck on later scans in
-            # case the Supreme mapping becomes available, but never value partially.
+            if os.environ.get("MM2_SCAN_LOOP") == "1":
+                unknown_names = [
+                    str(value).split(" (", 1)[0]
+                    for value in missing
+                    if value and not str(value).startswith("one side has")
+                ]
+                if unknown_names:
+                    record_unmatched_names(unknown_names)
             continue
         if not qualifies(result):
             mark_seen_ad(listing)
