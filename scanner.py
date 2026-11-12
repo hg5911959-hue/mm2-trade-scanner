@@ -180,15 +180,26 @@ def extract_side_items(node):
     return received, requested
 
 
-def listing_link(node):
+def listing_links(node):
     links = []
+    owner_url = ""
     for child in walk_nodes(node):
         if child.tag == "a" and child.attrs.get("href"):
-            links.append(child.attrs["href"])
+            href = child.attrs["href"]
+            links.append(href)
+            if "/users/" in href.casefold() and not owner_url:
+                owner_url = urljoin(BLOXSWAPS_URL, href)
+    discussion_url = ""
     for href in links:
-        if any(word in href.casefold() for word in ("trade", "post", "listing", "discussion")):
-            return urljoin(BLOXSWAPS_URL, href)
-    return urljoin(BLOXSWAPS_URL, links[0]) if links else BLOXSWAPS_URL
+        if "ad=" in href.casefold() or "discussion" in href.casefold():
+            discussion_url = urljoin(BLOXSWAPS_URL, href)
+            break
+    if not discussion_url:
+        for href in links:
+            if any(word in href.casefold() for word in ("trade", "post", "listing")):
+                discussion_url = urljoin(BLOXSWAPS_URL, href)
+                break
+    return discussion_url or BLOXSWAPS_URL, owner_url
 
 
 def parse_listings(html):
@@ -203,13 +214,14 @@ def parse_listings(html):
         received, requested = extract_side_items(node)
         if not received or not requested:
             continue
-        link = listing_link(node)
+        link, owner_url = listing_links(node)
         stable = hashlib.sha256((text + "|" + link).encode("utf-8")).hexdigest()[:20]
         listings.append({
             "id": stable,
             "receive_items": received,
             "give_items": requested,
             "url": link,
+            "owner_url": owner_url,
             "source_text": text[:700],
         })
     unique = {item["id"]: item for item in listings}
@@ -420,7 +432,8 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
         f"CALCULATED RESULT: {result}",
         "",
         "Values: Supreme Values source_b via RBLXValue API (Data from rblxvalue.com).",
-        f"Source: {listing['url']}",
+        f"Listing / discussion: {listing['url']}",
+        *( [f"Owner profile: {listing['owner_url']}"] if listing.get("owner_url") else [] ),
     ]
     return "\n".join(lines)
 
