@@ -2945,6 +2945,8 @@ def record_failure(error):
         (count > FAILURE_THRESHOLD and (count - FAILURE_THRESHOLD) % 5 == 0)
     ):
         safe_error = re.sub(r"https://api\.telegram\.org/bot[^/\s]+", "https://api.telegram.org/bot[REDACTED]", str(error))
+        safe_error = re.sub(r"rbx_[A-Za-z0-9_-]+", "rbx_[REDACTED]", safe_error)
+        safe_error = re.sub(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s]+", r"\1[REDACTED]", safe_error)
         try:
             send_telegram(
                 "MM2 Trade Scanner ALERT\n"
