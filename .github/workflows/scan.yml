@@ -8,7 +8,7 @@ on:
     types: [mm2-scan]
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: mm2-trade-scanner
@@ -17,7 +17,7 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 55
     env:
       HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
     steps:
@@ -38,6 +38,18 @@ jobs:
           restore-keys: |
             mm2-state-
 
+      - name: Restore durable state branch
+        run: |
+          if git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
+            git fetch origin state
+            rm -rf data
+            mkdir -p data
+            git archive origin/state data | tar -x
+            echo "Restored scanner state from branch 'state'."
+          else
+            echo "State branch not found; retaining legacy Actions Cache state for one-time migration."
+          fi
+
       - name: Test parser and value calculations
         run: python -m unittest discover -s tests -q
 
@@ -57,6 +69,12 @@ jobs:
           FAILURE_ALERT_THRESHOLD: "3"
           MAX_ALERTS_PER_RUN: "10"
           ALERT_DELAY_SECONDS: "1"
+          MM2_SCAN_LOOP: "1"
+          MM2_SCAN_DURATION_SECONDS: "3000"
+          MM2_SCAN_INTERVAL_SECONDS: "45"
+          MAX_FEED_PAGES: "50"
+          VALUES_TTL_SECONDS: "300"
+          BLOXSWAPS_ITEMS_TTL_SECONDS: "3600"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RBLXVALUE_API_KEY: ${{ secrets.RBLXVALUE_API_KEY }}
@@ -83,12 +101,34 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Save scanner state
-        id: save_state
+      - name: Persist durable state branch
         if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            data/
-          key: mm2-state-${{ github.run_id }}-${{ github.run_attempt }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          if git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
+            git fetch origin state
+            git worktree add -B state /tmp/mm2-state origin/state
+          else
+            git worktree add --detach /tmp/mm2-state HEAD
+            cd /tmp/mm2-state
+            git checkout --orphan state
+            git rm -rf . >/dev/null 2>&1 || true
+            cd -
+          fi
+          rm -rf /tmp/mm2-state/data
+          mkdir -p /tmp/mm2-state/data
+          if [ -d data ]; then cp -a data/. /tmp/mm2-state/data/; fi
+          cd /tmp/mm2-state
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A data
+          if git diff --cached --quiet; then
+            echo "Scanner state unchanged; no state-branch commit created."
+          else
+            git commit -m "chore(state): persist MM2 scanner state"
+            git push origin state
+            echo "Updated durable scanner state branch."
+          fi
 
