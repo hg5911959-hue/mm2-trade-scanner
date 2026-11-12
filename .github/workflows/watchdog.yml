@@ -15,7 +15,6 @@ concurrency:
 
 jobs:
   watchdog:
-    if: false # EMERGENCY PAUSE: prevent watchdog Telegram alerts while scanner is paused
     runs-on: ubuntu-latest
     timeout-minutes: 3
     env:
