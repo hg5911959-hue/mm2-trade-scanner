@@ -596,8 +596,8 @@ class ReliabilityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "history.csv"
             path.write_text(
-                "detected_at_utc,listing_id,profit_supreme,profit_margin_percent,you_give,you_receive,listing_url,owner_url\\n"
-                "2026-11-11T10:00:00+00:00,old-id,5,50,10,15,https://example.test/old,\\n",
+                "detected_at_utc,listing_id,profit_supreme,profit_margin_percent,you_give,you_receive,listing_url,owner_url\n"
+                "2026-11-11T10:00:00+00:00,old-id,5,50,10,15,https://example.test/old,\n",
                 encoding="utf-8",
             )
             listing = {
@@ -1648,6 +1648,23 @@ class QuantityDomFuzzRegressionTests(unittest.TestCase):
                     ),
                 )
                 self.assertEqual(listing["receive_items"][0]["listed_price"], 750.0)
+
+
+class DuplicateBatchRegressionTests(unittest.TestCase):
+    def test_duplicate_rows_with_same_listing_id_are_collapsed(self):
+        first = {"id": "stable-ad-1", "source_ad_id": "ad-1", "receive_items": [], "give_items": []}
+        duplicate = dict(first)
+        self.assertEqual(scanner.deduplicate_listings([first, duplicate]), [first])
+
+    def test_ad_id_stays_stable_when_item_quantity_or_details_change(self):
+        first_receive = [{"name": "Snowcannon", "quantity": 1, "quantity_source": "structured"}]
+        second_receive = [{"name": "Snowcannon", "quantity": 2, "quantity_source": "structured"}]
+        give = [{"name": "Spirit", "quantity": 1, "quantity_source": "structured"}]
+        url = "https://bloxswaps.com/fr/trade-mm2?ad=stable-ad-123"
+        owner = "https://bloxswaps.com/fr/users/123"
+        first_id = scanner.stable_listing_id(owner, first_receive, give, url)
+        second_id = scanner.stable_listing_id(owner, second_receive, give, url)
+        self.assertEqual(first_id, second_id)
 
 
 if __name__ == "__main__":
