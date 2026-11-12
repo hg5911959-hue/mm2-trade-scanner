@@ -343,6 +343,10 @@ class ReliabilityTests(unittest.TestCase):
             receive_total, _, _ = scanner.calculate_side(item, values, side="receive")
             self.assertEqual(give_total, 400)
             self.assertEqual(receive_total, 4)
+            give_min, give_max, _, _, _ = scanner.calculate_side_bounds(item, values, side="give")
+            receive_min, receive_max, _, _, _ = scanner.calculate_side_bounds(item, values, side="receive")
+            self.assertEqual((give_min, give_max), (400, 400))
+            self.assertEqual((receive_min, receive_max), (4, 4))
 
     def test_non_numeric_tier_notation_does_not_override_numeric_godly_value(self):
         items = [
@@ -877,6 +881,20 @@ class CacheTTLTests(unittest.TestCase):
                 loaded = scanner.load_supreme_values()
             self.assertEqual(len(loaded), 100)
             api.assert_not_called()
+
+    def test_legacy_highest_only_supreme_cache_is_not_trusted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "supreme.json"
+            values = {f"item {i}": {"name": f"Item {i}", "value": i + 1} for i in range(100)}
+            path.write_text(json.dumps({"fetched_at": 990, "values": values}), encoding="utf-8")
+            with (
+                patch("scanner.VALUES_FILE", path),
+                patch("scanner.VALUES_TTL_SECONDS", 300),
+                patch("scanner.time.time", return_value=1000),
+                patch("scanner.RBLXVALUE_API_KEY", ""),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "fresh cached source_b snapshot"):
+                    scanner.load_supreme_values()
 
     def test_expired_supreme_snapshot_is_never_used_without_api_key(self):
         with tempfile.TemporaryDirectory() as directory:
