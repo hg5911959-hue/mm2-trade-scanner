@@ -299,7 +299,7 @@ class ParserTests(unittest.TestCase):
             with patch("scanner.VALUES_FILE", cache_path), patch(
                 "scanner.RBLXVALUE_API_KEY", "test-key"
             ), patch(
-                "scanner.api_get_json", side_effect=RuntimeError("API unavailable")
+                "scanner.api_get_json_conditional", side_effect=RuntimeError("API unavailable")
             ):
                 with self.assertRaisesRegex(RuntimeError, "refusing stale-cache calculations"):
                     load_supreme_values()
@@ -329,7 +329,7 @@ class ReliabilityTests(unittest.TestCase):
                 with (
                     patch("scanner.VALUES_FILE", cache_path),
                     patch("scanner.RBLXVALUE_API_KEY", "test-key"),
-                    patch("scanner.api_get_json", return_value={"items": items, "total": len(items)}),
+                    patch("scanner.api_get_json_conditional", return_value=({"items": items, "total": len(items)}, None, False)),
                     patch("scanner.time.sleep"),
                 ):
                     values = load_supreme_values()
@@ -939,7 +939,7 @@ class CacheTTLTests(unittest.TestCase):
                 patch("scanner.VALUES_TTL_SECONDS", 300),
                 patch("scanner.time.time", return_value=1000),
                 patch("scanner.RBLXVALUE_API_KEY", ""),
-                patch("scanner.api_get_json") as api,
+                patch("scanner.api_get_json_conditional") as api,
             ):
                 loaded = scanner.load_supreme_values()
             self.assertEqual(len(loaded), 100)
