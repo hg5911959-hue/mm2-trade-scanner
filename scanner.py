@@ -2394,7 +2394,7 @@ def save_watch_state(ads):
     now = time.time()
     active = {str(k): v for k, v in ads.items() if isinstance(v, dict) and now - float(v.get('created_at', now)) <= 6 * 3600}
     if len(active) > 300: active = dict(sorted(active.items(), key=lambda pair: float(pair[1].get('updated_at', 0)))[-300:])
-    atomic_write_text(WATCH_FILE, json.dumps({'version': 1, 'ads': active}, ensure_ascii=False, indent=2) + '\\n')
+    atomic_write_text(WATCH_FILE, json.dumps({'version': 1, 'ads': active}, ensure_ascii=False, indent=2) + "\\n")
 
 def update_watch_entry(watch_state, listing, values, aliases=None):
     ad_id = str(listing.get('source_ad_id') or '')
@@ -2426,6 +2426,7 @@ def scan_once():
     print("[stage] Loading seen-offer and pending-recheck state")
     seen_ads = load_seen_ads()
     pending_ids = load_pending_ids()
+    watch_state = load_watch_state()
     # If the seen file was lost but pending items survive, do not cold-start:
     # search the feed for those unresolved IDs before establishing a baseline.
     if seen_ads is None and pending_ids:
