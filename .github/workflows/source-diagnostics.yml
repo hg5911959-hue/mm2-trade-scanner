@@ -1,4 +1,4 @@
-name: BloxSwaps Source Diagnostics - current scanner validation
+name: BloxSwaps Source Diagnostics - final quantity regression validation
 
 on:
   push:
