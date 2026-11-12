@@ -179,11 +179,11 @@ def _normalize_quantity_text(raw):
 def _quantity_marker(raw):
     """Parse a whole explicit marker or structured numeric quantity."""
     text = _normalize_quantity_text(raw).strip()
-    match = re.fullmatch(r"(?:x|×)\\s*(\\d{1,3})|(?:\\d{1,3})\\s*(?:x|×)", text, flags=re.I)
+    match = re.fullmatch(r"(?:x|×)\s*(\d{1,3})|(?:\d{1,3})\s*(?:x|×)", text, flags=re.I)
     if match:
-        number = re.search(r"\\d{1,3}", text)
+        number = re.search(r"\d{1,3}", text)
         return max(1, min(int(number.group()), 100))
-    if re.fullmatch(r"\\d{1,3}", text):
+    if re.fullmatch(r"\d{1,3}", text):
         return max(1, min(int(text), 100))
     return None
 
@@ -191,7 +191,7 @@ def _quantity_marker(raw):
 def _explicit_stack_quantities(raw):
     """Return all explicit xN/×N/Nx markers; never parse bare prices as counts."""
     text = _normalize_quantity_text(raw)
-    pattern = r"(?<![A-Za-z0-9])(?:x|×)\\s*(\\d{1,3})(?!\\d)|(?<!\\d)(\\d{1,3})\\s*(?:x|×)(?![A-Za-z0-9])"
+    pattern = r"(?<![A-Za-z0-9])(?:x|×)\s*(\d{1,3})(?!\d)|(?<!\d)(\d{1,3})\s*(?:x|×)(?![A-Za-z0-9])"
     return [
         max(1, min(int(match.group(1) or match.group(2)), 100))
         for match in re.finditer(pattern, text, flags=re.I)
@@ -205,7 +205,7 @@ def _explicit_stack_quantity(raw):
 
 def _side_marker_count(text):
     return len(re.findall(
-        r"\\b(?:propose|offering|offer|recherche|looking\\s+for|request)\\b",
+        r"\b(?:propose|offering|offer|recherche|looking\s+for|request)\b",
         text or "", flags=re.I
     ))
 
@@ -243,7 +243,7 @@ def _structured_quantity_from_nodes(image_node, wrapper):
             quantities = _explicit_stack_quantities(raw)
             if quantities:
                 found.extend(quantities)
-            elif raw and re.search(r"(?:^|\\s)(?:x|×)\\s*(?:$|[^0-9])", _normalize_quantity_text(raw), re.I):
+            elif raw and re.search(r"(?:^|\s)(?:x|×)\s*(?:$|[^0-9])", _normalize_quantity_text(raw), re.I):
                 return None, True
     if found and len(set(found)) != 1:
         return None, True
@@ -252,7 +252,7 @@ def _structured_quantity_from_nodes(image_node, wrapper):
 
 def _has_unreadable_quantity_hint(raw, wrapper=None):
     text = _normalize_quantity_text(raw)
-    if re.search(r"(?<![A-Za-z0-9])(?:x|×)\\s*(?:$|[^0-9\\s])", text, flags=re.I):
+    if re.search(r"(?<![A-Za-z0-9])(?:x|×)\s*(?:$|[^0-9\s])", text, flags=re.I):
         return True
     if wrapper is not None:
         for node in walk_nodes(wrapper):
@@ -273,7 +273,7 @@ def _has_unreadable_quantity_hint(raw, wrapper=None):
 def _listed_price(raw):
     """Parse a visible decimal listing price for diagnostics only."""
     text = _normalize_quantity_text(raw)
-    matches = re.findall(r"(?<![A-Za-z0-9])([0-9]+(?:[.,][0-9]+))\\s*([KMB])?(?![A-Za-z0-9])", text, flags=re.I)
+    matches = re.findall(r"(?<![A-Za-z0-9])([0-9]+(?:[.,][0-9]+))\s*([KMB])?(?![A-Za-z0-9])", text, flags=re.I)
     if not matches:
         return None
     number, suffix = matches[0]
@@ -323,7 +323,7 @@ def collect_ordered_events(node):
 
 def has_addition_marker(node):
     text = node_text(node).casefold()
-    return bool(re.search(r"\\bajout(?:s)?\\b", text))
+    return bool(re.search(r"\bajout(?:s)?\b", text))
 
 
 def _item_quantity_details(image_node, segment_text):
@@ -358,9 +358,9 @@ def extract_side_items(node):
     for i, (kind, value) in enumerate(events):
         if kind == "text":
             low = value.casefold()
-            if re.search(r"\\bpropose\\b|\\boffering\\b|\\boffer\\b", low):
+            if re.search(r"\bpropose\b|\boffering\b|\boffer\b", low):
                 side = "receive"
-            elif re.search(r"\\brecherche\\b|\\blooking\\s+for\\b|\\brequest\\b", low):
+            elif re.search(r"\brecherche\b|\blooking\s+for\b|\brequest\b", low):
                 side = "give"
             continue
         if kind != "img" or not value or not side:
@@ -372,7 +372,7 @@ def extract_side_items(node):
             if next_kind == "img" and next_value and next_value.get("name"):
                 break
             if next_kind == "text" and re.search(
-                r"\\b(?:propose|offering|offer|recherche|looking\\s+for|request)\\b",
+                r"\b(?:propose|offering|offer|recherche|looking\s+for|request)\b",
                 next_value, flags=re.I
             ):
                 break
