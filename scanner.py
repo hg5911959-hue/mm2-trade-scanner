@@ -278,6 +278,7 @@ def _semantic_badge_quantity(wrapper):
 
 def _has_unreadable_quantity_hint(raw, wrapper=None):
     text = _normalize_quantity_text(raw)
+    has_explicit_in_segment = bool(_explicit_stack_quantities(text))
     invalid_numeric_marker = re.search(
         r"(?<![A-Za-z0-9])(?:x|×)\s*(\d+)(?!\d)|(?<![\d.,])(\d+)\s*(?:x|×)(?![A-Za-z0-9])",
         text, flags=re.I
@@ -300,7 +301,7 @@ def _has_unreadable_quantity_hint(raw, wrapper=None):
             )).casefold()
             if re.search(r"quant|count|amount|stack|badge|counter", classes):
                 label = node_text(node).strip()
-                if label and not _explicit_stack_quantities(label) and _quantity_marker(label) is None:
+                if label and not _explicit_stack_quantities(label) and _quantity_marker(label) is None and not has_explicit_in_segment:
                     return True
             for key in ("data-quantity", "data-count", "data-amount", "data-stack", "data-stack-count"):
                 if key in node.attrs and _quantity_marker(node.attrs.get(key)) is None:
