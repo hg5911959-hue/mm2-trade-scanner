@@ -469,18 +469,23 @@ def send_telegram(message):
 
 def load_seen():
     if not SEEN_FILE.exists():
-        return []
+        return {"seen": [], "id_version": 2}
     try:
         data = json.loads(SEEN_FILE.read_text(encoding="utf-8"))
-        return data.get("seen", []) if isinstance(data, dict) else []
-    except (json.JSONDecodeError, OSError):
-        return []
+        if isinstance(data, dict):
+            return {
+                "seen": data.get("seen", []) if isinstance(data.get("seen", []), list) else [],
+                "id_version": int(data.get("id_version", 1)),
+            }
+        return {"seen": data if isinstance(data, list) else [], "id_version": 1}
+    except (json.JSONDecodeError, OSError, TypeError, ValueError):
+        return {"seen": [], "id_version": 1}
 
 
 def save_seen(seen_list):
     SEEN_FILE.parent.mkdir(parents=True, exist_ok=True)
     SEEN_FILE.write_text(
-        json.dumps({"seen": seen_list[-MAX_SEEN:]}, indent=2) + "\n",
+        json.dumps({"id_version": 2, "seen": seen_list[-MAX_SEEN:]}, indent=2) + "\n",
         encoding="utf-8",
     )
 
@@ -534,7 +539,17 @@ def main():
         raise RuntimeError(f"[bloxswaps] Parser could not read {stats['malformed_count']} non-Ajouts cards.")
     print(f"[bloxswaps] Eligible listings after Ajouts filter: {len(listings)}")
 
-    seen = set(load_seen())
+    seen_state = load_seen()
+    seen = set(seen_state["seen"])
+    if seen_state["id_version"] < 2 and seen:
+        # One-time migration: old IDs included volatile relative-time text.
+        # Suppress currently visible cards once to avoid duplicate Telegram alerts.
+        seen.update(listing["id"] for listing in listings)
+        save_seen(list(seen))
+        print(f"[migration] Converted legacy seen state; suppressed {len(listings)} currently visible cards once.")
+        record_success()
+        return
+
     skipped_unknown = 0
     sent = 0
     evaluated = 0
