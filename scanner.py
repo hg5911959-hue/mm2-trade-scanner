@@ -675,6 +675,10 @@ def evaluate_listing(listing, values):
     missing = give_missing + receive_missing
     if missing:
         return None, missing
+    # Never report a trade if either side has no numerically valued items.
+    # This prevents ignored/unvalued-only sides from becoming false 0-value trades.
+    if not give_lines or not receive_lines:
+        return None, ["one side has no valued items"]
     difference = receive_total - give_total
     margin = (difference / give_total * 100.0) if give_total > 0 else (100.0 if difference > 0 else 0.0)
     return {
@@ -752,12 +756,12 @@ def main():
         evaluated += 1
         if result is None:
             skipped_unknown += 1
-            print(f"[retry-next-scan] Unmatched Supreme item(s): {', '.join(missing)}")
-            # Alert once for manual inspection, but keep the listing eligible for
-            # a later fully-valued opportunity alert.
-            if trade_id not in reviewed:
-                send_telegram(format_unvalued_message(listing, missing))
-                mark_reviewed(trade_id)
+            print(
+                f"[skip-unknown] Listing excluded; missing/unvalued items: "
+                f"{', '.join(missing)}"
+            )
+            # Do not send MANUAL VALUE CHECK alerts. Recheck on later scans in
+            # case the Supreme mapping becomes available, but never value partially.
             continue
         if not qualifies(result):
             # Re-evaluate while visible; source values may change during the listing's lifetime.
