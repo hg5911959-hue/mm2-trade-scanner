@@ -654,6 +654,43 @@ class ReliabilityTests(unittest.TestCase):
             self.assertEqual(seen, ["offer-two"])
 
 
+    def test_best_case_only_profit_is_sent_as_manual_verification(self):
+        html = """
+        <article>
+          <div>Propose <img alt="Spirit"></div>
+          <div>Recherche <span class="quantity-badge">x?</span><img alt="Harvester"></div>
+          <a href="/fr/trade-mm2?ad=manual-review-test">Discussion</a>
+          <a href="/fr/users/123">Owner</a>
+        </article>
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            values = {
+                "harvester": {"name": "Harvester", "value": 265},
+                "spirit": {"name": "Spirit", "value": 540},
+            }
+            with (
+                patch("scanner.BOT_TOKEN", "test-token"),
+                patch("scanner.CHAT_ID", "123"),
+                patch("scanner.ALERTED_FILE", root / "alerted.json"),
+                patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
+                patch("scanner.FAILURE_FILE", root / "failure.json"),
+                patch("scanner.HISTORY_FILE", root / "history.csv"),
+                patch("scanner.SEEN_FILE", root / "seen_ads.json"),
+                patch("scanner.load_supreme_values", return_value=values),
+                patch("scanner.fetch_bloxswaps", return_value=html),
+                patch("scanner.send_telegram") as send,
+                patch("scanner.compare_secondary_values", return_value=""),
+            ):
+                scanner.main()
+            self.assertEqual(send.call_count, 1)
+            message = send.call_args.args[0]
+            self.assertIn("MANUAL VERIFICATION REQUIRED", message)
+            self.assertIn("worst-case -∞", message)
+            self.assertIn("best-case 275", message)
+            self.assertIn("quantity uncertain", message.lower())
+
+
     def test_main_quarantines_uncertain_telegram_delivery_on_next_scan(self):
         html = """
         <article>
