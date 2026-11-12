@@ -887,6 +887,48 @@ class SafeNameResolutionTests(unittest.TestCase):
         self.assertEqual(source, "unmatched")
 
 
+class StructuredQuantityCrossCheckTests(unittest.TestCase):
+    def test_rsc_quantity_two_conflicts_with_implicit_html_single(self):
+        listing = {
+            "receive_items": [{
+                "name": "Snowcannon", "quantity": 1,
+                "quantity_source": "implicit_single", "quantity_min": 1, "quantity_max": 1,
+            }],
+            "give_items": [{
+                "name": "Spirit", "quantity": 1,
+                "quantity_source": "implicit_single", "quantity_min": 1, "quantity_max": 1,
+            }],
+        }
+        structured = {"id": "ad", "tradePostItems": [
+            {"itemDetailsId": "snow", "quantity": 2, "tradeRole": "OFFERED"},
+            {"itemDetailsId": "spirit", "quantity": 1, "tradeRole": "REQUESTED"},
+        ]}
+        scanner._apply_structured_quantities(listing, structured)
+        item = listing["receive_items"][0]
+        self.assertIsNone(item["quantity"])
+        self.assertEqual(item["quantity_source"], "uncertain")
+        self.assertEqual((item["quantity_min"], item["quantity_max"]), (1, 2))
+
+    def test_rsc_and_explicit_html_quantity_match_as_structured(self):
+        listing = {
+            "receive_items": [{
+                "name": "Snowcannon", "quantity": 2,
+                "quantity_source": "explicit", "quantity_min": 2, "quantity_max": 2,
+            }],
+            "give_items": [{
+                "name": "Spirit", "quantity": 1,
+                "quantity_source": "implicit_single", "quantity_min": 1, "quantity_max": 1,
+            }],
+        }
+        structured = {"id": "ad", "tradePostItems": [
+            {"itemDetailsId": "snow", "quantity": 2, "tradeRole": "OFFERED"},
+            {"itemDetailsId": "spirit", "quantity": 1, "tradeRole": "REQUESTED"},
+        ]}
+        scanner._apply_structured_quantities(listing, structured)
+        self.assertEqual(listing["receive_items"][0]["quantity"], 2)
+        self.assertEqual(listing["receive_items"][0]["quantity_source"], "structured")
+
+
 class StructuredFirstPageRecoveryTests(unittest.TestCase):
     def test_rsc_recovers_offer_when_html_card_parser_misses_it(self):
         post = {
