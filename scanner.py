@@ -193,62 +193,31 @@ def _explicit_stack_quantity(raw):
 
 
 def quantity_from_image_node(image_node):
-    """Read stack counts from the image, its wrappers, or a nearby quantity badge."""
+    """Read explicit stack counts from the image or its own semantic attributes."""
     _, alt_quantity = split_item_label(image_node.attrs.get("alt", ""))
     if alt_quantity is not None:
         return alt_quantity
 
-    ancestors = []
     current = image_node
-    for _ in range(4):
+    for _ in range(3):
         if current is None:
             break
-        ancestors.append(current)
-        current = current.parent
-
-    # Structured data attributes are authoritative and may contain a bare integer.
-    for node in ancestors:
+        # Structured data attributes are authoritative and may contain a bare integer.
         for key in ("data-quantity", "data-count", "data-amount", "data-stack",
                     "data-stack-count"):
-            quantity = _quantity_marker(node.attrs.get(key, ""))
+            quantity = _quantity_marker(current.attrs.get(key, ""))
             if quantity is not None:
                 return quantity
-        # Accessibility labels/titles must contain an explicit count marker;
-        # a price such as "750" must never be mistaken for a stack quantity.
+        # Titles/accessibility labels must contain an explicit xN marker;
+        # prices such as "750" must never be interpreted as quantities.
         for key in ("aria-label", "title"):
-            quantity = _explicit_stack_quantity(node.attrs.get(key, ""))
+            quantity = _explicit_stack_quantity(current.attrs.get(key, ""))
             if quantity is not None:
                 return quantity
-
-    # Badges may precede or follow the weapon image in a nearby wrapper.
-    branch = image_node
-    ancestor = image_node.parent
-    for _ in range(4):
-        if ancestor is None:
-            break
-        for kind, sibling in ancestor.events:
-            if kind != "node" or sibling is branch:
-                continue
-            # Never borrow a badge from a sibling that contains another weapon.
-            if any(
-                child.tag == "img" and clean_item_name(child.attrs.get("alt", ""))
-                for child in walk_nodes(sibling)
-            ):
-                continue
-            classes = " ".join((
-                sibling.attrs.get("class", ""), sibling.attrs.get("id", ""),
-                sibling.attrs.get("aria-label", ""), sibling.attrs.get("data-testid", "")
-            )).casefold()
-            marker_text = node_text(sibling)
-            explicit = _explicit_stack_quantity(marker_text)
-            semantic = bool(re.search(r"quant|count|amount|stack|badge|counter", classes))
-            bare = _quantity_marker(marker_text) if semantic else None
-            if explicit is not None:
-                return explicit
-            if bare is not None:
-                return bare
-        branch = ancestor
-        ancestor = ancestor.parent
+        current = current.parent
+    # Do not inspect arbitrary ancestor siblings here: that can borrow x2
+    # from the previous/next weapon or even from the opposite trade side.
+    # Ordered event parsing associates nearby badges with their exact item.
     return None
 
 
@@ -287,19 +256,29 @@ def extract_side_items(node):
         elif kind == "img" and value and value["name"] and side:
             # Quantity may be embedded in alt text or rendered nearby as x3, 3x, ×3.
             quantity = value["quantity"]
-            # BloxSwaps can place the stack marker AFTER the item name,
-            # coin icon and displayed price (e.g. "Snowcannon 750.0 x2").
-            # Scan the whole item segment; decorative coin images do not end it.
+            # A badge may be before or after the icon. Associate it only inside
+            # this item's segment, bounded by adjacent weapon images and side labels.
+            if quantity is None:
+                for prev_kind, prev_value in reversed(events[:i]):
+                    if prev_kind == "img" and prev_value and prev_value["name"]:
+                        break
+                    if prev_kind == "text":
+                        if re.search(r"\\b(?:propose|offering|offer|recherche|looking for|request)\\b", prev_value, re.I):
+                            break
+                        quantity = _explicit_stack_quantity(prev_value)
+                        if quantity is not None:
+                            break
             if quantity is None:
                 for next_kind, next_value in events[i + 1:]:
                     if next_kind == "img" and next_value and next_value["name"]:
                         break
                     if next_kind == "text":
+                        if re.search(r"\\b(?:propose|offering|offer|recherche|looking for|request)\\b", next_value, re.I):
+                            break
                         quantity = _explicit_stack_quantity(next_value)
                         if quantity is not None:
                             break
-            # The normal single-item card has no count badge. Apply 1 only
-            # after the complete item segment has been checked for a stack badge.
+            # On BloxSwaps a plain item card means one copy when no xN badge exists.
             if quantity is None:
                 quantity = 1
             target = received if side == "receive" else requested
