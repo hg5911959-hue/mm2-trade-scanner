@@ -36,7 +36,7 @@ jobs:
             data/supreme_values.json
             data/failure_state.json
             data/history.csv
-          key: mm2-state-\${{ github.run_id }}-\${{ github.run_attempt }}
+          key: mm2-state-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             mm2-state-
 
@@ -46,9 +46,9 @@ jobs:
           MIN_VALUE_DIFFERENCE: "0"
           MIN_PROFIT_PERCENT: "0"
           FAILURE_ALERT_THRESHOLD: "3"
-          TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: \${{ secrets.TELEGRAM_CHAT_ID }}
-          RBLXVALUE_API_KEY: \${{ secrets.RBLXVALUE_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RBLXVALUE_API_KEY: ${{ secrets.RBLXVALUE_API_KEY }}
         run: |
           mkdir -p data
           set -o pipefail
@@ -72,4 +72,4 @@ jobs:
             data/supreme_values.json
             data/failure_state.json
             data/history.csv
-          key: mm2-state-\${{ github.run_id }}-\${{ github.run_attempt }}
+          key: mm2-state-${{ github.run_id }}-${{ github.run_attempt }}
