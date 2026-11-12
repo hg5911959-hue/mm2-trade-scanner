@@ -393,8 +393,9 @@ def _item_quantity_details(image_node, segment_text, segment_nodes=()):
     wrapper = _item_wrapper(image_node)
     wrapper_text = node_text(wrapper) if wrapper is not None else ""
     alt_name, alt_quantity = split_item_label(image_node.attrs.get("alt", ""))
+    wrapper_nodes = list(walk_nodes(wrapper)) if wrapper is not None else []
     structured, invalid_structured = _structured_quantity_from_nodes(
-        image_node, wrapper, segment_nodes
+        image_node, wrapper, [*wrapper_nodes, *segment_nodes]
     )
     # The text used to infer a stack is restricted to the image's own segment:
     # after this weapon image and before the next weapon or side marker. Ancestor
@@ -406,6 +407,7 @@ def _item_quantity_details(image_node, segment_text, segment_nodes=()):
         if current is wrapper:
             break
         current = current.parent
+    quantity_attribute_nodes.extend(wrapper_nodes)
     quantity_attribute_nodes.extend(segment_nodes)
     seen_nodes = set()
     quantity_attribute_nodes = [
@@ -430,6 +432,9 @@ def _item_quantity_details(image_node, segment_text, segment_nodes=()):
             quantity = _quantity_marker(node_text(node))
             if quantity is not None:
                 semantic_quantities.append(quantity)
+    wrapper_semantic_quantity = _semantic_badge_quantity(wrapper)
+    if wrapper_semantic_quantity is not None:
+        semantic_quantities.append(wrapper_semantic_quantity)
     semantic_quantity = (
         semantic_quantities[0]
         if semantic_quantities and len(set(semantic_quantities)) == 1
