@@ -5,6 +5,7 @@ import json
 import re
 import tempfile
 from pathlib import Path
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from scanner import parse_listings, parse_page, calculate_side, load_supreme_values
