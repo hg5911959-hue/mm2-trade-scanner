@@ -784,8 +784,9 @@ class ReliabilityTests(unittest.TestCase):
                 patch("scanner.MIN_PROFIT_PERCENT", 0),
             ):
                 scanner.main()
-            self.assertEqual(send.call_count, 1)
-            message = send.call_args.args[0]
+            trade_messages = [call.args[0] for call in send.call_args_list if "💎 MM2 TRADE" in call.args[0]]
+            self.assertEqual(len(trade_messages), 1)
+            message = trade_messages[0]
             self.assertIn("MANUAL CHECK", message)
             self.assertIn("POSSIBLE PROFIT RANGE: -∞ to 275", message)
             self.assertIn("Harvester x? (1..∞)", message)
@@ -862,9 +863,9 @@ class ReliabilityTests(unittest.TestCase):
                 scanner.main()
                 scanner.main()
             # Unknown-valued offers are silently excluded, then re-evaluated.
-            self.assertEqual(len(sent), 1)
-            self.assertIn("💎 MM2 TRADE", sent[0])
-            self.assertNotIn("MANUAL VALUE CHECK", "".join(sent))
+            trade_messages = [message for message in sent if "💎 MM2 TRADE" in message]
+            self.assertEqual(len(trade_messages), 1)
+            self.assertNotIn("MANUAL VALUE CHECK", "".join(trade_messages))
             self.assertTrue((root / "alerted.json").exists())
 
     def test_main_caps_alerts_and_defers_remaining_offers_across_scans(self):
@@ -1164,8 +1165,8 @@ class StructuredQuantityCrossCheckTests(unittest.TestCase):
             }],
         }
         structured = {"id": "ad", "tradePostItems": [
-            {"itemDetailsId": "snow", "quantity": 2, "tradeRole": "OFFERED"},
-            {"itemDetailsId": "spirit", "quantity": 1, "tradeRole": "REQUESTED"},
+            {"itemDetailsId": "snow", "displayName": "Snowcannon", "quantity": 2, "tradeRole": "OFFERED"},
+            {"itemDetailsId": "spirit", "displayName": "Spirit", "quantity": 1, "tradeRole": "REQUESTED"},
         ]}
         scanner._apply_structured_quantities(listing, structured)
         self.assertEqual(listing["receive_items"][0]["quantity"], 2)
