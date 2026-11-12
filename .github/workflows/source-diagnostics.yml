@@ -288,6 +288,43 @@ jobs:
           with open("bloxswaps-page-metadata.json", "w", encoding="utf-8") as f:
               json.dump({"final_url": final_url, "scripts": parser.scripts, "links": parser.links, "images": parser.images}, f, ensure_ascii=False, indent=2)
           PY
+      - name: Validate scanner against live RSC and cursor API without sending Telegram
+        run: |
+          python - <<'PY'
+          import scanner
+          html = scanner.fetch_bloxswaps()
+          first = scanner.parse_structured_initial_page(html)
+          if not first or not (first.get("meta") or {}).get("cursor"):
+              raise SystemExit("Live RSC page/cursor unavailable")
+          cursor = first["meta"]["cursor"]
+          second = scanner.bloxswaps_api_get_json(
+              "/trade-posts", {"cursor": cursor, "pageSize": scanner.BLOXSWAPS_PAGE_SIZE}
+          )
+          page_items = second.get("items", [])
+          if len(page_items) != scanner.BLOXSWAPS_PAGE_SIZE:
+              raise SystemExit(f"Expected {scanner.BLOXSWAPS_PAGE_SIZE} API items; got {len(page_items)}")
+          seen_boundary = str(page_items[-1]["id"])
+          listings, stats, _ = scanner.fetch_bloxswaps_all({seen_boundary})
+          all_items = [item for listing in listings for item in listing["receive_items"] + listing["give_items"]]
+          unknown_ids = [item.get("unmatched_item_id") for item in all_items if item.get("unmatched_item_id")]
+          uncertain = [item for item in all_items if item.get("quantity_source") == "uncertain"]
+          print("LIVE_PARSER_SUMMARY", {
+              "listings": len(listings),
+              "pages": stats.get("pagination_pages"),
+              "api_posts": stats.get("pagination_api_posts"),
+              "rsc_matches": stats.get("structured_matched_count"),
+              "owner_links": stats.get("owner_link_count"),
+              "item_count": len(all_items),
+              "unknown_item_ids": len(unknown_ids),
+              "uncertain_quantities": len(uncertain),
+              "seen_boundary": stats.get("seen_boundary_reached"),
+          })
+          if stats.get("pagination_pages") != 2 or not stats.get("seen_boundary_reached"):
+              raise SystemExit("Cursor scan did not stop at the requested seen boundary")
+          if not listings:
+              raise SystemExit("No listings parsed from live page")
+          PY
+
       - name: Upload public page snapshot
         uses: actions/upload-artifact@v4
         with:
