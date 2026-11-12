@@ -41,7 +41,7 @@ jobs:
       - name: Restore durable state branch
         run: |
           if git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
-            git fetch origin state
+            git fetch origin refs/heads/state:refs/remotes/origin/state
             rm -rf data
             mkdir -p data
             git archive origin/state data | tar -x
