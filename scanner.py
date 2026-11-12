@@ -2073,11 +2073,21 @@ def scan_once():
             alerted_set.add(trade_id)
             save_alerted(alerted)
 
+    def mark_pending(listing):
+        source_id = str(listing.get("source_ad_id") or "")
+        if source_id:
+            pending_ids.setdefault(source_id, time.time())
+            save_pending_ids(pending_ids)
+
     def mark_seen_ad(listing):
         source_id = str(listing.get("source_ad_id") or "")
+        changed = False
         if source_id and source_id not in seen_ads:
             seen_ads.add(source_id)
             save_seen_ads(seen_ads)
+        if source_id and source_id in pending_ids:
+            pending_ids.pop(source_id, None)
+            save_pending_ids(pending_ids)
 
     skipped_unknown = 0
     sent = 0
@@ -2101,6 +2111,7 @@ def scan_once():
                 f"[skip-unknown] Listing retained for recheck; missing/unvalued items: "
                 f"{', '.join(missing)}"
             )
+            mark_pending(listing)
             if os.environ.get("MM2_SCAN_LOOP") == "1":
                 unknown_names = [
                     str(value).split(" (", 1)[0]
@@ -2111,13 +2122,18 @@ def scan_once():
                     record_unmatched_names(unknown_names)
             continue
         if not qualifies(result):
-            mark_seen_ad(listing)
+            if result.get("uncertain_items"):
+                mark_pending(listing)
+            else:
+                mark_seen_ad(listing)
             continue
         opportunities.append(result)
 
     opportunities.sort(key=lambda item: (item["difference"], item["margin"]), reverse=True)
     selected_opportunities = opportunities[:MAX_ALERTS_PER_RUN]
     deferred = max(0, len(opportunities) - len(selected_opportunities))
+    for deferred_op in opportunities[len(selected_opportunities):]:
+        mark_pending(deferred_op["listing"])
     for op in selected_opportunities:
         listing = op["listing"]
         message = format_trade_message(
@@ -2175,9 +2191,10 @@ def scan_once():
         except Exception as exc:
             uncertain_ids.discard(trade_id)
             save_uncertain_ids(uncertain_ids)
+            mark_pending(listing)
             print(
                 f"[telegram] Definite send failure for listing {trade_id}: "
-                f"{type(exc).__name__}; will retry on a later scan and continue the batch."
+                f"{type(exc).__name__}; queued for a later scan and continuing the batch."
             )
             continue
         mark_alerted(trade_id)
@@ -2192,7 +2209,8 @@ def scan_once():
     summary = (
         f"Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | "
         f"already_alerted={already_alerted_skipped} | uncertain_quarantined={uncertain_skipped} | "
-        f"qualified={len(opportunities)} | alerts={sent} | deferred={deferred}"
+        f"pending_recheck={len(pending_ids)} | qualified={len(opportunities)} | "
+        f"alerts={sent} | deferred={deferred}"
     )
     print(f"[summary] {summary}")
     write_step_summary(summary)
