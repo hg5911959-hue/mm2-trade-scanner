@@ -3,9 +3,11 @@ name: BloxSwaps Source Diagnostics
 on:
   push:
     branches: [hardening/staged-audit-2026-11-12]
+    paths:
+      - ".github/workflows/source-diagnostics.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   inspect-source:
@@ -17,9 +19,11 @@ jobs:
         with:
           python-version: "3.12"
       - name: Inspect public page data and pagination
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           python - <<'PY'
-          import json, re, urllib.request
+          import base64, json, os, re, urllib.request
           from html.parser import HTMLParser
           from urllib.parse import urljoin, urlsplit, urlencode
 
@@ -101,6 +105,7 @@ jobs:
                               except Exception: return None
               return None
           discovered_cursor = None
+          captured_page = None
           for i, payload in enumerate(rsc_payloads):
               if "initialPage" in payload:
                   page_obj = extract_object_after(payload, '"initialPage":')
@@ -110,6 +115,7 @@ jobs:
                       print("RSC_INITIAL_PAGE_ITEM_COUNT", len(items))
                       print("RSC_PAGE_META", {k:v for k,v in page_obj.items() if k != "items"})
                       discovered_cursor = (page_obj.get("meta") or {}).get("cursor")
+                      captured_page = page_obj
                       for item in items[:12]:
                           print("RSC_LISTING", json.dumps({
                               "id": item.get("id"),
@@ -191,6 +197,79 @@ jobs:
                   if patterns: print("BUNDLE_ENDPOINTS", script_url, patterns[:80])
               except Exception as e:
                   print("BUNDLE_FETCH_ERROR", script_url, type(e).__name__)
+          # Commit a minimal, redacted real-card fixture with the matching RSC quantities.
+          if isinstance(captured_page, dict):
+              articles = re.findall(r"<article\b[\s\S]*?</article>", html, flags=re.I)
+              selected_article = ""
+              selected_id = ""
+              for article in articles:
+                  if "propose" not in article.casefold() or "recherche" not in article.casefold():
+                      continue
+                  match = re.search(r"""[?&]ad=([^&"' ]+)""", article)
+                  if not match: continue
+                  candidate_id = match.group(1)
+                  if any(str(x.get("id")) == candidate_id for x in captured_page.get("items", [])):
+                      selected_article, selected_id = article, candidate_id
+                      break
+              if selected_article:
+                  def redact_link(match):
+                      href = match.group(1)
+                      if "/users/" in href:
+                          return 'href="/fr/users/123"'
+                      href = re.sub(r"([?&])with=[^&]+", r"\1with=fixture-user", href)
+                      href = re.sub(r"([?&])id=[^&]+", r"\1id=123", href)
+                      href = re.sub(r"([?&])name=[^&]+", r"\1name=Fixture", href)
+                      return 'href="' + href + '"'
+                  selected_article = re.sub(r'href="([^"]+)"', redact_link, selected_article)
+                  selected_post = next(x for x in captured_page["items"] if str(x.get("id")) == selected_id)
+                  fixture_post = {
+                      "id": selected_id,
+                      "tradePostItems": selected_post.get("tradePostItems", []),
+                      "requestedWildcards": selected_post.get("requestedWildcards", []),
+                  }
+                  fixture_payload = json.dumps({
+                      "initialPage": {"items": [fixture_post], "meta": {"cursor": None}}
+                  }, ensure_ascii=False, separators=(",", ":"))
+                  fixture_html = (
+                      "<!doctype html><html><body><script>self.__next_f.push([1,"
+                      + json.dumps(fixture_payload, ensure_ascii=False)
+                      + "]);</script>" + selected_article + "</body></html>"
+                  )
+                  fixture_path = "tests/fixtures/bloxswaps-live-sample.html"
+                  os.makedirs("tests/fixtures", exist_ok=True)
+                  with open(fixture_path, "w", encoding="utf-8") as fixture_file:
+                      fixture_file.write(fixture_html)
+                  repo = os.environ["GITHUB_REPOSITORY"]
+                  branch = os.environ["GITHUB_REF_NAME"]
+                  api_url = f"https://api.github.com/repos/{repo}/contents/{fixture_path}"
+                  headers = {
+                      "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  }
+                  existing_sha = None
+                  try:
+                      get_req = urllib.request.Request(api_url + "?ref=" + branch, headers=headers)
+                      with urllib.request.urlopen(get_req, timeout=15) as existing_response:
+                          existing = json.loads(existing_response.read().decode("utf-8"))
+                      existing_sha = existing.get("sha")
+                  except urllib.error.HTTPError as error:
+                      if error.code != 404: raise
+                  put_body = {
+                      "message": "test: add redacted real BloxSwaps card fixture",
+                      "content": base64.b64encode(fixture_html.encode("utf-8")).decode("ascii"),
+                      "branch": branch,
+                  }
+                  if existing_sha: put_body["sha"] = existing_sha
+                  put_req = urllib.request.Request(
+                      api_url, data=json.dumps(put_body).encode("utf-8"),
+                      headers={**headers, "Content-Type": "application/json"}, method="PUT"
+                  )
+                  with urllib.request.urlopen(put_req, timeout=20) as put_response:
+                      committed = json.loads(put_response.read().decode("utf-8"))
+                  print("REAL_HTML_FIXTURE_COMMITTED", selected_id, committed.get("commit", {}).get("sha"), "bytes", len(fixture_html))
+              else:
+                  print("REAL_HTML_FIXTURE_NOT_FOUND", "no article matched an RSC listing id")
           with open("bloxswaps-live.html", "wb") as f:
               f.write(raw)
           with open("bloxswaps-page-metadata.json", "w", encoding="utf-8") as f:
