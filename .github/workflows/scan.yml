@@ -63,13 +63,13 @@ jobs:
           local_seen = json.loads(local_seen_path.read_text()) if local_seen_path.exists() else {"seen": []}
           merged_seen = list(dict.fromkeys(remote_seen.get("seen", []) + local_seen.get("seen", [])))[-5000:]
           local_seen_path.parent.mkdir(parents=True, exist_ok=True)
-          local_seen_path.write_text(json.dumps({"seen": merged_seen}, indent=2) + "\\n")
+          local_seen_path.write_text(json.dumps({"seen": merged_seen}, indent=2) + "\n")
 
           local_values_path = Path("data/supreme_values.json")
           remote_values = json.loads(Path("/tmp/remote_values.json").read_text())
           local_values = json.loads(local_values_path.read_text()) if local_values_path.exists() else {"fetched_at": 0, "values": {}}
           if float(remote_values.get("fetched_at", 0)) > float(local_values.get("fetched_at", 0)):
-              local_values_path.write_text(json.dumps(remote_values, ensure_ascii=False, indent=2) + "\\n")
+              local_values_path.write_text(json.dumps(remote_values, ensure_ascii=False, indent=2) + "\n")
           PY
           git reset --soft origin/main
           git add -A data/
