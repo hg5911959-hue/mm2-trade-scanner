@@ -2,7 +2,7 @@ name: MM2 Trade Scanner
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/15 * * * *"
   workflow_dispatch:
   repository_dispatch:
     types: [mm2-scan]
@@ -12,12 +12,12 @@ permissions:
 
 concurrency:
   group: mm2-trade-scanner
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 12
     env:
       HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
     steps:
@@ -67,11 +67,8 @@ jobs:
           MIN_VALUE_DIFFERENCE: "0"
           MIN_PROFIT_PERCENT: "0"
           FAILURE_ALERT_THRESHOLD: "3"
-          MAX_ALERTS_PER_RUN: "10"
-          ALERT_DELAY_SECONDS: "1"
-          MM2_SCAN_LOOP: "1"
-          MM2_SCAN_DURATION_SECONDS: "3000"
-          MM2_SCAN_INTERVAL_SECONDS: "45"
+          MAX_ALERTS_PER_RUN: "3"
+          ALERT_DELAY_SECONDS: "2"
           MAX_FEED_PAGES: "50"
           VALUES_TTL_SECONDS: "300"
           BLOXSWAPS_ITEMS_TTL_SECONDS: "3600"
