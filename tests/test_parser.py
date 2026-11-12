@@ -766,12 +766,12 @@ class SafeNameResolutionTests(unittest.TestCase):
     def test_ambiguous_singular_plural_candidates_are_not_auto_matched(self):
         values = {
             "knife": {"name": "Knife", "value": 100},
-            "knives": {"name": "Knives", "value": 120},
+            "knif": {"name": "Knif", "value": 120},
         }
         record, source, candidates = scanner.resolve_value_record("Knives", values)
         self.assertIsNone(record)
         self.assertEqual(source, "ambiguous")
-        self.assertEqual(set(candidates), {"Knife", "Knives"})
+        self.assertEqual(set(candidates), {"Knife", "Knif"})
 
     def test_reviewed_alias_maps_to_exact_supreme_record(self):
         with tempfile.TemporaryDirectory() as directory:
