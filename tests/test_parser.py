@@ -947,7 +947,8 @@ class ReliabilityTests(unittest.TestCase):
                 scanner.main()
                 scanner.main()
                 scanner.main()
-            self.assertEqual(len(sent), 2)
+            trade_messages = [message for message in sent if "💎 MM2 TRADE" in message]
+            self.assertEqual(len(trade_messages), 2)
             self.assertTrue((root / "history.csv").exists())
             self.assertTrue((root / "alerted.json").exists())
 
