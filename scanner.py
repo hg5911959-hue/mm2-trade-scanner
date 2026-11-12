@@ -1193,17 +1193,58 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None):
 
     raw_first_items = initial_page.get("items") or []
     if seen_ad_ids is None:
-        # Missing durable state must not replay a historical backlog.
-        seed_ids = [
-            str(item.get("id")) for item in raw_first_items
-            if isinstance(item, dict) and item.get("id")
-        ]
+        # Cold start: baseline the historical feed, but evaluate posts refreshed
+        # within the last hour instead of silently discarding all current offers.
+        now_ts = datetime.now(timezone.utc).timestamp()
+        cutoff = now_ts - 3600
+        seed_ids, recent_ids, recent_listings, additions, malformed = [], [], [], [], 0
+        for post in raw_first_items:
+            if not isinstance(post, dict) or not post.get("id"):
+                malformed += 1
+                continue
+            post_id = str(post["id"])
+            refreshed_ts = _parse_feed_timestamp(
+                post.get("lastRefreshedAt") or post.get("createdAt") or post.get("created_at")
+            )
+            if refreshed_ts is None or refreshed_ts < cutoff:
+                seed_ids.append(post_id)
+                continue
+            recent_ids.append(post_id)
+            wildcards = post.get("requestedWildcards") or []
+            if any(str(value).casefold() in {"add", "ajout", "ajouts"} for value in wildcards):
+                additions += 1
+                continue
+            if initial_item_map is None:
+                initial_item_map = fetch_bloxswaps_items_map()
+            listing = _api_trade_post_to_listing(post, initial_item_map)
+            if listing:
+                html_listing = next(
+                    (entry for entry in first_listings if entry.get("source_ad_id") == post_id),
+                    None,
+                )
+                if html_listing:
+                    listing = _merge_html_quantity_diagnostics(listing, html_listing)
+                recent_listings.append(listing)
+            else:
+                malformed += 1
         stats.update({
             "pagination_pages": 1, "pagination_complete": False,
             "pagination_source": "rsc-cold-start", "cold_start": True,
-            "addition_ids": [], "unparsed_ad_ids": [], "html_parse_warning_ids": [],
+            "cold_start_seed_ids": seed_ids,
+            "cold_start_recent_ids": recent_ids,
+            "candidate_count": len(recent_ids),
+            "addition_count": additions,
+            "malformed_count": malformed,
+            "addition_ids": [
+                str(post.get("id")) for post in raw_first_items
+                if isinstance(post, dict) and post.get("id")
+                and any(str(value).casefold() in {"add", "ajout", "ajouts"}
+                        for value in (post.get("requestedWildcards") or []))
+            ],
+            "unparsed_ad_ids": [], "html_parse_warning_ids": [],
+            "pending_remaining_ids": [],
         })
-        return [], stats, seed_ids
+        return recent_listings, stats, seed_ids + recent_ids
 
     seen = set(str(value) for value in seen_ad_ids)
     pending_remaining = set(str(value) for value in (pending_ad_ids or []))
@@ -2356,15 +2397,19 @@ def scan_once():
         source_ad_id = str(listing.get("source_ad_id") or "")
         listing["first_seen_at_utc"] = first_seen_ads.get(source_ad_id, observed_at)
     if stats.get("cold_start"):
-        save_seen_ads(discovered_ids)
+        seed_ids = set(str(value) for value in stats.get("cold_start_seed_ids", discovered_ids))
+        save_seen_ads(seed_ids)
+        seen_ads = seed_ids
         print(
-            f"[state] First-run feed baseline created with {len(discovered_ids)} current posts; "
-            "historical listings were marked seen without sending alerts."
+            f"[state] Cold-start baseline saved for {len(seed_ids)} historical posts; "
+            f"{len(stats.get('cold_start_recent_ids', []))} posts refreshed within 60 minutes will be evaluated."
         )
-        record_success()
-        write_step_summary("First-run baseline: existing feed posts marked as seen; new posts will be evaluated next scan.")
-        return
-    seen_ads = set(seen_ads or [])
+        if not listings:
+            record_success()
+            write_step_summary("Cold-start baseline saved; no verifiably recent post was eligible for evaluation.")
+            return
+    else:
+        seen_ads = set(seen_ads or [])
     pending_count_before = len(pending_ids)
     for ad_id in stats.get("unparsed_ad_ids", []):
         pending_ids.setdefault(str(ad_id), time.time())
