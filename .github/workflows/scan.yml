@@ -39,7 +39,7 @@ jobs:
             mm2-state-
 
       - name: Test parser and value calculations
-        run: python -m unittest discover -s tests -v
+        run: python -m unittest discover -s tests -q
 
       - name: Record test failure
         if: failure()
