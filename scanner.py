@@ -250,6 +250,24 @@ def _structured_quantity_from_nodes(image_node, wrapper):
     return (found[0], False) if found else (None, False)
 
 
+def _semantic_badge_quantity(wrapper):
+    if wrapper is None:
+        return None
+    quantities = []
+    for node in walk_nodes(wrapper):
+        classes = " ".join((
+            node.attrs.get("class", ""), node.attrs.get("id", ""),
+            node.attrs.get("data-testid", "")
+        )).casefold()
+        if re.search(r"quant|count|amount|stack|badge|counter", classes):
+            quantity = _quantity_marker(node_text(node))
+            if quantity is not None:
+                quantities.append(quantity)
+    if quantities and len(set(quantities)) == 1:
+        return quantities[0]
+    return None
+
+
 def _has_unreadable_quantity_hint(raw, wrapper=None):
     text = _normalize_quantity_text(raw)
     if re.search(r"(?<![A-Za-z0-9])(?:x|×)\s*(?:$|[^0-9\s])", text, flags=re.I):
@@ -333,9 +351,12 @@ def _item_quantity_details(image_node, segment_text):
     structured, invalid_structured = _structured_quantity_from_nodes(image_node, wrapper)
     local_text = " ".join(part for part in (wrapper_text, segment_text) if part)
     explicit = _explicit_stack_quantities(local_text)
+    semantic_quantity = _semantic_badge_quantity(wrapper)
     unreadable = _has_unreadable_quantity_hint(local_text, wrapper)
     if alt_quantity is not None:
         explicit.append(alt_quantity)
+    if semantic_quantity is not None:
+        explicit.append(semantic_quantity)
 
     if invalid_structured or len(set(explicit)) > 1:
         return None, "uncertain", _listed_price(local_text), local_text[:240]
