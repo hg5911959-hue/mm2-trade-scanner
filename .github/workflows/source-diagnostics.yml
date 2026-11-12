@@ -143,6 +143,30 @@ jobs:
                           "first_ids": [x.get("id") for x in payload.get("items", [])[:3]] if isinstance(payload, dict) else None
                       }, ensure_ascii=False)[:1500])
                       if isinstance(payload, dict) and payload.get("items"):
+                          print("API_LISTING_SAMPLE", json.dumps(payload["items"][0], ensure_ascii=False)[:5000])
+                          next_cursor = (payload.get("meta") or {}).get("cursor")
+                          if next_cursor:
+                              next_url = "https://api.bloxswaps.com/trade-posts?" + urlencode({"cursor": next_cursor, "pageSize": 20})
+                              try:
+                                  next_req = urllib.request.Request(next_url, headers=HEADERS)
+                                  with urllib.request.urlopen(next_req, timeout=20) as next_response:
+                                      next_payload = json.loads(next_response.read().decode("utf-8", "replace")).get("data", {})
+                                  print("PAGINATION_PAGE3", len(next_payload.get("items", [])), [x.get("id") for x in next_payload.get("items", [])[:5]], "cursor", bool((next_payload.get("meta") or {}).get("cursor")))
+                              except Exception as e:
+                                  print("PAGINATION_PAGE3_FAIL", type(e).__name__, str(e)[:250])
+                          for items_url in ("https://api.bloxswaps.com/items", "https://api.bloxswaps.com/inventory/items"):
+                              try:
+                                  items_req = urllib.request.Request(items_url, headers=HEADERS)
+                                  with urllib.request.urlopen(items_req, timeout=20) as items_response:
+                                      items_payload = json.loads(items_response.read().decode("utf-8", "replace"))
+                                  data_items = items_payload.get("data", items_payload)
+                                  if isinstance(data_items, dict): data_items = data_items.get("items", data_items.get("data", []))
+                                  print("ITEMS_API_OK", items_url, "count", len(data_items) if isinstance(data_items, list) else type(data_items).__name__)
+                                  if isinstance(data_items, list) and data_items:
+                                      print("ITEMS_API_SAMPLE", json.dumps(data_items[:3], ensure_ascii=False)[:3500])
+                                      break
+                              except Exception as e:
+                                  print("ITEMS_API_FAIL", items_url, type(e).__name__, str(e)[:250])
                           break
                   except urllib.error.HTTPError as e:
                       print("PAGINATION_API_FAIL", endpoint.split("?")[0], e.code, e.read(800).decode("utf-8", "replace")[:800])
