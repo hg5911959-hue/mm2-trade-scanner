@@ -2687,6 +2687,7 @@ def record_failure(error):
 
 def main():
     # One feed snapshot per workflow invocation; cadence is controlled by GitHub cron.
+    # Production cadence is deliberately bounded to prevent repeated Telegram alerts.
     return scan_once()
 
 if __name__ == "__main__":
