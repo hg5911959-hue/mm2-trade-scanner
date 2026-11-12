@@ -433,18 +433,43 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(result["difference"], 10)
         self.assertAlmostEqual(result["margin"], 50)
 
-    def test_evaluate_listing_rejects_unreadable_stack_quantity(self):
+    def test_uncertain_give_quantity_uses_best_and_worst_case_and_requires_manual_review(self):
         listing = {
-            "give_items": [{"name": "Harvester", "quantity": None}],
-            "receive_items": [{"name": "Spirit", "quantity": 1}],
+            "give_items": [{
+                "name": "Harvester", "quantity": None,
+                "quantity_source": "uncertain", "quantity_min": 1, "quantity_max": 3,
+                "raw_excerpt": "Harvester x?",
+            }],
+            "receive_items": [{"name": "Spirit", "quantity": 1, "quantity_source": "structured"}],
         }
         values = {
             "harvester": {"name": "Harvester", "value": 265},
             "spirit": {"name": "Spirit", "value": 540},
         }
         result, missing = scanner.evaluate_listing(listing, values)
-        self.assertIsNone(result)
-        self.assertEqual(missing, ["Harvester (quantity uncertain)"])
+        self.assertEqual(missing, [])
+        self.assertTrue(result["manual_review"])
+        self.assertEqual(result["profit_best"], 275)
+        self.assertEqual(result["profit_worst"], -255)
+        self.assertTrue(scanner.qualifies(result, 0, 0))
+
+    def test_uncertain_give_quantity_with_positive_worst_case_is_normal_alert(self):
+        listing = {
+            "give_items": [{
+                "name": "Harvester", "quantity": None,
+                "quantity_source": "uncertain", "quantity_min": 1, "quantity_max": 2,
+            }],
+            "receive_items": [{"name": "Spirit", "quantity": 1, "quantity_source": "structured"}],
+        }
+        values = {
+            "harvester": {"name": "Harvester", "value": 265},
+            "spirit": {"name": "Spirit", "value": 540},
+        }
+        result, missing = scanner.evaluate_listing(listing, values)
+        self.assertEqual(missing, [])
+        self.assertFalse(result["manual_review"])
+        self.assertEqual(result["profit_worst"], 10)
+        self.assertTrue(scanner.qualifies(result, 0, 0))
 
     def test_evaluate_listing_rejects_unknown_values_and_unvalued_only_side(self):
         listing = {
