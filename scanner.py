@@ -1765,7 +1765,7 @@ def write_step_summary(line):
             pass
 
 
-def main():
+def scan_once():
     if not BOT_TOKEN or not CHAT_ID:
         raise RuntimeError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in GitHub Actions secrets.")
 
@@ -2074,6 +2074,31 @@ def record_failure(error):
             print("[telegram] Repeated-failure alert sent")
         except Exception as notify_error:
             print(f"[telegram] Failure alert could not be sent: {type(notify_error).__name__}")
+
+
+def main():
+    if os.environ.get("MM2_SCAN_LOOP") != "1":
+        return scan_once()
+    duration = max(60, min(3300, int(os.environ.get("MM2_SCAN_DURATION_SECONDS", "3000"))))
+    interval = max(30, min(60, int(os.environ.get("MM2_SCAN_INTERVAL_SECONDS", "45"))))
+    deadline = time.monotonic() + duration
+    cycle = 0
+    while time.monotonic() < deadline:
+        cycle += 1
+        print(f"[loop] Starting scan cycle {cycle}; interval={interval}s")
+        try:
+            scan_once()
+        except Exception as exc:
+            print(f"[loop] Scan cycle {cycle} failed: {type(exc).__name__}: {str(exc)[:300]}")
+            try:
+                record_failure(exc)
+            except Exception as state_exc:
+                print(f"[loop] Could not record cycle failure: {type(state_exc).__name__}")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(interval, remaining))
+    print(f"[loop] Completed {cycle} scan cycles within the {duration}s job window.")
 
 
 if __name__ == "__main__":
