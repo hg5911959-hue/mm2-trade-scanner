@@ -1943,10 +1943,16 @@ def scan_once():
     values = load_supreme_values()
     aliases = load_aliases()
     print(f"[aliases] Loaded {len(aliases)} reviewed item aliases")
-    print("[stage] Loading seen-offer state")
+    print("[stage] Loading seen-offer and pending-recheck state")
     seen_ads = load_seen_ads()
+    pending_ids = load_pending_ids()
+    # If the seen file was lost but pending items survive, do not cold-start:
+    # search the feed for those unresolved IDs before establishing a baseline.
+    if seen_ads is None and pending_ids:
+        seen_ads = set()
+    print(f"[state] Pending listings queued for recheck: {len(pending_ids)}")
     print("[stage] Fetching BloxSwaps listings and cursor pages")
-    listings, stats, discovered_ids = fetch_bloxswaps_all(seen_ads)
+    listings, stats, discovered_ids = fetch_bloxswaps_all(seen_ads, pending_ids.keys())
     if stats.get("cold_start"):
         save_seen_ads(discovered_ids)
         print(
@@ -1957,10 +1963,27 @@ def scan_once():
         write_step_summary("First-run baseline: existing feed posts marked as seen; new posts will be evaluated next scan.")
         return
     seen_ads = set(seen_ads or [])
+    for ad_id in stats.get("unparsed_ad_ids", []):
+        pending_ids.setdefault(str(ad_id), time.time())
     addition_ids = set(stats.get("addition_ids", []))
     if addition_ids:
         seen_ads.update(addition_ids)
+        for ad_id in addition_ids:
+            pending_ids.pop(str(ad_id), None)
         save_seen_ads(seen_ads)
+        save_pending_ids(pending_ids)
+    if stats.get("pending_remaining_ids"):
+        print(
+            f"[pending] {len(stats['pending_remaining_ids'])} unresolved ad ID(s) "
+            "were not found before the pagination boundary/cap."
+        )
+        if os.environ.get("MM2_SCAN_LOOP") == "1" and stats.get("pagination_complete"):
+            send_maintenance_alert(
+                "pending-ads-not-found",
+                f"Could not locate {len(stats['pending_remaining_ids'])} pending listing(s) "
+                "in the recent cursor pages. They remain queued for recheck.",
+                cooldown_seconds=3600,
+            )
     if not listings:
         html_issue_count = max(
             int(stats.get("html_malformed_count", 0)),
