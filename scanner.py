@@ -241,19 +241,38 @@ def _identity_items(items):
     return sorted((name, quantity) for name, quantity in grouped.items())
 
 
-def stable_listing_id(owner_url, receive_items, give_items, listing_url=""):
+def listing_identifier(node):
+    """Read stable per-card IDs exposed as common data attributes by the source page."""
+    for child in walk_nodes(node):
+        for key in ("data-ad-id", "data-listing-id", "data-trade-id", "data-post-id"):
+            value = child.attrs.get(key)
+            if value and str(value).strip():
+                return str(value).strip()
+    return ""
+
+
+def stable_listing_id(owner_url, receive_items, give_items, listing_url="", listing_key_hint=""):
     owner = urlsplit(owner_url or "")
     listing = urlsplit(listing_url or "")
     ad_values = []
     for key, values in parse_qs(listing.query, keep_blank_values=False).items():
         if key.casefold() in {"ad", "id", "listing", "post", "trade"}:
             ad_values.extend((key.casefold(), value) for value in values)
-    if owner_url:
-        owner_identity = (owner.scheme + "://" + owner.netloc + owner.path).rstrip("/").casefold()
-        listing_key = sorted(ad_values) if ad_values else ""
-    else:
-        owner_identity = (listing.scheme + "://" + listing.netloc + listing.path).rstrip("/").casefold()
-        listing_key = sorted(ad_values) if ad_values else listing.query
+    stable_params = []
+    for key, values in parse_qs(listing.query, keep_blank_values=False).items():
+        if key.casefold() not in {"page", "sort", "trade-type", "type", "filter", "search"}:
+            stable_params.extend((key.casefold(), value) for value in values)
+    owner_identity = (
+        (owner.scheme + "://" + owner.netloc + owner.path).rstrip("/").casefold()
+        if owner_url else
+        (listing.scheme + "://" + listing.netloc + listing.path).rstrip("/").casefold()
+    )
+    listing_key = {
+        "hint": listing_key_hint or "",
+        "path": listing.path,
+        "ad": sorted(ad_values),
+        "query": sorted(stable_params),
+    }
     identity = {
         "owner": owner_identity,
         "listing_key": listing_key,
@@ -281,7 +300,7 @@ def parse_page(html):
             malformed += 1
             continue
         link, owner_url = listing_links(node)
-        stable = stable_listing_id(owner_url, received, requested, link)
+        stable = stable_listing_id(owner_url, received, requested, link, listing_identifier(node))
         listings.append({
             "id": stable,
             "receive_items": received,
