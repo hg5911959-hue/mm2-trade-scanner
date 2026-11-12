@@ -1384,7 +1384,7 @@ class StructuredFirstPageRecoveryTests(unittest.TestCase):
             }],
         }
         merged = scanner._merge_html_quantity_diagnostics(api_listing, html_listing)
-        self.assertEqual(merged["owner_url"], "owner")
+        self.assertEqual(merged["owner_url"], "html-owner")
         item = merged["receive_items"][0]
         self.assertIsNone(item["quantity"])
         self.assertEqual(item["quantity_source"], "uncertain")
