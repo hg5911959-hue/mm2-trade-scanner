@@ -759,6 +759,14 @@ class ReliabilityTests(unittest.TestCase):
 
 
 
+class CloudflareDetectionTests(unittest.TestCase):
+    def test_http_200_cloudflare_challenge_is_not_treated_as_empty_feed(self):
+        challenge = b"<html><title>Just a moment...</title><div id='challenge-platform'></div></html>"
+        with patch("scanner.request_with_retry", return_value=challenge):
+            with self.assertRaisesRegex(RuntimeError, "Cloudflare"):
+                scanner.http_get("https://bloxswaps.com/fr/trade-mm2")
+
+
 class MaintenanceAndUnmatchedNameTests(unittest.TestCase):
     def test_unmatched_names_are_alerted_once_and_kept_for_recheck(self):
         with tempfile.TemporaryDirectory() as directory:
