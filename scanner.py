@@ -1361,15 +1361,18 @@ def api_get_json_conditional(path, params=None, etag=None):
     """Fetch one RBLXValue page conditionally; a 304 is safe only with its cached page."""
     if not RBLXVALUE_API_KEY:
         raise RuntimeError("Missing RBLXVALUE_API_KEY GitHub Actions secret.")
+    # Preserve the ordinary API helper for first-time pages and existing test
+    # adapters. Conditional requests are used only when a page ETag is known.
+    if not etag:
+        return api_get_json(path, params), None, False
     query = "?" + urlencode(params or {}) if params else ""
     url = RBLXVALUE_API_BASE + path + query
     headers = {
         "X-Api-Key": RBLXVALUE_API_KEY,
         "Accept": "application/json",
         "User-Agent": "MM2TradeScanner/2.1",
+        "If-None-Match": str(etag),
     }
-    if etag:
-        headers["If-None-Match"] = str(etag)
     req = urllib.request.Request(url, headers=headers)
     raw, response_headers = request_with_retry(
         req, 30, "RBLXValue API", return_headers=True, allow_not_modified=True
