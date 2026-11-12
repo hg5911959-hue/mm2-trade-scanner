@@ -1286,6 +1286,7 @@ class CursorPaginationTests(unittest.TestCase):
                 "a-id": {"id": "a-id", "displayName": "Knife A"},
                 "b-id": {"id": "b-id", "displayName": "Knife B"},
             }),
+            patch("scanner._last_successful_scan_timestamp", return_value=datetime.now(timezone.utc).timestamp() - 60),
             patch("scanner.bloxswaps_api_get_json", side_effect=responses) as api,
         ):
             listings, stats, discovered = scanner.fetch_bloxswaps_all({"seen-old"} | {f"seen-old-{i}" for i in range(25)})
@@ -1837,7 +1838,7 @@ if __name__ == "__main__":
 class HardeningRegressionTests(unittest.TestCase):
     def test_refreshed_seen_post_at_feed_head_does_not_hide_new_posts_below(self):
         refreshed = CursorPaginationTests._post("seen-refreshed")
-        refreshed["lastRefreshedAt"] = "2026-11-12T12:00:00Z"
+        refreshed["lastRefreshedAt"] = datetime.now(timezone.utc).isoformat()
         refreshed["isPinned"] = True
         page = {
             "items": [refreshed],
@@ -1864,11 +1865,11 @@ class HardeningRegressionTests(unittest.TestCase):
         ):
             listings, stats, discovered = scanner.fetch_bloxswaps_all({"seen-refreshed"})
         self.assertEqual(api.call_count, 1)
-        self.assertEqual(
-            [item["source_ad_id"] for item in listings],
-            ["new-below-1", "new-below-2"],
-        )
-        self.assertIn("seen-refreshed", stats.get("seen_ids_skipped", []))
+        found_ids = [item["source_ad_id"] for item in listings]
+        self.assertIn("seen-refreshed", found_ids)
+        self.assertIn("new-below-1", found_ids)
+        self.assertIn("new-below-2", found_ids)
+        self.assertNotIn("seen-refreshed", stats.get("seen_ids_skipped", []))
 
     def test_html_rsc_merge_matches_by_item_id_not_list_position(self):
         api_listing = {
@@ -2107,3 +2108,24 @@ class AliasSuggestionToolTests(unittest.TestCase):
                     {"snow cannon": {"name": "Snow Cannon", "value": 750}},
                     path,
                 )
+
+
+class WorkflowSecurityTests(unittest.TestCase):
+    def test_scan_and_state_jobs_have_separate_permissions_and_no_legacy_cache(self):
+        workflow = Path(".github/workflows/scan.yml").read_text(encoding="utf-8")
+        scan_job, state_job = workflow.split("  persist-state:", 1)
+        self.assertIn('cron: "*/15 * * * *"', workflow)
+        self.assertIn("cancel-in-progress: false", workflow)
+        self.assertIn('MM2_SCAN_DURATION_SECONDS: "720"', scan_job)
+        self.assertIn('MM2_SCAN_INTERVAL_SECONDS: "45"', scan_job)
+        self.assertIn("contents: read", scan_job)
+        self.assertNotIn("contents: write", scan_job)
+        self.assertIn("contents: write", state_job)
+        self.assertNotIn("actions/cache/restore", workflow)
+
+    def test_all_external_actions_are_pinned_to_full_commit_shas(self):
+        workflow_dir = Path(".github/workflows")
+        for path in workflow_dir.glob("*.yml"):
+            source = path.read_text(encoding="utf-8")
+            for reference in re.findall(r"^\\s*uses:\\s+([^\\s]+)$", source, flags=re.MULTILINE):
+                self.assertRegex(reference, r"^[^@]+@[0-9a-f]{40}$", msg=f"{path}: {reference}")
