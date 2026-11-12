@@ -1,5 +1,6 @@
 import unittest
 import scanner
+import watchdog
 import json
 import tempfile
 from pathlib import Path
@@ -242,6 +243,13 @@ class ReliabilityTests(unittest.TestCase):
         result, reason = scanner.evaluate_listing(ignored_only, values)
         self.assertIsNone(result)
         self.assertEqual(reason, ["one side has no valued items"])
+
+    def test_watchdog_should_alert_windows(self):
+        self.assertFalse(watchdog.should_alert(29))
+        self.assertTrue(watchdog.should_alert(30))
+        self.assertFalse(watchdog.should_alert(45))
+        self.assertTrue(watchdog.should_alert(360))
+        self.assertFalse(watchdog.should_alert(380))
 
     def test_qualifies_rejects_fair_trades_even_when_thresholds_are_zero(self):
         self.assertFalse(scanner.qualifies({"difference": 0, "margin": 0}, min_diff=0, min_percent=0))
