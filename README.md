@@ -18,7 +18,7 @@ Telegram alerts include both item lists, quantities, per-item values, both total
 
 ## Value data source
 
-The scanner uses the documented **RBLXValue API v2** and calculates all totals using `value_source_b` (Supreme Values). It also compares `value_source_a` (MM2Values) as a secondary warning only when the difference is at least 30%; it never blends the two sources or substitutes the second source for Supreme Values.
+The scanner uses the documented **RBLXValue API v2** and calculates all totals using `value_source_b` (Supreme Values). If multiple API rows normalize to the same display name, it keeps the highest numeric Supreme value and the secondary value from that same row (never a lower duplicate just because it appeared later). Non-numeric tier notation such as `4T1` is not treated as a numeric item value. It also compares `value_source_a` (MM2Values) as a secondary warning only when the difference is at least 30%; it never blends the two sources or substitutes the second source for Supreme Values.
 
 Create a free API key at https://rblxvalue.com/developer. The key must be active and normally starts with `rbx_`. RBLXValue may require email verification. The API key is sent in the `X-Api-Key` header and must remain private.
 
