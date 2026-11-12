@@ -1,4 +1,5 @@
 import unittest
+import scanner
 import json
 import tempfile
 from pathlib import Path
@@ -121,6 +122,111 @@ class ParserTests(unittest.TestCase):
                 upgraded = load_seen()
         self.assertEqual(upgraded["id_version"], 2)
         self.assertEqual(upgraded["seen"], ["legacy-id"])
+
+
+class ReliabilityTests(unittest.TestCase):
+    def test_stable_id_uses_ad_id_to_distinguish_identical_owner_offers(self):
+        items = [{"name": "Chroma Gemstone", "quantity": 1}]
+        first = scanner.stable_listing_id("https://bloxswaps.com/fr/users/1", items, items,
+                                          "https://bloxswaps.com/fr/trade-mm2?ad=one")
+        second = scanner.stable_listing_id("https://bloxswaps.com/fr/users/1", items, items,
+                                           "https://bloxswaps.com/fr/trade-mm2?ad=two")
+        self.assertNotEqual(first, second)
+
+    def test_seen_keeps_newest_ids_in_insertion_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "seen.json"
+            with patch("scanner.SEEN_FILE", path):
+                scanner.save_seen([f"id-{i}" for i in range(5005)])
+                saved = scanner.load_seen()["seen"]
+        self.assertEqual(len(saved), 5000)
+        self.assertEqual(saved[0], "id-5")
+        self.assertEqual(saved[-1], "id-5004")
+
+    def test_state_writer_is_atomic_and_cleans_temp_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.json"
+            scanner.atomic_write_text(path, '{"ok": true}')
+            self.assertEqual(json.loads(path.read_text()), {"ok": True})
+            self.assertFalse(path.with_name("state.json.tmp").exists())
+
+    def test_evaluate_listing_accounts_for_quantities(self):
+        listing = {
+            "give_items": [{"name": "Knife A", "quantity": 2}],
+            "receive_items": [{"name": "Knife B", "quantity": 3}],
+        }
+        values = {
+            "knife a": {"name": "Knife A", "value": 10},
+            "knife b": {"name": "Knife B", "value": 10},
+        }
+        result, missing = scanner.evaluate_listing(listing, values)
+        self.assertEqual(missing, [])
+        self.assertEqual(result["give_total"], 20)
+        self.assertEqual(result["receive_total"], 30)
+        self.assertEqual(result["difference"], 10)
+        self.assertAlmostEqual(result["margin"], 50)
+
+    def test_qualifies_applies_both_absolute_and_percent_thresholds(self):
+        result = {"difference": 10, "margin": 4.99}
+        self.assertFalse(scanner.qualifies(result, min_diff=0, min_percent=5))
+        result["margin"] = 5
+        self.assertTrue(scanner.qualifies(result, min_diff=0, min_percent=5))
+        self.assertFalse(scanner.qualifies(result, min_diff=11, min_percent=5))
+
+    def test_telegram_message_is_truncated_before_request(self):
+        captured = {}
+        def fake_request(req, timeout, label, attempts=4):
+            captured["payload"] = json.loads(req.data.decode())
+            return b'{"ok": true}'
+        with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
+            "scanner.request_with_retry", side_effect=fake_request
+        ):
+            scanner.send_telegram("x" * 5000)
+        self.assertLessEqual(len(captured["payload"]["text"]), scanner.TELEGRAM_MAX_CHARS)
+        self.assertTrue(captured["payload"]["text"].endswith("[message truncated]"))
+
+    def test_history_write_is_atomic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "history.csv"
+            listing = {"id": "abc", "url": "https://example.test/ad", "owner_url": ""}
+            result = {"difference": 5, "margin": 50, "give_total": 10, "receive_total": 15}
+            with patch("scanner.HISTORY_FILE", path):
+                scanner.append_history(listing, result)
+            self.assertEqual(len(path.read_text().splitlines()), 2)
+            self.assertFalse(path.with_name("history.csv.tmp").exists())
+
+    def test_main_baselines_then_alerts_new_listing_once(self):
+        def html(ad_ids):
+            cards = []
+            for ad in ad_ids:
+                cards.append(f"""
+                <article>
+                  <div>Propose <img alt="Knife B"></div>
+                  <div>Recherche <img alt="Knife A"></div>
+                  <a href="/fr/trade-mm2?ad={ad}">Discussion</a>
+                  <a href="/fr/users/123">Owner</a>
+                </article>""")
+            return "<html><body>" + "".join(cards) + "</body></html>"
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sent = []
+            sequence = [html(["old"]), html(["old", "new"]), html(["old", "new"])]
+            with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), \
+                 patch("scanner.SEEN_FILE", root / "seen.json"), \
+                 patch("scanner.FAILURE_FILE", root / "failure.json"), \
+                 patch("scanner.HISTORY_FILE", root / "history.csv"), \
+                 patch("scanner.load_supreme_values", return_value={
+                     "knife a": {"name": "Knife A", "value": 10},
+                     "knife b": {"name": "Knife B", "value": 20},
+                 }), patch("scanner.fetch_bloxswaps", side_effect=sequence), \
+                 patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)), \
+                 patch("scanner.compare_secondary_values", return_value=""):
+                scanner.main()
+                scanner.main()
+                scanner.main()
+            self.assertEqual(len(sent), 1)
+            self.assertTrue((root / "history.csv").exists())
 
 
 if __name__ == "__main__":
