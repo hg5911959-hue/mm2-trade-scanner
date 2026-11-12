@@ -1,4 +1,4 @@
-name: BloxSwaps Source Diagnostics
+name: BloxSwaps Source Diagnostics - current scanner validation
 
 on:
   push:
