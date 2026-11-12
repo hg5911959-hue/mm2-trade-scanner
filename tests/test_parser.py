@@ -825,7 +825,7 @@ class QuantityIncidentReproductionTests(unittest.TestCase):
         listing = parse_listings(html)[0]
         item = listing["receive_items"][0]
         self.assertIn("x 2", item["raw_excerpt"])
-        self.assertEqual(item["quantity"], 2)
+        self.assertEqual(item["quantity"], 2, repr(item))
         self.assertEqual(item["quantity_source"], "explicit")
         self.assertEqual(item["listed_price"], 750.0)
 
