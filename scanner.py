@@ -214,15 +214,20 @@ def extract_side_items(node):
 
 
 def listing_context(node):
-    """Expand a nested trade-side block to its nearest enclosing card with links."""
+    """Expand a nested trade-side block to its nearest single-card ancestor with links."""
     current = node
     while current.parent is not None:
         parent = current.parent
+        parent_text = node_text(parent)
+        receive_markers = len(re.findall(r"\\bpropose\\b|\\boffering\\b|\\boffer\\b", parent_text, flags=re.I))
+        give_markers = len(re.findall(r"\\brecherche\\b|\\blooking for\\b|\\brequest\\b", parent_text, flags=re.I))
         has_link = any(
             child.tag == "a" and child.attrs.get("href")
             for child in walk_nodes(parent)
         )
-        if has_link and has_trade_sides(node_text(parent)):
+        # A feed/list container can contain several cards. Only adopt an
+        # ancestor that still describes exactly one offer and one request.
+        if has_link and receive_markers == 1 and give_markers == 1:
             return parent
         current = parent
     return node
