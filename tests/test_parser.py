@@ -406,6 +406,19 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(result["difference"], 10)
         self.assertAlmostEqual(result["margin"], 50)
 
+    def test_evaluate_listing_rejects_unreadable_stack_quantity(self):
+        listing = {
+            "give_items": [{"name": "Harvester", "quantity": None}],
+            "receive_items": [{"name": "Spirit", "quantity": 1}],
+        }
+        values = {
+            "harvester": {"name": "Harvester", "value": 265},
+            "spirit": {"name": "Spirit", "value": 540},
+        }
+        result, missing = scanner.evaluate_listing(listing, values)
+        self.assertIsNone(result)
+        self.assertEqual(missing, ["Harvester (quantity unreadable)"])
+
     def test_evaluate_listing_rejects_unknown_values_and_unvalued_only_side(self):
         listing = {
             "give_items": [{"name": "Knife A", "quantity": 1}],
