@@ -1728,5 +1728,41 @@ class SupremeETagCacheTests(unittest.TestCase):
         self.assertTrue(not_modified)
 
 
+class AdditionalHardeningRegressionTests(unittest.TestCase):
+    def test_single_malformed_card_is_reportable(self):
+        self.assertTrue(scanner.should_alert_malformed_cards(1))
+        self.assertTrue(scanner.should_alert_malformed_cards(3))
+        self.assertFalse(scanner.should_alert_malformed_cards(0))
+        self.assertFalse(scanner.should_alert_malformed_cards(None))
+
+    def test_initial_supreme_fetch_persists_server_etag(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "supreme.json"
+            rows = [
+                {"name": f"Initial ETag Item {i}", "value_source_b": i + 1, "value_source_a": None}
+                for i in range(100)
+            ]
+            etag = '"supreme-initial-v1"'
+            captured = {}
+
+            def first_page(request, timeout, label, **kwargs):
+                captured["request"] = request
+                self.assertIsNone(request.get_header("If-none-match"))
+                return json.dumps({"items": rows, "total": 100}).encode(), {"ETag": etag}
+
+            with (
+                patch("scanner.VALUES_FILE", path),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.request_with_retry", side_effect=first_page),
+                patch("scanner.time.sleep"),
+            ):
+                values = scanner.load_supreme_values()
+
+            cache = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(len(values), 100)
+            self.assertEqual(cache["pages"]["0"]["etag"], etag)
+            self.assertEqual(len(cache["pages"]["0"]["items"]), 100)
+
+
 if __name__ == "__main__":
     unittest.main()
