@@ -2075,3 +2075,34 @@ class PollingLoopTests(unittest.TestCase):
         scan.assert_called_once()
         self.assertEqual(result["cycles"], 1)
         self.assertEqual(result["successful_cycles"], 1)
+
+
+class AliasSuggestionToolTests(unittest.TestCase):
+    def test_ambiguous_candidates_are_suggestions_only(self):
+        from tools.suggest_aliases import build_suggestions
+        report = build_suggestions(
+            {"1": {"displayName": "Harvaster"}},
+            {"harvester": {"name": "Harvester", "value": 265},
+             "harvest": {"name": "Harvest", "value": 100}},
+        )
+        self.assertEqual(report[0]["status"], "ambiguous_manual_review")
+
+    def test_only_explicitly_approved_exact_catalogue_alias_is_written(self):
+        from tools.suggest_aliases import apply_reviewed_aliases
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "aliases.json"
+            count = apply_reviewed_aliases(
+                {"Snowcannon": "Snow Cannon"},
+                {"snow-id": {"displayName": "Snowcannon"}},
+                {"snow cannon": {"name": "Snow Cannon", "value": 750}},
+                path,
+            )
+            self.assertEqual(count, 1)
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"snowcannon": "Snow Cannon"})
+            with self.assertRaisesRegex(ValueError, "exact name"):
+                apply_reviewed_aliases(
+                    {"Snow Cannon?": "Snow Cannon"},
+                    {"snow-id": {"displayName": "Snowcannon"}},
+                    {"snow cannon": {"name": "Snow Cannon", "value": 750}},
+                    path,
+                )
