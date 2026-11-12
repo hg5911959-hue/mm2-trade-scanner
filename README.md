@@ -36,8 +36,8 @@ Never commit or share any of these secrets. The scanner never prints API keys or
 
 ## Run and diagnostics
 
-- Scheduled checks: two staggered cron schedules nominally start 2–3 minutes apart (GitHub Actions cron uses UTC; starts may be delayed or dropped during platform load). Each individual cron expression follows GitHub's 5-minute minimum.
-- Workflow triggers: staggered schedules, manual `workflow_dispatch`, external `repository_dispatch` events of type `mm2-scan`, and code updates to `scanner.py`, tests, or the scan workflow.
+- Scheduled checks: GitHub cron requests a scan every 5 minutes (UTC; starts may be delayed or dropped during platform load).
+- Workflow triggers: 5-minute schedule, manual `workflow_dispatch`, external `repository_dispatch` events of type `mm2-scan`, and code updates to `scanner.py`, tests, or the scan workflow.
 - Concurrency: one workflow at a time; queued runs are not cancelled.
 - The scanner workflow has `contents: read` only; the separate monthly keepalive workflow alone has `contents: write`.
 - Alert state stores only listings whose profit alert was successfully sent. A separate review state suppresses repeated manual-review warnings, without preventing future profit alerts. Existing alert history is used to migrate prior sent IDs; non-profitable and unrecognized listings remain eligible for re-evaluation.
