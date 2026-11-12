@@ -1861,6 +1861,7 @@ class HardeningRegressionTests(unittest.TestCase):
                 "a-id": {"id": "a-id", "displayName": "Knife A"},
                 "b-id": {"id": "b-id", "displayName": "Knife B"},
             }),
+            patch("scanner._last_successful_scan_timestamp", return_value=datetime.now(timezone.utc).timestamp() - 60),
             patch("scanner.bloxswaps_api_get_json", side_effect=responses) as api,
         ):
             listings, stats, discovered = scanner.fetch_bloxswaps_all({"seen-refreshed"})
