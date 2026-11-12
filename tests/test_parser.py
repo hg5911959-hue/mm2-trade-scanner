@@ -1172,6 +1172,30 @@ class CursorPaginationTests(unittest.TestCase):
         self.assertEqual(listings[1]["owner_url"], "https://bloxswaps.com/fr/users/123")
         self.assertIn("ad=post-2", listings[1]["url"])
 
+    def test_pending_listing_is_found_after_an_already_seen_boundary(self):
+        pending_post = self._post("pending-post")
+        responses = [{
+            "items": [pending_post, self._post("seen-boundary")],
+            "meta": {"cursor": None},
+        }]
+        with (
+            patch("scanner.fetch_bloxswaps", return_value=self._first_page_html()),
+            patch("scanner.fetch_bloxswaps_items_map", return_value={
+                "a-id": {"id": "a-id", "displayName": "Knife A"},
+                "b-id": {"id": "b-id", "displayName": "Knife B"},
+            }),
+            patch("scanner.bloxswaps_api_get_json", side_effect=responses),
+        ):
+            listings, stats, _ = scanner.fetch_bloxswaps_all(
+                {"first-post", "seen-boundary"}, {"pending-post"}
+            )
+        self.assertEqual([item["source_ad_id"] for item in listings], ["pending-post"])
+        self.assertEqual(stats["pending_found_ids"], ["pending-post"])
+        self.assertEqual(stats["pending_remaining_ids"], [])
+        self.assertTrue(stats["seen_boundary_reached"])
+        self.assertEqual(stats["pagination_pages"], 2)
+
+
     def test_missing_seen_state_seeds_current_page_without_replaying_history(self):
         with patch("scanner.fetch_bloxswaps", return_value=self._first_page_html()):
             listings, stats, seed_ids = scanner.fetch_bloxswaps_all(None)
