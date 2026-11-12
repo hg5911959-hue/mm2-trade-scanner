@@ -1134,7 +1134,9 @@ def _api_trade_post_to_listing(post, item_map):
             continue
         item_id = str(row.get("itemDetailsId") or "")
         details = item_map.get(item_id)
-        name = str(details.get("displayName")) if details else f"Unknown item ID {item_id or 'missing'}"
+        name = str(details.get("displayName")) if details else str(
+            row.get("displayName") or row.get("name") or f"Unknown item ID {item_id or 'missing'}"
+        )
         try:
             quantity = int(row.get("quantity"))
         except (TypeError, ValueError):
@@ -1697,6 +1699,8 @@ def _record_for_variant(variant):
 
 def resolve_value_record(name, values, aliases=None, item=None):
     """Resolve by exact source slug/name, catalogue identity or reviewed alias; never fuzzy-guess."""
+    if isinstance(item, dict) and item.get("unmatched_item_id"):
+        return None, "unmatched", []
     name_key = normalize_name(name)
     all_variants = list(_iter_value_variants(values))
     metadata_item = dict(item) if isinstance(item, dict) else {}
