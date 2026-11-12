@@ -293,6 +293,8 @@ class ParserTests(unittest.TestCase):
             cache_path = Path(directory) / "supreme_values.json"
             cache_path.write_text(json.dumps({"fetched_at": 1, "values": values}), encoding="utf-8")
             with patch("scanner.VALUES_FILE", cache_path), patch(
+                "scanner.RBLXVALUE_API_KEY", "test-key"
+            ), patch(
                 "scanner.api_get_json", side_effect=RuntimeError("API unavailable")
             ):
                 with self.assertRaisesRegex(RuntimeError, "refusing stale-cache calculations"):
@@ -322,6 +324,7 @@ class ReliabilityTests(unittest.TestCase):
                 cache_path = Path(directory) / "supreme_values.json"
                 with (
                     patch("scanner.VALUES_FILE", cache_path),
+                    patch("scanner.RBLXVALUE_API_KEY", "test-key"),
                     patch("scanner.api_get_json", return_value={"items": items, "total": len(items)}),
                     patch("scanner.time.sleep"),
                 ):
@@ -349,6 +352,7 @@ class ReliabilityTests(unittest.TestCase):
             cache_path = Path(directory) / "supreme_values.json"
             with (
                 patch("scanner.VALUES_FILE", cache_path),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
                 patch("scanner.api_get_json", return_value={"items": items, "total": len(items)}),
                 patch("scanner.time.sleep"),
             ):
