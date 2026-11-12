@@ -2127,5 +2127,9 @@ class WorkflowSecurityTests(unittest.TestCase):
         workflow_dir = Path(".github/workflows")
         for path in workflow_dir.glob("*.yml"):
             source = path.read_text(encoding="utf-8")
-            for reference in re.findall(r"^\\s*uses:\\s+([^\\s]+)$", source, flags=re.MULTILINE):
-                self.assertRegex(reference, r"^[^@]+@[0-9a-f]{40}$", msg=f"{path}: {reference}")
+            for line in source.splitlines():
+                if "uses:" not in line:
+                    continue
+                reference = line.split("uses:", 1)[1].strip()
+                self.assertIn("@", reference, msg=f"{path}: {reference}")
+                self.assertRegex(reference.rsplit("@", 1)[1], r"^[0-9a-f]{40}$", msg=f"{path}: {reference}")
