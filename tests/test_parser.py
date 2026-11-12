@@ -1063,6 +1063,30 @@ class CursorPaginationTests(unittest.TestCase):
         self.assertEqual(seed_ids, ["first-post"])
 
 
+class CardScopedAjoutFilterTests(unittest.TestCase):
+    def test_ajout_marker_is_scoped_to_its_own_card_not_header_or_neighbor(self):
+        html = """
+        <header>Ajout guide and filters</header>
+        <article>
+          <div>Propose <img alt="Knife B"></div>
+          <div>Recherche <img alt="Knife A"></div>
+          <span>Ajouts</span>
+          <a href="/fr/trade-mm2?ad=with-add">Discussion</a>
+          <a href="/fr/users/123">Owner</a>
+        </article>
+        <article>
+          <div>Propose <img alt="Knife D"></div>
+          <div>Recherche <img alt="Knife C"></div>
+          <a href="/fr/trade-mm2?ad=clean-card">Discussion</a>
+          <a href="/fr/users/456">Owner</a>
+        </article>
+        """
+        listings, stats = parse_page(html)
+        self.assertEqual([item["source_ad_id"] for item in listings], ["clean-card"])
+        self.assertEqual(stats["addition_count"], 1)
+        self.assertEqual(stats["addition_ids"], ["with-add"])
+
+
 class LiveBloxSwapsFixtureTests(unittest.TestCase):
     def test_redacted_real_bloxswaps_card_matches_rsc_quantities(self):
         fixture = Path(__file__).parent / "fixtures" / "bloxswaps-live-sample.html"
