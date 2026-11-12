@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """BloxSwaps MM2 scanner with verified Supreme Values calculations."""
 import csv
+import difflib
 import hashlib
 import json
 import math
@@ -38,6 +39,9 @@ MAX_ALERTED = 5000
 ALERTED_FILE = Path("data/alerted.json")
 UNCERTAIN_FILE = Path("data/telegram_uncertain.json")
 SEEN_FILE = Path("data/seen_ads.json")
+ALIASES_FILE = Path("aliases.json")
+UNMATCHED_FILE = Path("data/unmatched_names.json")
+MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
 BLOXSWAPS_PAGE_SIZE = 20
 MAX_FEED_PAGES = max(1, min(100, int(os.environ.get("MAX_FEED_PAGES", "50"))))
 VALUES_TTL_SECONDS = 4 * 60 * 60
@@ -1016,6 +1020,70 @@ def normalize_name(name):
     value = value.casefold().replace("&", "and")
     value = re.sub(r"[^a-z0-9]+", " ", value)
     return " ".join(value.split())
+
+
+def _plural_key(name):
+    words = normalize_name(name).split()
+    normalized = []
+    for word in words:
+        if len(word) > 4 and word.endswith("ies"):
+            word = word[:-3] + "y"
+        elif len(word) > 3 and word.endswith("s") and not word.endswith(("ss", "us", "is")):
+            word = word[:-1]
+        normalized.append(word)
+    return " ".join(sorted(normalized))
+
+
+def load_aliases():
+    if not ALIASES_FILE.exists():
+        return {}
+    try:
+        data = json.loads(ALIASES_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("[aliases] aliases.json is unreadable; refusing fuzzy value guesses.") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError("[aliases] aliases.json must contain an object mapping alias to canonical Supreme name.")
+    aliases = {}
+    for alias, canonical in data.items():
+        if isinstance(alias, str) and isinstance(canonical, str) and alias.strip() and canonical.strip():
+            aliases[normalize_name(alias)] = canonical.strip()
+    return aliases
+
+
+def resolve_value_record(name, values, aliases=None):
+    key = normalize_name(name)
+    exact = values.get(key)
+    if exact:
+        return exact, "exact", []
+    aliases = aliases or {}
+    canonical = aliases.get(key)
+    if canonical:
+        record = values.get(normalize_name(canonical))
+        if record:
+            return record, "alias", []
+
+    plural = _plural_key(name)
+    plural_matches = [
+        (candidate_key, record)
+        for candidate_key, record in values.items()
+        if _plural_key(candidate_key) == plural
+    ]
+    if len(plural_matches) == 1:
+        return plural_matches[0][1], "plural", []
+    if len(plural_matches) > 1:
+        return None, "ambiguous", [record.get("name", candidate_key) for candidate_key, record in plural_matches[:5]]
+
+    scored = []
+    for candidate_key, record in values.items():
+        score = difflib.SequenceMatcher(None, plural, _plural_key(candidate_key)).ratio()
+        if score >= 0.97:
+            scored.append((score, candidate_key, record))
+    scored.sort(key=lambda row: row[0], reverse=True)
+    if scored and (len(scored) == 1 or scored[0][0] - scored[1][0] >= 0.03):
+        return scored[0][2], "fuzzy", []
+    if scored:
+        return None, "ambiguous", [row[2].get("name", row[1]) for row in scored[:5]]
+    return None, "unmatched", []
 
 
 def api_get_json(path, params=None):
