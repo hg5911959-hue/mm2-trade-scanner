@@ -106,7 +106,10 @@ class ParserTests(unittest.TestCase):
         </article>
         """
         listing = parse_listings(html)[0]
-        self.assertEqual(listing["receive_items"], [{"name": "Chroma Gemstone", "quantity": 2}])
+        self.assertEqual(
+            [(item["name"], item["quantity"]) for item in listing["receive_items"]],
+            [("Chroma Gemstone", 2)],
+        )
 
     def test_non_finite_or_non_positive_values_are_treated_as_unknown(self):
         items = [{"name": "Bad Value Knife", "quantity": 1}]
@@ -184,9 +187,8 @@ class ParserTests(unittest.TestCase):
         """
         listing = parse_listings(html)[0]
         self.assertEqual(
-            listing["receive_items"],
-            [{"name": "Harvester", "quantity": 2},
-             {"name": "Spirit", "quantity": 3}],
+            [(item["name"], item["quantity"]) for item in listing["receive_items"]],
+            [("Harvester", 2), ("Spirit", 3)],
         )
 
     def test_overlay_quantity_badge_before_nested_weapon_image_is_detected(self):
@@ -205,7 +207,10 @@ class ParserTests(unittest.TestCase):
         </article>
         """
         listing = parse_listings(html)[0]
-        self.assertEqual(listing["receive_items"], [{"name": "Snowcannon", "quantity": 2}])
+        self.assertEqual(
+            [(item["name"], item["quantity"]) for item in listing["receive_items"]],
+            [("Snowcannon", 2)],
+        )
 
     def test_quantity_from_data_attribute_is_parsed(self):
         html = """
@@ -241,8 +246,14 @@ class ParserTests(unittest.TestCase):
         </article>
         """
         listing = parse_listings(html)[0]
-        self.assertEqual(listing["receive_items"], [{"name": "Snowcannon", "quantity": 2}])
-        self.assertEqual(listing["give_items"], [{"name": "Spirit", "quantity": 1}])
+        self.assertEqual(
+            [(item["name"], item["quantity"]) for item in listing["receive_items"]],
+            [("Snowcannon", 2)],
+        )
+        self.assertEqual(
+            [(item["name"], item["quantity"]) for item in listing["give_items"]],
+            [("Spirit", 1)],
+        )
 
     def test_quantity_badge_does_not_leak_from_next_item(self):
         html = """
@@ -256,8 +267,8 @@ class ParserTests(unittest.TestCase):
         """
         listing = parse_listings(html)[0]
         self.assertEqual(
-            listing["receive_items"],
-            [{"name": "Knife A", "quantity": 1}, {"name": "Knife B", "quantity": 2}],
+            [(item["name"], item["quantity"]) for item in listing["receive_items"]],
+            [("Knife A", 1), ("Knife B", 2)],
         )
 
     def test_displayed_price_is_never_used_as_stack_quantity(self):
@@ -710,6 +721,11 @@ class ReliabilityTests(unittest.TestCase):
 
 
 class QuantityIncidentReproductionTests(unittest.TestCase):
+    def test_explicit_quantity_regex_accepts_split_text_nodes(self):
+        self.assertEqual(scanner._explicit_stack_quantities("Snowcannon 750.0 x 2"), [2])
+        self.assertEqual(scanner._explicit_stack_quantities("Snowcannon 750.0 x\\u00a02"), [2])
+        self.assertEqual(scanner._explicit_stack_quantities("Snowcannon 750.0 x٢"), [2])
+
     def test_split_x_and_digit_after_price_is_quantity_two(self):
         html = """
         <article>
@@ -729,6 +745,7 @@ class QuantityIncidentReproductionTests(unittest.TestCase):
         """
         listing = parse_listings(html)[0]
         item = listing["receive_items"][0]
+        self.assertIn("x 2", item["raw_excerpt"])
         self.assertEqual(item["quantity"], 2)
         self.assertEqual(item["quantity_source"], "explicit")
         self.assertEqual(item["listed_price"], 750.0)
