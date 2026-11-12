@@ -49,7 +49,7 @@ jobs:
           fi
 
       - name: Test parser and value calculations
-        run: python -m unittest discover -s tests -q
+        run: python -m unittest discover -s tests
 
       - name: Record test failure
         if: failure()
