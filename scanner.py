@@ -2,6 +2,7 @@
 """BloxSwaps MM2 scanner with verified Supreme Values calculations."""
 import csv
 import difflib
+import itertools
 import hashlib
 import json
 import math
@@ -1022,16 +1023,24 @@ def normalize_name(name):
     return " ".join(value.split())
 
 
-def _plural_key(name):
+def _plural_keys(name):
     words = normalize_name(name).split()
-    normalized = []
+    options = []
     for word in words:
+        variants = {word}
         if len(word) > 4 and word.endswith("ies"):
-            word = word[:-3] + "y"
+            variants.add(word[:-3] + "y")
+        if len(word) > 4 and word.endswith("ves"):
+            variants.add(word[:-3] + "f")
+            variants.add(word[:-3] + "fe")
         elif len(word) > 3 and word.endswith("s") and not word.endswith(("ss", "us", "is")):
-            word = word[:-1]
-        normalized.append(word)
-    return " ".join(sorted(normalized))
+            variants.add(word[:-1])
+        options.append(variants)
+    if not options:
+        return {""}
+    return {" ".join(sorted(words_variant)) for words_variant in itertools.product(*options)}
+
+
 
 
 def load_aliases():
@@ -1062,11 +1071,11 @@ def resolve_value_record(name, values, aliases=None):
         if record:
             return record, "alias", []
 
-    plural = _plural_key(name)
+    plural = _plural_keys(name)
     plural_matches = [
         (candidate_key, record)
         for candidate_key, record in values.items()
-        if _plural_key(candidate_key) == plural
+        if _plural_keys(candidate_key).intersection(plural)
     ]
     if len(plural_matches) == 1:
         return plural_matches[0][1], "plural", []
@@ -1075,7 +1084,10 @@ def resolve_value_record(name, values, aliases=None):
 
     scored = []
     for candidate_key, record in values.items():
-        score = difflib.SequenceMatcher(None, plural, _plural_key(candidate_key)).ratio()
+        score = max(
+            difflib.SequenceMatcher(None, left, right).ratio()
+            for left in plural for right in _plural_keys(candidate_key)
+        )
         if score >= 0.97:
             scored.append((score, candidate_key, record))
     scored.sort(key=lambda row: row[0], reverse=True)
