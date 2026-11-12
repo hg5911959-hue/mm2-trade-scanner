@@ -691,23 +691,43 @@ def send_telegram(message):
 
 
 def load_alerted():
-    """Load alerted IDs in durable insertion order, then backfill legacy history."""
+    """Load sent IDs; tolerate missing first-run files but never reset on corruption."""
     ordered = []
-    try:
-        data = json.loads(ALERTED_FILE.read_text(encoding="utf-8"))
+    if ALERTED_FILE.exists():
+        try:
+            data = json.loads(ALERTED_FILE.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise RuntimeError(
+                f"[state] Alerted-state file is unreadable ({ALERTED_FILE}); "
+                "refusing to send potentially duplicated alerts."
+            ) from exc
         if isinstance(data, dict) and isinstance(data.get("alerted"), list):
             ordered.extend(str(value) for value in data["alerted"])
         elif isinstance(data, list):
             ordered.extend(str(value) for value in data)
-    except (OSError, ValueError, TypeError):
-        pass
-    try:
-        with HISTORY_FILE.open("r", newline="", encoding="utf-8") as handle:
-            for row in csv.DictReader(handle):
-                if row.get("listing_id"):
-                    ordered.append(str(row["listing_id"]))
-    except (OSError, csv.Error):
-        pass
+        else:
+            raise RuntimeError(
+                f"[state] Alerted-state file has an unsupported structure ({ALERTED_FILE}); "
+                "refusing to send potentially duplicated alerts."
+            )
+
+    if HISTORY_FILE.exists():
+        try:
+            with HISTORY_FILE.open("r", newline="", encoding="utf-8") as handle:
+                reader = csv.DictReader(handle)
+                if not reader.fieldnames or "listing_id" not in reader.fieldnames:
+                    raise RuntimeError(
+                        f"[state] History file has no listing_id column ({HISTORY_FILE}); "
+                        "refusing to send potentially duplicated alerts."
+                    )
+                for row in reader:
+                    if row.get("listing_id"):
+                        ordered.append(str(row["listing_id"]))
+        except (OSError, csv.Error) as exc:
+            raise RuntimeError(
+                f"[state] History file is unreadable ({HISTORY_FILE}); "
+                "refusing to send potentially duplicated alerts."
+            ) from exc
     return list(dict.fromkeys(ordered))
 
 
