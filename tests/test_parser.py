@@ -644,6 +644,10 @@ class ReliabilityTests(unittest.TestCase):
             ):
                 scanner.main()
             self.assertEqual(send.call_count, 2)
+            second_message = send.call_args_list[1].args[0]
+            self.assertIn("WARNING: quantity 5+", second_message)
+            self.assertIn("WARNING: unusually high profit", second_message)
+            self.assertIn("5 (explicit)", second_message)
             alerted = json.loads((root / "alerted.json").read_text(encoding="utf-8"))["alerted"]
             self.assertEqual(len(alerted), 1)
             seen = json.loads((root / "seen_ads.json").read_text(encoding="utf-8"))["ad_ids"]
