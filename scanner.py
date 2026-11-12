@@ -1748,10 +1748,18 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
 
 def format_unvalued_message(listing, missing):
     def describe(items):
-        return [
-            f"• {item['name']}" + (f" x{item.get('quantity', 1)}" if item.get("quantity", 1) > 1 else "")
-            for item in items
-        ] or ["• No items"]
+        lines = []
+        for item in items:
+            quantity = item.get("quantity")
+            source = item.get("quantity_source", "uncertain")
+            if quantity is None or source == "uncertain":
+                low = item.get("quantity_min", 1)
+                high = item.get("quantity_max")
+                label = f" x? ({low}..{high if high is not None else '∞'})"
+            else:
+                label = f" x{quantity}" if quantity > 1 else ""
+            lines.append(f"• {item['name']}{label}")
+        return lines or ["• No items"]
     owner_link = listing.get("owner_url") or listing.get("url") or BLOXSWAPS_URL
     lines = [
         "MM2 TRADE SCANNER — MANUAL VALUE CHECK",
@@ -1930,8 +1938,8 @@ def scan_once():
     for listing in listings:
         for side_label, field in (("Propose/receive", "receive_items"), ("Recherche/give", "give_items")):
             for item in listing.get(field, []):
-                quantity = item.get("quantity", 1)
-                if quantity and quantity > 1:
+                quantity = item.get("quantity")
+                if quantity is not None and quantity > 1:
                     print(
                         f"[quantity] {side_label}: {item['name']} x{quantity} "
                         f"(listing {listing['id']})"
