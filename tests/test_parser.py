@@ -581,6 +581,41 @@ class ReliabilityTests(unittest.TestCase):
                     scanner.load_uncertain_ids(), {"listing-a", "listing-b"}
                 )
 
+    def test_first_seen_state_round_trips_and_rejects_corruption(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "first_seen_ads.json"
+            with patch("scanner.FIRST_SEEN_FILE", path):
+                timestamp = "2026-11-12T19:00:00+00:00"
+                scanner.save_first_seen_ads({"ad-1": timestamp})
+                self.assertEqual(scanner.load_first_seen_ads(), {"ad-1": timestamp})
+                path.write_text("{bad", encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "First-seen"):
+                    scanner.load_first_seen_ads()
+
+    def test_history_migrates_legacy_rows_and_records_first_seen_and_alert_times(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "history.csv"
+            path.write_text(
+                "detected_at_utc,listing_id,profit_supreme,profit_margin_percent,you_give,you_receive,listing_url,owner_url\\n"
+                "2026-11-11T10:00:00+00:00,old-id,5,50,10,15,https://example.test/old,\\n",
+                encoding="utf-8",
+            )
+            listing = {
+                "id": "new-id", "url": "https://example.test/new", "owner_url": "",
+                "first_seen_at_utc": "2026-11-12T19:00:00+00:00",
+                "alert_attempted_at_utc": "2026-11-12T19:01:00+00:00",
+                "alerted_at_utc": "2026-11-12T19:01:02+00:00",
+            }
+            result = {"difference": 5, "margin": 50, "give_total": 10, "receive_total": 15}
+            with patch("scanner.HISTORY_FILE", path):
+                scanner.append_history(listing, result)
+            rows = list(__import__("csv").DictReader(path.open(encoding="utf-8")))
+            self.assertEqual([row["listing_id"] for row in rows], ["old-id", "new-id"])
+            self.assertEqual(rows[0]["alerted_at_utc"], "2026-11-11T10:00:00+00:00")
+            self.assertEqual(rows[1]["first_seen_at_utc"], listing["first_seen_at_utc"])
+            self.assertEqual(rows[1]["alert_attempted_at_utc"], listing["alert_attempted_at_utc"])
+            self.assertEqual(rows[1]["alerted_at_utc"], listing["alerted_at_utc"])
+
     def test_history_write_is_atomic(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "history.csv"
