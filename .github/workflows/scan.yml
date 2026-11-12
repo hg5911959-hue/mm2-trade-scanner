@@ -16,6 +16,8 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     timeout-minutes: 8
+    env:
+      HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -24,9 +26,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Test listing parser
-        run: python -m unittest discover -s tests -v
 
       - name: Restore scanner state
         uses: actions/cache/restore@v4
@@ -37,11 +36,22 @@ jobs:
           restore-keys: |
             mm2-state-
 
+      - name: Test parser and value calculations
+        run: python -m unittest discover -s tests -v
+
+      - name: Record test failure
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -c "from scanner import record_failure; record_failure('Unit tests failed before scan')"
+
       - name: Run BloxSwaps scanner
+        id: scan
         env:
           BLOXSWAPS_URL: "https://bloxswaps.com/fr/trade-mm2?trade-type=P2P"
           MIN_VALUE_DIFFERENCE: "0"
-          MIN_PROFIT_PERCENT: "0"
+          MIN_PROFIT_PERCENT: "5"
           FAILURE_ALERT_THRESHOLD: "3"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -50,6 +60,15 @@ jobs:
           mkdir -p data
           set -o pipefail
           python -u scanner.py 2>&1 | tee scanner.log
+
+      - name: Send external uptime heartbeat
+        if: always() && env.HEALTHCHECKS_PING_URL != ''
+        run: |
+          if [ "${{ steps.scan.outcome }}" = "success" ]; then
+            curl --fail --silent --show-error "$HEALTHCHECKS_PING_URL"
+          else
+            curl --fail --silent --show-error "$HEALTHCHECKS_PING_URL/fail"
+          fi
 
       - name: Upload scanner diagnostics
         if: always()
