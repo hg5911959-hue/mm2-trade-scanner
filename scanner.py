@@ -224,7 +224,7 @@ def quantity_from_image_node(image_node):
             marker_text = node_text(sibling)
             explicit = _quantity_marker(marker_text)
             semantic = bool(re.search(r"quant|count|amount|stack|badge|counter", classes))
-            if explicit and (semantic or re.search(r"(?:x|×)\\s*\\d|\\d\\s*(?:x|×)", marker_text, re.I)):
+            if explicit and (semantic or re.search(r"(?:x|×)\s*\d|\d\s*(?:x|×)", marker_text, re.I)):
                 return explicit
         branch = ancestor
         ancestor = ancestor.parent
