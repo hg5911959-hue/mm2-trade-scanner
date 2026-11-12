@@ -466,46 +466,25 @@ def _item_quantity_details(image_node, segment_text, segment_nodes=()):
     return 1, "implicit_single", _listed_price(diagnostic_text), local_text[:240], 1, 1, ""
 
 def extract_side_items(node):
+    """Extract each weapon's complete DOM segment without crossing item/side boundaries."""
     events = collect_ordered_events(node)
     side = None
     received = []
     requested = []
-    for i, (kind, value) in enumerate(events):
-        if kind == "text":
-            low = value.casefold()
-            if re.search(r"\bpropose\b|\boffering\b|\boffer\b", low):
-                side = "receive"
-            elif re.search(r"\brecherche\b|\blooking\s+for\b|\brequest\b", low):
-                side = "give"
-            continue
-        if kind != "img" or not value or not side:
-            continue
-        end = i + 1
-        suffix = []
-        segment_nodes = []
-        while end < len(events):
-            next_kind, next_value = events[end]
-            if next_kind == "img" and next_value and next_value.get("name"):
-                break
-            if next_kind == "text" and re.search(
-                r"\b(?:propose|offering|offer|recherche|looking\s+for|request)\b",
-                next_value, flags=re.I
-            ):
-                break
-            if next_kind == "text":
-                suffix.append(next_value)
-            elif next_kind == "element":
-                # Do not inherit metadata from a wrapper that contains a later
-                # weapon image (often the opposite side or a neighboring tile).
-                if not collect_images_in_order(next_value):
-                    segment_nodes.append(next_value)
-            end += 1
+    prefix_text = []
+    prefix_nodes = []
+    current = None
+
+    def finish_item():
+        nonlocal current
+        if current is None:
+            return
         quantity, source, price, raw_excerpt, quantity_min, quantity_max, reason = _item_quantity_details(
-            value["node"], " ".join(suffix), segment_nodes
+            current["node"], " ".join(current["text"]), current["nodes"]
         )
-        target = received if side == "receive" else requested
+        target = received if current["side"] == "receive" else requested
         target.append({
-            "name": value["name"],
+            "name": current["name"],
             "quantity": quantity,
             "quantity_source": source,
             "quantity_min": quantity_min,
@@ -514,6 +493,55 @@ def extract_side_items(node):
             "listed_price": price,
             "raw_excerpt": raw_excerpt,
         })
+        current = None
+
+    for kind, value in events:
+        if kind == "text":
+            low = value.casefold()
+            if re.search(r"\\bpropose\\b|\\boffering\\b|\\boffer\\b", low):
+                finish_item()
+                side = "receive"
+                prefix_text = []
+                prefix_nodes = []
+            elif re.search(r"\\brecherche\\b|\\blooking\\s+for\\b|\\brequest\\b", low):
+                finish_item()
+                side = "give"
+                prefix_text = []
+                prefix_nodes = []
+            elif side:
+                if current is None:
+                    prefix_text.append(value)
+                else:
+                    current["text"].append(value)
+            continue
+
+        if kind == "element":
+            if not side:
+                continue
+            image_count = len(collect_images_in_order(value))
+            if current is None:
+                # Elements before this weapon belong to its prefix only if they
+                # contain at most this one weapon; shared multi-item containers
+                # are never allowed to donate metadata.
+                if image_count <= 1:
+                    prefix_nodes.append(value)
+            elif image_count == 0:
+                current["nodes"].append(value)
+            continue
+
+        if kind == "img" and value and side:
+            finish_item()
+            current = {
+                "name": value["name"],
+                "node": value["node"],
+                "side": side,
+                "text": list(prefix_text),
+                "nodes": list(prefix_nodes),
+            }
+            prefix_text = []
+            prefix_nodes = []
+
+    finish_item()
     return received, requested
 
 
