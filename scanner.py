@@ -3,6 +3,7 @@
 import csv
 import hashlib
 import json
+import math
 import os
 import re
 import sys
@@ -463,10 +464,12 @@ def load_supreme_values():
                     source_value = float(source_value)
                 except (TypeError, ValueError):
                     continue
-                if source_value > 0:
+                if source_value > 0 and math.isfinite(source_value):
                     secondary = item.get("value_source_a")
                     try:
                         secondary = float(secondary) if secondary is not None else None
+                        if secondary is not None and not math.isfinite(secondary):
+                            secondary = None
                     except (TypeError, ValueError):
                         secondary = None
                     all_values[normalize_name(name)] = {
@@ -517,12 +520,20 @@ def calculate_side(items, values):
         if not record:
             missing.append(item["name"])
             continue
+        try:
+            unit_value = float(record["value"])
+        except (KeyError, TypeError, ValueError):
+            missing.append(item["name"])
+            continue
+        if not math.isfinite(unit_value) or unit_value <= 0:
+            missing.append(item["name"])
+            continue
         quantity = item["quantity"]
-        item_total = float(record["value"]) * quantity
+        item_total = unit_value * quantity
         total += item_total
         suffix = f" x{quantity}" if quantity > 1 else ""
         breakdown.append(
-            f"• {record['name']}{suffix} — {record['value']:g} each = {item_total:g}"
+            f"• {record.get('name', item['name'])}{suffix} — {unit_value:g} each = {item_total:g}"
         )
     return total, breakdown, missing
 
