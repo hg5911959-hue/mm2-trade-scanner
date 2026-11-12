@@ -2115,7 +2115,21 @@ def scan_once():
                     )
     alerted = load_alerted()
     alerted_set = set(alerted)
-    uncertain_ids = load_uncertain_ids()
+    uncertain_state, expired_uncertain = load_uncertain_state()
+    uncertain_ids = set(uncertain_state)
+    if expired_uncertain:
+        print(
+            f"[telegram] {len(expired_uncertain)} uncertain-delivery quarantine(s) expired; "
+            "their feed IDs remain marked seen and will not be auto-resent."
+        )
+        if os.environ.get("MM2_SCAN_LOOP") == "1":
+            send_maintenance_alert(
+                "telegram-quarantine-expired",
+                f"{len(expired_uncertain)} Telegram delivery quarantine(s) expired after "
+                f"{UNCERTAIN_TTL_SECONDS // 3600} hours. The listings remain marked seen; "
+                "check Telegram manually. No automatic resend was performed.",
+                cooldown_seconds=86400,
+            )
     if uncertain_ids:
         print(
             f"[telegram] {len(uncertain_ids)} listing(s) have uncertain delivery status "
