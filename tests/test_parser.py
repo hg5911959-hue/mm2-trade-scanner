@@ -773,7 +773,7 @@ class StructuredQuantityTests(unittest.TestCase):
 class QuantityIncidentReproductionTests(unittest.TestCase):
     def test_explicit_quantity_regex_accepts_split_text_nodes(self):
         self.assertEqual(scanner._explicit_stack_quantities("Snowcannon 750.0 x 2"), [2])
-        self.assertEqual(scanner._explicit_stack_quantities("Snowcannon 750.0 x\\u00a02"), [2])
+        self.assertEqual(scanner._explicit_stack_quantities("Snowcannon 750.0 x" + chr(160) + "2"), [2])
         self.assertEqual(scanner._explicit_stack_quantities("Snowcannon 750.0 x٢"), [2])
 
     def test_split_x_and_digit_after_price_is_quantity_two(self):
