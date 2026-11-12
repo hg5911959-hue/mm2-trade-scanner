@@ -514,14 +514,11 @@ def main():
 
     print("[stage] Checking RBLXValue API credential")
     if not RBLXVALUE_API_KEY:
-        raise RuntimeError("Missing GitHub Actions secret RBLXVALUE_API_KEY.")
-    if not RBLXVALUE_API_KEY.startswith("rbx_"):
-        raise RuntimeError(
-            "RBLXVALUE_API_KEY is present but does not have the documented rbx_ prefix. "
-            "Replace the GitHub secret with the raw key copied from https://rblxvalue.com/developer. "
-            "Do not add quotes or the variable name."
-        )
-    print("[stage] API key present; secret contents are intentionally never logged")
+        print("[supreme] API key missing; cached values will be used if available")
+    elif not RBLXVALUE_API_KEY.startswith("rbx_"):
+        print("[supreme] API key format looks invalid; cached values will be used if available")
+    else:
+        print("[stage] API key present; secret contents are intentionally never logged")
     print("[stage] Loading Supreme Values before evaluating trades")
     values = load_supreme_values()
     print("[stage] Fetching BloxSwaps listings")
