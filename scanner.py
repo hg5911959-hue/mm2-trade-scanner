@@ -614,6 +614,39 @@ def listing_identifier(node):
     return ""
 
 
+def legacy_stable_listing_id(owner_url, receive_items, give_items, listing_url="", listing_key_hint=""):
+    """Reproduce the pre-ad-ID hash so persisted alerts/quarantines migrate safely."""
+    owner = urlsplit(owner_url or "")
+    listing = urlsplit(listing_url or "")
+    ad_values = []
+    for key, values in parse_qs(listing.query, keep_blank_values=False).items():
+        if key.casefold() in {"ad", "id", "listing", "post", "trade"}:
+            ad_values.extend((key.casefold(), value) for value in values)
+    stable_params = []
+    for key, values in parse_qs(listing.query, keep_blank_values=False).items():
+        if key.casefold() not in {"page", "sort", "trade-type", "type", "filter", "search"}:
+            stable_params.extend((key.casefold(), value) for value in values)
+    owner_identity = (
+        (owner.scheme + "://" + owner.netloc + owner.path).rstrip("/").casefold()
+        if owner_url else
+        (listing.scheme + "://" + listing.netloc + listing.path).rstrip("/").casefold()
+    )
+    if listing_key_hint:
+        listing_key = {"hint": listing_key_hint}
+    elif ad_values:
+        listing_key = sorted(ad_values)
+    else:
+        listing_key = {"path": listing.path, "query": sorted(stable_params)}
+    identity = {
+        "owner": owner_identity,
+        "listing_key": listing_key,
+        "receive": _identity_items(receive_items),
+        "give": _identity_items(give_items),
+    }
+    payload = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
+
+
 def stable_listing_id(owner_url, receive_items, give_items, listing_url="", listing_key_hint=""):
     owner = urlsplit(owner_url or "")
     listing = urlsplit(listing_url or "")
@@ -836,6 +869,7 @@ def parse_page(html):
             continue
         listing = {
             "id": stable_listing_id(owner_url, received, requested, link, listing_identifier(context)),
+            "legacy_id": legacy_stable_listing_id(owner_url, received, requested, link, listing_identifier(context)),
             "receive_items": received,
             "give_items": requested,
             "url": link,
@@ -1055,12 +1089,14 @@ def _api_trade_post_to_listing(post, item_map):
         "posted_at": post.get("lastRefreshedAt"),
     }
     listing["id"] = stable_listing_id(owner_url, receive, give, listing_url, "")
+    listing["legacy_id"] = legacy_stable_listing_id(owner_url, receive, give, listing_url, "")
     return listing
 
 
 def _merge_html_quantity_diagnostics(api_listing, html_listing):
     """Keep RSC names/quantities but mark any HTML disagreement as uncertain."""
     api_listing["id"] = html_listing.get("id") or api_listing["id"]
+    api_listing["legacy_id"] = html_listing.get("legacy_id") or api_listing.get("legacy_id")
     api_listing["owner_url"] = html_listing.get("owner_url") or api_listing.get("owner_url")
     api_listing["source_text"] = html_listing.get("source_text", api_listing.get("source_text", ""))
     for field in ("receive_items", "give_items"):
@@ -2411,6 +2447,23 @@ def scan_once():
     opportunities = []
     for listing in listings:
         trade_id = listing["id"]
+        legacy_id = str(listing.get("legacy_id") or "")
+        # One-time migration: old quantity-sensitive hashes may still exist in
+        # alerted/history/quarantine state. Promote their new stable ad ID
+        # before any Telegram send so the upgrade cannot replay old alerts.
+        if legacy_id and legacy_id != trade_id and legacy_id in alerted_set:
+            print(f"[state-migration] Legacy alerted ID matched; promoting stable ad ID {trade_id}.")
+            mark_alerted(trade_id)
+            mark_seen_ad(listing)
+            already_alerted_skipped += 1
+            continue
+        if legacy_id and legacy_id != trade_id and legacy_id in uncertain_ids:
+            print(f"[state-migration] Legacy uncertain-delivery ID matched; promoting quarantine for {trade_id}.")
+            uncertain_ids.add(trade_id)
+            save_uncertain_ids(uncertain_ids)
+            mark_seen_ad(listing)
+            uncertain_skipped += 1
+            continue
         if trade_id in alerted_set:
             already_alerted_skipped += 1
             mark_seen_ad(listing)
