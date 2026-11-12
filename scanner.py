@@ -1506,6 +1506,12 @@ def main():
             alerted_set.add(trade_id)
             save_alerted(alerted)
 
+    def mark_seen_ad(listing):
+        source_id = str(listing.get("source_ad_id") or "")
+        if source_id and source_id not in seen_ads:
+            seen_ads.add(source_id)
+            save_seen_ads(seen_ads)
+
     skipped_unknown = 0
     sent = 0
     evaluated = 0
@@ -1514,9 +1520,11 @@ def main():
         trade_id = listing["id"]
         if trade_id in alerted_set:
             already_alerted_skipped += 1
+            mark_seen_ad(listing)
             continue
         if trade_id in uncertain_ids:
             uncertain_skipped += 1
+            mark_seen_ad(listing)
             continue
         result, missing = evaluate_listing(listing, values)
         evaluated += 1
@@ -1530,7 +1538,7 @@ def main():
             # case the Supreme mapping becomes available, but never value partially.
             continue
         if not qualifies(result):
-            # Re-evaluate while visible; source values may change during the listing's lifetime.
+            mark_seen_ad(listing)
             continue
         opportunities.append(result)
 
@@ -1566,16 +1574,23 @@ def main():
         except TelegramDeliveryUncertain:
             print(
                 f"[telegram] Delivery uncertain for listing {trade_id}; "
-                "quarantined and will not be resent automatically."
+                "quarantined, skipping this message and continuing the batch."
             )
-            raise
-        except Exception:
+            # The pre-send guard remains in uncertain_ids; persist the feed ID too.
+            mark_seen_ad(listing)
+            continue
+        except Exception as exc:
             uncertain_ids.discard(trade_id)
             save_uncertain_ids(uncertain_ids)
-            raise
+            print(
+                f"[telegram] Definite send failure for listing {trade_id}: "
+                f"{type(exc).__name__}; will retry on a later scan and continue the batch."
+            )
+            continue
         mark_alerted(trade_id)
         uncertain_ids.discard(trade_id)
         save_uncertain_ids(uncertain_ids)
+        mark_seen_ad(listing)
         append_history(listing, op)
         sent += 1
         if sent < len(selected_opportunities) and ALERT_DELAY_SECONDS > 0:
