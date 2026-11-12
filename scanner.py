@@ -647,6 +647,19 @@ def legacy_stable_listing_id(owner_url, receive_items, give_items, listing_url="
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
 
 
+def legacy_alert_state(listing, alerted_ids, uncertain_ids):
+    """Return the old hash's persisted delivery state for one-time migration."""
+    legacy_id = str(listing.get("legacy_id") or "")
+    trade_id = str(listing.get("id") or "")
+    if not legacy_id or legacy_id == trade_id:
+        return ""
+    if legacy_id in alerted_ids:
+        return "alerted"
+    if legacy_id in uncertain_ids:
+        return "uncertain"
+    return ""
+
+
 def stable_listing_id(owner_url, receive_items, give_items, listing_url="", listing_key_hint=""):
     owner = urlsplit(owner_url or "")
     listing = urlsplit(listing_url or "")
@@ -2447,17 +2460,17 @@ def scan_once():
     opportunities = []
     for listing in listings:
         trade_id = listing["id"]
-        legacy_id = str(listing.get("legacy_id") or "")
+        legacy_state = legacy_alert_state(listing, alerted_set, uncertain_ids)
         # One-time migration: old quantity-sensitive hashes may still exist in
         # alerted/history/quarantine state. Promote their new stable ad ID
         # before any Telegram send so the upgrade cannot replay old alerts.
-        if legacy_id and legacy_id != trade_id and legacy_id in alerted_set:
+        if legacy_state == "alerted":
             print(f"[state-migration] Legacy alerted ID matched; promoting stable ad ID {trade_id}.")
             mark_alerted(trade_id)
             mark_seen_ad(listing)
             already_alerted_skipped += 1
             continue
-        if legacy_id and legacy_id != trade_id and legacy_id in uncertain_ids:
+        if legacy_state == "uncertain":
             print(f"[state-migration] Legacy uncertain-delivery ID matched; promoting quarantine for {trade_id}.")
             uncertain_ids.add(trade_id)
             save_uncertain_ids(uncertain_ids)
