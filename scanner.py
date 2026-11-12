@@ -199,7 +199,7 @@ def _quantity_marker(raw):
 def _explicit_stack_quantities(raw):
     """Return all explicit xN/×N/Nx markers; never parse bare prices as counts."""
     text = _normalize_quantity_text(raw)
-    pattern = r"(?<![A-Za-z0-9])(?:x|×)\s*(\d{1,3})(?!\d)|(?<!\d)(\d{1,3})\s*(?:x|×)(?![A-Za-z0-9])"
+    pattern = r"(?<![A-Za-z0-9])(?:x|×)\s*(\d{1,3})(?!\d)|(?<![\d.,])(\d{1,3})\s*(?:x|×)(?![A-Za-z0-9])"
     values = []
     for match in re.finditer(pattern, text, flags=re.I):
         parsed = int(match.group(1) or match.group(2))
