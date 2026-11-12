@@ -48,9 +48,10 @@ def atomic_write_text(path, content):
 
 
 class Node:
-    def __init__(self, tag="", attrs=None):
+    def __init__(self, tag="", attrs=None, parent=None):
         self.tag = tag
         self.attrs = dict(attrs or [])
+        self.parent = parent
         self.events = []
 
 
@@ -64,13 +65,13 @@ class PageTree(HTMLParser):
         self.stack = [self.root]
 
     def handle_starttag(self, tag, attrs):
-        node = Node(tag, attrs)
+        node = Node(tag, attrs, self.stack[-1])
         self.stack[-1].events.append(("node", node))
         if tag not in self.VOID:
             self.stack.append(node)
 
     def handle_startendtag(self, tag, attrs):
-        self.stack[-1].events.append(("node", Node(tag, attrs)))
+        self.stack[-1].events.append(("node", Node(tag, attrs, self.stack[-1])))
 
     def handle_endtag(self, tag):
         for i in range(len(self.stack) - 1, 0, -1):
@@ -212,6 +213,21 @@ def extract_side_items(node):
     return received, requested
 
 
+def listing_context(node):
+    """Expand a nested trade-side block to its nearest enclosing card with links."""
+    current = node
+    while current.parent is not None:
+        parent = current.parent
+        has_link = any(
+            child.tag == "a" and child.attrs.get("href")
+            for child in walk_nodes(parent)
+        )
+        if has_link and has_trade_sides(node_text(parent)):
+            return parent
+        current = parent
+    return node
+
+
 def listing_links(node):
     links = []
     owner_url = ""
@@ -297,18 +313,19 @@ def parse_page(html):
     malformed = 0
     link_samples = []
     for node in candidates:
-        text = node_text(node)
-        if has_addition_marker(node):
+        context = listing_context(node)
+        text = node_text(context)
+        if has_addition_marker(context):
             additions += 1
             continue
         received, requested = extract_side_items(node)
         if not received or not requested:
             malformed += 1
             continue
-        link, owner_url, card_links = listing_links(node)
+        link, owner_url, card_links = listing_links(context)
         if len(link_samples) < 5:
             link_samples.append(card_links[:10])
-        stable = stable_listing_id(owner_url, received, requested, link, listing_identifier(node))
+        stable = stable_listing_id(owner_url, received, requested, link, listing_identifier(context))
         listings.append({
             "id": stable,
             "receive_items": received,
