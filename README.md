@@ -11,14 +11,14 @@ From the scanner user's perspective:
 - Any listing containing **Ajout / Ajouts** is excluded completely.
 - The scanner ignores BloxSwaps' own Win/Loss label.
 - Profit = total Supreme Values of received items minus total Supreme Values of given items.
-- Minimum profit defaults to **0**, so fair trades are included.
+- Minimum absolute profit defaults to **0**, and minimum profit percentage defaults to **0%**, so fair trades are included. Qualified offers are sorted by highest absolute Supreme profit before alerts are sent.
 - If even one item cannot be matched to a numeric Supreme Values entry, the whole listing is skipped. The scanner never guesses or sends partial totals.
 
-Telegram alerts include both item lists, quantities, per-item values, both totals, calculated profit, result, and source link. Repeated copies of the same weapon are grouped and their quantities are added together; explicit BloxSwaps xN stack labels are also applied. When a scan finds no new fully verified listing meeting the profit threshold, Telegram receives a status message: “لا توجد عروض جيدة حاليًا.”
+Telegram alerts include both item lists, quantities, per-item values, both totals, calculated profit, result, and source link. Repeated copies of the same weapon are grouped and their quantities are added together; explicit BloxSwaps xN stack labels are also applied. The scanner sends Telegram messages only for newly detected qualifying opportunities. It does not send routine no-op heartbeats.
 
 ## Value data source
 
-The scanner uses the documented **RBLXValue API v2** and reads only `value_source_b` (Supreme Values). It does not use `value` (blended value) or `value_source_a` (MM2Values).
+The scanner uses the documented **RBLXValue API v2** and calculates all totals using `value_source_b` (Supreme Values). It also compares `value_source_a` (MM2Values) as a secondary warning only when the difference is at least 30%; it never blends the two sources or substitutes the second source for Supreme Values.
 
 Create a free API key at https://rblxvalue.com/developer. The key must be active and normally starts with `rbx_`. RBLXValue may require email verification. The API key is sent in the `X-Api-Key` header and must remain private.
 
@@ -32,16 +32,19 @@ Open **Settings → Secrets and variables → Actions → New repository secret*
 - `TELEGRAM_CHAT_ID`: your Telegram numeric chat ID.
 - `RBLXVALUE_API_KEY`: active API key copied from the RBLXValue developer dashboard (raw key only, no quotes).
 
-Never commit or share any of these secrets. The scanner never prints the API key in logs.
+Never commit or share any of these secrets. The scanner never prints API keys or the Telegram bot token in logs. Secrets are passed only through GitHub Actions `secrets.*` environment variables.
 
 ## Run and diagnostics
 
-- Scheduled checks: every 5 minutes (GitHub Actions cron uses UTC).
-- Heartbeat: if no new qualifying trade is found in a scan, Telegram receives a “no good offers currently” status update. A successful qualifying trade replaces that heartbeat for the cycle.
+- Scheduled checks: every 5 minutes (GitHub Actions cron uses UTC; starts may be delayed).
+- Workflow triggers: schedule and manual `workflow_dispatch` only; pushes do not start scans.
+- Concurrency: one workflow at a time; queued runs are not cancelled.
+- Failure alerts: Telegram is notified after 3 consecutive failed runs, then every 5 additional consecutive failures. A successful run resets the counter.
 - GitHub Actions schedules are recurring checks, not a permanently running server; GitHub may occasionally delay scheduled starts.
 - Manual run: **Actions → MM2 Trade Scanner → Run workflow**.
 - Logs: open the workflow run and download the `mm2-scanner-diagnostics` artifact.
-- Processed listing IDs and the Supreme cache are stored under `data/`.
+- Processed IDs, Supreme cache, failure counter, and `history.csv` are persisted with GitHub Actions Cache; they are not committed to `main`.
+- `history.csv` records detected opportunities and their calculated values. It cannot confirm that a Roblox trade was accepted or completed.
 
 If the API returns HTTP 403, the key is invalid, inactive, unverified, expired, or suspended. Check its status at https://rblxvalue.com/developer, create/regenerate a key if needed, then replace the GitHub secret `RBLXVALUE_API_KEY`. A GitHub secret's name must remain exactly the same.
 
@@ -50,6 +53,9 @@ If the API returns HTTP 403, the key is invalid, inactive, unverified, expired, 
 - Direct Supreme Values page access from GitHub Actions can be blocked; the API is used instead.
 - The API is a third-party delivery source for Supreme Values data, not an official Supreme Values API. The scanner specifically selects the provider's `value_source_b` field.
 - Only listings visible on the selected BloxSwaps P2P page are scanned.
+- HTTP 429 and transient 5xx/network errors are retried with exponential backoff and `Retry-After` support.
+- If BloxSwaps' expected trade-side markers disappear or cards stop parsing, the scanner fails loudly instead of treating the page as empty; regression tests run before each scan.
+- GitHub Actions Cache is not permanent archival storage; export `history.csv` periodically if you need long-term records.
 - Parsing depends on BloxSwaps' page structure; changes to its markup may require parser updates.
 - Item values are estimates and do not guarantee a trade will be accepted or completed.
 - No Roblox password, browser cookie, or account session token is needed.
