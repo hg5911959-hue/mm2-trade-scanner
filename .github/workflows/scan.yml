@@ -32,10 +32,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: |
-            data/seen.json
-            data/supreme_values.json
-            data/failure_state.json
-            data/history.csv
+            data/
           key: mm2-state-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             mm2-state-
@@ -68,8 +65,5 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: |
-            data/seen.json
-            data/supreme_values.json
-            data/failure_state.json
-            data/history.csv
+            data/
           key: mm2-state-${{ github.run_id }}-${{ github.run_attempt }}
