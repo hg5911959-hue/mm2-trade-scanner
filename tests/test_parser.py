@@ -1485,5 +1485,51 @@ class StructuredHtmlConflictRegressionTests(unittest.TestCase):
         self.assertEqual((item["quantity_min"], item["quantity_max"]), (2, 3))
 
 
+
+
+class QuantityBadgeAttributeBoundaryTests(unittest.TestCase):
+    def _listing(self, badge):
+        html = f"""
+        <article>
+          <div>Propose
+            <div class="item-tile">
+              <div class="weapon-image"><img alt="Snowcannon"></div>
+              <div class="details">
+                <span class="price">750.0</span>
+                {badge}
+              </div>
+            </div>
+          </div>
+          <div>Recherche <img alt="Spirit"></div>
+          <a href="/fr/trade-mm2?ad=badge-attribute">Discussion</a>
+          <a href="/fr/users/123">Owner</a>
+        </article>
+        """
+        return parse_listings(html)[0]["receive_items"][0]
+
+    def test_aria_label_on_badge_sibling_after_decimal_price_is_explicit(self):
+        item = self._listing('<span class="stack-badge" aria-label="x2"></span>')
+        self.assertEqual(item["quantity"], 2, repr(item))
+        self.assertEqual(item["quantity_source"], "explicit")
+        self.assertEqual(item["listed_price"], 750.0)
+
+    def test_title_on_badge_sibling_after_decimal_price_is_explicit(self):
+        item = self._listing('<span class="stack-badge" title="×2"></span>')
+        self.assertEqual(item["quantity"], 2, repr(item))
+        self.assertEqual(item["quantity_source"], "explicit")
+
+    def test_data_quantity_on_badge_sibling_is_not_ignored(self):
+        item = self._listing('<span class="stack-badge" data-quantity="2"></span>')
+        self.assertEqual(item["quantity"], 2, repr(item))
+        self.assertEqual(item["quantity_source"], "explicit")
+
+    def test_nested_split_badge_after_price_with_comment_is_two_not_one(self):
+        item = self._listing(
+            '<span class="stack-badge"><b>x</b><!-- split --><i>2</i></span>'
+        )
+        self.assertEqual(item["quantity"], 2, repr(item))
+        self.assertEqual(item["quantity_source"], "explicit")
+
+
 if __name__ == "__main__":
     unittest.main()
