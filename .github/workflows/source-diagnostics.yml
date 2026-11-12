@@ -1,0 +1,382 @@
+name: BloxSwaps Source Diagnostics - final quantity regression validation
+
+on:
+  push:
+    branches: [hardening/staged-audit-2026-11-12]
+    paths:
+      - ".github/workflows/source-diagnostics.yml"
+      - "scanner.py"
+      - "tests/**"
+      - "aliases.json"
+      - "README.md"
+
+permissions:
+  contents: write
+
+jobs:
+  inspect-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Inspect public page data and pagination
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import base64, json, os, re, urllib.request
+          from html.parser import HTMLParser
+          from html import escape as html_escape, unescape as html_unescape
+          from urllib.parse import urljoin, urlsplit, urlencode
+
+          URL = "https://bloxswaps.com/fr/trade-mm2?trade-type=P2P"
+          HEADERS = {
+              "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36",
+              "Accept": "text/html,application/xhtml+xml,application/json",
+              "Accept-Language": "en-US,en;q=0.9,fr;q=0.8",
+          }
+          class Capture(HTMLParser):
+              def __init__(self):
+                  super().__init__(convert_charrefs=True)
+                  self.scripts, self.links, self.images = [], [], []
+                  self.current = None
+              def handle_starttag(self, tag, attrs):
+                  a = dict(attrs)
+                  if tag == "script":
+                      self.current = {"attrs": a, "text": ""}
+                      self.scripts.append(self.current)
+                  elif tag == "a" and a.get("href"):
+                      self.links.append(a["href"])
+                  elif tag == "img":
+                      self.images.append(a)
+              def handle_data(self, data):
+                  if self.current is not None:
+                      self.current["text"] += data
+              def handle_endtag(self, tag):
+                  if tag == "script":
+                      self.current = None
+
+          req = urllib.request.Request(URL, headers=HEADERS)
+          with urllib.request.urlopen(req, timeout=25) as response:
+              raw = response.read()
+              final_url = response.geturl()
+              print("PAGE_STATUS", response.status, "CONTENT_TYPE", response.headers.get("Content-Type"))
+          html = raw.decode("utf-8", "replace")
+          print("PAGE_BYTES", len(raw), "FINAL_URL", final_url)
+          low = html.casefold()
+          for marker in ("cloudflare", "captcha", "challenge-platform", "__next_data__", "__next_f.push", "self.__next_f.push"):
+              print("MARKER", marker, low.find(marker))
+          parser = Capture()
+          parser.feed(html)
+          print("SCRIPT_COUNT", len(parser.scripts), "LINK_COUNT", len(parser.links), "IMAGE_COUNT", len(parser.images))
+          print("SCRIPT_TAGS")
+          rsc_payloads = []
+          decoder = json.JSONDecoder()
+          for script in parser.scripts:
+              src = script["text"]
+              cursor = 0
+              marker = "self.__next_f.push([1,"
+              while True:
+                  pos = src.find(marker, cursor)
+                  if pos < 0: break
+                  try:
+                      payload, consumed = decoder.raw_decode(src[pos + len(marker):])
+                      if isinstance(payload, str): rsc_payloads.append(payload)
+                      cursor = pos + len(marker) + consumed
+                  except Exception:
+                      cursor = pos + len(marker)
+          def extract_object_after(text, marker):
+              pos = text.find(marker)
+              if pos < 0: return None
+              start = text.find("{", pos + len(marker))
+              if start < 0: return None
+              depth, quoted, escaped = 0, False, False
+              for i in range(start, len(text)):
+                  ch = text[i]
+                  if quoted:
+                      if escaped: escaped = False
+                      elif ch == "\\\\": escaped = True
+                      elif ch == '"': quoted = False
+                  else:
+                      if ch == '"': quoted = True
+                      elif ch == "{": depth += 1
+                      elif ch == "}":
+                          depth -= 1
+                          if depth == 0:
+                              try: return json.loads(text[start:i+1])
+                              except Exception: return None
+              return None
+          discovered_cursor = None
+          captured_page = None
+          for i, payload in enumerate(rsc_payloads):
+              if "initialPage" in payload:
+                  page_obj = extract_object_after(payload, '"initialPage":')
+                  if isinstance(page_obj, dict):
+                      print("RSC_INITIAL_PAGE_KEYS", list(page_obj))
+                      items = page_obj.get("items", [])
+                      print("RSC_INITIAL_PAGE_ITEM_COUNT", len(items))
+                      print("RSC_PAGE_META", {k:v for k,v in page_obj.items() if k != "items"})
+                      discovered_cursor = (page_obj.get("meta") or {}).get("cursor")
+                      captured_page = page_obj
+                      for item in items[:12]:
+                          print("RSC_LISTING", json.dumps({
+                              "id": item.get("id"),
+                              "keys": list(item),
+                              "tradePostItems": item.get("tradePostItems"),
+                              "requestedWildcards": item.get("requestedWildcards"),
+                          }, ensure_ascii=False)[:2400])
+                  else:
+                      print("RSC_INITIAL_PAGE_PARSE_FAILED", i, payload.find('"initialPage":'))
+          print("TRADE_POST_LINKS", [x for x in parser.links if "trade-mm2" in x or "ad=" in x][:50])
+          if discovered_cursor:
+              candidate_urls = [
+                  "https://bloxswaps.com/api/trade-posts?" + urlencode({"cursor": discovered_cursor, "pageSize": 20}),
+                  "https://bloxswaps.com/api/trade-posts?" + urlencode({"cursor": discovered_cursor, "limit": 20}),
+                  "https://bloxswaps.com/api/trade-posts?" + urlencode({"cursor": discovered_cursor, "take": 20}),
+                  "https://bloxswaps.com/api/trade-posts?" + urlencode({"cursor": discovered_cursor, "page_size": 20}),
+                  "https://api.bloxswaps.com/trade-posts?" + urlencode({"cursor": discovered_cursor, "pageSize": 20}),
+                  "https://api.bloxswaps.com/api/trade-posts?" + urlencode({"cursor": discovered_cursor, "pageSize": 20}),
+              ]
+              for endpoint in candidate_urls:
+                  try:
+                      rq = urllib.request.Request(endpoint, headers=HEADERS)
+                      with urllib.request.urlopen(rq, timeout=20) as response:
+                          body = response.read()
+                          data = json.loads(body.decode("utf-8", "replace"))
+                      payload = data.get("data", data)
+                      print("PAGINATION_API_OK", endpoint.split("?")[0], "keys", list(payload) if isinstance(payload, dict) else type(payload).__name__)
+                      print("PAGINATION_API_PAGE", json.dumps({
+                          "count": len(payload.get("items", [])) if isinstance(payload, dict) else None,
+                          "meta": payload.get("meta") if isinstance(payload, dict) else None,
+                          "first_ids": [x.get("id") for x in payload.get("items", [])[:3]] if isinstance(payload, dict) else None
+                      }, ensure_ascii=False)[:1500])
+                      if isinstance(payload, dict) and payload.get("items"):
+                          print("API_LISTING_SAMPLE", json.dumps(payload["items"][0], ensure_ascii=False)[:5000])
+                          next_cursor = (payload.get("meta") or {}).get("cursor")
+                          if next_cursor:
+                              next_url = "https://api.bloxswaps.com/trade-posts?" + urlencode({"cursor": next_cursor, "pageSize": 20})
+                              try:
+                                  next_req = urllib.request.Request(next_url, headers=HEADERS)
+                                  with urllib.request.urlopen(next_req, timeout=20) as next_response:
+                                      next_payload = json.loads(next_response.read().decode("utf-8", "replace")).get("data", {})
+                                  print("PAGINATION_PAGE3", len(next_payload.get("items", [])), [x.get("id") for x in next_payload.get("items", [])[:5]], "cursor", bool((next_payload.get("meta") or {}).get("cursor")))
+                              except Exception as e:
+                                  print("PAGINATION_PAGE3_FAIL", type(e).__name__, str(e)[:250])
+                          for items_url in ("https://api.bloxswaps.com/items", "https://api.bloxswaps.com/inventory/items"):
+                              try:
+                                  items_req = urllib.request.Request(items_url, headers=HEADERS)
+                                  with urllib.request.urlopen(items_req, timeout=20) as items_response:
+                                      items_payload = json.loads(items_response.read().decode("utf-8", "replace"))
+                                  data_items = items_payload.get("data", items_payload)
+                                  if isinstance(data_items, dict): data_items = data_items.get("items", data_items.get("data", []))
+                                  print("ITEMS_API_OK", items_url, "count", len(data_items) if isinstance(data_items, list) else type(data_items).__name__)
+                                  if isinstance(data_items, list) and data_items:
+                                      print("ITEMS_API_SAMPLE", json.dumps(data_items[:3], ensure_ascii=False)[:3500])
+                                      break
+                              except Exception as e:
+                                  print("ITEMS_API_FAIL", items_url, type(e).__name__, str(e)[:250])
+                          break
+                  except urllib.error.HTTPError as e:
+                      print("PAGINATION_API_FAIL", endpoint.split("?")[0], e.code, e.read(800).decode("utf-8", "replace")[:800])
+                  except Exception as e:
+                      print("PAGINATION_API_FAIL", endpoint.split("?")[0], type(e).__name__, str(e)[:200])
+          print("PAGINATION_LINKS", [x for x in parser.links if re.search(r"page|cursor|offset|next", x, re.I)][:80])
+          print("PAGE_QUERY_HINTS", sorted(set(re.findall(r"(?i)(?:page|cursor|offset|limit|take|skip)[A-Za-z0-9_]*", html)))[:80])
+          print("APP_DATA_MARKERS", [m for m in re.findall(r"(?i)(?:/api/|graphql|trades|listings)[^\\\"'\\s]{0,140}", html)[:80]])
+          scripts = [urljoin(final_url, s["attrs"]["src"]) for s in parser.scripts if s["attrs"].get("src")]
+          print("SCRIPT_URLS", scripts[:100])
+          for script_url in scripts:
+              if urlsplit(script_url).netloc != "bloxswaps.com": continue
+              try:
+                  rq = urllib.request.Request(script_url, headers=HEADERS)
+                  with urllib.request.urlopen(rq, timeout=12) as response:
+                      js = response.read(3_000_000).decode("utf-8", "replace")
+                  for term in ("baseURL", "api.create", "NEXT_PUBLIC_API", "api.bloxswaps", "tradePosts.search", "useSearchTradePosts", "toSearchParams", "/trade-posts"):
+                      positions = [m.start() for m in re.finditer(re.escape(term), js)]
+                      for p in positions[:3]:
+                          print("TRADE_API_CONTEXT", term, script_url, " ".join(js[max(0,p-700):p+1300].split())[:2200])
+                  patterns = re.findall(r"""(?:"|')((?:/api/|/trpc/|/graphql)[^"'\\s]{0,160})(?:"|')""", js)
+                  if patterns: print("BUNDLE_ENDPOINTS", script_url, patterns[:80])
+              except Exception as e:
+                  print("BUNDLE_FETCH_ERROR", script_url, type(e).__name__)
+          # Commit a minimal, redacted real-card fixture with the matching RSC quantities.
+          if isinstance(captured_page, dict):
+              articles = re.findall(r"<article\b[\s\S]*?</article>", html, flags=re.I)
+              selected_article = ""
+              selected_id = ""
+              for article in articles:
+                  article_decoded = html_unescape(article)
+                  if "propose" not in article_decoded.casefold() or "recherche" not in article_decoded.casefold():
+                      continue
+                  match = re.search(r"""[?&]ad=([^&"' ]+)""", article_decoded)
+                  if not match: continue
+                  candidate_id = match.group(1)
+                  post = next((x for x in captured_page.get("items", []) if str(x.get("id")) == candidate_id), None)
+                  if not post: continue
+                  if any(str(value).casefold() in {"add", "ajout", "ajouts"} for value in (post.get("requestedWildcards") or [])):
+                      continue
+                  trade_rows = post.get("tradePostItems") or []
+                  roles = {str(row.get("tradeRole", "")).upper() for row in trade_rows}
+                  if not {"OFFERED", "REQUESTED"}.issubset(roles):
+                      continue
+                  if not any(int(row.get("quantity") or 1) > 1 for row in trade_rows):
+                      continue
+                  if not re.search(r"(?:x|×)\s*(?:<!--.*?-->\s*)?[2-9]\d*|[2-9]\d*\s*(?:x|×)", article_decoded, flags=re.I | re.S):
+                      continue
+                  if not re.search(r"\b\d+\.\d{1,2}\b", article_decoded):
+                      continue
+                  selected_article, selected_id = article_decoded, candidate_id
+                  break
+              if selected_article:
+                  selected_post = next(x for x in captured_page["items"] if str(x.get("id")) == selected_id)
+                  user_data = selected_post.get("user") or {}
+                  for field, replacement in (("robloxDisplayName", "Fixture Owner"), ("robloxUsername", "fixture_user")):
+                      private_label = str(user_data.get(field) or "")
+                      if private_label:
+                          selected_article = selected_article.replace(">" + private_label + "<", ">" + replacement + "<")
+                  def redact_link(match):
+                      href = match.group(1)
+                      if "/users/" in href:
+                          return 'href="/fr/users/123"'
+                      href = re.sub(r"([?&])with=[^&]+", r"\1with=fixture-user", href)
+                      href = re.sub(r"([?&])id=[^&]+", r"\1id=123", href)
+                      href = re.sub(r"([?&])name=[^&]+", r"\1name=Fixture", href)
+                      return 'href="' + html_escape(href, quote=True) + '"'
+                  selected_article = re.sub(r'href="([^"]+)"', redact_link, selected_article)
+                  fixture_post = {
+                      "id": selected_id,
+                      "tradePostItems": selected_post.get("tradePostItems", []),
+                      "requestedWildcards": selected_post.get("requestedWildcards", []),
+                  }
+                  fixture_payload = json.dumps({
+                      "initialPage": {"items": [fixture_post], "meta": {"cursor": None}}
+                  }, ensure_ascii=False, separators=(",", ":"))
+                  fixture_html = (
+                      "<!doctype html><html><body><script>self.__next_f.push([1,"
+                      + json.dumps(fixture_payload, ensure_ascii=False)
+                      + "]);</script>" + selected_article + "</body></html>"
+                  )
+                  fixture_path = "tests/fixtures/bloxswaps-live-sample.html"
+                  os.makedirs("tests/fixtures", exist_ok=True)
+                  with open(fixture_path, "w", encoding="utf-8") as fixture_file:
+                      fixture_file.write(fixture_html)
+                  repo = os.environ["GITHUB_REPOSITORY"]
+                  branch = os.environ["GITHUB_REF_NAME"]
+                  api_url = f"https://api.github.com/repos/{repo}/contents/{fixture_path}"
+                  headers = {
+                      "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  }
+                  existing_sha = None
+                  try:
+                      get_req = urllib.request.Request(api_url + "?ref=" + branch, headers=headers)
+                      with urllib.request.urlopen(get_req, timeout=15) as existing_response:
+                          existing = json.loads(existing_response.read().decode("utf-8"))
+                      existing_sha = existing.get("sha")
+                  except urllib.error.HTTPError as error:
+                      if error.code != 404: raise
+                  put_body = {
+                      "message": "test: add redacted real BloxSwaps card fixture",
+                      "content": base64.b64encode(fixture_html.encode("utf-8")).decode("ascii"),
+                      "branch": branch,
+                  }
+                  if existing_sha: put_body["sha"] = existing_sha
+                  put_req = urllib.request.Request(
+                      api_url, data=json.dumps(put_body).encode("utf-8"),
+                      headers={**headers, "Content-Type": "application/json"}, method="PUT"
+                  )
+                  with urllib.request.urlopen(put_req, timeout=20) as put_response:
+                      committed = json.loads(put_response.read().decode("utf-8"))
+                  print("REAL_HTML_FIXTURE_COMMITTED", selected_id, committed.get("commit", {}).get("sha"), "bytes", len(fixture_html))
+              else:
+                  print("REAL_HTML_FIXTURE_NOT_FOUND", "no article matched an RSC listing id")
+          with open("bloxswaps-live.html", "wb") as f:
+              f.write(raw)
+          with open("bloxswaps-page-metadata.json", "w", encoding="utf-8") as f:
+              json.dump({"final_url": final_url, "scripts": parser.scripts, "links": parser.links, "images": parser.images}, f, ensure_ascii=False, indent=2)
+          PY
+      - name: Validate scanner against live RSC and cursor API without sending Telegram
+        run: |
+          python - <<'PY'
+          import scanner
+          html = scanner.fetch_bloxswaps()
+          first = scanner.parse_structured_initial_page(html)
+          if not first or not (first.get("meta") or {}).get("cursor"):
+              raise SystemExit("Live RSC page/cursor unavailable")
+          cursor = first["meta"]["cursor"]
+          second = scanner.bloxswaps_api_get_json(
+              "/trade-posts", {"cursor": cursor, "pageSize": scanner.BLOXSWAPS_PAGE_SIZE}
+          )
+          page_items = second.get("items", [])
+          if len(page_items) != scanner.BLOXSWAPS_PAGE_SIZE:
+              raise SystemExit(f"Expected {scanner.BLOXSWAPS_PAGE_SIZE} API items; got {len(page_items)}")
+          cursor2 = (second.get("meta") or {}).get("cursor")
+          if not cursor2:
+              raise SystemExit("Second API page did not provide a next cursor")
+          third = scanner.bloxswaps_api_get_json(
+              "/trade-posts", {"cursor": cursor2, "pageSize": scanner.BLOXSWAPS_PAGE_SIZE}
+          )
+          third_items = third.get("items", [])
+          if len(third_items) != scanner.BLOXSWAPS_PAGE_SIZE:
+              raise SystemExit(f"Expected {scanner.BLOXSWAPS_PAGE_SIZE} third-page items; got {len(third_items)}")
+          seen_boundary = str(third_items[-1]["id"])
+          listings, stats, _ = scanner.fetch_bloxswaps_all({seen_boundary})
+          all_items = [item for listing in listings for item in listing["receive_items"] + listing["give_items"]]
+          unknown_ids = [item.get("unmatched_item_id") for item in all_items if item.get("unmatched_item_id")]
+          uncertain = [
+              {
+                  "ad": listing.get("source_ad_id"),
+                  "side": side,
+                  "name": item["name"],
+                  "quantity_min": item.get("quantity_min"),
+                  "quantity_max": item.get("quantity_max"),
+                  "html_quantity": item.get("html_quantity"),
+                  "html_source": item.get("html_quantity_source"),
+                  "rsc_quantity": item.get("structured_quantity"),
+                  "reason": item.get("quantity_reason"),
+                  "raw": item.get("raw_excerpt", "")[:140],
+              }
+              for listing in listings
+              for side, field in (("receive", "receive_items"), ("give", "give_items"))
+              for item in listing[field]
+              if item.get("quantity_source") == "uncertain"
+          ]
+          stacked = [
+              {"ad": listing.get("source_ad_id"), "name": item["name"], "quantity": item["quantity"]}
+              for listing in listings
+              for item in listing["receive_items"] + listing["give_items"]
+              if item.get("quantity") and item["quantity"] > 1
+          ]
+          print("LIVE_PARSER_SUMMARY", {
+              "listings": len(listings),
+              "pages": stats.get("pagination_pages"),
+              "api_posts": stats.get("pagination_api_posts"),
+              "rsc_matches": stats.get("structured_matched_count"),
+              "owner_links": stats.get("owner_link_count"),
+              "item_count": len(all_items),
+              "stacked_items": len(stacked),
+              "stacked_examples": stacked[:10],
+              "unknown_item_ids": len(unknown_ids),
+              "uncertain_quantities": len(uncertain),
+              "uncertain_examples": uncertain[:5],
+              "html_parse_warnings": stats.get("html_parse_warning_count"),
+              "seen_boundary": stats.get("seen_boundary_reached"),
+          })
+          if stats.get("pagination_pages", 0) < 3 or not stats.get("seen_boundary_reached"):
+              raise SystemExit("Cursor scan did not reach and stop at the requested third-page seen boundary")
+          if not listings:
+              raise SystemExit("No listings parsed from live page")
+          PY
+
+      - name: Upload public page snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: bloxswaps-source-diagnostics
+          path: |
+            bloxswaps-live.html
+            bloxswaps-page-metadata.json
+          retention-days: 3

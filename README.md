@@ -1,28 +1,58 @@
 # MM2 Trade Scanner
 
-Automated scanner for public **BloxSwaps MM2 P2P listings**, with Telegram alerts. GitHub Actions uses staggered scheduled checks and also scans after scanner-code updates.
+Automated scanner for public **BloxSwaps MM2 P2P listings**, with Telegram alerts. The GitHub Actions job runs a 50-minute scan loop, checking approximately every 45 seconds. The 5-minute cron and `repository_dispatch` event remain backup entry points. Concurrency prevents overlapping scanner jobs.
 
-## How a trade is evaluated
+## Trade evaluation
 
 From the scanner user's perspective:
 
 - **BloxSwaps Propose** = items you receive.
 - **BloxSwaps Recherche** = items you give.
-- Any listing containing **Ajout / Ajouts** is excluded completely.
-- The scanner ignores BloxSwaps' own Win/Loss label.
+- Any listing containing **Ajout / Ajouts** is excluded. The filter is applied to the individual card and also checks the structured `requestedWildcards` data for `ADD`.
 - Profit = total Supreme Values of received items minus total Supreme Values of given items.
-- Minimum absolute profit defaults to **0**, and minimum profit percentage is set to **0%** in the scheduled workflow, but every alert must still have strictly positive profit; fair and negative-profit trades are never reported. Qualified offers are sorted by highest absolute Supreme profit before alerts are sent.
-- If any item cannot be matched to a numeric Supreme Values entry, the entire offer is silently excluded: no partial calculation, no manual-review Telegram alert, and no offer notification. It is checked again on later scans in case the value mapping becomes available. Items explicitly configured as non-valued (currently Brew and Drool) are ignored in the item totals; an offer is still excluded if either trade side has no remaining numerically valued items.
+- The scheduled workflow uses a minimum absolute difference of **0** and minimum percentage of **0%**, but a Telegram trade alert still requires a strictly positive profit.
+- The scanner never uses BloxSwaps' own Win/Loss label, never uses the visible listing price as an item value, and never invents a missing item value or quantity.
 
-Telegram alerts include both item lists, quantities, per-item values, both totals, calculated profit, result, and source links. The **OPEN OWNER PROFILE** link is shown first when the card exposes a BloxSwaps user URL; the listing/discussion URL is secondary. The scan log reports how many parsed cards had a direct owner URL. Repeated copies of the same weapon are grouped after quantities are summed from repeated item images, explicit stack counts such as `x3` / `3x` / `×3`, counts embedded in image alt labels, and semantic count badges inside the item's own wrapper. The parser now handles BloxSwaps' visible order where the stack badge appears after the weapon name, coin icon, and displayed price (for example `Snowcannon 750.0 x2`): it scans only the current item's segment, bounded by adjacent weapon images and the Propose/Recherche side labels. It never borrows a badge from another weapon or the opposite trade side, and a numeric listing price is never treated as a quantity. If a future page-layout change makes a quantity unreadable, valuation rejects that item rather than guessing a quantity. A live-feed-shaped regression fixture and adjacent-item isolation tests protect this behavior; parser behavior still requires validation if BloxSwaps changes its markup. The scanner sends Telegram messages only for listings it has not successfully alerted before. A listing with an unknown Supreme item or a currently unprofitable value is **not** marked as completed: it is re-evaluated on later scans, so an API mapping/value update can still make it alert.
+### Quantity handling
 
-## Value data source
+Every parsed item carries `quantity`, `quantity_source`, `quantity_min`, `quantity_max`, `listed_price`, and a raw text excerpt. Quantity provenance is one of:
 
-The scanner uses the documented **RBLXValue API v2** and calculates all totals using `value_source_b` (Supreme Values). If multiple API rows normalize to the same display name, it keeps the highest numeric Supreme value and the secondary value from that same row (never a lower duplicate just because it appeared later). Non-numeric tier notation such as `4T1` is not treated as a numeric item value. It also compares `value_source_a` (MM2Values) as a secondary warning only when the difference is at least 30%; it never blends the two sources or substitutes the second source for Supreme Values.
+- `structured`: quantity from BloxSwaps RSC/API data or a `data-*` quantity attribute.
+- `explicit`: a readable quantity marker in the item's own HTML segment, image alt text, `aria-label`, or `title`.
+- `implicit_single`: no quantity marker or malformed quantity hint exists in the isolated item segment, so the item is a single item.
+- `uncertain`: quantity markers conflict, are malformed, or disagree with structured data.
 
-Create a free API key at https://rblxvalue.com/developer. The key must be active and normally starts with `rbx_`. RBLXValue may require email verification. The API key is sent in the `X-Api-Key` header and must remain private.
+The parser supports `x2`, `X2`, `×2`, `2x`, `2×`, split `x` + `2` nodes, Arabic-Indic digits, non-breaking spaces, nested badge elements, and supported `data-*` attributes. It isolates each item between adjacent weapon images and Propose/Recherche boundaries; it does not borrow badges from parent/sibling containers that include another weapon or the opposite side. A decimal listing price such as `750.0` is never interpreted as a quantity.
 
-The scanner requests the full current `value_source_b` snapshot from RBLXValue on every scan (the GitHub workflow runs every 5 minutes). It does not reuse a local cached snapshot for calculations: if the API cannot refresh, the scan fails closed and sends no profit alerts based on stale values. Important: the third-party provider may itself refresh its upstream Supreme Values dataset on a slower cadence (historically around 12 hours), so this guarantees no extra local staleness, not instant publication by Supreme or RBLXValue. Free-plan attribution is included in Telegram messages: **Data from rblxvalue.com**.
+BloxSwaps' page includes Next.js RSC `initialPage.items` data. The scanner uses its per-item `quantity` and `tradeRole` as the primary source, then compares it with the visible HTML. A disagreement becomes `uncertain`, not a silent choice. The first live card used for regression testing is saved, with owner identifiers redacted, at `tests/fixtures/bloxswaps-live-sample.html`.
+
+If a quantity is uncertain, the scanner computes a conservative best/worst profit interval:
+- If the worst-case profit is still positive, it can send a normal trade alert.
+- If only the best-case profit is positive, it sends a separate **MANUAL VERIFICATION REQUIRED** alert.
+- If even the best-case profit is not positive, it does not send a trade alert.
+
+Telegram messages include quantity source, the raw item excerpt, and visible listed price for diagnostics only. A warning is added for a margin of **100% or more** or a quantity of **5 or more**.
+
+### Item names and duplicate values
+
+- Exact normalized Supreme names are preferred.
+- `aliases.json` contains reviewed manual aliases (alias → canonical Supreme name).
+- Singular/plural normalization is supported. Fuzzy matching is deliberately strict (similarity at least 0.97, with a clear gap from the next candidate); ambiguous matches are rejected.
+- A new unmatched name is reported once in a maintenance summary and is rechecked on every scan. No value is guessed. Add an alias only after verifying the exact item.
+- If several Supreme source rows normalize to the same name, all numeric variants are retained. The scanner uses the **higher** value when you give an item and the **lower** value when you receive it, avoiding optimistic duplicate-name valuation.
+
+Items without a numeric Supreme value are not partially valued. Brew and Drool remain explicitly ignored in totals; an offer is excluded if either side has no remaining valued items.
+
+## Data sources and pagination
+
+The scanner uses RBLXValue API v2 and calculates all trade totals from `value_source_b` (Supreme Values). `value_source_a` is secondary information only and is never blended into Supreme totals.
+
+- A successful Supreme snapshot is reused for **5 minutes**. Once expired, the scanner must refresh from the API; if refresh fails or the API key is missing, it fails closed rather than using stale values.
+- The site item catalogue is loaded from `https://api.bloxswaps.com/items` and cached for **1 hour**.
+- The first BloxSwaps page is read from its HTML/RSC payload, then every new RSC post is converted through the site's item catalogue—even if its HTML card could not be parsed. Parsed HTML is cross-checked for quantity and contributes visible-price/raw-text diagnostics. Further pages are fetched from `https://api.bloxswaps.com/trade-posts` with `cursor` and `pageSize=20`.
+- Pagination continues through recent pages until a previously seen ad ID is reached. The default safety cap is 50 pages; reaching it with a cursor remaining raises a maintenance warning rather than claiming complete coverage.
+- Structured item IDs are mapped to BloxSwaps display names through the site catalogue. Unknown IDs are not assigned guessed names or values.
+- Cloudflare/CAPTCHA challenge pages and HTTP 403 access denials are reported explicitly rather than treated as an empty feed.
 
 ## Required GitHub Actions secrets
 
@@ -30,45 +60,40 @@ Open **Settings → Secrets and variables → Actions → New repository secret*
 
 - `TELEGRAM_BOT_TOKEN`: Telegram bot token.
 - `TELEGRAM_CHAT_ID`: your Telegram numeric chat ID.
-- `RBLXVALUE_API_KEY`: active API key copied from the RBLXValue developer dashboard (raw key only, no quotes).
+- `RBLXVALUE_API_KEY`: active API key from the RBLXValue developer dashboard (raw key only, no quotes).
 
-Never commit or share any of these secrets. The scanner never prints API keys or the Telegram bot token in logs. Secrets are passed only through GitHub Actions `secrets.*` environment variables.
+Never commit or share these secrets. The scanner does not print API keys or Telegram bot tokens in logs.
 
-## Run and diagnostics
+## Runtime, deduplication, and persistence
 
-- Scheduled checks: GitHub cron requests a scan every 5 minutes (UTC; starts may be delayed or dropped during platform load).
-- Workflow triggers: 5-minute schedule, manual `workflow_dispatch`, and external `repository_dispatch` events of type `mm2-scan`. Code pushes run the separate test workflow only; they do not launch an extra live scan.
-- Concurrency: one workflow at a time; queued runs are not cancelled.
-- The scanner workflow has `contents: read` only; the separate monthly keepalive workflow alone has `contents: write`.
-- Alert state stores only listings whose profit alert was successfully sent. Offers with unknown values are silently skipped and re-evaluated on later scans. Existing alert history is used to migrate prior sent IDs; non-profitable and unrecognized listings remain eligible for re-evaluation.
-- Alerted IDs retain the newest 5,000 in insertion order, and legacy `history.csv` IDs are backfilled without duplicates. State, values cache, failure counter, and history writes use atomic replace operations.
-- Telegram flood protection: `MAX_ALERTS_PER_RUN` defaults to 10 and `ALERT_DELAY_SECONDS` defaults to 1 second. Offers are ranked first; only the first N are sent per run. Deferred offers remain unalerted and are sent on later scans.
-- Brew and Drool are excluded from numeric totals because they have no numeric Supreme value. If either appears in an otherwise eligible offer, the alert explicitly notes the omitted item(s); no value is guessed.
-- A separate watchdog checks the latest successful `scan.yml` run every 15 minutes and alerts if it is at least 30 minutes old, then repeats every 6 hours.
-- Recommended independent monitoring: configure Healthchecks.io with a 5-minute period and 15-minute grace time, then store its ping URL as `HEALTHCHECKS_PING_URL`.
-- IDs use normalized owner identity, stable card/ad identifiers when exposed, listing path/query identity, and sorted item names and quantities; relative-time labels are ignored.
-- Telegram messages are capped at 4,000 characters. Calculated margins at or above 200% include a warning to manually verify item names and values.
-- Telegram delivery safety: `sendMessage` is never automatically retried after a timeout, connection failure, or HTTP 5xx because Telegram may already have accepted the message. Only explicit Telegram 429 rejections are retried. Before sending, the listing ID is written to a delivery-guard file; if delivery is ambiguous, that ID is quarantined and is not resent automatically. Check Telegram manually before clearing that ID from `data/telegram_uncertain.json` in the persisted workflow state. Definite API rejections clear the guard so the offer can be retried later.
-- Failure alerts: Telegram is notified after 3 consecutive failed runs, then every 5 additional consecutive failures (8, 13, 18...). A successful run resets the counter.
-- GitHub Actions schedules are recurring checks, not a permanently running server; GitHub may occasionally delay scheduled starts.
+- Scanner job: 50-minute loop, approximately every 45 seconds, with a 55-minute job timeout.
+- Backup triggers: GitHub cron every 5 minutes, manual `workflow_dispatch`, and `repository_dispatch` event type `mm2-scan`.
+- Concurrency: one scanner workflow at a time; a new scheduled run does not cancel the active scan.
+- The first run with missing seen-ad state creates a baseline from the current first page and does **not** replay the historical feed backlog. Subsequent scans process new posts until the seen boundary.
+- `data/seen_ads.json` tracks processed BloxSwaps ad IDs. Unmatched or malformed listings remain eligible for rechecking; successful alerts and intentionally excluded Ajout posts are marked seen.
+- Alerted IDs, uncertain Telegram deliveries, seen IDs, history, failure counters, Supreme snapshot, BloxSwaps item catalogue, unmatched names, and maintenance-alert throttles are stored on the dedicated **`state` branch**. That branch is updated only when state files change.
+- The workflow retains a one-time legacy Actions Cache restore path for migration. The state branch becomes authoritative after it exists.
+- A corrupt or unreadable state file fails closed instead of silently resetting deduplication.
+- Alerted IDs retain the newest 5,000 in insertion order; writes use atomic replace operations.
+- `MAX_ALERTS_PER_RUN` defaults to 10 and `ALERT_DELAY_SECONDS` defaults to 1 second. Deferred opportunities remain unalerted for a later scan.
+- A definite Telegram API rejection clears its pre-send guard so the offer can be retried later. A timeout, connection failure, invalid response, or HTTP 5xx is treated as **uncertain delivery**: the listing is quarantined and is not automatically resent. Check Telegram before manually clearing its entry in `data/telegram_uncertain.json`.
+- A failed Telegram message does not stop later opportunities in the same batch.
+- Unparsed cards trigger a throttled maintenance alert when their count/rate crosses the configured threshold. Unmatched item names are summarized once per name and rechecked on later scans.
+- The watchdog checks successful scan runs every 15 minutes. It recognizes an active 50-minute scan loop and suppresses false stale-success alerts while that job is running; it uses `GITHUB_REPOSITORY`, not a hard-coded repository path.
+- Recommended independent monitoring: configure Healthchecks.io and store its ping URL as `HEALTHCHECKS_PING_URL`. The workflow pings when the long scan job finishes.
+
+## Logs and manual operations
+
 - Manual run: **Actions → MM2 Trade Scanner → Run workflow**.
-- Telegram connection test: **Actions → Telegram Connection Test → Run workflow**. This sends one explicit test message without changing scanner state or triggering a trade scan; the job fails with a safe API error if Telegram rejects it.
+- Telegram connection test: **Actions → Telegram Connection Test → Run workflow**. This sends one explicit test message without changing scanner state or triggering a trade scan.
 - Logs: open the workflow run and download the `mm2-scanner-diagnostics` artifact.
-- External scheduler fallback: the scanner accepts `repository_dispatch` event type `mm2-scan`. A scheduler such as cron-job.org can call GitHub’s repository-dispatch API every 5 minutes using a fine-grained token with Contents: read/write access to this repository. Store that token only in the scheduler service; never paste it into chat or commit it. The request body is `{"event_type":"mm2-scan"}`. This avoids depending exclusively on GitHub cron, but the external scheduler must still be configured by the repository owner.
-- Optional missed-schedule monitoring: create a free check at Healthchecks.io and save its ping URL as the repository secret `HEALTHCHECKS_PING_URL`. The workflow pings on successful scans and sends `/fail` on failures; the service can alert if scheduled pings stop arriving.
-- Processed IDs, Supreme cache, failure counter, and `history.csv` are persisted with GitHub Actions Cache. If an existing alerted-state or history file is unreadable/corrupt, the scanner now fails closed rather than silently starting with an empty deduplication list. Runtime `data/` is git-ignored and is not tracked in `main`. A separate monthly keepalive workflow commits a tiny activity marker to reduce the risk of scheduled workflows being disabled for inactivity.
-- `history.csv` records detected opportunities and their calculated values. It cannot confirm that a Roblox trade was accepted or completed.
+- External scheduler fallback: a scheduler can call GitHub's repository-dispatch API with `{"event_type":"mm2-scan"}`. Keep any scheduler token in the scheduler's secret store; never paste it into chat or commit it.
+- `history.csv` records detected opportunities and calculated values; it cannot confirm that a Roblox trade was accepted or completed.
 
-If the API returns HTTP 403, the key is invalid, inactive, unverified, expired, or suspended. Check its status at https://rblxvalue.com/developer, create/regenerate a key if needed, then replace the GitHub secret `RBLXVALUE_API_KEY`. A GitHub secret's name must remain exactly the same.
+## Limitations and safety
 
-## Safety and limitations
-
-- Direct Supreme Values page access from GitHub Actions can be blocked; the API is used instead.
-- The API is a third-party delivery source for Supreme Values data, not an official Supreme Values API. The scanner specifically selects the provider's `value_source_b` field.
-- Only listings visible on the selected BloxSwaps P2P page are scanned.
-- BloxSwaps and RBLXValue transient HTTP 429/5xx/network errors are retried with backoff; Telegram sendMessage is handled separately to avoid duplicate delivery on ambiguous retries.
-- If BloxSwaps' expected trade-side markers disappear or cards stop parsing, the scanner fails loudly instead of treating the page as empty; regression tests run before each scan.
-- GitHub Actions Cache is not permanent archival storage; export `history.csv` periodically if you need long-term records.
-- Parsing depends on BloxSwaps' page structure; changes to its markup may require parser updates.
-- Item values are estimates and do not guarantee a trade will be accepted or completed.
+- BloxSwaps' public RSC/API contract and HTML markup can change. The live fixture and regression tests protect known layouts, not every future layout.
+- The scanner uses a maximum of 50 cursor pages per scan. If there are more than 1,000 new posts before a seen boundary, the maintenance warning indicates that the scan was capped.
+- GitHub cron starts can be delayed. The long-running loop reduces missed short-lived offers but cannot guarantee detection before another trader accepts them.
+- Supreme Values are estimates delivered by a third-party provider. A fresh RBLXValue response does not guarantee Supreme itself has just changed its upstream data.
 - No Roblox password, browser cookie, or account session token is needed.
