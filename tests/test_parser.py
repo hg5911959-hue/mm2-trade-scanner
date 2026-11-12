@@ -645,7 +645,7 @@ class ReliabilityTests(unittest.TestCase):
         self.assertTrue(result["manual_review"])
         self.assertEqual(result["profit_best"], 275)
         self.assertEqual(result["profit_worst"], -255)
-        self.assertTrue(scanner.qualifies(result, 0, 0))
+        self.assertFalse(scanner.qualifies(result, 0, 0))
 
     def test_uncertain_give_quantity_with_positive_worst_case_is_normal_alert(self):
         listing = {
