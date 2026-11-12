@@ -2516,10 +2516,10 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
     lines = [
         "💎 MM2 TRADE",
         "",
-        f"👤 OWNER PROFILE: {owner_link}",
+        f"👤 {owner_link}",
     ]
     if listing.get("url") and listing.get("url") != owner_link:
-        lines.extend(["", f"🔗 LISTING DETAILS: {listing['url']}"])
+        lines.extend(["", f"🔗 {listing['url']}"])
     lines.extend([
         "",
         "📤 GIVE:",
