@@ -184,31 +184,50 @@ def _quantity_marker(raw):
 
 
 def quantity_from_image_node(image_node):
-    """Read stack counts from image labels, data attributes and nearby quantity badges."""
+    """Read explicit stack counts, including overlay badges placed before an icon."""
     name, alt_quantity = split_item_label(image_node.attrs.get("alt", ""))
     if alt_quantity > 1:
         return alt_quantity
-    for node in (image_node, image_node.parent,
-                 image_node.parent.parent if image_node.parent else None):
-        if node is None:
-            continue
+
+    # Check the image and its nearest wrappers for semantic quantity attributes.
+    ancestors = []
+    current = image_node
+    for _ in range(4):
+        if current is None:
+            break
+        ancestors.append(current)
+        current = current.parent
+    for node in ancestors:
         for key in ("data-quantity", "data-count", "data-amount", "data-stack",
                     "data-stack-count", "aria-label", "title"):
             quantity = _quantity_marker(node.attrs.get(key, ""))
             if quantity:
                 return quantity
 
-    parent = image_node.parent
-    if parent is not None:
-        for kind, sibling in parent.events:
-            if kind != "node" or sibling is image_node:
+    # BloxSwaps can render ×2 as an absolutely-positioned badge before the
+    # weapon image. It may be a sibling of the image's immediate wrapper,
+    # rather than a direct child of image.parent. Walk only nearby wrappers.
+    # Explicit xN/×N markers are safe; a bare number is accepted only when
+    # its element has a quantity/count-like semantic class or attribute.
+    branch = image_node
+    ancestor = image_node.parent
+    for depth in range(3):
+        if ancestor is None:
+            break
+        for kind, sibling in ancestor.events:
+            if kind != "node" or sibling is branch:
                 continue
-            classes = " ".join((sibling.attrs.get("class", ""), sibling.attrs.get("id", ""),
-                                sibling.attrs.get("aria-label", ""))).casefold()
-            if re.search(r"quant|count|amount|stack|badge|counter", classes):
-                quantity = _quantity_marker(node_text(sibling))
-                if quantity:
-                    return quantity
+            classes = " ".join((
+                sibling.attrs.get("class", ""), sibling.attrs.get("id", ""),
+                sibling.attrs.get("aria-label", ""), sibling.attrs.get("data-testid", "")
+            )).casefold()
+            marker_text = node_text(sibling)
+            explicit = _quantity_marker(marker_text)
+            semantic = bool(re.search(r"quant|count|amount|stack|badge|counter", classes))
+            if explicit and (semantic or re.search(r"(?:x|×)\\s*\\d|\\d\\s*(?:x|×)", marker_text, re.I)):
+                return explicit
+        branch = ancestor
+        ancestor = ancestor.parent
     return 1
 
 
@@ -484,10 +503,12 @@ def _read_values_cache():
 
 
 def load_supreme_values():
+    # Always fetch the provider's current snapshot on every scan. The API
+    # itself may publish Supreme's upstream changes on its own refresh cadence;
+    # never silently calculate trades from an older local snapshot.
     cached_values, cached_age = _read_values_cache()
-    if cached_values is not None and cached_age < VALUES_TTL_SECONDS:
-        print(f"[supreme] Using cached source_b values: {len(cached_values)} items; age {cached_age // 60} min")
-        return cached_values
+    if cached_values is not None:
+        print(f"[supreme] Cached snapshot available for diagnostics only (age {cached_age // 60} min); refreshing API")
 
     all_values = {}
     try:
@@ -529,10 +550,10 @@ def load_supreme_values():
         if len(all_values) < 100:
             raise RuntimeError(f"[supreme] Only {len(all_values)} numeric source_b values loaded; refusing to calculate")
     except Exception as exc:
-        if cached_values is not None:
-            print(f"[supreme] API refresh failed ({type(exc).__name__}); using stale cache ({cached_age // 3600}h old)")
-            return cached_values
-        raise
+        # Fail closed: stale Supreme values can manufacture false-profit alerts.
+        raise RuntimeError(
+            f"[supreme] Could not refresh current source_b values; refusing stale-cache calculations ({type(exc).__name__})"
+        ) from exc
 
     VALUES_FILE.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(VALUES_FILE, json.dumps({
