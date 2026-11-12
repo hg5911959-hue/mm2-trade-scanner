@@ -49,6 +49,7 @@ MAX_FEED_PAGES = max(1, min(100, int(os.environ.get("MAX_FEED_PAGES", "50"))))
 VALUES_TTL_SECONDS = max(60, int(os.environ.get("VALUES_TTL_SECONDS", "300")))
 BLOXSWAPS_ITEMS_TTL_SECONDS = max(300, int(os.environ.get("BLOXSWAPS_ITEMS_TTL_SECONDS", "3600")))
 PENDING_TTL_SECONDS = max(86400, int(os.environ.get("PENDING_TTL_SECONDS", str(7 * 86400))))
+UNCERTAIN_TTL_SECONDS = max(3600, int(os.environ.get("UNCERTAIN_TTL_SECONDS", str(24 * 3600))))
 BLOXSWAPS_ITEMS_FILE = Path("data/bloxswaps_items.json")
 SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "100"))
 TELEGRAM_MAX_CHARS = 4000
@@ -1699,27 +1700,67 @@ def save_alerted(alerted):
     atomic_write_text(ALERTED_FILE, json.dumps({"version": 2, "alerted": ordered}, indent=2) + "\n")
 
 
-def load_uncertain_ids():
+def save_uncertain_state(state):
+    normalized = {
+        str(ad_id): float(timestamp)
+        for ad_id, timestamp in state.items()
+    }
+    atomic_write_text(UNCERTAIN_FILE, json.dumps({
+        "version": 2,
+        "ids": sorted(normalized),
+        "created_at": normalized,
+    }, indent=2) + "\n")
+
+
+def load_uncertain_state():
     if not UNCERTAIN_FILE.exists():
-        return set()
+        return {}, []
     try:
         data = json.loads(UNCERTAIN_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise RuntimeError(
             "[state] Telegram uncertain-delivery file is unreadable; refusing to risk duplicate alerts."
         ) from exc
-    if isinstance(data, dict) and isinstance(data.get("ids"), list):
-        return {str(value) for value in data["ids"]}
+    now = time.time()
     if isinstance(data, list):
-        return {str(value) for value in data}
-    raise RuntimeError(
-        "[state] Telegram uncertain-delivery file has an invalid structure; refusing duplicate-risk sends."
-    )
+        raw_ids = [str(value) for value in data]
+        created_at = {ad_id: now for ad_id in raw_ids}
+    elif isinstance(data, dict) and isinstance(data.get("ids"), list):
+        raw_ids = [str(value) for value in data["ids"]]
+        created_at = data.get("created_at") if isinstance(data.get("created_at"), dict) else {}
+    else:
+        raise RuntimeError(
+            "[state] Telegram uncertain-delivery file has an invalid structure; refusing duplicate-risk sends."
+        )
+    active = {}
+    expired = []
+    for ad_id in raw_ids:
+        try:
+            timestamp = float(created_at.get(ad_id, now))
+        except (TypeError, ValueError):
+            raise RuntimeError("[state] Telegram uncertain-delivery timestamp is invalid.")
+        if timestamp > 0 and now - timestamp > UNCERTAIN_TTL_SECONDS:
+            expired.append(ad_id)
+        else:
+            active[ad_id] = timestamp
+    if expired:
+        save_uncertain_state(active)
+    return active, expired
+
+
+def load_uncertain_ids():
+    state, _ = load_uncertain_state()
+    return set(state)
 
 
 def save_uncertain_ids(ids):
-    ordered = sorted(set(str(value) for value in ids))
-    atomic_write_text(UNCERTAIN_FILE, json.dumps({"ids": ordered}, indent=2) + "\n")
+    wanted = set(str(value) for value in ids)
+    state, _ = load_uncertain_state()
+    state = {ad_id: timestamp for ad_id, timestamp in state.items() if ad_id in wanted}
+    now = time.time()
+    for ad_id in wanted:
+        state.setdefault(ad_id, now)
+    save_uncertain_state(state)
 
 
 def _load_json_state(path, default, label):
