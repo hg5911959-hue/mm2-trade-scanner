@@ -1306,7 +1306,7 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
             entry["max_quantity"] += qmax
         if source == "uncertain":
             uncertain.append({
-                "side": side, "name": item["name"], "quantity_min": qmin,
+                "name": item["name"], "quantity_min": qmin,
                 "quantity_max": qmax, "quantity_source": source,
                 "quantity_reason": item.get("quantity_reason", ""),
                 "listed_price": item.get("listed_price"), "raw_excerpt": item.get("raw_excerpt", ""),
@@ -1586,9 +1586,13 @@ def format_unvalued_message(listing, missing):
     return "\n".join(lines)
 
 
-def evaluate_listing(listing, values):
-    give_min, give_max, give_lines, give_missing, give_uncertain = calculate_side_bounds(listing["give_items"], values)
-    receive_min, receive_max, receive_lines, receive_missing, receive_uncertain = calculate_side_bounds(listing["receive_items"], values)
+def evaluate_listing(listing, values, aliases=None):
+    give_min, give_max, give_lines, give_missing, give_uncertain = calculate_side_bounds(
+        listing["give_items"], values, aliases, side="give"
+    )
+    receive_min, receive_max, receive_lines, receive_missing, receive_uncertain = calculate_side_bounds(
+        listing["receive_items"], values, aliases, side="receive"
+    )
     missing = give_missing + receive_missing
     if missing:
         return None, missing
@@ -1660,6 +1664,8 @@ def main():
         print("[stage] API key present; secret contents are intentionally never logged")
     print("[stage] Loading Supreme Values before evaluating trades")
     values = load_supreme_values()
+    aliases = load_aliases()
+    print(f"[aliases] Loaded {len(aliases)} reviewed item aliases")
     print("[stage] Loading seen-offer state")
     seen_ads = load_seen_ads()
     print("[stage] Fetching BloxSwaps listings and cursor pages")
@@ -1761,7 +1767,7 @@ def main():
             uncertain_skipped += 1
             mark_seen_ad(listing)
             continue
-        result, missing = evaluate_listing(listing, values)
+        result, missing = evaluate_listing(listing, values, aliases)
         evaluated += 1
         if result is None:
             skipped_unknown += 1
