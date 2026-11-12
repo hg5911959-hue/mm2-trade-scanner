@@ -121,14 +121,20 @@ jobs:
                       print("RSC_INITIAL_PAGE_PARSE_FAILED", i, payload.find('"initialPage":'))
           print("TRADE_POST_LINKS", [x for x in parser.links if "trade-mm2" in x or "ad=" in x][:50])
           if discovered_cursor:
-              for params in ({"cursor": discovered_cursor}, {"type":"P2P","cursor":discovered_cursor}, {"tradeType":"P2P","cursor":discovered_cursor}, {"trade-type":"P2P","cursor":discovered_cursor}):
-                  endpoint = "https://bloxswaps.com/api/trade-posts?" + urlencode(params)
+              candidate_urls = [
+                  "https://bloxswaps.com/api/trade-posts?" + urlencode({"cursor": discovered_cursor}),
+                  "https://api.bloxswaps.com/trade-posts?" + urlencode({"cursor": discovered_cursor}),
+                  "https://api.bloxswaps.com/api/trade-posts?" + urlencode({"cursor": discovered_cursor}),
+                  "https://bloxswaps.com/api/v1/trade-posts?" + urlencode({"cursor": discovered_cursor}),
+              ]
+              for endpoint in candidate_urls:
                   try:
                       rq = urllib.request.Request(endpoint, headers=HEADERS)
                       with urllib.request.urlopen(rq, timeout=20) as response:
-                          data = json.loads(response.read().decode("utf-8", "replace"))
+                          body = response.read()
+                          data = json.loads(body.decode("utf-8", "replace"))
                       payload = data.get("data", data)
-                      print("PAGINATION_API_OK", params.keys(), "keys", list(payload) if isinstance(payload, dict) else type(payload).__name__)
+                      print("PAGINATION_API_OK", endpoint.split("?")[0], "keys", list(payload) if isinstance(payload, dict) else type(payload).__name__)
                       print("PAGINATION_API_PAGE", json.dumps({
                           "count": len(payload.get("items", [])) if isinstance(payload, dict) else None,
                           "meta": payload.get("meta") if isinstance(payload, dict) else None,
@@ -137,9 +143,9 @@ jobs:
                       if isinstance(payload, dict) and payload.get("items"):
                           break
                   except urllib.error.HTTPError as e:
-                      print("PAGINATION_API_FAIL", params.keys(), e.code, e.read(800).decode("utf-8", "replace")[:800])
+                      print("PAGINATION_API_FAIL", endpoint.split("?")[0], e.code, e.read(800).decode("utf-8", "replace")[:800])
                   except Exception as e:
-                      print("PAGINATION_API_FAIL", params.keys(), type(e).__name__, str(e)[:200])
+                      print("PAGINATION_API_FAIL", endpoint.split("?")[0], type(e).__name__, str(e)[:200])
           print("PAGINATION_LINKS", [x for x in parser.links if re.search(r"page|cursor|offset|next", x, re.I)][:80])
           print("PAGE_QUERY_HINTS", sorted(set(re.findall(r"(?i)(?:page|cursor|offset|limit|take|skip)[A-Za-z0-9_]*", html)))[:80])
           print("APP_DATA_MARKERS", [m for m in re.findall(r"(?i)(?:/api/|graphql|trades|listings)[^\\\"'\\s]{0,140}", html)[:80]])
@@ -151,10 +157,10 @@ jobs:
                   rq = urllib.request.Request(script_url, headers=HEADERS)
                   with urllib.request.urlopen(rq, timeout=12) as response:
                       js = response.read(3_000_000).decode("utf-8", "replace")
-                  for term in ("/api/trade-posts?", "tradePosts.search", "useSearchTradePosts", "toSearchParams", "trade-type", "tradeType", "baseURL"):
+                  for term in ("baseURL", "api.create", "NEXT_PUBLIC_API", "api.bloxswaps", "tradePosts.search", "useSearchTradePosts", "toSearchParams", "/trade-posts"):
                       positions = [m.start() for m in re.finditer(re.escape(term), js)]
-                      for p in positions[:4]:
-                          print("TRADE_API_CONTEXT", term, script_url, re.sub(r"\\s+", " ", js[max(0,p-1100):p+1800])[:2900])
+                      for p in positions[:3]:
+                          print("TRADE_API_CONTEXT", term, script_url, " ".join(js[max(0,p-700):p+1300].split())[:2200])
                   patterns = re.findall(r"""(?:"|')((?:/api/|/trpc/|/graphql)[^"'\\s]{0,160})(?:"|')""", js)
                   if patterns: print("BUNDLE_ENDPOINTS", script_url, patterns[:80])
               except Exception as e:
