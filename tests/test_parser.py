@@ -1764,5 +1764,26 @@ class AdditionalHardeningRegressionTests(unittest.TestCase):
             self.assertEqual(len(cache["pages"]["0"]["items"]), 100)
 
 
+class LegacyAlertStateMigrationTests(unittest.TestCase):
+    def test_old_quantity_sensitive_hash_is_recognized_as_already_alerted(self):
+        receive = [{"name": "Snowcannon", "quantity": 1, "quantity_source": "structured"}]
+        give = [{"name": "Spirit", "quantity": 1, "quantity_source": "structured"}]
+        owner = "https://bloxswaps.com/fr/users/123"
+        url = "https://bloxswaps.com/fr/trade-mm2?ad=legacy-migration-ad"
+        legacy_id = scanner.legacy_stable_listing_id(owner, receive, give, url)
+        stable_id = scanner.stable_listing_id(owner, receive, give, url)
+        self.assertNotEqual(legacy_id, stable_id)
+        listing = {"id": stable_id, "legacy_id": legacy_id}
+        self.assertEqual(scanner.legacy_alert_state(listing, {legacy_id}, set()), "alerted")
+
+    def test_old_uncertain_hash_is_quarantined_instead_of_resent(self):
+        listing = {"id": "new-stable-id", "legacy_id": "old-quantity-hash"}
+        self.assertEqual(
+            scanner.legacy_alert_state(listing, set(), {"old-quantity-hash"}),
+            "uncertain",
+        )
+        self.assertEqual(scanner.legacy_alert_state(listing, set(), set()), "")
+
+
 if __name__ == "__main__":
     unittest.main()
