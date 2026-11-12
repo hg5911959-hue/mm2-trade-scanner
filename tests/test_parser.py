@@ -556,6 +556,22 @@ class ReliabilityTests(unittest.TestCase):
                 scanner.send_telegram("test")
         self.assertEqual(len(calls), 1)
 
+    def test_uncertain_delivery_quarantine_expires_without_auto_resend(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "uncertain.json"
+            with patch("scanner.UNCERTAIN_FILE", path), patch("scanner.time.time", return_value=1000):
+                scanner.save_uncertain_ids({"old-listing"})
+            with patch(
+                "scanner.UNCERTAIN_FILE", path
+            ), patch(
+                "scanner.time.time", return_value=1000 + scanner.UNCERTAIN_TTL_SECONDS + 1
+            ):
+                state, expired = scanner.load_uncertain_state()
+            self.assertEqual(state, {})
+            self.assertEqual(expired, ["old-listing"])
+            self.assertEqual(scanner.load_uncertain_ids(), set())
+
+
     def test_uncertain_telegram_delivery_ids_are_persisted_and_loaded(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "telegram_uncertain.json"
