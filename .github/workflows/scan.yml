@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   scan:
+    if: false # EMERGENCY PAUSE: prevent new scanner jobs until deduplication is verified
     runs-on: ubuntu-latest
     timeout-minutes: 55
     env:
