@@ -689,7 +689,7 @@ def parse_page(html):
             additions += 1
             continue
         listing = {
-            "id": stable_listing_id(owner_url, received, requested, link, source_ad_id),
+            "id": stable_listing_id(owner_url, received, requested, link, listing_identifier(context)),
             "receive_items": received,
             "give_items": requested,
             "url": link,
