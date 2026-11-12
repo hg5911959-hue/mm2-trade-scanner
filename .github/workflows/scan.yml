@@ -61,6 +61,8 @@ jobs:
           MIN_VALUE_DIFFERENCE: "0"
           MIN_PROFIT_PERCENT: "0"
           FAILURE_ALERT_THRESHOLD: "3"
+          MAX_ALERTS_PER_RUN: "10"
+          ALERT_DELAY_SECONDS: "1"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RBLXVALUE_API_KEY: ${{ secrets.RBLXVALUE_API_KEY }}

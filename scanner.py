@@ -28,13 +28,13 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 MIN_DIFF = float(os.environ.get("MIN_VALUE_DIFFERENCE", "0"))
 MIN_PROFIT_PERCENT = float(os.environ.get("MIN_PROFIT_PERCENT", "5"))
 FAILURE_THRESHOLD = int(os.environ.get("FAILURE_ALERT_THRESHOLD", "3"))
-SEEN_FILE = Path("data/seen.json")
+MAX_ALERTS_PER_RUN = max(1, int(os.environ.get("MAX_ALERTS_PER_RUN", "10")))
+ALERT_DELAY_SECONDS = max(0.0, float(os.environ.get("ALERT_DELAY_SECONDS", "1")) )
 VALUES_FILE = Path("data/supreme_values.json")
 FAILURE_FILE = Path("data/failure_state.json")
 HISTORY_FILE = Path("data/history.csv")
-MAX_SEEN = 5000
+MAX_ALERTED = 5000
 ALERTED_FILE = Path("data/alerted.json")
-REVIEWED_FILE = Path("data/reviewed.json")
 VALUES_TTL_SECONDS = 4 * 60 * 60
 SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "200"))
 TELEGRAM_MAX_CHARS = 4000
@@ -573,63 +573,43 @@ def send_telegram(message):
     raise RuntimeError("[telegram] Rate limit persisted after retries")
 
 
-def load_seen():
-    if not SEEN_FILE.exists():
-        return {"seen": [], "id_version": 1, "fresh": True}
-    try:
-        data = json.loads(SEEN_FILE.read_text(encoding="utf-8"))
-        if isinstance(data, dict) and isinstance(data.get("seen"), list):
-            return {"seen": data["seen"], "id_version": int(data.get("id_version", 1)), "fresh": False}
-        if isinstance(data, list):
-            return {"seen": data, "id_version": 1, "fresh": False}
-    except (json.JSONDecodeError, OSError, TypeError, ValueError):
-        pass
-    return {"seen": [], "id_version": 1, "fresh": True}
-
-
-def save_seen(seen_list):
-    ordered = list(dict.fromkeys(str(value) for value in seen_list))[-MAX_SEEN:]
-    atomic_write_text(SEEN_FILE, json.dumps({"id_version": 3, "seen": ordered}, indent=2) + "\n")
-
-
 def load_alerted():
-    """Load only successfully alerted listings; unknown or unprofitable offers stay eligible."""
-    alerted = set()
+    """Load alerted IDs in durable insertion order, then backfill legacy history."""
+    ordered = []
     try:
         data = json.loads(ALERTED_FILE.read_text(encoding="utf-8"))
         if isinstance(data, dict) and isinstance(data.get("alerted"), list):
-            alerted.update(str(value) for value in data["alerted"])
+            ordered.extend(str(value) for value in data["alerted"])
+        elif isinstance(data, list):
+            ordered.extend(str(value) for value in data)
     except (OSError, ValueError, TypeError):
         pass
-    # Backfill alerts sent by older scanner versions from the durable trade history.
     try:
         with HISTORY_FILE.open("r", newline="", encoding="utf-8") as handle:
             for row in csv.DictReader(handle):
                 if row.get("listing_id"):
-                    alerted.add(str(row["listing_id"]))
+                    ordered.append(str(row["listing_id"]))
     except (OSError, csv.Error):
         pass
-    return alerted
+    return list(dict.fromkeys(ordered))
 
 
 def save_alerted(alerted):
-    ordered = sorted(set(str(value) for value in alerted))[-MAX_SEEN:]
-    atomic_write_text(ALERTED_FILE, json.dumps({"version": 1, "alerted": ordered}, indent=2) + "\n")
+    ordered = list(dict.fromkeys(str(value) for value in alerted))[-MAX_ALERTED:]
+    atomic_write_text(ALERTED_FILE, json.dumps({"version": 2, "alerted": ordered}, indent=2) + "\n")
 
 
-def load_reviewed():
-    try:
-        data = json.loads(REVIEWED_FILE.read_text(encoding="utf-8"))
-        if isinstance(data, dict) and isinstance(data.get("reviewed"), list):
-            return set(str(value) for value in data["reviewed"])
-    except (OSError, ValueError, TypeError):
-        pass
-    return set()
-
-
-def save_reviewed(reviewed):
-    ordered = sorted(set(str(value) for value in reviewed))[-MAX_SEEN:]
-    atomic_write_text(REVIEWED_FILE, json.dumps({"version": 1, "reviewed": ordered}, indent=2) + "\n")
+def ignored_item_names(listing):
+    """Return unique explicitly ignored item names in give-then-receive order."""
+    names = []
+    seen = set()
+    for item in listing.get("give_items", []) + listing.get("receive_items", []):
+        name = str(item.get("name", "")).strip()
+        key = normalize_name(name)
+        if key in IGNORED_VALUE_ITEMS and key not in seen:
+            names.append(name)
+            seen.add(key)
+    return names
 
 
 def format_trade_message(listing, give_total, give_lines, receive_total, receive_lines, difference):
@@ -702,7 +682,7 @@ def evaluate_listing(listing, values):
 def qualifies(result, min_diff=None, min_percent=None):
     min_diff = MIN_DIFF if min_diff is None else min_diff
     min_percent = MIN_PROFIT_PERCENT if min_percent is None else min_percent
-    return result["difference"] >= min_diff and result["margin"] >= min_percent
+    return result["difference"] > 0 and result["difference"] >= min_diff and result["margin"] >= min_percent
 
 
 def write_step_summary(line):
@@ -743,17 +723,13 @@ def main():
     print(f"[bloxswaps] Eligible listings after Ajouts filter: {len(listings)}")
     print(f"[bloxswaps] Direct owner profiles parsed: {stats.get('owner_link_count', 0)}/{len(listings)}")
     alerted = load_alerted()
-    reviewed = load_reviewed()
+    alerted_set = set(alerted)
 
     def mark_alerted(trade_id):
-        if trade_id not in alerted:
-            alerted.add(trade_id)
+        if trade_id not in alerted_set:
+            alerted.append(trade_id)
+            alerted_set.add(trade_id)
             save_alerted(alerted)
-
-    def mark_reviewed(trade_id):
-        if trade_id not in reviewed:
-            reviewed.add(trade_id)
-            save_reviewed(reviewed)
 
     skipped_unknown = 0
     sent = 0
@@ -780,13 +756,18 @@ def main():
         opportunities.append(result)
 
     opportunities.sort(key=lambda item: (item["difference"], item["margin"]), reverse=True)
-    for op in opportunities:
+    selected_opportunities = opportunities[:MAX_ALERTS_PER_RUN]
+    deferred = max(0, len(opportunities) - len(selected_opportunities))
+    for op in selected_opportunities:
         listing = op["listing"]
         message = format_trade_message(
             listing, op["give_total"], op["give_lines"],
             op["receive_total"], op["receive_lines"], op["difference"]
         )
         message += f"\nPROFIT MARGIN: {op['margin']:.2f}%"
+        ignored_names = ignored_item_names(listing)
+        if ignored_names:
+            message += "\nNOTE: not valued (no numeric Supreme value): " + ", ".join(ignored_names)
         if op["margin"] >= SUSPICIOUS_PROFIT_PERCENT:
             message += "\nWARNING: unusually high profit - verify item names and values before trading."
         secondary_note = compare_secondary_values(listing["give_items"] + listing["receive_items"], values)
@@ -797,8 +778,10 @@ def main():
         mark_alerted(listing["id"])
         append_history(listing, op)
         sent += 1
+        if sent < len(selected_opportunities) and ALERT_DELAY_SECONDS > 0:
+            time.sleep(ALERT_DELAY_SECONDS)
 
-    summary = f"Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | qualified={len(opportunities)} | alerts={sent}"
+    summary = f"Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | qualified={len(opportunities)} | alerts={sent} | deferred={deferred}"
     print(f"[summary] {summary}")
     write_step_summary(summary)
     record_success()

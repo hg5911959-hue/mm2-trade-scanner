@@ -11,7 +11,7 @@ From the scanner user's perspective:
 - Any listing containing **Ajout / Ajouts** is excluded completely.
 - The scanner ignores BloxSwaps' own Win/Loss label.
 - Profit = total Supreme Values of received items minus total Supreme Values of given items.
-- Minimum absolute profit defaults to **0**, and minimum profit percentage is set to **0%** in the scheduled workflow, so fair (zero-profit) trades are also reported; negative-profit trades are not reported. Qualified offers are sorted by highest absolute Supreme profit before alerts are sent.
+- Minimum absolute profit defaults to **0**, and minimum profit percentage is set to **0%** in the scheduled workflow, but every alert must still have strictly positive profit; fair and negative-profit trades are never reported. Qualified offers are sorted by highest absolute Supreme profit before alerts are sent.
 - If any item cannot be matched to a numeric Supreme Values entry, the entire offer is silently excluded: no partial calculation, no manual-review Telegram alert, and no offer notification. It is checked again on later scans in case the value mapping becomes available. Items explicitly configured as non-valued (currently Brew and Drool) are ignored in the item totals; an offer is still excluded if either trade side has no remaining numerically valued items.
 
 Telegram alerts include both item lists, quantities, per-item values, both totals, calculated profit, result, and source links. The **OPEN OWNER PROFILE** link is shown first when the card exposes a BloxSwaps user URL; the listing/discussion URL is secondary. The scan log reports how many parsed cards had a direct owner URL. Repeated copies of the same weapon are grouped after quantities are summed from repeated item images, explicit stack counts such as `x3` / `3x` / `×3`, and counts embedded in image alt labels. The scanner sends Telegram messages only for listings it has not successfully alerted before. A listing with an unknown Supreme item or a currently unprofitable value is **not** marked as completed: it is re-evaluated on later scans, so an API mapping/value update can still make it alert.
@@ -41,7 +41,11 @@ Never commit or share any of these secrets. The scanner never prints API keys or
 - Concurrency: one workflow at a time; queued runs are not cancelled.
 - The scanner workflow has `contents: read` only; the separate monthly keepalive workflow alone has `contents: write`.
 - Alert state stores only listings whose profit alert was successfully sent. Offers with unknown values are silently skipped and re-evaluated on later scans. Existing alert history is used to migrate prior sent IDs; non-profitable and unrecognized listings remain eligible for re-evaluation.
-- Alerted IDs retain the newest 5,000. State, values cache, failure counter, and history writes use atomic replace operations.
+- Alerted IDs retain the newest 5,000 in insertion order, and legacy `history.csv` IDs are backfilled without duplicates. State, values cache, failure counter, and history writes use atomic replace operations.
+- Telegram flood protection: `MAX_ALERTS_PER_RUN` defaults to 10 and `ALERT_DELAY_SECONDS` defaults to 1 second. Offers are ranked first; only the first N are sent per run. Deferred offers remain unalerted and are sent on later scans.
+- Brew and Drool are excluded from numeric totals because they have no numeric Supreme value. If either appears in an otherwise eligible offer, the alert explicitly notes the omitted item(s); no value is guessed.
+- A separate watchdog checks the latest successful `scan.yml` run every 15 minutes and alerts if it is at least 30 minutes old, then repeats every 6 hours.
+- Recommended independent monitoring: configure Healthchecks.io with a 5-minute period and 15-minute grace time, then store its ping URL as `HEALTHCHECKS_PING_URL`.
 - IDs use normalized owner identity, stable card/ad identifiers when exposed, listing path/query identity, and sorted item names and quantities; relative-time labels are ignored.
 - Telegram messages are capped at 4,000 characters. Calculated margins at or above 200% include a warning to manually verify item names and values.
 - Failure alerts: Telegram is notified after 3 consecutive failed runs, then every 5 additional consecutive failures (8, 13, 18...). A successful run resets the counter.

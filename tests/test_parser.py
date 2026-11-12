@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from scanner import parse_listings, parse_page, calculate_side, load_supreme_values, load_seen, save_seen
+from scanner import parse_listings, parse_page, calculate_side, load_supreme_values
 
 
 class ParserTests(unittest.TestCase):
@@ -178,17 +178,6 @@ class ParserTests(unittest.TestCase):
                 loaded = load_supreme_values()
         self.assertEqual(len(loaded), 100)
 
-    def test_legacy_seen_file_is_detected_and_upgraded(self):
-        with tempfile.TemporaryDirectory() as directory:
-            seen_path = Path(directory) / "seen.json"
-            seen_path.write_text(json.dumps({"seen": ["legacy-id"]}), encoding="utf-8")
-            with patch("scanner.SEEN_FILE", seen_path):
-                state = load_seen()
-                self.assertEqual(state["id_version"], 1)
-                save_seen(state["seen"])
-                upgraded = load_seen()
-        self.assertEqual(upgraded["id_version"], 3)
-        self.assertEqual(upgraded["seen"], ["legacy-id"])
 
 
 class ReliabilityTests(unittest.TestCase):
@@ -200,15 +189,17 @@ class ReliabilityTests(unittest.TestCase):
                                            "https://bloxswaps.com/fr/trade-mm2?ad=two")
         self.assertNotEqual(first, second)
 
-    def test_seen_keeps_newest_ids_in_insertion_order(self):
+    def test_alerted_keeps_newest_ids_in_insertion_order(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "seen.json"
-            with patch("scanner.SEEN_FILE", path):
-                scanner.save_seen([f"id-{i}" for i in range(5005)])
-                saved = scanner.load_seen()["seen"]
+            path = Path(directory) / "alerted.json"
+            history = Path(directory) / "history.csv"
+            with patch("scanner.ALERTED_FILE", path), patch("scanner.HISTORY_FILE", history):
+                scanner.save_alerted([f"id-{i}" for i in range(5005)])
+                saved = scanner.load_alerted()
         self.assertEqual(len(saved), 5000)
         self.assertEqual(saved[0], "id-5")
         self.assertEqual(saved[-1], "id-5004")
+
 
     def test_state_writer_is_atomic_and_cleans_temp_file(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -252,12 +243,20 @@ class ReliabilityTests(unittest.TestCase):
         self.assertIsNone(result)
         self.assertEqual(reason, ["one side has no valued items"])
 
+    def test_qualifies_rejects_fair_trades_even_when_thresholds_are_zero(self):
+        self.assertFalse(scanner.qualifies({"difference": 0, "margin": 0}, min_diff=0, min_percent=0))
+        self.assertTrue(scanner.qualifies({"difference": 1, "margin": 1}, min_diff=0, min_percent=0))
+
     def test_qualifies_applies_both_absolute_and_percent_thresholds(self):
         result = {"difference": 10, "margin": 4.99}
         self.assertFalse(scanner.qualifies(result, min_diff=0, min_percent=5))
         result["margin"] = 5
         self.assertTrue(scanner.qualifies(result, min_diff=0, min_percent=5))
         self.assertFalse(scanner.qualifies(result, min_diff=11, min_percent=5))
+
+    def test_ignored_item_names_returns_explicitly_ignored_names(self):
+        listing = {"give_items": [{"name": "Brew", "quantity": 1}], "receive_items": []}
+        self.assertEqual(scanner.ignored_item_names(listing), ["Brew"])
 
     def test_telegram_message_is_truncated_before_request(self):
         captured = {}
@@ -339,7 +338,6 @@ class ReliabilityTests(unittest.TestCase):
             ]
             with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), \
                  patch("scanner.ALERTED_FILE", root / "alerted.json"), \
-                 patch("scanner.REVIEWED_FILE", root / "reviewed.json"), \
                  patch("scanner.FAILURE_FILE", root / "failure.json"), \
                  patch("scanner.HISTORY_FILE", root / "history.csv"), \
                  patch("scanner.load_supreme_values", side_effect=value_sets), \
@@ -353,7 +351,49 @@ class ReliabilityTests(unittest.TestCase):
             self.assertIn("SUPREME TRADE SCANNER", sent[0])
             self.assertNotIn("MANUAL VALUE CHECK", "".join(sent))
             self.assertTrue((root / "alerted.json").exists())
-            self.assertFalse((root / "reviewed.json").exists())
+
+    def test_main_caps_alerts_and_defers_remaining_offers_across_scans(self):
+        def html(ad_ids):
+            cards = []
+            for ad in ad_ids:
+                cards.append(f"""
+                <article>
+                  <div>Propose <img alt="Knife B"></div>
+                  <div>Recherche <img alt="Knife A"></div>
+                  <a href="/fr/trade-mm2?ad={ad}">Discussion</a>
+                  <a href="/fr/users/123">Owner</a>
+                </article>""")
+            return "<html><body>" + "".join(cards) + "</body></html>"
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sent = []
+            page = html(["a", "b", "c", "d", "e"])
+            values = {
+                "knife a": {"name": "Knife A", "value": 10},
+                "knife b": {"name": "Knife B", "value": 20},
+            }
+            with (
+                patch("scanner.BOT_TOKEN", "test-token"),
+                patch("scanner.CHAT_ID", "123"),
+                patch("scanner.ALERTED_FILE", root / "alerted.json"),
+                patch("scanner.FAILURE_FILE", root / "failure.json"),
+                patch("scanner.HISTORY_FILE", root / "history.csv"),
+                patch("scanner.load_supreme_values", return_value=values),
+                patch("scanner.fetch_bloxswaps", return_value=page),
+                patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)),
+                patch("scanner.compare_secondary_values", return_value=""),
+                patch("scanner.MAX_ALERTS_PER_RUN", 2),
+                patch("scanner.ALERT_DELAY_SECONDS", 0),
+            ):
+                scanner.main()
+                scanner.main()
+                scanner.main()
+                alerted = scanner.load_alerted()
+            self.assertEqual(len(sent), 5)
+            self.assertEqual(len(alerted), 5)
+            self.assertEqual(len(set(alerted)), 5)
+            self.assertEqual(len((root / "history.csv").read_text().splitlines()), 6)
 
     def test_main_alerts_visible_qualifying_offers_once(self):
         def html(ad_ids):
@@ -373,9 +413,7 @@ class ReliabilityTests(unittest.TestCase):
             sent = []
             sequence = [html(["old"]), html(["old", "new"]), html(["old", "new"])]
             with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), \
-                 patch("scanner.SEEN_FILE", root / "seen.json"), \
                  patch("scanner.ALERTED_FILE", root / "alerted.json"), \
-                 patch("scanner.REVIEWED_FILE", root / "reviewed.json"), \
                  patch("scanner.FAILURE_FILE", root / "failure.json"), \
                  patch("scanner.HISTORY_FILE", root / "history.csv"), \
                  patch("scanner.load_supreme_values", return_value={
