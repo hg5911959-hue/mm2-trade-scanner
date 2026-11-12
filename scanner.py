@@ -17,7 +17,7 @@ import urllib.request
 from urllib.error import HTTPError, URLError
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import urljoin, urlencode, urlsplit, parse_qs
+from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 
 BLOXSWAPS_URL = os.environ.get(
     "BLOXSWAPS_URL",
