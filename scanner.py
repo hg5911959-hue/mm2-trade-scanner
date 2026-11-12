@@ -48,6 +48,7 @@ BLOXSWAPS_PAGE_SIZE = 20
 MAX_FEED_PAGES = max(1, min(100, int(os.environ.get("MAX_FEED_PAGES", "50"))))
 VALUES_TTL_SECONDS = max(60, int(os.environ.get("VALUES_TTL_SECONDS", "300")))
 BLOXSWAPS_ITEMS_TTL_SECONDS = max(300, int(os.environ.get("BLOXSWAPS_ITEMS_TTL_SECONDS", "3600")))
+PENDING_TTL_SECONDS = max(86400, int(os.environ.get("PENDING_TTL_SECONDS", str(7 * 86400))))
 BLOXSWAPS_ITEMS_FILE = Path("data/bloxswaps_items.json")
 SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "100"))
 TELEGRAM_MAX_CHARS = 4000
@@ -1607,11 +1608,27 @@ def load_pending_ids():
         return {str(value): time.time() for value in pending if value}
     if isinstance(pending, dict):
         result = {}
+        expired = []
+        now = time.time()
         for ad_id, timestamp in pending.items():
             try:
-                result[str(ad_id)] = float(timestamp)
+                first_seen = float(timestamp)
             except (TypeError, ValueError):
                 raise RuntimeError("[state] Pending recheck timestamp is invalid.")
+            if first_seen > 0 and now - first_seen > PENDING_TTL_SECONDS:
+                expired.append(str(ad_id))
+            else:
+                result[str(ad_id)] = first_seen
+        if expired:
+            save_pending_ids(result)
+            print(f"[pending] Expired {len(expired)} unresolved listing(s) after {PENDING_TTL_SECONDS}s.")
+            send_maintenance_alert(
+                "pending-recheck-expired",
+                f"{len(expired)} unresolved listing IDs expired from automatic recheck after "
+                f"{PENDING_TTL_SECONDS // 86400} days: {', '.join(expired[:20])}. "
+                "Review them manually if they are still active.",
+                cooldown_seconds=86400,
+            )
         return result
     raise RuntimeError("[state] Pending recheck state has an invalid structure.")
 
