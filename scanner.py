@@ -926,8 +926,49 @@ def _api_trade_post_to_listing(post, item_map):
     return listing
 
 
+def _merge_html_quantity_diagnostics(api_listing, html_listing):
+    """Keep RSC names/quantities but mark any HTML disagreement as uncertain."""
+    api_listing["id"] = html_listing.get("id") or api_listing["id"]
+    api_listing["owner_url"] = html_listing.get("owner_url") or api_listing.get("owner_url")
+    api_listing["source_text"] = html_listing.get("source_text", api_listing.get("source_text", ""))
+    for field in ("receive_items", "give_items"):
+        api_items = api_listing.get(field, [])
+        html_items = html_listing.get(field, [])
+        if len(api_items) != len(html_items):
+            for item in api_items:
+                item["quantity"] = None
+                item["quantity_source"] = "uncertain"
+                item["quantity_min"] = 1
+                item["quantity_max"] = None
+                item["quantity_reason"] = "HTML/RSC item count mismatch"
+            continue
+        for api_item, html_item in zip(api_items, html_items):
+            api_item["listed_price"] = html_item.get("listed_price")
+            api_item["raw_excerpt"] = html_item.get("raw_excerpt", api_item.get("raw_excerpt", ""))
+            html_source = html_item.get("quantity_source", "implicit_single")
+            html_quantity = html_item.get("quantity")
+            api_quantity = api_item.get("quantity")
+            if html_source == "uncertain":
+                api_item["quantity"] = None
+                api_item["quantity_source"] = "uncertain"
+                api_item["quantity_min"] = html_item.get("quantity_min", 1)
+                api_item["quantity_max"] = html_item.get("quantity_max")
+                api_item["quantity_reason"] = html_item.get("quantity_reason", "ambiguous HTML quantity")
+            elif html_quantity != api_quantity:
+                known = [
+                    int(value) for value in (html_quantity, api_quantity)
+                    if value is not None and str(value).isdigit() and 1 <= int(value) <= 100
+                ]
+                api_item["quantity"] = None
+                api_item["quantity_source"] = "uncertain"
+                api_item["quantity_min"] = min(known) if known else 1
+                api_item["quantity_max"] = max(known) if known else None
+                api_item["quantity_reason"] = f"HTML quantity {html_quantity} disagrees with RSC quantity {api_quantity}"
+    return api_listing
+
+
 def fetch_bloxswaps_all(seen_ad_ids=None):
-    """Fetch RSC first page and cursor pages until a previously seen post is reached."""
+    """Fetch all recent RSC/API posts up to the first previously seen ad ID."""
     html = fetch_bloxswaps()
     first_listings, stats = parse_page(html)
     initial_page = parse_structured_initial_page(html)
@@ -935,13 +976,15 @@ def fetch_bloxswaps_all(seen_ad_ids=None):
         stats.update({
             "pagination_pages": 1, "pagination_complete": False,
             "pagination_source": "html-only", "addition_ids": [],
-            "unparsed_ad_ids": [],
+            "unparsed_ad_ids": [], "html_parse_warning_ids": [],
         })
+        if os.environ.get("MM2_SCAN_LOOP") == "1":
+            raise RuntimeError("[bloxswaps] RSC initialPage/cursor data missing; refusing a partial HTML-only production scan.")
         return first_listings, stats, []
 
     raw_first_items = initial_page.get("items") or []
     if seen_ad_ids is None:
-        # First run after a missing state must not alert the historical feed backlog.
+        # Missing durable state must not replay a historical backlog.
         seed_ids = [
             str(item.get("id")) for item in raw_first_items
             if isinstance(item, dict) and item.get("id")
@@ -949,7 +992,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None):
         stats.update({
             "pagination_pages": 1, "pagination_complete": False,
             "pagination_source": "rsc-cold-start", "cold_start": True,
-            "addition_ids": [], "unparsed_ad_ids": [],
+            "addition_ids": [], "unparsed_ad_ids": [], "html_parse_warning_ids": [],
         })
         return [], stats, seed_ids
 
@@ -963,15 +1006,17 @@ def fetch_bloxswaps_all(seen_ad_ids=None):
     addition_ids = []
     unparsed_ids = []
     unparsed_samples = []
+    html_parse_warning_ids = []
     boundary_reached = False
     additions = 0
     malformed = 0
     api_listings_added = 0
     api_posts_scanned = 0
     candidate_count = 0
+    item_map = None
 
-    def consume_raw_posts(raw_posts, from_api=False, item_map=None):
-        nonlocal boundary_reached, additions, malformed, api_listings_added, candidate_count
+    def consume_raw_posts(raw_posts, compare_html=False):
+        nonlocal boundary_reached, additions, malformed, api_listings_added, candidate_count, item_map
         for raw in raw_posts:
             if not isinstance(raw, dict) or not raw.get("id"):
                 malformed += 1
@@ -989,22 +1034,30 @@ def fetch_bloxswaps_all(seen_ad_ids=None):
                 additions += 1
                 addition_ids.append(post_id)
                 continue
-            listing = by_ad_id.get(post_id) if not from_api else _api_trade_post_to_listing(raw, item_map or {})
+            if item_map is None:
+                item_map = fetch_bloxswaps_items_map()
+            listing = _api_trade_post_to_listing(raw, item_map)
+            if listing and compare_html:
+                html_listing = by_ad_id.get(post_id)
+                if html_listing:
+                    listing = _merge_html_quantity_diagnostics(listing, html_listing)
+                else:
+                    listing["html_card_parse_warning"] = True
+                    html_parse_warning_ids.append(post_id)
             if listing:
                 collected.append(listing)
-                if from_api:
+                if not compare_html:
                     api_listings_added += 1
             else:
                 malformed += 1
                 unparsed_ids.append(post_id)
                 unparsed_samples.append(json.dumps(raw, ensure_ascii=False)[:240])
 
-    consume_raw_posts(raw_first_items)
+    consume_raw_posts(raw_first_items, compare_html=True)
     cursor = (initial_page.get("meta") or {}).get("cursor")
     pages_scanned = 1
     seen_cursors = {str(cursor)} if cursor else set()
     if cursor and not boundary_reached:
-        item_map = fetch_bloxswaps_items_map()
         while cursor and pages_scanned < MAX_FEED_PAGES:
             payload = bloxswaps_api_get_json(
                 "/trade-posts", {"cursor": cursor, "pageSize": BLOXSWAPS_PAGE_SIZE}
@@ -1013,7 +1066,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None):
                 raise RuntimeError("[bloxswaps] Cursor API returned an invalid page structure.")
             page_items = payload["items"]
             api_posts_scanned += len(page_items)
-            consume_raw_posts(page_items, from_api=True, item_map=item_map)
+            consume_raw_posts(page_items, compare_html=False)
             pages_scanned += 1
             if boundary_reached:
                 break
@@ -1031,10 +1084,14 @@ def fetch_bloxswaps_all(seen_ad_ids=None):
     for listing in collected:
         unique[listing["id"]] = listing
     result = list(unique.values())
+    html_malformed_count = int(stats.get("malformed_count", 0))
     stats.update({
         "candidate_count": candidate_count,
         "addition_count": additions,
         "malformed_count": malformed,
+        "html_malformed_count": html_malformed_count,
+        "html_parse_warning_count": len(html_parse_warning_ids),
+        "html_parse_warning_ids": html_parse_warning_ids,
         "owner_link_count": sum(1 for item in result if item.get("owner_url")),
         "pagination_pages": pages_scanned,
         "pagination_api_posts": api_posts_scanned,
