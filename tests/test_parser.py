@@ -755,6 +755,42 @@ class ReliabilityTests(unittest.TestCase):
 
 
 
+class SafeNameResolutionTests(unittest.TestCase):
+    def test_irregular_plural_matches_unique_singular_item(self):
+        values = {"knife": {"name": "Knife", "value": 100}}
+        record, source, candidates = scanner.resolve_value_record("Knives", values)
+        self.assertEqual(record["name"], "Knife")
+        self.assertEqual(source, "plural")
+        self.assertEqual(candidates, [])
+
+    def test_ambiguous_singular_plural_candidates_are_not_auto_matched(self):
+        values = {
+            "knife": {"name": "Knife", "value": 100},
+            "knives": {"name": "Knives", "value": 120},
+        }
+        record, source, candidates = scanner.resolve_value_record("Knives", values)
+        self.assertIsNone(record)
+        self.assertEqual(source, "ambiguous")
+        self.assertEqual(set(candidates), {"Knife", "Knives"})
+
+    def test_reviewed_alias_maps_to_exact_supreme_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "aliases.json"
+            path.write_text(json.dumps({"Snowcannon": "Snow Cannon"}), encoding="utf-8")
+            with patch("scanner.ALIASES_FILE", path):
+                aliases = scanner.load_aliases()
+        values = {"snow cannon": {"name": "Snow Cannon", "value": 750}}
+        record, source, _ = scanner.resolve_value_record("Snowcannon", values, aliases)
+        self.assertEqual(record["value"], 750)
+        self.assertEqual(source, "alias")
+
+    def test_low_confidence_fuzzy_match_is_rejected(self):
+        values = {"harvester": {"name": "Harvester", "value": 265}}
+        record, source, _ = scanner.resolve_value_record("Harvaster", values)
+        self.assertIsNone(record)
+        self.assertEqual(source, "unmatched")
+
+
 class CursorPaginationTests(unittest.TestCase):
     @staticmethod
     def _first_page_html():
