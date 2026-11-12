@@ -342,53 +342,15 @@ class ParserTests(unittest.TestCase):
 
 
 class ReliabilityTests(unittest.TestCase):
-    def test_duplicate_normalized_names_use_conservative_value_by_trade_side(self):
-        # Same normalized display names can describe different items. Preserve
-        # both source_b records: give uses the higher value; receive the lower.
-        for duplicate_rows in (
-            [
-                {"name": "Rainbow Gun", "value_source_b": 4, "value_source_a": 3},
-                {"name": "Rainbow Gun", "value_source_b": 400, "value_source_a": 410},
-            ],
-            [
-                {"name": "Rainbow Gun", "value_source_b": 400, "value_source_a": 410},
-                {"name": "Rainbow Gun", "value_source_b": 4, "value_source_a": 3},
-            ],
-        ):
-            items = duplicate_rows + [
-                {"name": f"Test Item {i}", "value_source_b": i + 1, "value_source_a": None}
-                for i in range(99)
-            ]
-            with tempfile.TemporaryDirectory() as directory:
-                cache_path = Path(directory) / "supreme_values.json"
-                with (
-                    patch("scanner.VALUES_FILE", cache_path),
-                    patch("scanner.RBLXVALUE_API_KEY", "test-key"),
-                    patch("scanner.api_get_json_conditional", return_value=({"items": items, "total": len(items)}, None, False)),
-                    patch("scanner.time.sleep"),
-                ):
-                    values = load_supreme_values()
-            self.assertEqual(values["rainbow gun"]["value"], 400)
-            self.assertEqual(
-                sorted(variant["value"] for variant in values["rainbow gun"]["variants"]),
-                [4, 400],
-            )
-            item = [{"name": "Rainbow Gun", "quantity": 1}]
-            give_total, _, _ = scanner.calculate_side(item, values, side="give")
-            receive_total, _, _ = scanner.calculate_side(item, values, side="receive")
-            self.assertEqual(give_total, 400)
-            self.assertEqual(receive_total, 4)
-            give_min, give_max, _, _, _ = scanner.calculate_side_bounds(item, values, side="give")
-            receive_min, receive_max, _, _, _ = scanner.calculate_side_bounds(item, values, side="receive")
-            self.assertEqual((give_min, give_max), (400, 400))
-            self.assertEqual((receive_min, receive_max), (4, 4))
-
-    def test_non_numeric_tier_notation_does_not_override_numeric_godly_value(self):
+    def test_same_name_items_keep_identity_and_never_become_a_fake_range(self):
         items = [
-            {"name": "Rainbow Gun", "value_source_b": "4T1", "value_source_a": None},
-            {"name": "Rainbow Gun", "value_source_b": 400, "value_source_a": 410},
+            {"id": 380, "slug": "rainbow-gun", "name": "Rainbow Gun",
+             "category": "godly", "type": "gun", "value_source_b": 405, "value_source_a": 410},
+            {"id": 470, "slug": "rainbow-gun-rare", "name": "Rainbow Gun",
+             "category": "rare", "type": "gun", "value_source_b": 4, "value_source_a": 3},
         ] + [
-            {"name": f"Test Item {i}", "value_source_b": i + 1, "value_source_a": None}
+            {"id": i + 1000, "slug": f"test-item-{i}", "name": f"Test Item {i}",
+             "category": "godly", "type": "knife", "value_source_b": i + 20, "value_source_a": None}
             for i in range(99)
         ]
         with tempfile.TemporaryDirectory() as directory:
@@ -400,7 +362,180 @@ class ReliabilityTests(unittest.TestCase):
                 patch("scanner.time.sleep"),
             ):
                 values = load_supreme_values()
-        self.assertEqual(values["rainbow gun"]["value"], 400)
+
+        variants = values["rainbow gun"]["variants"]
+        self.assertEqual(len(variants), 2)
+        self.assertIsNone(values["rainbow gun"]["value"])
+        self.assertEqual(
+            {(row["slug"], row["category"], row["value"], row["value_status"]) for row in variants},
+            {
+                ("rainbow-gun", "godly", 405.0, "numeric"),
+                ("rainbow-gun-rare", "rare", None, "tier_item_count"),
+            },
+        )
+
+        godly_item = [{
+            "name": "Rainbow Gun", "quantity": 1,
+            "catalog_slug": "rainbow-gun", "catalog_rarity": "GODLY",
+            "catalog_type": "Gun", "catalog_chroma": False,
+        }]
+        give_total, _, give_missing = scanner.calculate_side(godly_item, values, side="give")
+        receive_total, _, receive_missing = scanner.calculate_side(godly_item, values, side="receive")
+        self.assertEqual((give_total, receive_total), (405, 405))
+        self.assertEqual(give_missing, [])
+        self.assertEqual(receive_missing, [])
+        self.assertEqual(scanner.calculate_side_bounds(godly_item, values)[0:2], (405, 405))
+
+        rare_item = [{
+            "name": "Rainbow Gun", "quantity": 1,
+            "catalog_slug": "rainbow-gun-rare", "catalog_rarity": "RARE",
+            "catalog_type": "Gun", "catalog_chroma": False,
+        }]
+        rare_total, _, rare_missing = scanner.calculate_side(rare_item, values, side="give")
+        self.assertEqual(rare_total, 0)
+        self.assertEqual(rare_missing, ["Rainbow Gun"])
+
+        ambiguous_total, _, ambiguous_missing = scanner.calculate_side(
+            [{"name": "Rainbow Gun", "quantity": 1}], values, side="give"
+        )
+        self.assertEqual(ambiguous_total, 0)
+        self.assertTrue(ambiguous_missing)
+
+
+    def test_supreme_ranges_are_item_level_not_duplicate_name_ranges(self):
+        rows = [
+            {"id": 385, "slug": "travelers-gun", "name": "Travelers Gun",
+             "category": "godly", "type": "gun", "value_source_b": 4900,
+             "value_source_a": 4950, "range": "4,800 - 4,900"},
+        ] + [
+            {"id": i + 2000, "slug": f"range-test-{i}", "name": f"Range Test {i}",
+             "category": "godly", "type": "knife", "value_source_b": i + 20}
+            for i in range(99)
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            cache_path = Path(directory) / "supreme_values.json"
+            with (
+                patch("scanner.VALUES_FILE", cache_path),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.api_get_json_conditional", return_value=({"items": rows, "total": len(rows)}, None, False)),
+                patch("scanner.time.sleep"),
+            ):
+                values = load_supreme_values()
+        item = [{
+            "name": "Traveler's Gun", "quantity": 1,
+            "catalog_slug": "travelers-gun", "catalog_rarity": "GODLY",
+            "catalog_type": "Gun", "catalog_chroma": False,
+        }]
+        self.assertEqual(scanner.calculate_side(item, values, side="give")[0], 4900)
+        self.assertEqual(scanner.calculate_side(item, values, side="receive")[0], 4800)
+        self.assertEqual(scanner.calculate_side_bounds(item, values)[0:2], (4800, 4900))
+
+
+    def test_blox_catalogue_metadata_is_preserved_and_unknown_ids_are_not_name_guessed(self):
+        post = {
+            "id": "post-1",
+            "user": {"robloxUserId": "123", "robloxUsername": "trader", "robloxDisplayName": "Trader"},
+            "tradePostItems": [
+                {"tradeRole": "OFFERED", "itemDetailsId": "known", "quantity": 1},
+                {"tradeRole": "REQUESTED", "itemDetailsId": "missing", "displayName": "Harvester", "quantity": 1},
+            ],
+            "requestedWildcards": [],
+        }
+        item_map = {
+            "known": {
+                "displayName": "Rainbow Gun", "slug": "rainbow-gun",
+                "rarity": "GODLY", "type": "Gun", "chroma": False,
+            }
+        }
+        listing = scanner._api_trade_post_to_listing(post, item_map)
+        self.assertEqual(listing["receive_items"][0]["catalog_slug"], "rainbow-gun")
+        self.assertEqual(listing["receive_items"][0]["catalog_rarity"], "GODLY")
+        self.assertEqual(listing["receive_items"][0]["catalog_type"], "Gun")
+        self.assertEqual(listing["give_items"][0]["name"], "Unknown item ID missing")
+        self.assertEqual(listing["give_items"][0]["unmatched_item_id"], "missing")
+
+
+    def test_common_uncommon_rare_x_tier_counts_are_not_scalar_values(self):
+        self.assertEqual(scanner._supreme_numeric_value({"category": "rare", "value_source_b": 4}), (None, "tier_item_count"))
+        self.assertEqual(scanner._supreme_numeric_value({"category": "uncommon", "value_source_b": 3}), (None, "tier_item_count"))
+        self.assertEqual(scanner._supreme_numeric_value({"category": "common", "value_source_b": 65}), (65.0, "numeric"))
+        self.assertEqual(scanner._supreme_numeric_value({"category": "godly", "value_source_b": 4}), (4.0, "numeric"))
+
+
+    def test_travelers_gun_and_latte_resolve_by_slug_or_catalogue_type(self):
+        values = {
+            "travelers gun": {
+                "name": "Travelers Gun", "variants": [{
+                    "id": "385", "slug": "travelers-gun", "name": "Travelers Gun",
+                    "category": "godly", "type": "gun", "value": 4900,
+                    "value_min": 4900, "value_max": 4900,
+                }],
+            },
+            "latte gun": {
+                "name": "Latte gun", "variants": [{
+                    "id": "456", "slug": "latte-gun", "name": "Latte gun",
+                    "category": "legendary", "type": "gun", "value": 140,
+                    "value_min": 140, "value_max": 140,
+                }],
+            },
+            "latte knife": {
+                "name": "Latte Knife", "variants": [{
+                    "id": "457", "slug": "latte-knife", "name": "Latte Knife",
+                    "category": "legendary", "type": "knife", "value": 140,
+                    "value_min": 140, "value_max": 140,
+                }],
+            },
+        }
+        traveler = {
+            "name": "Traveler's Gun", "catalog_slug": "travelers-gun",
+            "catalog_rarity": "GODLY", "catalog_type": "Gun",
+        }
+        record, source, _ = scanner.resolve_value_record("Traveler's Gun", values, item=traveler)
+        self.assertEqual(source, "slug")
+        self.assertEqual(record["value"], 4900)
+
+        latte_gun = {
+            "name": "Latte", "catalog_slug": "latte",
+            "catalog_rarity": "LEGENDARY", "catalog_type": "Gun",
+        }
+        record, source, _ = scanner.resolve_value_record("Latte", values, item=latte_gun)
+        self.assertEqual(source, "metadata")
+        self.assertEqual(record["value"], 140)
+
+        latte_knife = {
+            "name": "Latte", "catalog_slug": "latte-k-2023",
+            "catalog_rarity": "LEGENDARY", "catalog_type": "Knife",
+        }
+        record, source, _ = scanner.resolve_value_record("Latte", values, item=latte_knife)
+        self.assertEqual(source, "metadata")
+        self.assertEqual(record["value"], 140)
+
+    def test_non_numeric_tier_notation_does_not_override_numeric_godly_value(self):
+        items = [
+            {"id": 470, "slug": "rainbow-gun-rare", "name": "Rainbow Gun",
+             "category": "rare", "type": "gun", "value_source_b": "4T1"},
+            {"id": 380, "slug": "rainbow-gun", "name": "Rainbow Gun",
+             "category": "godly", "type": "gun", "value_source_b": 400},
+        ] + [
+            {"id": i + 3000, "slug": f"numeric-item-{i}", "name": f"Numeric Item {i}",
+             "category": "godly", "type": "knife", "value_source_b": i + 20}
+            for i in range(99)
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            cache_path = Path(directory) / "supreme_values.json"
+            with (
+                patch("scanner.VALUES_FILE", cache_path),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.api_get_json_conditional", return_value=({"items": items, "total": len(items)}, None, False)),
+                patch("scanner.time.sleep"),
+            ):
+                values = load_supreme_values()
+        item = [{
+            "name": "Rainbow Gun", "quantity": 1,
+            "catalog_slug": "rainbow-gun", "catalog_rarity": "GODLY",
+            "catalog_type": "Gun",
+        }]
+        self.assertEqual(scanner.calculate_side(item, values, side="give")[0], 400)
 
     def test_stable_id_uses_ad_id_to_distinguish_identical_owner_offers(self):
         items = [{"name": "Chroma Gemstone", "quantity": 1}]
@@ -970,11 +1105,11 @@ class CacheTTLTests(unittest.TestCase):
             values = {
                 f"item {i}": {
                     "name": f"Item {i}", "value": i + 1,
-                    "variants": [{"name": f"Item {i}", "value": i + 1}],
+                    "variants": [{"id": str(i), "slug": f"item-{i}", "name": f"Item {i}", "category": "godly", "type": "knife", "value": i + 1, "value_min": i + 1, "value_max": i + 1}],
                 }
                 for i in range(100)
             }
-            path.write_text(json.dumps({"schema_version": 2, "fetched_at": 990, "values": values}), encoding="utf-8")
+            path.write_text(json.dumps({"schema_version": 3, "fetched_at": 990, "values": values}), encoding="utf-8")
             with (
                 patch("scanner.VALUES_FILE", path),
                 patch("scanner.VALUES_TTL_SECONDS", 300),
@@ -1011,7 +1146,7 @@ class CacheTTLTests(unittest.TestCase):
                 patch("scanner.time.time", return_value=1000),
                 patch("scanner.RBLXVALUE_API_KEY", ""),
             ):
-                with self.assertRaisesRegex(RuntimeError, "refusing stale values"):
+                with self.assertRaisesRegex(RuntimeError, "fresh cached source_b snapshot")
                     scanner.load_supreme_values()
 
     def test_fresh_bloxswaps_item_catalogue_is_reused(self):
@@ -1098,22 +1233,22 @@ class MaintenanceAndUnmatchedNameTests(unittest.TestCase):
 
 
 class SafeNameResolutionTests(unittest.TestCase):
-    def test_irregular_plural_matches_unique_singular_item(self):
+    def test_irregular_plural_is_not_auto_matched(self):
         values = {"knife": {"name": "Knife", "value": 100}}
         record, source, candidates = scanner.resolve_value_record("Knives", values)
-        self.assertEqual(record["name"], "Knife")
-        self.assertEqual(source, "plural")
+        self.assertIsNone(record)
+        self.assertEqual(source, "unmatched")
         self.assertEqual(candidates, [])
 
-    def test_ambiguous_singular_plural_candidates_are_not_auto_matched(self):
+    def test_plural_lookalikes_are_not_auto_matched(self):
         values = {
             "knife": {"name": "Knife", "value": 100},
             "knif": {"name": "Knif", "value": 120},
         }
         record, source, candidates = scanner.resolve_value_record("Knives", values)
         self.assertIsNone(record)
-        self.assertEqual(source, "ambiguous")
-        self.assertEqual(set(candidates), {"Knife", "Knif"})
+        self.assertEqual(source, "unmatched")
+        self.assertEqual(candidates, [])
 
     def test_reviewed_alias_maps_to_exact_supreme_record(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1725,7 +1860,7 @@ class SupremeETagCacheTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "supreme.json"
             rows = [
-                {"name": f"ETag Item {i}", "value_source_b": i + 1, "value_source_a": None}
+                {"id": i, "slug": f"etag-item-{i}", "name": f"ETag Item {i}", "category": "godly", "type": "knife", "value_source_b": i + 1, "value_source_a": None}
                 for i in range(100)
             ]
             cached_values = {
@@ -1733,15 +1868,17 @@ class SupremeETagCacheTests(unittest.TestCase):
                     "name": row["name"], "value": row["value_source_b"],
                     "secondary_value": None,
                     "variants": [{
-                        "name": row["name"], "value": row["value_source_b"],
-                        "secondary_value": None,
+                        "id": str(row["id"]), "slug": row["slug"], "name": row["name"],
+                        "category": row["category"], "type": row["type"],
+                        "value": row["value_source_b"], "value_min": row["value_source_b"],
+                        "value_max": row["value_source_b"], "secondary_value": None,
                     }],
                 }
                 for row in rows
             }
             etag = '"supreme-page-v1"'
             path.write_text(json.dumps({
-                "schema_version": 2,
+                "schema_version": 3,
                 "fetched_at": 1,
                 "values": cached_values,
                 "pages": {"0": {"etag": etag, "total": 100, "items": rows}},
