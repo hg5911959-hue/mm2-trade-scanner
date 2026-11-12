@@ -498,12 +498,12 @@ def extract_side_items(node):
     for kind, value in events:
         if kind == "text":
             low = value.casefold()
-            if re.search(r"\\bpropose\\b|\\boffering\\b|\\boffer\\b", low):
+            if re.search(r"\bpropose\b|\boffering\b|\boffer\b", low):
                 finish_item()
                 side = "receive"
                 prefix_text = []
                 prefix_nodes = []
-            elif re.search(r"\\brecherche\\b|\\blooking\\s+for\\b|\\brequest\\b", low):
+            elif re.search(r"\brecherche\b|\blooking\s+for\b|\brequest\b", low):
                 finish_item()
                 side = "give"
                 prefix_text = []
