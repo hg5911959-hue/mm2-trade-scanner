@@ -42,6 +42,7 @@ UNCERTAIN_FILE = Path("data/telegram_uncertain.json")
 SEEN_FILE = Path("data/seen_ads.json")
 PENDING_FILE = Path("data/pending_recheck.json")
 FIRST_SEEN_FILE = Path("data/first_seen_ads.json")
+LAST_SUCCESS_FILE = Path("data/last_successful_scan.json")
 ALIASES_FILE = Path("aliases.json")
 UNMATCHED_FILE = Path("data/unmatched_names.json")
 MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
@@ -1150,6 +1151,28 @@ def _merge_html_quantity_diagnostics(api_listing, html_listing):
     return api_listing
 
 
+def _parse_feed_timestamp(raw):
+    if not raw:
+        return None
+    try:
+        value = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).timestamp()
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _last_successful_scan_timestamp():
+    if not LAST_SUCCESS_FILE.exists():
+        return None
+    try:
+        state = json.loads(LAST_SUCCESS_FILE.read_text(encoding="utf-8"))
+        return _parse_feed_timestamp(state.get("completed_at_utc"))
+    except (OSError, ValueError, TypeError):
+        raise RuntimeError("[state] Last-success checkpoint is unreadable; refusing unsafe pagination boundary.")
+
+
 def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None):
     """Fetch recent RSC/API posts and recheck unresolved IDs beyond seen posts."""
     if seen_ad_ids is None and pending_ad_ids:
@@ -1201,6 +1224,9 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None):
     unparsed_samples = []
     html_parse_warning_ids = []
     boundary_reached = False
+    seen_streak = 0
+    seen_ids_skipped = []
+    last_success_ts = _last_successful_scan_timestamp()
     additions = 0
     malformed = 0
     api_listings_added = 0
@@ -1209,19 +1235,31 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None):
     item_map = None
 
     def consume_raw_posts(raw_posts, compare_html=False):
-        nonlocal boundary_reached, additions, malformed, api_listings_added, candidate_count, item_map
+        nonlocal boundary_reached, seen_streak, additions, malformed, api_listings_added, candidate_count, item_map
         for raw in raw_posts:
             if not isinstance(raw, dict) or not raw.get("id"):
                 malformed += 1
                 continue
             post_id = str(raw["id"])
-            if post_id in seen and post_id not in pending_remaining:
+            refreshed_ts = _parse_feed_timestamp(
+                raw.get("lastRefreshedAt") or raw.get("createdAt") or raw.get("created_at")
+            )
+            recently_refreshed = (
+                refreshed_ts is not None and last_success_ts is not None
+                and refreshed_ts >= last_success_ts - 90
+            )
+            if post_id in seen and post_id not in pending_remaining and not recently_refreshed:
+                seen_ids_skipped.append(post_id)
                 if pending_remaining:
-                    # Keep paging past already-processed ads to find unresolved
-                    # listings that were deliberately left pending for recheck.
+                    # Pending ads take priority over an early boundary.
+                    seen_streak = 0
                     continue
-                boundary_reached = True
-                break
+                seen_streak += 1
+                if seen_streak >= 25:
+                    boundary_reached = True
+                    break
+                continue
+            seen_streak = 0
             if post_id in pending_remaining:
                 pending_remaining.discard(post_id)
                 pending_found_ids.append(post_id)
@@ -1298,6 +1336,8 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None):
         "pagination_complete": pagination_complete,
         "pagination_source": "RSC + cursor API",
         "seen_boundary_reached": boundary_reached,
+        "seen_streak": seen_streak,
+        "seen_ids_skipped": seen_ids_skipped,
         "pending_found_ids": pending_found_ids,
         "pending_remaining_ids": sorted(pending_remaining),
         "pending_complete": not pending_remaining,
@@ -2658,7 +2698,14 @@ def append_history(listing, op):
 
 
 def record_success():
-    atomic_write_text(FAILURE_FILE, json.dumps({"consecutive_failures": 0}, indent=2) + "\n")
+    completed_at = datetime.now(timezone.utc).isoformat()
+    atomic_write_text(FAILURE_FILE, json.dumps({
+        "consecutive_failures": 0,
+        "last_success_at_utc": completed_at,
+    }, indent=2) + "\n")
+    atomic_write_text(LAST_SUCCESS_FILE, json.dumps({
+        "completed_at_utc": completed_at,
+    }, indent=2) + "\n")
 
 
 def record_failure(error):
