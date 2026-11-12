@@ -122,10 +122,12 @@ jobs:
           print("TRADE_POST_LINKS", [x for x in parser.links if "trade-mm2" in x or "ad=" in x][:50])
           if discovered_cursor:
               candidate_urls = [
-                  "https://bloxswaps.com/api/trade-posts?" + urlencode({"cursor": discovered_cursor}),
-                  "https://api.bloxswaps.com/trade-posts?" + urlencode({"cursor": discovered_cursor}),
-                  "https://api.bloxswaps.com/api/trade-posts?" + urlencode({"cursor": discovered_cursor}),
-                  "https://bloxswaps.com/api/v1/trade-posts?" + urlencode({"cursor": discovered_cursor}),
+                  "https://bloxswaps.com/api/trade-posts?" + urlencode({"cursor": discovered_cursor, "pageSize": 20}),
+                  "https://bloxswaps.com/api/trade-posts?" + urlencode({"cursor": discovered_cursor, "limit": 20}),
+                  "https://bloxswaps.com/api/trade-posts?" + urlencode({"cursor": discovered_cursor, "take": 20}),
+                  "https://bloxswaps.com/api/trade-posts?" + urlencode({"cursor": discovered_cursor, "page_size": 20}),
+                  "https://api.bloxswaps.com/trade-posts?" + urlencode({"cursor": discovered_cursor, "pageSize": 20}),
+                  "https://api.bloxswaps.com/api/trade-posts?" + urlencode({"cursor": discovered_cursor, "pageSize": 20}),
               ]
               for endpoint in candidate_urls:
                   try:
