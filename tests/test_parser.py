@@ -688,7 +688,7 @@ class ReliabilityTests(unittest.TestCase):
             self.assertIn("MANUAL VERIFICATION REQUIRED", message)
             self.assertIn("worst-case -∞", message)
             self.assertIn("best-case 275", message)
-            self.assertIn("quantity uncertain", message.lower())
+            self.assertIn("uncertain (1..∞)", message)
 
 
     def test_main_quarantines_uncertain_telegram_delivery_on_next_scan(self):
