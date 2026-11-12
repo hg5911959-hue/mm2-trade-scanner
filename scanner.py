@@ -2990,7 +2990,7 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
                 scan_once()
                 successful_cycles += 1
             except Exception as exc:
-                print(f"[loop] Scan cycle {cycles} failed safely: {type(exc).__name__}: {str(exc)[:300]}")
+                print(f"[loop] Scan cycle {cycles} failed safely: {type(exc).__name__}; details are recorded with secret redaction.")
                 record_failure(exc)
             cycle_elapsed = time.monotonic() - cycle_started
             remaining = deadline - time.monotonic()
@@ -3030,6 +3030,6 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        print(f"ERROR: {type(exc).__name__}; details are recorded with secret redaction.", file=sys.stderr)
         record_failure(exc)
         sys.exit(1)
