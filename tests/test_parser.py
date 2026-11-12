@@ -451,8 +451,14 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(listing["receive_items"][0]["catalog_slug"], "rainbow-gun")
         self.assertEqual(listing["receive_items"][0]["catalog_rarity"], "GODLY")
         self.assertEqual(listing["receive_items"][0]["catalog_type"], "Gun")
-        self.assertEqual(listing["give_items"][0]["name"], "Unknown item ID missing")
+        self.assertEqual(listing["give_items"][0]["name"], "Harvester")
         self.assertEqual(listing["give_items"][0]["unmatched_item_id"], "missing")
+        record, source, _ = scanner.resolve_value_record(
+            "Harvester", {"harvester": {"name": "Harvester", "value": 265}},
+            item=listing["give_items"][0],
+        )
+        self.assertIsNone(record)
+        self.assertEqual(source, "unmatched")
 
 
     def test_common_uncommon_rare_x_tier_counts_are_not_scalar_values(self):
