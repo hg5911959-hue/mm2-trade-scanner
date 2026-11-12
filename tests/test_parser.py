@@ -632,9 +632,11 @@ class ReliabilityTests(unittest.TestCase):
             "owner_url": "https://bloxswaps.com/fr/users/12345?tab=trade-ads",
         }
         message = scanner.format_trade_message(listing, 10, ["give"], 20, ["receive"], 10)
-        self.assertIn("OPEN OWNER PROFILE: https://bloxswaps.com/fr/users/12345", message)
-        self.assertLess(message.index("OPEN OWNER PROFILE"), message.index("Listing details"))
-        self.assertLess(message.index("OPEN OWNER PROFILE"), message.index("YOU GIVE"))
+        self.assertIn("👤 OWNER: https://bloxswaps.com/fr/users/12345", message)
+        self.assertLess(message.index("👤 OWNER"), message.index("🔗 LISTING"))
+        self.assertLess(message.index("👤 OWNER"), message.index("📤 YOU GIVE"))
+        self.assertNotIn("QUANTITY PROVENANCE", message)
+        self.assertNotIn("raw=", message)
 
     def test_unvalued_trade_message_is_explicit_and_links_owner(self):
         listing = {
