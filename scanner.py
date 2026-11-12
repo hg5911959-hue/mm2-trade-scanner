@@ -222,16 +222,17 @@ def main():
             continue
         give = listing["give_value"]
         receive = listing["receive_value"]
-        difference = receive - give
+        # For the person taking the listing: give what the poster requests, receive what they propose.
+        difference = give - receive
         new_ids.append(trade_id)
 
         if difference >= MIN_DIFF:
             message = (
                 "MM2 P2P VALUE ALERT — BLOXSWAPS\n"
-                f"Offer value: {give:g}\n"
-                f"Requested value: {receive:g}\n"
-                f"Value difference: {difference:+g}\n"
-                f"Items shown: {', '.join(listing['give_names'][:8]) or 'Open listing'}\n"
+                f"You give (requested): {receive:g}\n"
+                f"You receive (proposed): {give:g}\n"
+                f"Your value difference: {difference:+g}\n"
+                f"Listing items: {', '.join(listing['give_names'][:8]) or 'Open listing'}\n"
                 f"Source: {listing['url']}"
             )
             send_telegram(message)
