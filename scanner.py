@@ -41,6 +41,7 @@ ALERTED_FILE = Path("data/alerted.json")
 UNCERTAIN_FILE = Path("data/telegram_uncertain.json")
 SEEN_FILE = Path("data/seen_ads.json")
 PENDING_FILE = Path("data/pending_recheck.json")
+FIRST_SEEN_FILE = Path("data/first_seen_ads.json")
 ALIASES_FILE = Path("aliases.json")
 UNMATCHED_FILE = Path("data/unmatched_names.json")
 MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
@@ -254,8 +255,8 @@ def _item_wrapper(image_node):
     return wrapper
 
 
-def _structured_quantity_from_nodes(image_node, wrapper):
-    """Read data-* counts along the isolated image-to-wrapper ancestor path."""
+def _structured_quantity_from_nodes(image_node, wrapper, segment_nodes=()):
+    """Read data-* counts only from the image ancestry and its own DOM segment."""
     nodes = [image_node]
     current = image_node.parent
     while current is not None:
@@ -263,6 +264,8 @@ def _structured_quantity_from_nodes(image_node, wrapper):
         if current is wrapper:
             break
         current = current.parent
+    known = {id(node) for node in nodes}
+    nodes.extend(node for node in segment_nodes if id(node) not in known)
     found = []
     for node in nodes:
         for key in ("data-quantity", "data-count", "data-amount", "data-stack", "data-stack-count"):
@@ -295,7 +298,7 @@ def _semantic_badge_quantity(wrapper):
     return None
 
 
-def _has_unreadable_quantity_hint(raw, wrapper=None):
+def _has_unreadable_quantity_hint(raw, wrapper=None, segment_nodes=()):
     text = _normalize_quantity_text(raw)
     has_explicit_in_segment = bool(_explicit_stack_quantities(text))
     invalid_numeric_marker = re.search(
@@ -308,8 +311,11 @@ def _has_unreadable_quantity_hint(raw, wrapper=None):
             return True
     if re.search(r"(?<![A-Za-z0-9])(?:x|×)\s*(?:$|[^0-9\s])", text, flags=re.I):
         return True
-    if wrapper is not None:
-        for node in walk_nodes(wrapper):
+    if wrapper is not None or segment_nodes:
+        nodes = list(walk_nodes(wrapper)) if wrapper is not None else []
+        known = {id(node) for node in nodes}
+        nodes.extend(node for node in segment_nodes if id(node) not in known)
+        for node in nodes:
             for key in ("aria-label", "title"):
                 label = node.attrs.get(key, "")
                 if label and re.search(r"(?:^|\s)(?:x|×)\s*(?:$|[^0-9])", _normalize_quantity_text(label), re.I):
@@ -361,6 +367,7 @@ def quantity_from_image_node(image_node):
 
 
 def collect_ordered_events(node):
+    """Flatten DOM events while retaining element nodes for segment-scoped metadata."""
     result = []
     def visit(n):
         for kind, value in n.events:
@@ -370,10 +377,9 @@ def collect_ordered_events(node):
                 name, _ = split_item_label(value.attrs.get("alt", ""))
                 if name:
                     result.append(("img", {"name": name, "node": value}))
-                else:
-                    # Coin/decoration images are not item boundaries.
-                    continue
+                # Coin/decoration images are not item boundaries.
             else:
+                result.append(("element", value))
                 visit(value)
     visit(node)
     return result
@@ -384,20 +390,60 @@ def has_addition_marker(node):
     return bool(re.search(r"\bajout(?:s)?\b", text))
 
 
-def _item_quantity_details(image_node, segment_text):
+def _item_quantity_details(image_node, segment_text, segment_nodes=()):
     wrapper = _item_wrapper(image_node)
     wrapper_text = node_text(wrapper) if wrapper is not None else ""
     alt_name, alt_quantity = split_item_label(image_node.attrs.get("alt", ""))
-    structured, invalid_structured = _structured_quantity_from_nodes(image_node, wrapper)
-    local_text = " ".join(part for part in (wrapper_text, segment_text) if part)
+    wrapper_nodes = list(walk_nodes(wrapper)) if wrapper is not None else []
+    structured, invalid_structured = _structured_quantity_from_nodes(
+        image_node, wrapper, [*wrapper_nodes, *segment_nodes]
+    )
+    # The text used to infer a stack is restricted to the image's own segment:
+    # after this weapon image and before the next weapon or side marker. Ancestor
+    # text is retained only for diagnostic price extraction, never quantity.
+    quantity_attribute_nodes = [image_node]
+    current = image_node.parent
+    while current is not None:
+        quantity_attribute_nodes.append(current)
+        if current is wrapper:
+            break
+        current = current.parent
+    quantity_attribute_nodes.extend(wrapper_nodes)
+    quantity_attribute_nodes.extend(segment_nodes)
+    seen_nodes = set()
+    quantity_attribute_nodes = [
+        node for node in quantity_attribute_nodes
+        if not (id(node) in seen_nodes or seen_nodes.add(id(node)))
+    ]
     attribute_text = " ".join(
         str(node.attrs.get(key, ""))
-        for node in ([image_node] + (list(walk_nodes(wrapper)) if wrapper is not None else []))
+        for node in quantity_attribute_nodes
         for key in ("aria-label", "title")
     )
+    local_text = " ".join(part for part in (alt_name, segment_text) if part)
+    diagnostic_text = " ".join(part for part in (wrapper_text, local_text) if part)
     explicit = _explicit_stack_quantities(local_text + " " + attribute_text)
-    semantic_quantity = _semantic_badge_quantity(wrapper)
-    unreadable = _has_unreadable_quantity_hint(local_text + " " + attribute_text, wrapper)
+    semantic_quantities = []
+    for node in segment_nodes:
+        classes = " ".join((
+            node.attrs.get("class", ""), node.attrs.get("id", ""),
+            node.attrs.get("data-testid", "")
+        )).casefold()
+        if re.search(r"quant|count|amount|stack|badge|counter", classes):
+            quantity = _quantity_marker(node_text(node))
+            if quantity is not None:
+                semantic_quantities.append(quantity)
+    wrapper_semantic_quantity = _semantic_badge_quantity(wrapper)
+    if wrapper_semantic_quantity is not None:
+        semantic_quantities.append(wrapper_semantic_quantity)
+    semantic_quantity = (
+        semantic_quantities[0]
+        if semantic_quantities and len(set(semantic_quantities)) == 1
+        else None
+    )
+    unreadable = _has_unreadable_quantity_hint(
+        local_text + " " + attribute_text, wrapper, segment_nodes
+    )
     if alt_quantity is not None:
         explicit.append(alt_quantity)
     if semantic_quantity is not None:
@@ -405,56 +451,41 @@ def _item_quantity_details(image_node, segment_text):
 
     if invalid_structured:
         lower = min(explicit) if explicit else 1
-        return None, "uncertain", _listed_price(local_text), local_text[:240], lower, None, "invalid structured quantity marker"
+        return None, "uncertain", _listed_price(diagnostic_text), local_text[:240], lower, None, "invalid structured quantity marker"
     if len(set(explicit)) > 1:
-        return None, "uncertain", _listed_price(local_text), local_text[:240], min(explicit), max(explicit), "conflicting explicit quantity markers"
+        return None, "uncertain", _listed_price(diagnostic_text), local_text[:240], min(explicit), max(explicit), "conflicting explicit quantity markers"
     if unreadable:
         lower = min(explicit) if explicit else 1
-        return None, "uncertain", _listed_price(local_text), local_text[:240], lower, None, "ambiguous quantity marker"
+        return None, "uncertain", _listed_price(diagnostic_text), local_text[:240], lower, None, "ambiguous quantity marker"
     if structured is not None:
         if explicit and any(value != structured for value in explicit):
             candidates = [structured, *explicit]
-            return None, "uncertain", _listed_price(local_text), local_text[:240], min(candidates), max(candidates), "HTML/structured quantity disagreement"
-        return structured, "structured", _listed_price(local_text), local_text[:240], structured, structured, ""
+            return None, "uncertain", _listed_price(diagnostic_text), local_text[:240], min(candidates), max(candidates), "HTML/structured quantity disagreement"
+        return structured, "structured", _listed_price(diagnostic_text), local_text[:240], structured, structured, ""
     if explicit:
-        return explicit[0], "explicit", _listed_price(local_text), local_text[:240], explicit[0], explicit[0], ""
-    return 1, "implicit_single", _listed_price(local_text), local_text[:240], 1, 1, ""
+        return explicit[0], "explicit", _listed_price(diagnostic_text), local_text[:240], explicit[0], explicit[0], ""
+    return 1, "implicit_single", _listed_price(diagnostic_text), local_text[:240], 1, 1, ""
 
 def extract_side_items(node):
+    """Extract each weapon's complete DOM segment without crossing item/side boundaries."""
     events = collect_ordered_events(node)
     side = None
     received = []
     requested = []
-    for i, (kind, value) in enumerate(events):
-        if kind == "text":
-            low = value.casefold()
-            if re.search(r"\bpropose\b|\boffering\b|\boffer\b", low):
-                side = "receive"
-            elif re.search(r"\brecherche\b|\blooking\s+for\b|\brequest\b", low):
-                side = "give"
-            continue
-        if kind != "img" or not value or not side:
-            continue
-        end = i + 1
-        suffix = []
-        while end < len(events):
-            next_kind, next_value = events[end]
-            if next_kind == "img" and next_value and next_value.get("name"):
-                break
-            if next_kind == "text" and re.search(
-                r"\b(?:propose|offering|offer|recherche|looking\s+for|request)\b",
-                next_value, flags=re.I
-            ):
-                break
-            if next_kind == "text":
-                suffix.append(next_value)
-            end += 1
+    prefix_text = []
+    prefix_nodes = []
+    current = None
+
+    def finish_item():
+        nonlocal current
+        if current is None:
+            return
         quantity, source, price, raw_excerpt, quantity_min, quantity_max, reason = _item_quantity_details(
-            value["node"], " ".join(suffix)
+            current["node"], " ".join(current["text"]), current["nodes"]
         )
-        target = received if side == "receive" else requested
+        target = received if current["side"] == "receive" else requested
         target.append({
-            "name": value["name"],
+            "name": current["name"],
             "quantity": quantity,
             "quantity_source": source,
             "quantity_min": quantity_min,
@@ -463,6 +494,55 @@ def extract_side_items(node):
             "listed_price": price,
             "raw_excerpt": raw_excerpt,
         })
+        current = None
+
+    for kind, value in events:
+        if kind == "text":
+            low = value.casefold()
+            if re.search(r"\bpropose\b|\boffering\b|\boffer\b", low):
+                finish_item()
+                side = "receive"
+                prefix_text = []
+                prefix_nodes = []
+            elif re.search(r"\brecherche\b|\blooking\s+for\b|\brequest\b", low):
+                finish_item()
+                side = "give"
+                prefix_text = []
+                prefix_nodes = []
+            elif side:
+                if current is None:
+                    prefix_text.append(value)
+                else:
+                    current["text"].append(value)
+            continue
+
+        if kind == "element":
+            if not side:
+                continue
+            image_count = len(collect_images_in_order(value))
+            if current is None:
+                # Elements before this weapon belong to its prefix only if they
+                # contain at most this one weapon; shared multi-item containers
+                # are never allowed to donate metadata.
+                if image_count <= 1:
+                    prefix_nodes.append(value)
+            elif image_count == 0:
+                current["nodes"].append(value)
+            continue
+
+        if kind == "img" and value and side:
+            finish_item()
+            current = {
+                "name": value["name"],
+                "node": value["node"],
+                "side": side,
+                "text": list(prefix_text),
+                "nodes": list(prefix_nodes),
+            }
+            prefix_text = []
+            prefix_nodes = []
+
+    finish_item()
     return received, requested
 
 
@@ -560,12 +640,18 @@ def stable_listing_id(owner_url, receive_items, give_items, listing_url="", list
         listing_key = {"path": listing.path, "query": sorted(stable_params)}
     else:
         listing_key = {"path": listing.path, "query": sorted(stable_params)}
-    identity = {
-        "owner": owner_identity,
-        "listing_key": listing_key,
-        "receive": _identity_items(receive_items),
-        "give": _identity_items(give_items),
-    }
+    # A source ad ID is the durable identity of a BloxSwaps post. Item
+    # quantities and card text can change while the post remains the same;
+    # including them here would create a fresh ID and resend an old alert.
+    if ad_values or listing_key_hint:
+        identity = {"owner": owner_identity, "listing_key": listing_key}
+    else:
+        identity = {
+            "owner": owner_identity,
+            "listing_key": listing_key,
+            "receive": _identity_items(receive_items),
+            "give": _identity_items(give_items),
+        }
     payload = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
 
@@ -773,6 +859,21 @@ def parse_page(html):
         "structured_matched_count": structured_matched,
         "structured_unmatched_count": max(0, len(structured_entries) - structured_matched),
     }
+
+
+def deduplicate_listings(listings):
+    """Keep the first parsed instance of each stable listing ID in one feed batch."""
+    unique = []
+    seen = set()
+    for listing in listings:
+        trade_id = str(listing.get("id") or "")
+        if not trade_id:
+            raise RuntimeError("[parser] Listing has no stable ID; refusing to evaluate it.")
+        if trade_id in seen:
+            continue
+        seen.add(trade_id)
+        unique.append(listing)
+    return unique
 
 
 def parse_listings(html):
@@ -1666,6 +1767,38 @@ def save_seen_ads(ad_ids):
     }, indent=2) + "\n")
 
 
+def load_first_seen_ads():
+    """Load first-observed timestamps without resetting corrupt state."""
+    if not FIRST_SEEN_FILE.exists():
+        return {}
+    try:
+        data = json.loads(FIRST_SEEN_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("[state] First-seen listing timestamps are unreadable; refusing a silent reset.") from exc
+    entries = data.get("first_seen") if isinstance(data, dict) else None
+    if not isinstance(entries, dict):
+        raise RuntimeError("[state] First-seen listing timestamp state has an invalid structure.")
+    result = {}
+    for ad_id, timestamp in entries.items():
+        if not isinstance(ad_id, str) or not ad_id or not isinstance(timestamp, str):
+            raise RuntimeError("[state] First-seen listing timestamp entry is invalid.")
+        try:
+            datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise RuntimeError("[state] First-seen listing timestamp is invalid.") from exc
+        result[ad_id] = timestamp
+    return result
+
+
+def save_first_seen_ads(entries):
+    ordered = dict(list(entries.items())[-50000:])
+    atomic_write_text(FIRST_SEEN_FILE, json.dumps({
+        "version": 1,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "first_seen": ordered,
+    }, ensure_ascii=False, indent=2) + "\n")
+
+
 def load_alerted():
     """Load sent IDs; tolerate missing first-run files but never reset on corruption."""
     ordered = []
@@ -1857,6 +1990,8 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
         "MM2 SUPREME TRADE SCANNER",
         f"OPEN OWNER PROFILE: {owner_link}",
         *( [f"Listing details: {listing['url']}"] if listing.get("url") and listing.get("url") != owner_link else [] ),
+        *( [f"FIRST SEEN UTC: {listing['first_seen_at_utc']}"] if listing.get("first_seen_at_utc") else [] ),
+        *( [f"ALERT ATTEMPT UTC: {listing['alert_attempted_at_utc']}"] if listing.get("alert_attempted_at_utc") else [] ),
         "",
         "YOU GIVE (BloxSwaps: Recherche):",
         *(give_lines or ["• No items"]),
@@ -2023,6 +2158,19 @@ def scan_once():
     print(f"[state] Pending listings queued for recheck: {len(pending_ids)}")
     print("[stage] Fetching BloxSwaps listings and cursor pages")
     listings, stats, discovered_ids = fetch_bloxswaps_all(seen_ads, pending_ids.keys())
+    first_seen_ads = load_first_seen_ads()
+    first_seen_changed = False
+    observed_at = datetime.now(timezone.utc).isoformat()
+    for ad_id in discovered_ids:
+        key = str(ad_id)
+        if key and key not in first_seen_ads:
+            first_seen_ads[key] = observed_at
+            first_seen_changed = True
+    if first_seen_changed:
+        save_first_seen_ads(first_seen_ads)
+    for listing in listings:
+        source_ad_id = str(listing.get("source_ad_id") or "")
+        listing["first_seen_at_utc"] = first_seen_ads.get(source_ad_id, observed_at)
     if stats.get("cold_start"):
         save_seen_ads(discovered_ids)
         print(
@@ -2076,6 +2224,11 @@ def scan_once():
             raise RuntimeError("[bloxswaps] No trade cards parsed; page structure may have changed or feed is empty.")
         if stats["candidate_count"] == 0 and not stats.get("pagination_complete"):
             raise RuntimeError("[bloxswaps] No feed entries parsed and pagination could not be verified.")
+    parsed_count = len(listings)
+    listings = deduplicate_listings(listings)
+    duplicate_count = parsed_count - len(listings)
+    if duplicate_count:
+        print(f"[dedupe] Ignored {duplicate_count} duplicate listing row(s) in this scan batch.")
     print(f"[bloxswaps] Eligible listings after Ajouts filter: {len(listings)}")
     print(f"[bloxswaps] Direct owner profiles parsed: {stats.get('owner_link_count', 0)}/{len(listings)}")
     print(
@@ -2222,6 +2375,13 @@ def scan_once():
         mark_pending(deferred_op["listing"])
     for op in selected_opportunities:
         listing = op["listing"]
+        trade_id = listing["id"]
+        # Re-check immediately before every non-idempotent send. This also
+        # protects against duplicates that enter through a future code path.
+        if trade_id in alerted_set or trade_id in uncertain_ids:
+            print(f"[dedupe] Skipping already guarded listing {trade_id} before Telegram send.")
+            continue
+        listing["alert_attempted_at_utc"] = datetime.now(timezone.utc).isoformat()
         message = format_trade_message(
             listing, op["give_total"], op["give_lines"],
             op["receive_total"], op["receive_lines"], op["difference"]
@@ -2287,7 +2447,13 @@ def scan_once():
         uncertain_ids.discard(trade_id)
         save_uncertain_ids(uncertain_ids)
         mark_seen_ad(listing)
+        listing["alerted_at_utc"] = datetime.now(timezone.utc).isoformat()
         append_history(listing, op)
+        print(
+            f"[timing] listing={listing.get('source_ad_id') or trade_id} "
+            f"first_seen={listing.get('first_seen_at_utc', 'unknown')} "
+            f"alerted={listing['alerted_at_utc']}"
+        )
         sent += 1
         if sent < len(selected_opportunities) and ALERT_DELAY_SECONDS > 0:
             time.sleep(ALERT_DELAY_SECONDS)
@@ -2317,24 +2483,35 @@ def compare_secondary_values(items, values):
 
 def append_history(listing, op):
     from io import StringIO
-    fieldnames = ["detected_at_utc", "listing_id", "profit_supreme", "profit_margin_percent", "you_give", "you_receive", "listing_url", "owner_url"]
+    fieldnames = [
+        "detected_at_utc", "first_seen_at_utc", "alert_attempted_at_utc",
+        "alerted_at_utc", "listing_id", "profit_supreme",
+        "profit_margin_percent", "you_give", "you_receive", "listing_url", "owner_url",
+    ]
     buffer = StringIO(newline="")
     writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+    existing_rows = []
     if HISTORY_FILE.exists():
         try:
             with HISTORY_FILE.open("r", newline="", encoding="utf-8") as handle:
                 reader = csv.DictReader(handle)
-                if reader.fieldnames == fieldnames:
-                    writer.writeheader()
-                    writer.writerows(reader)
-                else:
-                    writer.writeheader()
+                if reader.fieldnames and "listing_id" in reader.fieldnames:
+                    existing_rows = list(reader)
         except (OSError, csv.Error):
-            writer.writeheader()
-    else:
-        writer.writeheader()
+            raise RuntimeError("[state] History file could not be migrated safely; refusing to overwrite it.")
+    writer.writeheader()
+    for old_row in existing_rows:
+        migrated = {key: old_row.get(key, "") for key in fieldnames}
+        migrated["first_seen_at_utc"] = migrated["first_seen_at_utc"] or ""
+        migrated["alert_attempted_at_utc"] = migrated["alert_attempted_at_utc"] or old_row.get("detected_at_utc", "")
+        migrated["alerted_at_utc"] = migrated["alerted_at_utc"] or old_row.get("detected_at_utc", "")
+        writer.writerow(migrated)
+    alerted_at = listing.get("alerted_at_utc") or datetime.now(timezone.utc).isoformat()
     writer.writerow({
-        "detected_at_utc": datetime.now(timezone.utc).isoformat(),
+        "detected_at_utc": alerted_at,
+        "first_seen_at_utc": listing.get("first_seen_at_utc", ""),
+        "alert_attempted_at_utc": listing.get("alert_attempted_at_utc", alerted_at),
+        "alerted_at_utc": alerted_at,
         "listing_id": listing["id"],
         "profit_supreme": round(op["difference"], 2),
         "profit_margin_percent": round(op["margin"], 2),

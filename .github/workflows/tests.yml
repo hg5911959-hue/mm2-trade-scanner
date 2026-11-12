@@ -2,7 +2,7 @@ name: MM2 Scanner Tests
 
 on:
   push:
-    branches: [main, hardening/staged-audit-2026-11-12]
+    branches: [main, hardening/staged-audit-2026-11-12, 'fix/quantity-provenance-2026-11-12']
   pull_request:
   workflow_dispatch:
 

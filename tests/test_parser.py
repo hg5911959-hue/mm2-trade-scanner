@@ -581,6 +581,41 @@ class ReliabilityTests(unittest.TestCase):
                     scanner.load_uncertain_ids(), {"listing-a", "listing-b"}
                 )
 
+    def test_first_seen_state_round_trips_and_rejects_corruption(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "first_seen_ads.json"
+            with patch("scanner.FIRST_SEEN_FILE", path):
+                timestamp = "2026-11-12T19:00:00+00:00"
+                scanner.save_first_seen_ads({"ad-1": timestamp})
+                self.assertEqual(scanner.load_first_seen_ads(), {"ad-1": timestamp})
+                path.write_text("{bad", encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "First-seen"):
+                    scanner.load_first_seen_ads()
+
+    def test_history_migrates_legacy_rows_and_records_first_seen_and_alert_times(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "history.csv"
+            path.write_text(
+                "detected_at_utc,listing_id,profit_supreme,profit_margin_percent,you_give,you_receive,listing_url,owner_url\n"
+                "2026-11-11T10:00:00+00:00,old-id,5,50,10,15,https://example.test/old,\n",
+                encoding="utf-8",
+            )
+            listing = {
+                "id": "new-id", "url": "https://example.test/new", "owner_url": "",
+                "first_seen_at_utc": "2026-11-12T19:00:00+00:00",
+                "alert_attempted_at_utc": "2026-11-12T19:01:00+00:00",
+                "alerted_at_utc": "2026-11-12T19:01:02+00:00",
+            }
+            result = {"difference": 5, "margin": 50, "give_total": 10, "receive_total": 15}
+            with patch("scanner.HISTORY_FILE", path):
+                scanner.append_history(listing, result)
+            rows = list(__import__("csv").DictReader(path.open(encoding="utf-8")))
+            self.assertEqual([row["listing_id"] for row in rows], ["old-id", "new-id"])
+            self.assertEqual(rows[0]["alerted_at_utc"], "2026-11-11T10:00:00+00:00")
+            self.assertEqual(rows[1]["first_seen_at_utc"], listing["first_seen_at_utc"])
+            self.assertEqual(rows[1]["alert_attempted_at_utc"], listing["alert_attempted_at_utc"])
+            self.assertEqual(rows[1]["alerted_at_utc"], listing["alerted_at_utc"])
+
     def test_history_write_is_atomic(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "history.csv"
@@ -1483,6 +1518,153 @@ class StructuredHtmlConflictRegressionTests(unittest.TestCase):
         self.assertIsNone(item["quantity"])
         self.assertEqual(item["quantity_source"], "uncertain")
         self.assertEqual((item["quantity_min"], item["quantity_max"]), (2, 3))
+
+
+
+
+class QuantityBadgeAttributeBoundaryTests(unittest.TestCase):
+    def _listing(self, badge):
+        html = f"""
+        <article>
+          <div>Propose
+            <div class="item-tile">
+              <div class="weapon-image"><img alt="Snowcannon"></div>
+              <div class="details">
+                <span class="price">750.0</span>
+                {badge}
+              </div>
+            </div>
+          </div>
+          <div>Recherche <img alt="Spirit"></div>
+          <a href="/fr/trade-mm2?ad=badge-attribute">Discussion</a>
+          <a href="/fr/users/123">Owner</a>
+        </article>
+        """
+        return parse_listings(html)[0]["receive_items"][0]
+
+    def test_aria_label_on_badge_sibling_after_decimal_price_is_explicit(self):
+        item = self._listing('<span class="stack-badge" aria-label="x2"></span>')
+        self.assertEqual(item["quantity"], 2, repr(item))
+        self.assertEqual(item["quantity_source"], "explicit")
+        self.assertEqual(item["listed_price"], 750.0)
+
+    def test_title_on_badge_sibling_after_decimal_price_is_explicit(self):
+        item = self._listing('<span class="stack-badge" title="×2"></span>')
+        self.assertEqual(item["quantity"], 2, repr(item))
+        self.assertEqual(item["quantity_source"], "explicit")
+
+    def test_data_quantity_on_badge_sibling_is_not_ignored(self):
+        item = self._listing('<span class="stack-badge" data-quantity="2"></span>')
+        self.assertEqual(item["quantity"], 2, repr(item))
+        self.assertEqual(item["quantity_source"], "structured")
+
+    def test_data_quantity_badge_does_not_leak_across_propose_recherche_boundary(self):
+        html = """
+        <article>
+          <div class="flat-trade-card">
+            <span>Propose</span><img alt="Knife A">
+            <span class="stack-badge" data-quantity="2"></span>
+            <span>Recherche</span><img alt="Knife B">
+          </div>
+          <a href="/fr/trade-mm2?ad=data-boundary">Discussion</a>
+          <a href="/fr/users/123">Owner</a>
+        </article>
+        """
+        listing = parse_listings(html)[0]
+        self.assertEqual(listing["receive_items"][0]["quantity"], 2)
+        self.assertEqual(listing["receive_items"][0]["quantity_source"], "structured")
+        self.assertEqual(listing["give_items"][0]["quantity"], 1)
+        self.assertEqual(listing["give_items"][0]["quantity_source"], "implicit_single")
+
+    def test_nested_split_badge_after_price_with_comment_is_two_not_one(self):
+        item = self._listing(
+            '<span class="stack-badge"><b>x</b><!-- split --><i>2</i></span>'
+        )
+        self.assertEqual(item["quantity"], 2, repr(item))
+        self.assertEqual(item["quantity_source"], "explicit")
+
+
+
+
+class QuantityDomFuzzRegressionTests(unittest.TestCase):
+    def test_seeded_dom_layout_variants_keep_each_badge_with_its_own_weapon(self):
+        import random
+        rng = random.Random(20261112)
+        wrappers = [
+            ("<div class='item-wrap'>", "</div>"),
+            ("<section class='tile'><div class='inner'>", "</div></section>"),
+            ("<div><span class='content'>", "</span></div>"),
+            ("<div class='relative'><div class='absolute'>", "</div></div>"),
+        ]
+        badge_variants = [
+            '<span class="quantity-badge">x2</span>',
+            '<span class="quantity-badge"><b>x</b><!-- split --><i>2</i></span>',
+            '<span class="quantity-badge" title="×2"></span>',
+            '<span class="quantity-badge" data-quantity="2"></span>',
+        ]
+        for case in range(80):
+            open_a, close_a = rng.choice(wrappers)
+            open_b, close_b = rng.choice(wrappers)
+            badge_a = rng.choice(badge_variants)
+            badge_b = rng.choice([
+                "",
+                '<span class="quantity-badge">x4</span>',
+                '<span class="quantity-badge" aria-label="4x"></span>',
+            ])
+            before_a = rng.choice([True, False])
+            before_b = rng.choice([True, False])
+            tile_a = (
+                (badge_a if before_a else "")
+                + open_a + '<img alt="Knife A"><img alt="coin">'
+                + '<span class="price">750.0</span>'
+                + ("" if before_a else badge_a) + close_a
+            )
+            tile_b = (
+                (badge_b if before_b else "")
+                + open_b + '<img alt="Knife B">'
+                + ("" if before_b else badge_b) + close_b
+            )
+            html = f"""
+            <article>
+              <div>Propose {tile_a}</div>
+              <div>Recherche {tile_b}</div>
+              <a href="/fr/trade-mm2?ad=fuzz-{case}">Discussion</a>
+              <a href="/fr/users/123">Owner</a>
+            </article>
+            """
+            with self.subTest(case=case, before_a=before_a, before_b=before_b):
+                listing = parse_listings(html)[0]
+                self.assertEqual(listing["receive_items"][0]["quantity"], 2)
+                self.assertIn(
+                    listing["receive_items"][0]["quantity_source"],
+                    {"explicit", "structured"},
+                )
+                expected_b = 4 if badge_b else 1
+                self.assertEqual(listing["give_items"][0]["quantity"], expected_b)
+                self.assertEqual(
+                    listing["give_items"][0]["quantity_source"],
+                    "explicit" if badge_b and "data-quantity" not in badge_b else (
+                        "structured" if badge_b else "implicit_single"
+                    ),
+                )
+                self.assertEqual(listing["receive_items"][0]["listed_price"], 750.0)
+
+
+class DuplicateBatchRegressionTests(unittest.TestCase):
+    def test_duplicate_rows_with_same_listing_id_are_collapsed(self):
+        first = {"id": "stable-ad-1", "source_ad_id": "ad-1", "receive_items": [], "give_items": []}
+        duplicate = dict(first)
+        self.assertEqual(scanner.deduplicate_listings([first, duplicate]), [first])
+
+    def test_ad_id_stays_stable_when_item_quantity_or_details_change(self):
+        first_receive = [{"name": "Snowcannon", "quantity": 1, "quantity_source": "structured"}]
+        second_receive = [{"name": "Snowcannon", "quantity": 2, "quantity_source": "structured"}]
+        give = [{"name": "Spirit", "quantity": 1, "quantity_source": "structured"}]
+        url = "https://bloxswaps.com/fr/trade-mm2?ad=stable-ad-123"
+        owner = "https://bloxswaps.com/fr/users/123"
+        first_id = scanner.stable_listing_id(owner, first_receive, give, url)
+        second_id = scanner.stable_listing_id(owner, second_receive, give, url)
+        self.assertEqual(first_id, second_id)
 
 
 if __name__ == "__main__":
