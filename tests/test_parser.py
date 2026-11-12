@@ -809,6 +809,53 @@ class CloudflareDetectionTests(unittest.TestCase):
                 scanner.http_get("https://bloxswaps.com/fr/trade-mm2")
 
 
+class CacheTTLTests(unittest.TestCase):
+    def test_fresh_supreme_snapshot_is_reused_within_ttl(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "supreme.json"
+            values = {f"item {i}": {"name": f"Item {i}", "value": i + 1} for i in range(100)}
+            path.write_text(json.dumps({"fetched_at": 990, "values": values}), encoding="utf-8")
+            with (
+                patch("scanner.VALUES_FILE", path),
+                patch("scanner.VALUES_TTL_SECONDS", 300),
+                patch("scanner.time.time", return_value=1000),
+                patch("scanner.RBLXVALUE_API_KEY", ""),
+                patch("scanner.api_get_json") as api,
+            ):
+                loaded = scanner.load_supreme_values()
+            self.assertEqual(len(loaded), 100)
+            api.assert_not_called()
+
+    def test_expired_supreme_snapshot_is_never_used_without_api_key(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "supreme.json"
+            values = {f"item {i}": {"name": f"Item {i}", "value": i + 1} for i in range(100)}
+            path.write_text(json.dumps({"fetched_at": 100, "values": values}), encoding="utf-8")
+            with (
+                patch("scanner.VALUES_FILE", path),
+                patch("scanner.VALUES_TTL_SECONDS", 300),
+                patch("scanner.time.time", return_value=1000),
+                patch("scanner.RBLXVALUE_API_KEY", ""),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "refusing stale values"):
+                    scanner.load_supreme_values()
+
+    def test_fresh_bloxswaps_item_catalogue_is_reused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "items.json"
+            items = {"item-id": {"id": "item-id", "displayName": "Snowcannon"}}
+            path.write_text(json.dumps({"fetched_at": 990, "items": items}), encoding="utf-8")
+            with (
+                patch("scanner.BLOXSWAPS_ITEMS_FILE", path),
+                patch("scanner.BLOXSWAPS_ITEMS_TTL_SECONDS", 3600),
+                patch("scanner.time.time", return_value=1000),
+                patch("scanner.bloxswaps_api_get_json") as api,
+            ):
+                loaded = scanner.fetch_bloxswaps_items_map()
+            self.assertEqual(loaded, items)
+            api.assert_not_called()
+
+
 class SeenAdStateTests(unittest.TestCase):
     def test_seen_state_round_trips_and_corruption_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:
