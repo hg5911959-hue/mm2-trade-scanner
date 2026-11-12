@@ -761,6 +761,11 @@ def request_with_retry(req, timeout, label, attempts=4):
                 return body
         except HTTPError as exc:
             detail = exc.read(400).decode("utf-8", errors="replace")
+            challenge_markers = ("cloudflare", "captcha", "just a moment", "challenge-platform", "cf-chl-")
+            if exc.code in (403, 503) and any(marker in detail.casefold() for marker in challenge_markers):
+                raise RuntimeError(f"[cloudflare] {label} blocked by Cloudflare/CAPTCHA challenge (HTTP {exc.code}).") from exc
+            if exc.code == 403:
+                raise RuntimeError(f"[cloudflare] {label} returned HTTP 403; possible bot protection or access denial.") from exc
             retryable = exc.code == 429 or 500 <= exc.code <= 599
             if not retryable or attempt == attempts - 1:
                 raise RuntimeError(f"{label}: HTTP {exc.code}: {detail[:200]}") from exc
@@ -791,7 +796,15 @@ def http_get(url, timeout=35):
         "Accept": "text/html,application/xhtml+xml,application/json",
         "Accept-Language": "en-US,en;q=0.9,fr;q=0.8",
     })
-    return request_with_retry(req, timeout, "BloxSwaps page").decode("utf-8", errors="replace")
+    body = request_with_retry(req, timeout, "BloxSwaps page")
+    html = body.decode("utf-8", errors="replace")
+    sample = html[:12000].casefold()
+    if any(marker in sample for marker in (
+        "cf-chl-", "challenge-platform", "attention required! | cloudflare",
+        "just a moment...", "captcha-container",
+    )):
+        raise RuntimeError("[cloudflare] BloxSwaps returned a challenge page instead of trade listings.")
+    return html
 
 def fetch_bloxswaps():
     return http_get(BLOXSWAPS_URL)
