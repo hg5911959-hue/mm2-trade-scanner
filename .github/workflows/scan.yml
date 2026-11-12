@@ -49,13 +49,33 @@ jobs:
 
       - name: Save scanner state and Supreme cache
         run: |
+          # Merge state with the latest main so concurrent/manual reruns cannot
+          # overwrite already-seen listing IDs or a newer values cache.
+          git fetch origin main
+          git show origin/main:data/seen.json > /tmp/remote_seen.json 2>/dev/null || echo '{"seen":[]}' > /tmp/remote_seen.json
+          git show origin/main:data/supreme_values.json > /tmp/remote_values.json 2>/dev/null || echo '{"fetched_at":0,"values":{}}' > /tmp/remote_values.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          local_seen_path = Path("data/seen.json")
+          remote_seen = json.loads(Path("/tmp/remote_seen.json").read_text())
+          local_seen = json.loads(local_seen_path.read_text()) if local_seen_path.exists() else {"seen": []}
+          merged_seen = list(dict.fromkeys(remote_seen.get("seen", []) + local_seen.get("seen", [])))[-5000:]
+          local_seen_path.parent.mkdir(parents=True, exist_ok=True)
+          local_seen_path.write_text(json.dumps({"seen": merged_seen}, indent=2) + "\\n")
+
+          local_values_path = Path("data/supreme_values.json")
+          remote_values = json.loads(Path("/tmp/remote_values.json").read_text())
+          local_values = json.loads(local_values_path.read_text()) if local_values_path.exists() else {"fetched_at": 0, "values": {}}
+          if float(remote_values.get("fetched_at", 0)) > float(local_values.get("fetched_at", 0)):
+              local_values_path.write_text(json.dumps(remote_values, ensure_ascii=False, indent=2) + "\\n")
+          PY
+          git reset --soft origin/main
           git add -A data/
           if ! git diff --cached --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git commit -m "Update scanner state and Supreme values cache"
-            # A documentation/code commit may land while this scan is running.
-            # Rebase the generated state commit on the latest main before pushing.
-            git pull --rebase origin main
             git push
           fi
