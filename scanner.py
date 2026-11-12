@@ -165,6 +165,53 @@ def collect_images_in_order(node):
     return images
 
 
+def _quantity_marker(raw):
+    """Parse only explicit stack/count labels; never infer quantity from value text."""
+    text = (raw or "").strip()
+    if not text:
+        return None
+    match = re.fullmatch(r"(?:x|×)\\s*(\\d{1,3})|(?:\\d{1,3})\\s*(?:x|×)", text, flags=re.I)
+    if match:
+        number = re.search(r"\\d{1,3}", text)
+        return max(1, min(int(number.group()), 100))
+    # Some BloxSwaps cards render the stack badge as a bare number.
+    if re.fullmatch(r"\\d{1,3}", text):
+        return max(1, min(int(text), 100))
+    match = re.search(r"(?:[x×]\\s*(\\d{1,3})|(\\d{1,3})\\s*[x×])", text, flags=re.I)
+    if match:
+        return max(1, min(int(match.group(1) or match.group(2)), 100))
+    return None
+
+
+def quantity_from_image_node(image_node):
+    """Read stack counts from image labels, data attributes and nearby quantity badges."""
+    name, alt_quantity = split_item_label(image_node.attrs.get("alt", ""))
+    if alt_quantity > 1:
+        return alt_quantity
+    for node in (image_node, image_node.parent,
+                 image_node.parent.parent if image_node.parent else None):
+        if node is None:
+            continue
+        for key in ("data-quantity", "data-count", "data-amount", "data-stack",
+                    "data-stack-count", "aria-label", "title"):
+            quantity = _quantity_marker(node.attrs.get(key, ""))
+            if quantity:
+                return quantity
+
+    parent = image_node.parent
+    if parent is not None:
+        for kind, sibling in parent.events:
+            if kind != "node" or sibling is image_node:
+                continue
+            classes = " ".join((sibling.attrs.get("class", ""), sibling.attrs.get("id", ""),
+                                sibling.attrs.get("aria-label", ""))).casefold()
+            if re.search(r"quant|count|amount|stack|badge|counter", classes):
+                quantity = _quantity_marker(node_text(sibling))
+                if quantity:
+                    return quantity
+    return 1
+
+
 def collect_ordered_events(node):
     result = []
     def visit(n):
@@ -172,8 +219,8 @@ def collect_ordered_events(node):
             if kind == "text":
                 result.append(("text", value))
             elif value.tag == "img":
-                name, quantity = split_item_label(value.attrs.get("alt", ""))
-                result.append(("img", {"name": name, "quantity": quantity}))
+                name, _ = split_item_label(value.attrs.get("alt", ""))
+                result.append(("img", {"name": name, "quantity": quantity_from_image_node(value)}))
             else:
                 visit(value)
     visit(node)
