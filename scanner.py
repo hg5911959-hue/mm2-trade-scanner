@@ -1665,12 +1665,14 @@ def _iter_value_variants(values):
 def _catalog_value_metadata(item):
     if not isinstance(item, dict):
         return "", "", "", ""
-    slug = normalize_slug(item.get("catalog_slug") or item.get("slug") or "")
+    # Only structured catalogue fields are trusted. HTML parser fields such as
+    # "type" or "slug" are presentation hints, not canonical item identity.
+    slug = normalize_slug(item.get("catalog_slug") or "")
     rarity = str(item.get("catalog_rarity") or "").strip().casefold()
     chroma = item.get("catalog_chroma")
     if chroma is True or str(chroma).casefold() in {"true", "1", "yes"}:
         rarity = "chroma"
-    item_type = str(item.get("catalog_type") or item.get("type") or "").strip().casefold()
+    item_type = str(item.get("catalog_type") or "").strip().casefold()
     return slug, rarity, item_type, normalize_name(item.get("name") or "")
 
 
