@@ -217,6 +217,46 @@ class ParserTests(unittest.TestCase):
         listing = parse_listings(html)[0]
         self.assertEqual(listing["receive_items"][0]["quantity"], 2)
 
+    def test_live_bloxswaps_layout_reads_x2_after_coin_icon_and_price(self):
+        # Mirrors the live feed's visible order: weapon image, item name,
+        # coin icon, numeric listing price, then the x2 stack badge.
+        html = """
+        <article>
+          <div>Propose
+            <a href="/item/snowcannon">
+              <img alt="Image de Snowcannon dans Murder Mystery 2">
+            </a>
+            Snowcannon
+            <img alt="coin">
+            750.0
+            <span>x2</span>
+          </div>
+          <div>Recherche
+            <img alt="Image de Spirit dans Murder Mystery 2">
+            Spirit
+            <img alt="coin">
+            540.0
+          </div>
+          <a href="/fr/users/12345">Owner</a>
+        </article>
+        """
+        listing = parse_listings(html)[0]
+        self.assertEqual(listing["receive_items"], [{"name": "Snowcannon", "quantity": 2}])
+        self.assertEqual(listing["give_items"], [{"name": "Spirit", "quantity": 1}])
+
+    def test_displayed_price_is_never_used_as_stack_quantity(self):
+        html = """
+        <article>
+          <div>Propose
+            <img alt="Image de Snowcannon dans Murder Mystery 2">
+            Snowcannon <img alt="coin"> 750.0
+          </div>
+          <div>Recherche <img alt="Image de Spirit dans Murder Mystery 2"> Spirit</div>
+        </article>
+        """
+        listing = parse_listings(html)[0]
+        self.assertEqual(listing["receive_items"][0]["quantity"], 1)
+
     def test_stale_supreme_cache_is_never_used_when_api_fails(self):
         values = {
             f"item {i}": {"name": f"Item {i}", "value": i + 1, "secondary_value": None}
