@@ -287,12 +287,15 @@ class ParserTests(unittest.TestCase):
 
     def test_stale_supreme_cache_is_never_used_when_api_fails(self):
         values = {
-            f"item {i}": {"name": f"Item {i}", "value": i + 1, "secondary_value": None}
+            f"item {i}": {
+                "name": f"Item {i}", "value": i + 1, "secondary_value": None,
+                "variants": [{"name": f"Item {i}", "value": i + 1, "secondary_value": None}],
+            }
             for i in range(100)
         }
         with tempfile.TemporaryDirectory() as directory:
             cache_path = Path(directory) / "supreme_values.json"
-            cache_path.write_text(json.dumps({"fetched_at": 1, "values": values}), encoding="utf-8")
+            cache_path.write_text(json.dumps({"schema_version": 2, "fetched_at": 1, "values": values}), encoding="utf-8")
             with patch("scanner.VALUES_FILE", cache_path), patch(
                 "scanner.RBLXVALUE_API_KEY", "test-key"
             ), patch(
@@ -856,8 +859,14 @@ class CacheTTLTests(unittest.TestCase):
     def test_fresh_supreme_snapshot_is_reused_within_ttl(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "supreme.json"
-            values = {f"item {i}": {"name": f"Item {i}", "value": i + 1} for i in range(100)}
-            path.write_text(json.dumps({"fetched_at": 990, "values": values}), encoding="utf-8")
+            values = {
+                f"item {i}": {
+                    "name": f"Item {i}", "value": i + 1,
+                    "variants": [{"name": f"Item {i}", "value": i + 1}],
+                }
+                for i in range(100)
+            }
+            path.write_text(json.dumps({"schema_version": 2, "fetched_at": 990, "values": values}), encoding="utf-8")
             with (
                 patch("scanner.VALUES_FILE", path),
                 patch("scanner.VALUES_TTL_SECONDS", 300),
@@ -873,7 +882,7 @@ class CacheTTLTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "supreme.json"
             values = {f"item {i}": {"name": f"Item {i}", "value": i + 1} for i in range(100)}
-            path.write_text(json.dumps({"fetched_at": 100, "values": values}), encoding="utf-8")
+            path.write_text(json.dumps({"schema_version": 2, "fetched_at": 100, "values": values}), encoding="utf-8")
             with (
                 patch("scanner.VALUES_FILE", path),
                 patch("scanner.VALUES_TTL_SECONDS", 300),
