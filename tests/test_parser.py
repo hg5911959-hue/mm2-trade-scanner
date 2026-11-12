@@ -251,7 +251,7 @@ class ReliabilityTests(unittest.TestCase):
         ):
             items = duplicate_rows + [
                 {"name": f"Test Item {i}", "value_source_b": i + 1, "value_source_a": None}
-                for i in range(98)
+                for i in range(99)
             ]
             with tempfile.TemporaryDirectory() as directory:
                 cache_path = Path(directory) / "supreme_values.json"
@@ -270,7 +270,7 @@ class ReliabilityTests(unittest.TestCase):
             {"name": "Rainbow Gun", "value_source_b": 400, "value_source_a": 410},
         ] + [
             {"name": f"Test Item {i}", "value_source_b": i + 1, "value_source_a": None}
-            for i in range(98)
+            for i in range(99)
         ]
         with tempfile.TemporaryDirectory() as directory:
             cache_path = Path(directory) / "supreme_values.json"
