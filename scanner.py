@@ -2877,7 +2877,7 @@ def scan_once():
 
     summary = (
         f"Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | "
-        f"already_alerted={already_alerted_skipped} | watch_unchanged={watch_unchanged_skipped} | uncertain_quarantined={uncertain_skipped} | 
+        f"already_alerted={already_alerted_skipped} | watch_unchanged={watch_unchanged_skipped} | uncertain_quarantined={uncertain_skipped} | "
         f"pending_recheck={len(pending_ids)} | qualified={len(opportunities)} | "
         f"alerts={sent} | deferred={deferred}"
     )
