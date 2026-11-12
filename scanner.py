@@ -229,6 +229,12 @@ def quantity_from_image_node(image_node):
         for kind, sibling in ancestor.events:
             if kind != "node" or sibling is branch:
                 continue
+            # Never borrow a badge from a sibling that contains another weapon.
+            if any(
+                child.tag == "img" and clean_item_name(child.attrs.get("alt", ""))
+                for child in walk_nodes(sibling)
+            ):
+                continue
             classes = " ".join((
                 sibling.attrs.get("class", ""), sibling.attrs.get("id", ""),
                 sibling.attrs.get("aria-label", ""), sibling.attrs.get("data-testid", "")
