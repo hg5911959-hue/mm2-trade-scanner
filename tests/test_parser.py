@@ -255,9 +255,11 @@ class ReliabilityTests(unittest.TestCase):
             ]
             with tempfile.TemporaryDirectory() as directory:
                 cache_path = Path(directory) / "supreme_values.json"
-                with patch("scanner.VALUES_FILE", cache_path), \\
-                     patch("scanner.api_get_json", return_value={"items": items, "total": len(items)}), \\
-                     patch("scanner.time.sleep"):
+                with (
+                    patch("scanner.VALUES_FILE", cache_path),
+                    patch("scanner.api_get_json", return_value={"items": items, "total": len(items)}),
+                    patch("scanner.time.sleep"),
+                ):
                     values = load_supreme_values()
             self.assertEqual(values["rainbow gun"]["value"], 400)
             self.assertEqual(values["rainbow gun"]["secondary_value"], 410)
@@ -272,9 +274,11 @@ class ReliabilityTests(unittest.TestCase):
         ]
         with tempfile.TemporaryDirectory() as directory:
             cache_path = Path(directory) / "supreme_values.json"
-            with patch("scanner.VALUES_FILE", cache_path), \\
-                 patch("scanner.api_get_json", return_value={"items": items, "total": len(items)}), \\
-                 patch("scanner.time.sleep"):
+            with (
+                patch("scanner.VALUES_FILE", cache_path),
+                patch("scanner.api_get_json", return_value={"items": items, "total": len(items)}),
+                patch("scanner.time.sleep"),
+            ):
                 values = load_supreme_values()
         self.assertEqual(values["rainbow gun"]["value"], 400)
 
