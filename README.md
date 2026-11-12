@@ -11,7 +11,7 @@ From the scanner user's perspective:
 - Any listing containing **Ajout / Ajouts** is excluded completely.
 - The scanner ignores BloxSwaps' own Win/Loss label.
 - Profit = total Supreme Values of received items minus total Supreme Values of given items.
-- Minimum absolute profit defaults to **0**, and minimum profit percentage defaults to **0%**, so fair trades are included. Qualified offers are sorted by highest absolute Supreme profit before alerts are sent.
+- Minimum absolute profit defaults to **0**, and minimum profit percentage is set to **5%** in the scheduled workflow, filtering out fair trades. Qualified offers are sorted by highest absolute Supreme profit before alerts are sent.
 - If even one item cannot be matched to a numeric Supreme Values entry, the whole listing is skipped. The scanner never guesses or sends partial totals.
 
 Telegram alerts include both item lists, quantities, per-item values, both totals, calculated profit, result, and source link. Repeated copies of the same weapon are grouped and their quantities are added together; explicit BloxSwaps xN stack labels are also applied. The scanner sends Telegram messages only for newly detected qualifying opportunities. It does not send routine no-op heartbeats.
@@ -39,11 +39,12 @@ Never commit or share any of these secrets. The scanner never prints API keys or
 - Scheduled checks: every 5 minutes (GitHub Actions cron uses UTC; starts may be delayed).
 - Workflow triggers: schedule and manual `workflow_dispatch` only; pushes do not start scans.
 - Concurrency: one workflow at a time; queued runs are not cancelled.
-- Failure alerts: Telegram is notified after 3 consecutive failed runs, then every 5 additional consecutive failures. A successful run resets the counter.
+- Failure alerts: Telegram is notified after 3 consecutive failed runs, then every 5 additional consecutive failures (8, 13, 18...). A successful run resets the counter.
 - GitHub Actions schedules are recurring checks, not a permanently running server; GitHub may occasionally delay scheduled starts.
 - Manual run: **Actions → MM2 Trade Scanner → Run workflow**.
 - Logs: open the workflow run and download the `mm2-scanner-diagnostics` artifact.
-- Processed IDs, Supreme cache, failure counter, and `history.csv` are persisted with GitHub Actions Cache; they are not committed to `main`.
+- Optional missed-schedule monitoring: create a free check at Healthchecks.io and save its ping URL as the repository secret `HEALTHCHECKS_PING_URL`. The workflow pings on successful scans and sends `/fail` on failures; the service can alert if scheduled pings stop arriving.
+- Processed IDs, Supreme cache, failure counter, and `history.csv` are persisted with GitHub Actions Cache; `data/` is ignored and is not committed to `main`. A separate monthly keepalive workflow commits a tiny activity marker to reduce the risk of scheduled workflows being disabled for inactivity.
 - `history.csv` records detected opportunities and their calculated values. It cannot confirm that a Roblox trade was accepted or completed.
 
 If the API returns HTTP 403, the key is invalid, inactive, unverified, expired, or suspended. Check its status at https://rblxvalue.com/developer, create/regenerate a key if needed, then replace the GitHub secret `RBLXVALUE_API_KEY`. A GitHub secret's name must remain exactly the same.
