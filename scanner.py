@@ -263,7 +263,7 @@ def extract_side_items(node):
                     if prev_kind == "img" and prev_value and prev_value["name"]:
                         break
                     if prev_kind == "text":
-                        if re.search(r"\\b(?:propose|offering|offer|recherche|looking for|request)\\b", prev_value, re.I):
+                        if re.search(r"\b(?:propose|offering|offer|recherche|looking for|request)\b", prev_value, re.I):
                             break
                         quantity = _explicit_stack_quantity(prev_value)
                         if quantity is not None:
@@ -273,7 +273,7 @@ def extract_side_items(node):
                     if next_kind == "img" and next_value and next_value["name"]:
                         break
                     if next_kind == "text":
-                        if re.search(r"\\b(?:propose|offering|offer|recherche|looking for|request)\\b", next_value, re.I):
+                        if re.search(r"\b(?:propose|offering|offer|recherche|looking for|request)\b", next_value, re.I):
                             break
                         quantity = _explicit_stack_quantity(next_value)
                         if quantity is not None:
