@@ -46,9 +46,9 @@ def main():
     print(f"[watchdog] Latest successful scan age: {age:.1f} minutes")
     if should_alert(age):
         scanner.send_telegram(
-            "MM2 TRADE SCANNER WATCHDOG\\n"
-            f"No successful scan for {age:.0f} minutes.\\n"
-            f"Last successful run: {run.get('html_url', 'GitHub Actions')}\\n"
+            "MM2 TRADE SCANNER WATCHDOG\n"
+            f"No successful scan for {age:.0f} minutes.\n"
+            f"Last successful run: {run.get('html_url', 'GitHub Actions')}\n"
             "Check GitHub Actions for delayed or failed scheduled runs."
         )
         print("[watchdog] Telegram alert sent")
