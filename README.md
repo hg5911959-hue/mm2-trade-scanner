@@ -14,7 +14,7 @@ From the scanner user's perspective:
 - Minimum absolute profit defaults to **0**, and minimum profit percentage is set to **5%** in the scheduled workflow, filtering out fair trades. Qualified offers are sorted by highest absolute Supreme profit before alerts are sent.
 - If even one item cannot be matched to a numeric Supreme Values entry, the whole listing is skipped. The scanner never guesses or sends partial totals.
 
-Telegram alerts include both item lists, quantities, per-item values, both totals, calculated profit, result, and source link. Repeated copies of the same weapon are grouped and their quantities are added together; explicit BloxSwaps xN stack labels are also applied. The scanner sends Telegram messages only for newly detected qualifying opportunities. It does not send routine no-op heartbeats.
+Telegram alerts include both item lists, quantities, per-item values, both totals, calculated profit, result, and source links. The **OPEN OWNER PROFILE** link is shown first when the card exposes a BloxSwaps user URL; the listing/discussion URL is secondary. Repeated copies of the same weapon are grouped after quantities are summed from repeated item images, explicit stack counts such as `x3` / `3x` / `×3`, and counts embedded in image alt labels. The scanner sends Telegram messages only for listings it has not successfully alerted before. A listing with an unknown Supreme item or a currently unprofitable value is **not** marked as completed: it is re-evaluated on later scans, so an API mapping/value update can still make it alert.
 
 ## Value data source
 
@@ -36,13 +36,13 @@ Never commit or share any of these secrets. The scanner never prints API keys or
 
 ## Run and diagnostics
 
-- Scheduled checks: every 5 minutes (GitHub Actions cron uses UTC; starts may be delayed).
+- Scheduled checks: two staggered cron schedules nominally start 2–3 minutes apart (GitHub Actions cron uses UTC; starts may be delayed or dropped during platform load). Each individual cron expression follows GitHub's 5-minute minimum.
 - Workflow triggers: schedule and manual `workflow_dispatch` only; pushes do not start scans.
 - Concurrency: one workflow at a time; queued runs are not cancelled.
 - The scanner workflow has `contents: read` only; the separate monthly keepalive workflow alone has `contents: write`.
-- State is treated as a baseline when missing or corrupt: visible listings are recorded without alerts to prevent a Telegram flood. This is intentionally conservative and can miss offers posted during a cache-loss window.
-- Seen IDs preserve insertion order and retain the newest 5,000. State, values cache, failure counter, and history writes use atomic replace operations.
-- IDs are based on normalized owner identity, sorted item names and quantities, and a stable ad identifier when available; relative-time labels are ignored. The first run after an ID-version migration is a silent baseline.
+- Alert state stores only listings whose Telegram alert was successfully sent. Existing alert history is used to migrate prior sent IDs; non-profitable and unrecognized listings remain eligible for re-evaluation.
+- Alerted IDs retain the newest 5,000. State, values cache, failure counter, and history writes use atomic replace operations.
+- IDs use normalized owner identity, stable card/ad identifiers when exposed, listing path/query identity, and sorted item names and quantities; relative-time labels are ignored.
 - Telegram messages are capped at 4,000 characters. Calculated margins at or above 200% include a warning to manually verify item names and values.
 - Failure alerts: Telegram is notified after 3 consecutive failed runs, then every 5 additional consecutive failures (8, 13, 18...). A successful run resets the counter.
 - GitHub Actions schedules are recurring checks, not a permanently running server; GitHub may occasionally delay scheduled starts.
