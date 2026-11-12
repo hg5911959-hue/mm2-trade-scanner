@@ -1864,3 +1864,91 @@ class HardeningRegressionTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(RuntimeError, "RSC"):
                 scanner.fetch_bloxswaps_all(set())
+
+
+class WatchWindowRegressionTests(unittest.TestCase):
+    def _listing(self, receive_quantity=1):
+        return {
+            "source_ad_id": "watch-ad",
+            "receive_items": [{"name": "Knife A", "quantity": receive_quantity,
+                               "quantity_min": receive_quantity, "quantity_max": receive_quantity,
+                               "quantity_source": "structured"}],
+            "give_items": [{"name": "Knife B", "quantity": 1, "quantity_min": 1,
+                            "quantity_max": 1, "quantity_source": "structured"}],
+        }
+
+    def test_supreme_value_change_changes_watch_fingerprint(self):
+        listing = self._listing()
+        values_a = {
+            "knife a": {"name": "Knife A", "value": 100},
+            "knife b": {"name": "Knife B", "value": 110},
+        }
+        values_b = {
+            "knife a": {"name": "Knife A", "value": 150},
+            "knife b": {"name": "Knife B", "value": 110},
+        }
+        first = scanner.listing_watch_fingerprints(listing, values_a)
+        second = scanner.listing_watch_fingerprints(listing, values_b)
+        self.assertEqual(first[0], second[0])
+        self.assertNotEqual(first[1], second[1])
+
+    def test_owner_quantity_edit_changes_watch_fingerprint(self):
+        first = scanner.listing_watch_fingerprints(self._listing(1), {})
+        second = scanner.listing_watch_fingerprints(self._listing(3), {})
+        self.assertNotEqual(first[0], second[0])
+
+    def test_watch_state_round_trips_and_expires_after_six_hours(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "watch.json"
+            with patch("scanner.WATCH_FILE", path), patch("scanner.time.time", return_value=1000):
+                state = {"watch-ad": {"content_hash": "c", "values_hash": "v",
+                                      "created_at": 1000, "updated_at": 1000}}
+                scanner.save_watch_state(state)
+                self.assertEqual(scanner.load_watch_state(), state)
+            with patch("scanner.WATCH_FILE", path), patch("scanner.time.time", return_value=1000 + 6 * 3600 + 1):
+                self.assertEqual(scanner.load_watch_state(), {})
+
+
+class CatalogueRefreshRegressionTests(unittest.TestCase):
+    def test_unknown_item_catalogue_refresh_bypasses_hour_ttl_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "items.json"
+            with (
+                patch("scanner.BLOXSWAPS_ITEMS_FILE", path),
+                patch("scanner._LAST_ITEMS_FORCE_REFRESH_AT", 0),
+                patch("scanner.time.time", return_value=1000),
+                patch("scanner.bloxswaps_api_get_json", return_value=[
+                    {"id": "old", "displayName": "Old Item"}
+                ]) as api,
+            ):
+                first = scanner.fetch_bloxswaps_items_map()
+                with patch("scanner.time.time", return_value=1001), patch(
+                    "scanner.bloxswaps_api_get_json",
+                    return_value=[
+                        {"id": "old", "displayName": "Old Item"},
+                        {"id": "new", "displayName": "New Item"},
+                    ],
+                ):
+                    refreshed = scanner.fetch_bloxswaps_items_map(force_refresh=True)
+                self.assertIn("old", first)
+                self.assertIn("new", refreshed)
+
+
+class ColdStartRecentOfferTests(unittest.TestCase):
+    def test_cold_start_evaluates_recently_refreshed_post(self):
+        post = CursorPaginationTests._post("recent-cold-post")
+        post["lastRefreshedAt"] = datetime.now(timezone.utc).isoformat()
+        page = {"items": [post], "meta": {"cursor": None}}
+        payload = json.dumps({"initialPage": page}, separators=(",", ":"))
+        html = '<script>self.__next_f.push([1,' + json.dumps(payload) + ']);</script>'
+        with (
+            patch("scanner.fetch_bloxswaps", return_value=html),
+            patch("scanner.fetch_bloxswaps_items_map", return_value={
+                "a-id": {"id": "a-id", "displayName": "Knife A"},
+                "b-id": {"id": "b-id", "displayName": "Knife B"},
+            }),
+        ):
+            listings, stats, discovered = scanner.fetch_bloxswaps_all(None)
+        self.assertTrue(stats["cold_start"])
+        self.assertEqual([item["source_ad_id"] for item in listings], ["recent-cold-post"])
+        self.assertEqual(discovered, ["recent-cold-post"])
