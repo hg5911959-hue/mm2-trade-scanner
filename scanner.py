@@ -1163,8 +1163,13 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None):
             "pagination_source": "html-only", "addition_ids": [],
             "unparsed_ad_ids": [], "html_parse_warning_ids": [],
         })
-        if os.environ.get("MM2_SCAN_LOOP") == "1":
-            raise RuntimeError("[bloxswaps] RSC initialPage/cursor data missing; refusing a partial HTML-only production scan.")
+        send_maintenance_alert(
+            "rsc-data-missing",
+            "BloxSwaps page is HTML-only: RSC initialPage/cursor data is missing. "
+            "The scan is treated as failed; no partial feed is trusted.",
+            cooldown_seconds=900,
+        )
+        raise RuntimeError("[bloxswaps] RSC initialPage/cursor data missing; refusing a partial HTML-only scan.")
         return first_listings, stats, []
 
     raw_first_items = initial_page.get("items") or []
@@ -2314,7 +2319,7 @@ def scan_once():
             f"[pending] {len(stats['pending_remaining_ids'])} unresolved ad ID(s) "
             "were not found before the pagination boundary/cap."
         )
-        if os.environ.get("MM2_SCAN_LOOP") == "1" and stats.get("pagination_complete"):
+        if stats.get("pagination_complete"):
             send_maintenance_alert(
                 "pending-ads-not-found",
                 f"Could not locate {len(stats['pending_remaining_ids'])} pending listing(s) "
@@ -2367,7 +2372,7 @@ def scan_once():
             f"HTML warning IDs: {', '.join(stats.get('html_parse_warning_ids', [])[:10])}"
         )
         ratio = issue_count / max(1, stats.get("candidate_count", 0))
-        if os.environ.get("MM2_SCAN_LOOP") == "1" and should_alert_malformed_cards(issue_count):
+        if should_alert_malformed_cards(issue_count):
             samples = " | ".join(stats.get("malformed_samples", [])[:3])
             send_maintenance_alert(
                 "malformed-feed-cards",
@@ -2377,13 +2382,12 @@ def scan_once():
             )
     if not stats.get("pagination_complete", False):
         print("[maintenance] Feed pagination is incomplete; more recent posts may remain beyond the scan limit.")
-        if os.environ.get("MM2_SCAN_LOOP") == "1":
-            send_maintenance_alert(
-                "pagination-incomplete",
-                f"Cursor scan incomplete after {stats.get('pagination_pages', 1)} pages. "
-                "Newer posts may remain unscanned; inspect the latest GitHub Actions logs.",
-                cooldown_seconds=1800,
-            )
+        send_maintenance_alert(
+            "pagination-incomplete",
+            f"Cursor scan incomplete after {stats.get('pagination_pages', 1)} pages. "
+            "Newer posts may remain unscanned; inspect the latest GitHub Actions logs.",
+            cooldown_seconds=1800,
+        )
     # Runtime visibility for real-feed quantity validation: log only explicit stacks.
     for listing in listings:
         for side_label, field in (("Propose/receive", "receive_items"), ("Recherche/give", "give_items")):
@@ -2403,14 +2407,13 @@ def scan_once():
             f"[telegram] {len(expired_uncertain)} uncertain-delivery quarantine(s) expired; "
             "their feed IDs remain marked seen and will not be auto-resent."
         )
-        if os.environ.get("MM2_SCAN_LOOP") == "1":
-            send_maintenance_alert(
-                "telegram-quarantine-expired",
-                f"{len(expired_uncertain)} Telegram delivery quarantine(s) expired after "
-                f"{UNCERTAIN_TTL_SECONDS // 3600} hours. The listings remain marked seen; "
-                "check Telegram manually. No automatic resend was performed.",
-                cooldown_seconds=86400,
-            )
+        send_maintenance_alert(
+            "telegram-quarantine-expired",
+            f"{len(expired_uncertain)} Telegram delivery quarantine(s) expired after "
+            f"{UNCERTAIN_TTL_SECONDS // 3600} hours. The listings remain marked seen; "
+            "check Telegram manually. No automatic resend was performed.",
+            cooldown_seconds=86400,
+        )
     if uncertain_ids:
         print(
             f"[telegram] {len(uncertain_ids)} listing(s) have uncertain delivery status "
@@ -2484,14 +2487,13 @@ def scan_once():
                 f"{', '.join(missing)}"
             )
             mark_pending(listing)
-            if os.environ.get("MM2_SCAN_LOOP") == "1":
-                unknown_names = [
-                    str(value).split(" (", 1)[0]
-                    for value in missing
-                    if value and not str(value).startswith("one side has")
-                ]
-                if unknown_names:
-                    record_unmatched_names(unknown_names)
+            unknown_names = [
+                str(value).split(" (", 1)[0]
+                for value in missing
+                if value and not str(value).startswith("one side has")
+            ]
+            if unknown_names:
+                record_unmatched_names(unknown_names)
             continue
         if not qualifies(result):
             if result.get("uncertain_items"):
