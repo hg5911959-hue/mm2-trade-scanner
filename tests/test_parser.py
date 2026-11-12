@@ -1286,7 +1286,7 @@ class CursorPaginationTests(unittest.TestCase):
             }),
             patch("scanner.bloxswaps_api_get_json", side_effect=responses) as api,
         ):
-            listings, stats, discovered = scanner.fetch_bloxswaps_all({"seen-old"})
+            listings, stats, discovered = scanner.fetch_bloxswaps_all({"seen-old"} | {f"seen-old-{i}" for i in range(25)})
         self.assertEqual(api.call_count, 2)
         self.assertEqual([x["source_ad_id"] for x in listings], ["first-post", "post-2", "post-3", "post-4"])
         self.assertEqual(stats["pagination_pages"], 3)
