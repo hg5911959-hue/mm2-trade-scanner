@@ -839,6 +839,16 @@ def main():
         raise RuntimeError(f"[bloxswaps] Parser could not read {stats['malformed_count']} non-Ajouts cards.")
     print(f"[bloxswaps] Eligible listings after Ajouts filter: {len(listings)}")
     print(f"[bloxswaps] Direct owner profiles parsed: {stats.get('owner_link_count', 0)}/{len(listings)}")
+    # Runtime visibility for real-feed quantity validation: log only explicit stacks.
+    for listing in listings:
+        for side_label, field in (("Propose/receive", "receive_items"), ("Recherche/give", "give_items")):
+            for item in listing.get(field, []):
+                quantity = item.get("quantity", 1)
+                if quantity and quantity > 1:
+                    print(
+                        f"[quantity] {side_label}: {item['name']} x{quantity} "
+                        f"(listing {listing['id']})"
+                    )
     alerted = load_alerted()
     alerted_set = set(alerted)
 
