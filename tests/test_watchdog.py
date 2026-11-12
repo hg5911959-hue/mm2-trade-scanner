@@ -32,7 +32,7 @@ if __name__ == "__main__":
 
 class WatchdogPollingWindowTests(unittest.TestCase):
     def test_stale_threshold_matches_faster_scan_schedule(self):
-        self.assertFalse(watchdog.should_alert(24.9))
-        self.assertTrue(watchdog.should_alert(25))
-        self.assertTrue(watchdog.should_alert(29.9))
-        self.assertFalse(watchdog.should_alert(30))
+        self.assertFalse(watchdog.should_alert(19.9))
+        self.assertTrue(watchdog.should_alert(20))
+        self.assertTrue(watchdog.should_alert(24.9))
+        self.assertFalse(watchdog.should_alert(25))

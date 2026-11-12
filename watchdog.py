@@ -8,7 +8,7 @@ from urllib.request import Request
 import scanner
 
 
-def should_alert(age, threshold=25, interval=5, reminder=360):
+def should_alert(age, threshold=20, interval=5, reminder=360):
     """Alert in the first interval after threshold, then once per reminder window."""
     return (
         threshold <= age < threshold + interval

@@ -65,6 +65,44 @@ _LAST_ITEMS_FORCE_REFRESH_AT = 0.0
 IGNORED_VALUE_ITEMS = {"brew", "drool"}
 
 
+def redact(text):
+    """Remove configured credentials and known credential formats from text."""
+    safe = str(text)
+    configured = {os.environ.get("TELEGRAM_BOT_TOKEN", "").strip(), os.environ.get("TELEGRAM_CHAT_ID", "").strip(), os.environ.get("RBLXVALUE_API_KEY", "").strip(), BOT_TOKEN, CHAT_ID, RBLXVALUE_API_KEY}
+    for secret in sorted((v for v in configured if v and len(v) >= 6), key=len, reverse=True):
+        safe = safe.replace(secret, "[REDACTED]")
+    safe = re.sub(r"https://api\.telegram\.org/bot[^/\s]+", "https://api.telegram.org/bot[REDACTED]", safe)
+    safe = re.sub(r"rbx_[A-Za-z0-9_-]+", "rbx_[REDACTED]", safe)
+    safe = re.sub(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s]+", r"\1[REDACTED]", safe)
+    return safe
+
+class RedactingStream:
+    """Line-buffered stream that redacts secrets before writing logs."""
+    def __init__(self, stream):
+        self._stream = stream
+        self._buffer = ""
+    def write(self, value):
+        value = str(value)
+        self._buffer += value
+        while "\n" in self._buffer:
+            line, self._buffer = self._buffer.split("\n", 1)
+            self._stream.write(redact(line) + "\n")
+        return len(value)
+    def flush(self):
+        if self._buffer:
+            self._stream.write(redact(self._buffer))
+            self._buffer = ""
+        self._stream.flush()
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+def install_redacting_streams():
+    """Install secret-safe stdout/stderr filters once, before scanner output."""
+    if not isinstance(sys.stdout, RedactingStream):
+        sys.stdout = RedactingStream(sys.stdout)
+    if not isinstance(sys.stderr, RedactingStream):
+        sys.stderr = RedactingStream(sys.stderr)
+
 def atomic_write_text(path, content):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -3030,9 +3068,7 @@ def record_failure(error):
         count == FAILURE_THRESHOLD or
         (count > FAILURE_THRESHOLD and (count - FAILURE_THRESHOLD) % 5 == 0)
     ):
-        safe_error = re.sub(r"https://api\.telegram\.org/bot[^/\s]+", "https://api.telegram.org/bot[REDACTED]", str(error))
-        safe_error = re.sub(r"rbx_[A-Za-z0-9_-]+", "rbx_[REDACTED]", safe_error)
-        safe_error = re.sub(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s]+", r"\1[REDACTED]", safe_error)
+        safe_error = redact(error)
         try:
             send_telegram(
                 "MM2 Trade Scanner ALERT\n"
@@ -3105,6 +3141,7 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
 
 
 def main():
+    install_redacting_streams()
     duration = int(os.environ.get("MM2_SCAN_DURATION_SECONDS", "0") or 0)
     if duration > 0:
         interval = int(os.environ.get("MM2_SCAN_INTERVAL_SECONDS", "45") or 45)
