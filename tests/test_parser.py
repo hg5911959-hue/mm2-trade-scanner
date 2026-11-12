@@ -120,7 +120,7 @@ class ParserTests(unittest.TestCase):
                 self.assertEqual(state["id_version"], 1)
                 save_seen(state["seen"])
                 upgraded = load_seen()
-        self.assertEqual(upgraded["id_version"], 2)
+        self.assertEqual(upgraded["id_version"], 3)
         self.assertEqual(upgraded["seen"], ["legacy-id"])
 
 
