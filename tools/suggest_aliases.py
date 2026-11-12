@@ -50,7 +50,7 @@ def build_suggestions(catalogue, values):
                 "candidate": best[2], "score": round(best[0], 4),
                 "alternatives": candidates[1:],
             })
-        elif candidates and candidates[-1]["score"] >= 0.75:
+        elif candidates and candidates[0]["score"] >= 0.75:
             report.append({
                 "bloxswaps_name": name, "status": "ambiguous_manual_review",
                 "candidates": candidates,
