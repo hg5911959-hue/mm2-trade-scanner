@@ -33,6 +33,7 @@ FAILURE_FILE = Path("data/failure_state.json")
 HISTORY_FILE = Path("data/history.csv")
 MAX_SEEN = 5000
 ALERTED_FILE = Path("data/alerted.json")
+REVIEWED_FILE = Path("data/reviewed.json")
 VALUES_TTL_SECONDS = 4 * 60 * 60
 SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "200"))
 TELEGRAM_MAX_CHARS = 4000
@@ -574,6 +575,21 @@ def save_alerted(alerted):
     atomic_write_text(ALERTED_FILE, json.dumps({"version": 1, "alerted": ordered}, indent=2) + "\n")
 
 
+def load_reviewed():
+    try:
+        data = json.loads(REVIEWED_FILE.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and isinstance(data.get("reviewed"), list):
+            return set(str(value) for value in data["reviewed"])
+    except (OSError, ValueError, TypeError):
+        pass
+    return set()
+
+
+def save_reviewed(reviewed):
+    ordered = sorted(set(str(value) for value in reviewed))[-MAX_SEEN:]
+    atomic_write_text(REVIEWED_FILE, json.dumps({"version": 1, "reviewed": ordered}, indent=2) + "\n")
+
+
 def format_trade_message(listing, give_total, give_lines, receive_total, receive_lines, difference):
     result = "WIN" if difference > 0 else ("FAIR" if difference == 0 else "LOSS")
     owner_link = listing.get("owner_url") or listing.get("url") or BLOXSWAPS_URL
@@ -595,6 +611,31 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
         f"OPEN OWNER PROFILE: {owner_link}",
         *( [f"Listing details: {listing['url']}"] if listing.get("url") and listing.get("url") != owner_link else [] ),
     ]
+    return "\n".join(lines)
+
+
+def format_unvalued_message(listing, missing):
+    def describe(items):
+        return [
+            f"• {item['name']}" + (f" x{item.get('quantity', 1)}" if item.get("quantity", 1) > 1 else "")
+            for item in items
+        ] or ["• No items"]
+    owner_link = listing.get("owner_url") or listing.get("url") or BLOXSWAPS_URL
+    lines = [
+        "MM2 TRADE SCANNER — MANUAL VALUE CHECK",
+        "",
+        "YOU GIVE (Recherche):",
+        *describe(listing.get("give_items", [])),
+        "",
+        "YOU RECEIVE (Propose):",
+        *describe(listing.get("receive_items", [])),
+        "",
+        "UNMATCHED SUPREME ITEMS: " + ", ".join(sorted(set(missing))),
+        "PROFIT: NOT CALCULATED — no value was guessed.",
+        f"OPEN OWNER PROFILE: {owner_link}",
+    ]
+    if listing.get("url") and listing.get("url") != owner_link:
+        lines.append(f"Listing details: {listing['url']}")
     return "\n".join(lines)
 
 
@@ -657,11 +698,17 @@ def main():
     print(f"[bloxswaps] Eligible listings after Ajouts filter: {len(listings)}")
 
     alerted = load_alerted()
+    reviewed = load_reviewed()
 
     def mark_alerted(trade_id):
         if trade_id not in alerted:
             alerted.add(trade_id)
             save_alerted(alerted)
+
+    def mark_reviewed(trade_id):
+        if trade_id not in reviewed:
+            reviewed.add(trade_id)
+            save_reviewed(reviewed)
 
     skipped_unknown = 0
     sent = 0
@@ -676,7 +723,11 @@ def main():
         if result is None:
             skipped_unknown += 1
             print(f"[retry-next-scan] Unmatched Supreme item(s): {', '.join(missing)}")
-            # Keep the listing eligible: API refresh or corrected mapping may resolve it.
+            # Alert once for manual inspection, but keep the listing eligible for
+            # a later fully-valued opportunity alert.
+            if trade_id not in reviewed:
+                send_telegram(format_unvalued_message(listing, missing))
+                mark_reviewed(trade_id)
             continue
         if not qualifies(result):
             # Re-evaluate while visible; source values may change during the listing's lifetime.
