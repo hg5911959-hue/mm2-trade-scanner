@@ -250,13 +250,13 @@ class ReliabilityTests(unittest.TestCase):
                 {"knife a": {"name": "Knife A", "value": 10},
                  "knife b": {"name": "Knife B", "value": 20}},
             ]
-            with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), \\
-                 patch("scanner.ALERTED_FILE", root / "alerted.json"), \\
-                 patch("scanner.FAILURE_FILE", root / "failure.json"), \\
-                 patch("scanner.HISTORY_FILE", root / "history.csv"), \\
-                 patch("scanner.load_supreme_values", side_effect=value_sets), \\
-                 patch("scanner.fetch_bloxswaps", return_value=html), \\
-                 patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)), \\
+            with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), \
+                 patch("scanner.ALERTED_FILE", root / "alerted.json"), \
+                 patch("scanner.FAILURE_FILE", root / "failure.json"), \
+                 patch("scanner.HISTORY_FILE", root / "history.csv"), \
+                 patch("scanner.load_supreme_values", side_effect=value_sets), \
+                 patch("scanner.fetch_bloxswaps", return_value=html), \
+                 patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)), \
                  patch("scanner.compare_secondary_values", return_value=""):
                 scanner.main()
                 scanner.main()
