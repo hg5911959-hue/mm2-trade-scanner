@@ -108,7 +108,9 @@ def clean_item_name(raw):
     name = re.sub(r"\s+(dans|in) Murder Mystery 2$", "", name, flags=re.I)
     name = re.sub(r"\s+", " ", name).strip()
     if not name or name.casefold() in {
-        "coin", "offers", "offres", "ajouts", "item stability",
+        "coin", "offers", "offres", "ajouts", "ajout", "item stability",
+        "déclassements", "declassements", "surclassements",
+        "downgrades", "upgrades",
         "murder mystery 2", "mm2", "image"
     }:
         return ""
