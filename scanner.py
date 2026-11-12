@@ -2101,54 +2101,27 @@ def ignored_item_names(listing):
 
 
 def format_trade_message(listing, give_total, give_lines, receive_total, receive_lines, difference):
+    """Keep Telegram alerts focused on the trade; diagnostics stay in GitHub logs."""
     result = "WIN" if difference > 0 else ("FAIR" if difference == 0 else "LOSS")
     owner_link = listing.get("owner_url") or listing.get("url") or BLOXSWAPS_URL
     lines = [
-        "MM2 SUPREME TRADE SCANNER",
-        f"OPEN OWNER PROFILE: {owner_link}",
-        *( [f"Listing details: {listing['url']}"] if listing.get("url") and listing.get("url") != owner_link else [] ),
-        *( [f"FIRST SEEN UTC: {listing['first_seen_at_utc']}"] if listing.get("first_seen_at_utc") else [] ),
-        *( [f"ALERT ATTEMPT UTC: {listing['alert_attempted_at_utc']}"] if listing.get("alert_attempted_at_utc") else [] ),
-        "",
-        "YOU GIVE (BloxSwaps: Recherche):",
-        *(give_lines or ["• No items"]),
-        f"TOTAL YOU GIVE (scenario): {format_number(give_total)}",
-        "",
-        "YOU RECEIVE (BloxSwaps: Propose):",
-        *(receive_lines or ["• No items"]),
-        f"TOTAL YOU RECEIVE (scenario): {format_number(receive_total)}",
-        "",
-        f"SUPREME PROFIT (scenario): {format_number(difference)}",
-        f"CALCULATED RESULT: {result}",
-        "",
-        "QUANTITY PROVENANCE (listed prices are diagnostic only, never used for Supreme value):",
+        "💎 MM2 SUPREME TRADE",
+        f"👤 OWNER: {owner_link}",
     ]
-    for side, field in (("Propose/receive", "receive_items"), ("Recherche/give", "give_items")):
-        for item in listing.get(field, []):
-            source = item.get("quantity_source", "uncertain")
-            quantity = item.get("quantity")
-            if source == "uncertain":
-                low = item.get("quantity_min", 1)
-                high = item.get("quantity_max")
-                label = f"uncertain ({low}..{high if high is not None else '∞'})"
-            else:
-                label = f"{quantity} ({source})"
-            price = f"; listed_price={item['listed_price']}" if item.get("listed_price") is not None else ""
-            reason = item.get("quantity_reason", "")
-            comparison = ""
-            if item.get("html_quantity") is not None or item.get("structured_quantity") is not None:
-                comparison = (
-                    f"; HTML={item.get('html_quantity')} ({item.get('html_quantity_source', 'n/a')})"
-                    f" vs RSC={item.get('structured_quantity')}"
-                )
-            raw = str(item.get("raw_excerpt", "")).replace("\n", " ")[:150]
-            lines.append(
-                f"• {side}: {item['name']} — {label}{price}{comparison}; "
-                f"reason={reason!r}; raw={raw!r}"
-            )
+    if listing.get("url") and listing.get("url") != owner_link:
+        lines.append(f"🔗 LISTING: {listing['url']}")
     lines.extend([
         "",
-        "Values: Supreme Values source_b via RBLXValue API (Data from rblxvalue.com).",
+        "📤 YOU GIVE:",
+        *(give_lines or ["• No items"]),
+        f"TOTAL: {format_number(give_total)}",
+        "",
+        "📥 YOU RECEIVE:",
+        *(receive_lines or ["• No items"]),
+        f"TOTAL: {format_number(receive_total)}",
+        "",
+        f"💰 SUPREME PROFIT: {'+' if difference > 0 else ''}{format_number(difference)}",
+        f"RESULT: {result}",
     ])
     return "\n".join(lines)
 
