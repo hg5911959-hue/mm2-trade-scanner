@@ -537,33 +537,169 @@ def stable_listing_id(owner_url, receive_items, give_items, listing_url="", list
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
 
 
+def _extract_balanced_json_object(text, marker):
+    position = text.find(marker)
+    if position < 0:
+        return None
+    start = text.find("{", position + len(marker))
+    if start < 0:
+        return None
+    depth = 0
+    quoted = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if quoted:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quoted = False
+        else:
+            if char == '"':
+                quoted = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(text[start:index + 1])
+                    except (ValueError, TypeError):
+                        return None
+    return None
+
+
+def parse_structured_trade_data(html):
+    """Read the public Next.js RSC initialPage payload containing authoritative quantities."""
+    decoder = json.JSONDecoder()
+    marker = "self.__next_f.push([1,"
+    cursor = 0
+    payloads = []
+    while True:
+        position = html.find(marker, cursor)
+        if position < 0:
+            break
+        start = position + len(marker)
+        try:
+            payload, consumed = decoder.raw_decode(html[start:])
+        except (ValueError, TypeError):
+            cursor = start
+            continue
+        cursor = start + consumed
+        if isinstance(payload, str):
+            payloads.append(payload)
+
+    structured = {}
+    for payload in payloads:
+        page = _extract_balanced_json_object(payload, '"initialPage":')
+        if not isinstance(page, dict):
+            continue
+        items = page.get("items")
+        if not isinstance(items, list):
+            continue
+        for listing in items:
+            if not isinstance(listing, dict) or not listing.get("id"):
+                continue
+            structured[str(listing["id"])] = listing
+    return structured
+
+
+def _ad_id_from_url(url):
+    try:
+        values = parse_qs(urlsplit(url or "").query).get("ad", [])
+        return str(values[0]).strip() if values else ""
+    except (TypeError, ValueError):
+        return ""
+
+
+def _apply_structured_quantities(listing, structured):
+    trade_items = structured.get("tradePostItems")
+    if not isinstance(trade_items, list):
+        return False
+    roles = {
+        "receive_items": "OFFERED",
+        "give_items": "REQUESTED",
+    }
+    for field, role in roles.items():
+        rows = [row for row in trade_items if isinstance(row, dict) and str(row.get("tradeRole", "")).upper() == role]
+        items = listing.get(field, [])
+        if len(rows) != len(items):
+            for item in items:
+                item["quantity"] = None
+                item["quantity_source"] = "uncertain"
+                item["quantity_reason"] = "structured/HTML item count mismatch"
+            continue
+        for item, row in zip(items, rows):
+            try:
+                quantity = int(row.get("quantity"))
+            except (TypeError, ValueError):
+                quantity = None
+            if quantity is None or not 1 <= quantity <= 100:
+                item["quantity"] = None
+                item["quantity_source"] = "uncertain"
+                item["quantity_reason"] = "invalid structured quantity"
+                continue
+            html_source = item.get("quantity_source")
+            html_quantity = item.get("quantity")
+            if html_source == "uncertain":
+                item["quantity"] = None
+                item["quantity_source"] = "uncertain"
+                item["quantity_reason"] = "HTML quantity marker conflicts with structured source"
+            elif html_source == "explicit" and html_quantity != quantity:
+                item["quantity"] = None
+                item["quantity_source"] = "uncertain"
+                item["quantity_reason"] = f"HTML says {html_quantity}, structured data says {quantity}"
+            else:
+                item["quantity"] = quantity
+                item["quantity_source"] = "structured"
+                item["structured_item_id"] = str(row.get("itemDetailsId", ""))
+    listing["structured_trade_post_id"] = str(structured.get("id", ""))
+    listing["requested_wildcards"] = list(structured.get("requestedWildcards") or [])
+    return True
+
+
 def parse_page(html):
     parser = PageTree()
     parser.feed(html)
     candidates = smallest_matching_nodes(parser.root, has_trade_sides)
+    structured_entries = parse_structured_trade_data(html)
     listings = []
     additions = 0
     malformed = 0
+    structured_matched = 0
     for node in candidates:
         context = listing_context(node)
         text = node_text(context)
-        if has_addition_marker(context):
-            additions += 1
-            continue
         received, requested = extract_side_items(node)
         if not received or not requested:
             malformed += 1
             continue
         link, owner_url = listing_links(context)
-        stable = stable_listing_id(owner_url, received, requested, link, listing_identifier(context))
-        listings.append({
-            "id": stable,
+        source_ad_id = _ad_id_from_url(link) or listing_identifier(context)
+        structured = structured_entries.get(source_ad_id)
+        structured_add = bool(
+            structured and any(
+                str(value).casefold() in {"add", "ajout", "ajouts"}
+                for value in (structured.get("requestedWildcards") or [])
+            )
+        )
+        if has_addition_marker(context) or structured_add:
+            additions += 1
+            continue
+        listing = {
+            "id": stable_listing_id(owner_url, received, requested, link, source_ad_id),
             "receive_items": received,
             "give_items": requested,
             "url": link,
             "owner_url": owner_url,
             "source_text": text[:700],
-        })
+            "source_ad_id": source_ad_id,
+        }
+        if structured and _apply_structured_quantities(listing, structured):
+            structured_matched += 1
+        listings.append(listing)
     unique = {item["id"]: item for item in listings}
     parsed = list(unique.values())
     return parsed, {
@@ -571,6 +707,9 @@ def parse_page(html):
         "addition_count": additions,
         "malformed_count": malformed,
         "owner_link_count": sum(1 for item in parsed if item.get("owner_url")),
+        "structured_entry_count": len(structured_entries),
+        "structured_matched_count": structured_matched,
+        "structured_unmatched_count": max(0, len(structured_entries) - structured_matched),
     }
 
 
