@@ -1202,7 +1202,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
         for row in (post.get("tradePostItems") or []) if isinstance(row, dict)
     ] if initial_page else []
     needs_catalogue = any(
-        row.get("itemDetailsId") and not (row.get("displayName") or row.get("name"))
+        row.get("itemDetailsId")
         for row in structured_rows
     )
     initial_item_map = fetch_bloxswaps_items_map() if needs_catalogue else {}
@@ -1211,7 +1211,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
         str(row.get("itemDetailsId") or "")
         for post in raw_first_items if isinstance(post, dict)
         for row in (post.get("tradePostItems") or []) if isinstance(row, dict)
-        if row.get("itemDetailsId") and not (row.get("displayName") or row.get("name"))
+        if row.get("itemDetailsId")
         and str(row.get("itemDetailsId")) not in initial_item_map
     }
     if first_page_unknown_ids:
@@ -1380,7 +1380,6 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                 str(row.get("itemDetailsId") or "")
                 for row in (raw.get("tradePostItems") or [])
                 if isinstance(row, dict) and row.get("itemDetailsId")
-                and not (row.get("displayName") or row.get("name"))
                 and str(row.get("itemDetailsId")) not in item_map
             }
             if unknown_ids:
