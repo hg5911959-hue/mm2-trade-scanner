@@ -1326,7 +1326,13 @@ class CursorPaginationTests(unittest.TestCase):
 
 
     def test_missing_seen_state_seeds_current_page_without_replaying_history(self):
-        with patch("scanner.fetch_bloxswaps", return_value=self._first_page_html()):
+        with (
+            patch("scanner.fetch_bloxswaps", return_value=self._first_page_html()),
+            patch("scanner.fetch_bloxswaps_items_map", return_value={
+                "a-id": {"displayName": "Knife A"}, "b-id": {"displayName": "Knife B"}
+            }),
+            patch("scanner.bloxswaps_api_get_json", return_value={"items": [], "meta": {"cursor": None}}),
+        ):
             listings, stats, seed_ids = scanner.fetch_bloxswaps_all(None)
         self.assertEqual(listings, [])
         self.assertTrue(stats["cold_start"])
