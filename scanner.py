@@ -2515,10 +2515,11 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
     owner_link = _clean_owner_link(listing.get("owner_url") or listing.get("url"))
     lines = [
         "💎 MM2 TRADE",
-        f"👤 {owner_link}",
+        "",
+        f"👤 OWNER PROFILE: {owner_link}",
     ]
     if listing.get("url") and listing.get("url") != owner_link:
-        lines.append(f"🔗 {listing['url']}")
+        lines.extend(["", f"🔗 LISTING DETAILS: {listing['url']}"])
     lines.extend([
         "",
         "📤 GIVE:",
@@ -2555,10 +2556,11 @@ def format_unvalued_message(listing, missing):
     owner_link = _clean_owner_link(listing.get("owner_url") or listing.get("url"))
     lines = [
         "⚠️ MM2 MANUAL VALUE CHECK",
-        f"👤 {owner_link}",
+        "",
+        f"👤 OWNER PROFILE: {owner_link}",
     ]
     if listing.get("url") and listing.get("url") != owner_link:
-        lines.append(f"🔗 {listing['url']}")
+        lines.extend(["", f"🔗 LISTING DETAILS: {listing['url']}"])
     lines.extend([
         "",
         "📤 GIVE:",
