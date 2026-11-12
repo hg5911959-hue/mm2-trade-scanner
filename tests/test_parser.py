@@ -2161,3 +2161,40 @@ class WatchWindowPaginationTests(unittest.TestCase):
         self.assertIn("watch-later", [item["source_ad_id"] for item in listings])
         self.assertEqual(stats["watch_remaining_ids"], [])
         self.assertFalse(stats["seen_boundary_reached"])
+
+
+class ColdStartPaginationTests(unittest.TestCase):
+    def test_cold_start_paginates_recent_posts_and_ignores_pinned_old_boundary(self):
+        pinned = CursorPaginationTests._post("pinned-old")
+        pinned["lastRefreshedAt"] = "2026-11-12T00:00:00Z"
+        pinned["isPinned"] = True
+        recent_first = CursorPaginationTests._post("recent-first")
+        recent_first["lastRefreshedAt"] = datetime.now(timezone.utc).isoformat()
+        page = {"items": [pinned, recent_first], "meta": {"cursor": "cold-cursor"}}
+        payload = json.dumps({"initialPage": page}, separators=(",", ":"))
+        html = '<script>self.__next_f.push([1,' + json.dumps(payload) + ']);</script>'
+        recent_second = CursorPaginationTests._post("recent-second")
+        recent_second["lastRefreshedAt"] = datetime.now(timezone.utc).isoformat()
+        old_tail = []
+        for i in range(25):
+            post = CursorPaginationTests._post(f"cold-old-{i}")
+            post["lastRefreshedAt"] = "2026-11-12T00:00:00Z"
+            old_tail.append(post)
+        with (
+            patch("scanner.fetch_bloxswaps", return_value=html),
+            patch("scanner.fetch_bloxswaps_items_map", return_value={
+                "a-id": {"displayName": "Knife A"}, "b-id": {"displayName": "Knife B"}
+            }),
+            patch("scanner.bloxswaps_api_get_json", return_value={
+                "items": [recent_second] + old_tail, "meta": {"cursor": "still-more"}
+            }),
+        ):
+            listings, stats, discovered = scanner.fetch_bloxswaps_all(None)
+        found = [item["source_ad_id"] for item in listings]
+        self.assertIn("recent-first", found)
+        self.assertIn("recent-second", found)
+        self.assertIn("pinned-old", stats["cold_start_seed_ids"])
+        self.assertTrue(stats["seen_boundary_reached"])
+        self.assertTrue(stats["pagination_complete"])
+        self.assertEqual(stats["pagination_pages"], 2)
+        self.assertIn("cold-old-24", discovered)
