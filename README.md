@@ -1,41 +1,53 @@
 # MM2 Trade Scanner
 
-Automated scanner for public **BloxSwaps MM2 P2P listings**, with Telegram alerts. GitHub Actions is configured to check every 15 minutes.
+Automated scanner for public **BloxSwaps MM2 P2P listings**, with Telegram alerts. GitHub Actions checks every 15 minutes.
 
-## Source and calculation
+## How a trade is evaluated
 
-The scanner reads the BloxSwaps P2P page:
+From the scanner user's perspective:
 
-`https://bloxswaps.com/fr/trade-mm2?trade-type=P2P`
+- **BloxSwaps Propose** = items you receive.
+- **BloxSwaps Recherche** = items you give.
+- Any listing containing **Ajout / Ajouts** is excluded completely.
+- The scanner ignores BloxSwaps' own Win/Loss label.
+- Profit = total Supreme Values of received items minus total Supreme Values of given items.
+- Minimum profit defaults to **0**, so fair trades are included.
+- If even one item cannot be matched to a numeric Supreme Values entry, the whole listing is skipped. The scanner never guesses or sends partial totals.
 
-It reads the values displayed on each listing itself; a separate item-values API is not required for the current implementation.
+Telegram alerts include both item lists, quantities, per-item values, both totals, calculated profit, result, and source link.
 
-Calculation:
+## Value data source
 
-`your value difference = offered value - requested value`
+The scanner uses the documented **RBLXValue API v2** and reads only `value_source_b` (Supreme Values). It does not use `value` (blended value) or `value_source_a` (MM2Values).
 
-From your perspective as the person taking the listing, you give the items the poster requests and receive the items the poster proposes. The configured minimum difference is **0**, so a listing qualifies when the proposed items are worth at least as much as the requested items. The alert includes the listing link and both displayed values.
+Create a free API key at https://rblxvalue.com/developer. The key must be active and normally starts with `rbx_`. RBLXValue may require email verification. The API key is sent in the `X-Api-Key` header and must remain private.
 
-## Required Telegram setup
+API values are refreshed by the provider approximately every 12 hours. The scanner caches the downloaded value list locally for four hours to reduce requests. Free-plan attribution is included in Telegram messages: **Data from rblxvalue.com**.
 
-In the repository, open **Settings → Secrets and variables → Actions → New repository secret**.
+## Required GitHub Actions secrets
 
-Add:
-- `TELEGRAM_BOT_TOKEN`: token created with Telegram BotFather.
+Open **Settings → Secrets and variables → Actions → New repository secret** and add:
+
+- `TELEGRAM_BOT_TOKEN`: Telegram bot token.
 - `TELEGRAM_CHAT_ID`: your Telegram numeric chat ID.
+- `RBLXVALUE_API_KEY`: active API key copied from the RBLXValue developer dashboard (raw key only, no quotes).
 
-Never commit the bot token to the repository or share it in chat.
+Never commit or share any of these secrets. The scanner never prints the API key in logs.
 
-## Run
+## Run and diagnostics
 
-Open **Actions → MM2 Trade Scanner → Run workflow** to start a manual run. Scheduled runs occur every 15 minutes (GitHub Actions cron uses UTC).
+- Scheduled checks: every 15 minutes (GitHub Actions cron uses UTC).
+- Manual run: **Actions → MM2 Trade Scanner → Run workflow**.
+- Logs: open the workflow run and download the `mm2-scanner-diagnostics` artifact.
+- Processed listing IDs and the Supreme cache are stored under `data/`.
 
-The workflow stores processed listing IDs in `data/seen.json` to reduce duplicate alerts.
+If the API returns HTTP 403, the key is invalid, inactive, unverified, expired, or suspended. Check its status at https://rblxvalue.com/developer, create/regenerate a key if needed, then replace the GitHub secret `RBLXVALUE_API_KEY`. A GitHub secret's name must remain exactly the same.
 
-## Important limitations
+## Safety and limitations
 
-- This adapter reads the public P2P listing page and depends on its HTML structure remaining compatible.
-- If BloxSwaps changes the page markup or loads listings only through client-side code, the run will fail clearly rather than send guessed alerts. The first live run must confirm parsing works.
-- Only listings visible on the selected P2P page are scanned; this is not a guarantee of every trade on the site.
-- Displayed values are estimates and do not guarantee that a trade is accepted or completed.
+- Direct Supreme Values page access from GitHub Actions can be blocked; the API is used instead.
+- The API is a third-party delivery source for Supreme Values data, not an official Supreme Values API. The scanner specifically selects the provider's `value_source_b` field.
+- Only listings visible on the selected BloxSwaps P2P page are scanned.
+- Parsing depends on BloxSwaps' page structure; changes to its markup may require parser updates.
+- Item values are estimates and do not guarantee a trade will be accepted or completed.
 - No Roblox password, browser cookie, or account session token is needed.
