@@ -637,6 +637,8 @@ def _apply_structured_quantities(listing, structured):
             for item in items:
                 item["quantity"] = None
                 item["quantity_source"] = "uncertain"
+                item["quantity_min"] = 1
+                item["quantity_max"] = None
                 item["quantity_reason"] = "structured/HTML item count mismatch"
             continue
         for item, row in zip(items, rows):
@@ -647,6 +649,8 @@ def _apply_structured_quantities(listing, structured):
             if quantity is None or not 1 <= quantity <= 100:
                 item["quantity"] = None
                 item["quantity_source"] = "uncertain"
+                item["quantity_min"] = 1
+                item["quantity_max"] = None
                 item["quantity_reason"] = "invalid structured quantity"
                 continue
             html_source = item.get("quantity_source")
@@ -654,14 +658,21 @@ def _apply_structured_quantities(listing, structured):
             if html_source == "uncertain":
                 item["quantity"] = None
                 item["quantity_source"] = "uncertain"
-                item["quantity_reason"] = "HTML quantity marker conflicts with structured source"
+                item["quantity_min"] = item.get("quantity_min", 1)
+                item["quantity_max"] = item.get("quantity_max")
+                item["quantity_reason"] = "HTML quantity marker is ambiguous; structured data cannot override the conflict"
             elif html_source == "explicit" and html_quantity != quantity:
                 item["quantity"] = None
                 item["quantity_source"] = "uncertain"
+                item["quantity_min"] = min(int(html_quantity), quantity)
+                item["quantity_max"] = max(int(html_quantity), quantity)
                 item["quantity_reason"] = f"HTML says {html_quantity}, structured data says {quantity}"
             else:
                 item["quantity"] = quantity
                 item["quantity_source"] = "structured"
+                item["quantity_min"] = quantity
+                item["quantity_max"] = quantity
+                item["quantity_reason"] = ""
                 item["structured_item_id"] = str(row.get("itemDetailsId", ""))
     listing["structured_trade_post_id"] = str(structured.get("id", ""))
     listing["requested_wildcards"] = list(structured.get("requestedWildcards") or [])
@@ -842,6 +853,9 @@ def _api_trade_post_to_listing(post, item_map):
             "name": name,
             "quantity": quantity,
             "quantity_source": "structured" if quantity is not None else "uncertain",
+            "quantity_min": quantity if quantity is not None else 1,
+            "quantity_max": quantity,
+            "quantity_reason": "" if quantity is not None else "invalid structured quantity",
             "listed_price": None,
             "raw_excerpt": f"API itemDetailsId={item_id}; role={role}; quantity={row.get('quantity')}",
             "structured_item_id": item_id,
