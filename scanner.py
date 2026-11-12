@@ -1543,7 +1543,10 @@ def evaluate_listing(listing, values):
 def qualifies(result, min_diff=None, min_percent=None):
     min_diff = MIN_DIFF if min_diff is None else min_diff
     min_percent = MIN_PROFIT_PERCENT if min_percent is None else min_percent
-    metric = result["profit_best"] if result.get("manual_review") else result["profit_worst"]
+    metric = result.get(
+        "profit_best" if result.get("manual_review") else "profit_worst",
+        result.get("difference", 0),
+    )
     return metric > 0 and metric >= min_diff and result["margin"] >= min_percent
 
 
