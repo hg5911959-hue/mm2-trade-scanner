@@ -1316,11 +1316,17 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                 addition_ids.append(post_id)
                 continue
             if item_map is None:
-                item_map = fetch_bloxswaps_items_map()
+                needs_catalogue = any(
+                    isinstance(row, dict) and row.get("itemDetailsId")
+                    and not (row.get("displayName") or row.get("name"))
+                    for row in (raw.get("tradePostItems") or [])
+                )
+                item_map = fetch_bloxswaps_items_map() if needs_catalogue else {}
             unknown_ids = {
                 str(row.get("itemDetailsId") or "")
                 for row in (raw.get("tradePostItems") or [])
                 if isinstance(row, dict) and row.get("itemDetailsId")
+                and not (row.get("displayName") or row.get("name"))
                 and str(row.get("itemDetailsId")) not in item_map
             }
             if unknown_ids:
