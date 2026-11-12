@@ -62,6 +62,35 @@ class ParserTests(unittest.TestCase):
         <a href="/fr/users/12345">Owner</a></article>"""
         self.assertEqual(parse_listings(html_a)[0]["id"], parse_listings(html_b)[0]["id"])
 
+    def test_repeated_identical_weapon_images_are_counted_individually(self):
+        html = """
+        <article>
+          <div>Propose <img alt="Chroma Gemstone"><img alt="Chroma Gemstone"></div>
+          <div>Recherche <img alt="Chroma Laser"></div>
+          <a href="/fr/users/12345">Owner</a>
+        </article>
+        """
+        listing = parse_listings(html)[0]
+        self.assertEqual(len(listing["receive_items"]), 2)
+        values = {
+            "chroma gemstone": {"name": "Chroma Gemstone", "value": 10},
+            "chroma laser": {"name": "Chroma Laser", "value": 5},
+        }
+        total, breakdown, missing = calculate_side(listing["receive_items"], values)
+        self.assertEqual(total, 20)
+        self.assertEqual(missing, [])
+        self.assertIn("x2", breakdown[0])
+
+    def test_quantity_in_image_alt_is_parsed(self):
+        html = """
+        <article>
+          <div>Propose <img alt="Chroma Gemstone x2"></div>
+          <div>Recherche <img alt="Chroma Laser"></div>
+        </article>
+        """
+        listing = parse_listings(html)[0]
+        self.assertEqual(listing["receive_items"], [{"name": "Chroma Gemstone", "quantity": 2}])
+
     def test_calculate_side_multiplies_quantities_and_groups_duplicates(self):
         items = [
             {"name": "Chroma Gemstone", "quantity": 2},
@@ -195,7 +224,46 @@ class ReliabilityTests(unittest.TestCase):
             self.assertEqual(len(path.read_text().splitlines()), 2)
             self.assertFalse(path.with_name("history.csv.tmp").exists())
 
-    def test_main_baselines_then_alerts_new_listing_once(self):
+    def test_owner_profile_is_the_primary_telegram_link(self):
+        listing = {
+            "url": "https://bloxswaps.com/fr/trade-mm2?ad=abc",
+            "owner_url": "https://bloxswaps.com/fr/users/12345?tab=trade-ads",
+        }
+        message = scanner.format_trade_message(listing, 10, ["give"], 20, ["receive"], 10)
+        self.assertIn("OPEN OWNER PROFILE: https://bloxswaps.com/fr/users/12345", message)
+        self.assertLess(message.index("OPEN OWNER PROFILE"), message.index("Listing details"))
+
+    def test_main_retries_unmatched_offer_after_value_mapping_becomes_available(self):
+        html = """
+        <article>
+          <div>Propose <img alt="Knife B"></div>
+          <div>Recherche <img alt="Knife A"></div>
+          <a href="/fr/trade-mm2?ad=retry-me">Discussion</a>
+          <a href="/fr/users/123">Owner</a>
+        </article>
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sent = []
+            value_sets = [
+                {"knife a": {"name": "Knife A", "value": 10}},
+                {"knife a": {"name": "Knife A", "value": 10},
+                 "knife b": {"name": "Knife B", "value": 20}},
+            ]
+            with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), \\
+                 patch("scanner.ALERTED_FILE", root / "alerted.json"), \\
+                 patch("scanner.FAILURE_FILE", root / "failure.json"), \\
+                 patch("scanner.HISTORY_FILE", root / "history.csv"), \\
+                 patch("scanner.load_supreme_values", side_effect=value_sets), \\
+                 patch("scanner.fetch_bloxswaps", return_value=html), \\
+                 patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)), \\
+                 patch("scanner.compare_secondary_values", return_value=""):
+                scanner.main()
+                scanner.main()
+            self.assertEqual(len(sent), 1)
+            self.assertTrue((root / "alerted.json").exists())
+
+    def test_main_alerts_visible_qualifying_offers_once(self):
         def html(ad_ids):
             cards = []
             for ad in ad_ids:
@@ -214,6 +282,7 @@ class ReliabilityTests(unittest.TestCase):
             sequence = [html(["old"]), html(["old", "new"]), html(["old", "new"])]
             with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), \
                  patch("scanner.SEEN_FILE", root / "seen.json"), \
+                 patch("scanner.ALERTED_FILE", root / "alerted.json"), \
                  patch("scanner.FAILURE_FILE", root / "failure.json"), \
                  patch("scanner.HISTORY_FILE", root / "history.csv"), \
                  patch("scanner.load_supreme_values", return_value={
@@ -225,8 +294,9 @@ class ReliabilityTests(unittest.TestCase):
                 scanner.main()
                 scanner.main()
                 scanner.main()
-            self.assertEqual(len(sent), 1)
+            self.assertEqual(len(sent), 2)
             self.assertTrue((root / "history.csv").exists())
+            self.assertTrue((root / "alerted.json").exists())
 
 
 if __name__ == "__main__":
