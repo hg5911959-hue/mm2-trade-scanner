@@ -231,7 +231,7 @@ def listing_links(node):
             if any(word in href.casefold() for word in ("trade", "post", "listing")):
                 discussion_url = urljoin(BLOXSWAPS_URL, href)
                 break
-    return discussion_url or BLOXSWAPS_URL, owner_url
+    return discussion_url or BLOXSWAPS_URL, owner_url, links
 
 
 def _identity_items(items):
@@ -295,6 +295,7 @@ def parse_page(html):
     listings = []
     additions = 0
     malformed = 0
+    link_samples = []
     for node in candidates:
         text = node_text(node)
         if has_addition_marker(node):
@@ -304,7 +305,9 @@ def parse_page(html):
         if not received or not requested:
             malformed += 1
             continue
-        link, owner_url = listing_links(node)
+        link, owner_url, card_links = listing_links(node)
+        if len(link_samples) < 5:
+            link_samples.append(card_links[:10])
         stable = stable_listing_id(owner_url, received, requested, link, listing_identifier(node))
         listings.append({
             "id": stable,
@@ -321,6 +324,7 @@ def parse_page(html):
         "addition_count": additions,
         "malformed_count": malformed,
         "owner_link_count": sum(1 for item in parsed if item.get("owner_url")),
+        "link_samples": link_samples,
     }
 
 
@@ -699,6 +703,8 @@ def main():
         raise RuntimeError(f"[bloxswaps] Parser could not read {stats['malformed_count']} non-Ajouts cards.")
     print(f"[bloxswaps] Eligible listings after Ajouts filter: {len(listings)}")
     print(f"[bloxswaps] Direct owner profiles parsed: {stats.get('owner_link_count', 0)}/{len(listings)}")
+    for index, links in enumerate(stats.get("link_samples", []), start=1):
+        print(f"[bloxswaps-link-debug] card={index} hrefs={links}")
 
     alerted = load_alerted()
     reviewed = load_reviewed()
