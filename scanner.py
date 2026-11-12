@@ -138,9 +138,11 @@ def split_item_label(raw):
     name = re.sub(r"\s+(dans|in) Murder Mystery 2$", "", name, flags=re.I)
     name = re.sub(r"\s+", " ", name).strip()
     quantity = None
-    match = re.search(r"(?:[x×]\s*(\d{1,3})|(\d{1,3})\s*[x×])\s*$", name, flags=re.I)
+    normalized = _normalize_quantity_text(name)
+    match = re.search(r"(?:[x×]\s*(\d{1,3})|(\d{1,3})\s*[x×])\s*$", normalized, flags=re.I)
     if match:
-        quantity = max(1, min(int(match.group(1) or match.group(2)), 100))
+        parsed = int(match.group(1) or match.group(2))
+        quantity = parsed if 1 <= parsed <= 100 else None
         name = name[:match.start()].strip()
     ignored = {
         "coin", "offers", "offres", "ajouts", "ajout", "item stability",
@@ -186,9 +188,11 @@ def _quantity_marker(raw):
     match = re.fullmatch(r"(?:x|×)\s*(\d{1,3})|(?:\d{1,3})\s*(?:x|×)", text, flags=re.I)
     if match:
         number = re.search(r"\d{1,3}", text)
-        return max(1, min(int(number.group()), 100))
+        parsed = int(number.group())
+        return parsed if 1 <= parsed <= 100 else None
     if re.fullmatch(r"\d{1,3}", text):
-        return max(1, min(int(text), 100))
+        parsed = int(text)
+        return parsed if 1 <= parsed <= 100 else None
     return None
 
 
@@ -196,10 +200,13 @@ def _explicit_stack_quantities(raw):
     """Return all explicit xN/×N/Nx markers; never parse bare prices as counts."""
     text = _normalize_quantity_text(raw)
     pattern = r"(?<![A-Za-z0-9])(?:x|×)\s*(\d{1,3})(?!\d)|(?<!\d)(\d{1,3})\s*(?:x|×)(?![A-Za-z0-9])"
-    return [
-        max(1, min(int(match.group(1) or match.group(2)), 100))
-        for match in re.finditer(pattern, text, flags=re.I)
-    ]
+    values = []
+    for match in re.finditer(pattern, text, flags=re.I):
+        parsed = int(match.group(1) or match.group(2))
+        if not 1 <= parsed <= 100:
+            continue
+        values.append(parsed)
+    return values
 
 
 def _explicit_stack_quantity(raw):
