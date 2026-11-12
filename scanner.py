@@ -540,9 +540,23 @@ def load_supreme_values():
                             secondary = None
                     except (TypeError, ValueError):
                         secondary = None
-                    all_values[normalize_name(name)] = {
+                    key = normalize_name(name)
+                    candidate = {
                         "name": name, "value": source_value, "secondary_value": secondary
                     }
+                    existing = all_values.get(key)
+                    if existing is None or source_value > float(existing["value"]):
+                        if existing is not None:
+                            print(
+                                f"[supreme] Duplicate normalized name {name!r}: "
+                                f"keeping higher value {source_value:g} over {float(existing['value']):g}"
+                            )
+                        all_values[key] = candidate
+                    elif source_value < float(existing["value"]):
+                        print(
+                            f"[supreme] Duplicate normalized name {name!r}: "
+                            f"ignoring lower value {source_value:g}; keeping {float(existing['value']):g}"
+                        )
             offset += len(items)
             if len(items) < page_size:
                 break
