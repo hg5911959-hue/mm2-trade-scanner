@@ -619,6 +619,8 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
     owner_link = listing.get("owner_url") or listing.get("url") or BLOXSWAPS_URL
     lines = [
         "MM2 SUPREME TRADE SCANNER",
+        f"OPEN OWNER PROFILE: {owner_link}",
+        *( [f"Listing details: {listing['url']}"] if listing.get("url") and listing.get("url") != owner_link else [] ),
         "",
         "YOU GIVE (BloxSwaps: Recherche):",
         *(give_lines or ["• No items"]),
@@ -632,8 +634,6 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
         f"CALCULATED RESULT: {result}",
         "",
         "Values: Supreme Values source_b via RBLXValue API (Data from rblxvalue.com).",
-        f"OPEN OWNER PROFILE: {owner_link}",
-        *( [f"Listing details: {listing['url']}"] if listing.get("url") and listing.get("url") != owner_link else [] ),
     ]
     return "\n".join(lines)
 
@@ -647,6 +647,8 @@ def format_unvalued_message(listing, missing):
     owner_link = listing.get("owner_url") or listing.get("url") or BLOXSWAPS_URL
     lines = [
         "MM2 TRADE SCANNER — MANUAL VALUE CHECK",
+        f"OPEN OWNER PROFILE: {owner_link}",
+        *( [f"Listing details: {listing['url']}"] if listing.get("url") and listing.get("url") != owner_link else [] ),
         "",
         "YOU GIVE (Recherche):",
         *describe(listing.get("give_items", [])),
@@ -656,10 +658,7 @@ def format_unvalued_message(listing, missing):
         "",
         "UNMATCHED SUPREME ITEMS: " + ", ".join(sorted(set(missing))),
         "PROFIT: NOT CALCULATED — no value was guessed.",
-        f"OPEN OWNER PROFILE: {owner_link}",
     ]
-    if listing.get("url") and listing.get("url") != owner_link:
-        lines.append(f"Listing details: {listing['url']}")
     return "\n".join(lines)
 
 
