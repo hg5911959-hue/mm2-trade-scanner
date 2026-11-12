@@ -544,10 +544,10 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(reason, ["one side has no valued items"])
 
     def test_watchdog_should_alert_windows(self):
-        self.assertFalse(watchdog.should_alert(24))
-        self.assertTrue(watchdog.should_alert(25))
-        self.assertTrue(watchdog.should_alert(29))
-        self.assertFalse(watchdog.should_alert(30))
+        self.assertFalse(watchdog.should_alert(19))
+        self.assertTrue(watchdog.should_alert(20))
+        self.assertTrue(watchdog.should_alert(24))
+        self.assertFalse(watchdog.should_alert(25))
         self.assertTrue(watchdog.should_alert(360))
         self.assertFalse(watchdog.should_alert(380))
 
@@ -2122,9 +2122,13 @@ class WorkflowSecurityTests(unittest.TestCase):
     def test_scan_and_state_jobs_have_separate_permissions_and_no_legacy_cache(self):
         workflow = Path(".github/workflows/scan.yml").read_text(encoding="utf-8")
         scan_job, state_job = workflow.split("  persist-state:", 1)
-        self.assertIn('cron: "*/15 * * * *"', workflow)
+        self.assertIn('cron: "*/10 * * * *"', workflow)
         self.assertIn("cancel-in-progress: false", workflow)
-        self.assertIn('MM2_SCAN_DURATION_SECONDS: "720"', scan_job)
+        self.assertIn('MM2_SCAN_DURATION_SECONDS: "570"', scan_job)
+        self.assertIn("timeout-minutes: 12", scan_job)
+        self.assertNotIn("Test parser and value calculations", scan_job)
+        self.assertIn("git checkout --orphan state-new", state_job)
+        self.assertIn("git push --force origin state-new:state", state_job)
         self.assertIn('MM2_SCAN_INTERVAL_SECONDS: "45"', scan_job)
         job_defaults = scan_job.split("    steps:", 1)[0]
         self.assertNotIn("MM2_SCAN_DURATION_SECONDS", job_defaults)
@@ -2141,7 +2145,7 @@ class WorkflowSecurityTests(unittest.TestCase):
             for line in source.splitlines():
                 if "uses:" not in line:
                     continue
-                reference = line.split("uses:", 1)[1].strip()
+                reference = line.split("uses:", 1)[1].split("#", 1)[0].strip()
                 self.assertIn("@", reference, msg=f"{path}: {reference}")
                 self.assertRegex(reference.rsplit("@", 1)[1], r"^[0-9a-f]{40}$", msg=f"{path}: {reference}")
 
