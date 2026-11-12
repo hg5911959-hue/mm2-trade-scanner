@@ -2269,4 +2269,4 @@ class RealAlertReevaluationIntegrationTests(unittest.TestCase):
                 scanner.main()
         trade_messages = [message for message in sent if "💎 MM2 TRADE" in message]
         self.assertEqual(len(trade_messages), 1)
-        self.assertIn("Supreme Profit: +10", trade_messages[0])
+        self.assertIn("PROFIT: +10", trade_messages[0])
