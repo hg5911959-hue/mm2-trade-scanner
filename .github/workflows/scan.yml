@@ -1,9 +1,6 @@
 name: MM2 Trade Scanner
 
 on:
-  push:
-    branches: [main]
-    paths: [scanner.py]
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
