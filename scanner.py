@@ -867,22 +867,29 @@ def _api_trade_post_to_listing(post, item_map):
 
 
 def fetch_bloxswaps_all(seen_ad_ids=None):
-    """Fetch the RSC first page, then cursor pages until an already-seen post is reached."""
+    """Fetch RSC first page and cursor pages until a previously seen post is reached."""
     html = fetch_bloxswaps()
     first_listings, stats = parse_page(html)
     initial_page = parse_structured_initial_page(html)
     if not initial_page:
-        # Compatibility for captured HTML fixtures and older page variants.
-        stats.update({"pagination_pages": 1, "pagination_complete": False, "pagination_source": "html-only"})
+        stats.update({
+            "pagination_pages": 1, "pagination_complete": False,
+            "pagination_source": "html-only", "addition_ids": [],
+            "unparsed_ad_ids": [],
+        })
         return first_listings, stats, []
 
     raw_first_items = initial_page.get("items") or []
     if seen_ad_ids is None:
-        # Missing persistent state must not replay a large backlog on deployment.
-        seed_ids = [str(item.get("id")) for item in raw_first_items if isinstance(item, dict) and item.get("id")]
+        # First run after a missing state must not alert the historical feed backlog.
+        seed_ids = [
+            str(item.get("id")) for item in raw_first_items
+            if isinstance(item, dict) and item.get("id")
+        ]
         stats.update({
             "pagination_pages": 1, "pagination_complete": False,
             "pagination_source": "rsc-cold-start", "cold_start": True,
+            "addition_ids": [], "unparsed_ad_ids": [],
         })
         return [], stats, seed_ids
 
@@ -893,27 +900,49 @@ def fetch_bloxswaps_all(seen_ad_ids=None):
     }
     collected = []
     discovered_ids = []
+    addition_ids = []
+    unparsed_ids = []
     boundary_reached = False
-    for raw in raw_first_items:
-        if not isinstance(raw, dict) or not raw.get("id"):
-            continue
-        post_id = str(raw["id"])
-        if post_id in seen:
-            boundary_reached = True
-            break
-        discovered_ids.append(post_id)
-        if any(str(value).casefold() in {"add", "ajout", "ajouts"} for value in (raw.get("requestedWildcards") or [])):
-            continue
-        listing = by_ad_id.get(post_id)
-        if listing:
-            collected.append(listing)
+    additions = 0
+    malformed = 0
+    api_listings_added = 0
+    api_posts_scanned = 0
+    candidate_count = 0
 
+    def consume_raw_posts(raw_posts, from_api=False, item_map=None):
+        nonlocal boundary_reached, additions, malformed, api_listings_added, candidate_count
+        for raw in raw_posts:
+            if not isinstance(raw, dict) or not raw.get("id"):
+                malformed += 1
+                continue
+            post_id = str(raw["id"])
+            if post_id in seen:
+                boundary_reached = True
+                break
+            if post_id in discovered_ids:
+                continue
+            discovered_ids.append(post_id)
+            candidate_count += 1
+            wildcards = raw.get("requestedWildcards") or []
+            if any(str(value).casefold() in {"add", "ajout", "ajouts"} for value in wildcards):
+                additions += 1
+                addition_ids.append(post_id)
+                continue
+            listing = by_ad_id.get(post_id) if not from_api else _api_trade_post_to_listing(raw, item_map or {})
+            if listing:
+                collected.append(listing)
+                if from_api:
+                    api_listings_added += 1
+            else:
+                malformed += 1
+                unparsed_ids.append(post_id)
+
+    consume_raw_posts(raw_first_items)
     cursor = (initial_page.get("meta") or {}).get("cursor")
     pages_scanned = 1
-    api_posts_scanned = 0
+    seen_cursors = {str(cursor)} if cursor else set()
     if cursor and not boundary_reached:
         item_map = fetch_bloxswaps_items_map()
-        seen_cursors = {str(cursor)}
         while cursor and pages_scanned < MAX_FEED_PAGES:
             payload = bloxswaps_api_get_json(
                 "/trade-posts", {"cursor": cursor, "pageSize": BLOXSWAPS_PAGE_SIZE}
@@ -922,19 +951,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None):
                 raise RuntimeError("[bloxswaps] Cursor API returned an invalid page structure.")
             page_items = payload["items"]
             api_posts_scanned += len(page_items)
-            for raw in page_items:
-                if not isinstance(raw, dict) or not raw.get("id"):
-                    continue
-                post_id = str(raw["id"])
-                if post_id in seen:
-                    boundary_reached = True
-                    break
-                discovered_ids.append(post_id)
-                if any(str(value).casefold() in {"add", "ajout", "ajouts"} for value in (raw.get("requestedWildcards") or [])):
-                    continue
-                listing = _api_trade_post_to_listing(raw, item_map)
-                if listing:
-                    collected.append(listing)
+            consume_raw_posts(page_items, from_api=True, item_map=item_map)
             pages_scanned += 1
             if boundary_reached:
                 break
@@ -948,20 +965,27 @@ def fetch_bloxswaps_all(seen_ad_ids=None):
             cursor = next_cursor
 
     pagination_complete = not cursor or boundary_reached
+    unique = {}
+    for listing in collected:
+        unique[listing["id"]] = listing
+    result = list(unique.values())
     stats.update({
+        "candidate_count": candidate_count,
+        "addition_count": additions,
+        "malformed_count": malformed,
+        "owner_link_count": sum(1 for item in result if item.get("owner_url")),
         "pagination_pages": pages_scanned,
         "pagination_api_posts": api_posts_scanned,
         "pagination_complete": pagination_complete,
         "pagination_source": "RSC + cursor API",
         "seen_boundary_reached": boundary_reached,
+        "api_listings_added": api_listings_added,
+        "addition_ids": addition_ids,
+        "unparsed_ad_ids": unparsed_ids,
     })
     if not pagination_complete:
         print(f"[maintenance] Pagination stopped at MAX_FEED_PAGES={MAX_FEED_PAGES} with a cursor remaining.")
-    unique = {}
-    for listing in collected:
-        unique[listing["id"]] = listing
-    stats["api_listings_added"] = sum(1 for listing in unique.values() if listing.get("structured_trade_post_id"))
-    return list(unique.values()), stats, discovered_ids
+    return result, stats, discovered_ids
 
 
 def normalize_name(name):
@@ -1220,7 +1244,7 @@ def save_seen_ads(ad_ids):
     atomic_write_text(SEEN_FILE, json.dumps({
         "version": 1, "updated_at": datetime.now(timezone.utc).isoformat(),
         "ad_ids": ordered,
-    }, indent=2) + "\\n")
+    }, indent=2) + "\n")
 
 
 def load_alerted():
