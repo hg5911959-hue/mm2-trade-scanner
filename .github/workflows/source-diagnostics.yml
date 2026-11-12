@@ -5,6 +5,10 @@ on:
     branches: [hardening/staged-audit-2026-11-12]
     paths:
       - ".github/workflows/source-diagnostics.yml"
+      - "scanner.py"
+      - "tests/**"
+      - "aliases.json"
+      - "README.md"
 
 permissions:
   contents: write
