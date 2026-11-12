@@ -136,6 +136,8 @@ jobs:
                       }, ensure_ascii=False)[:1500])
                       if isinstance(payload, dict) and payload.get("items"):
                           break
+                  except urllib.error.HTTPError as e:
+                      print("PAGINATION_API_FAIL", params.keys(), e.code, e.read(800).decode("utf-8", "replace")[:800])
                   except Exception as e:
                       print("PAGINATION_API_FAIL", params.keys(), type(e).__name__, str(e)[:200])
           print("PAGINATION_LINKS", [x for x in parser.links if re.search(r"page|cursor|offset|next", x, re.I)][:80])
