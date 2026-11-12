@@ -1425,20 +1425,56 @@ def main():
         print("[stage] API key present; secret contents are intentionally never logged")
     print("[stage] Loading Supreme Values before evaluating trades")
     values = load_supreme_values()
-    print("[stage] Fetching BloxSwaps listings")
-    html = fetch_bloxswaps()
-    listings, stats = parse_page(html)
+    print("[stage] Loading seen-offer state")
+    seen_ads = load_seen_ads()
+    print("[stage] Fetching BloxSwaps listings and cursor pages")
+    listings, stats, discovered_ids = fetch_bloxswaps_all(seen_ads)
+    if stats.get("cold_start"):
+        save_seen_ads(discovered_ids)
+        print(
+            f"[state] First-run feed baseline created with {len(discovered_ids)} current posts; "
+            "historical listings were marked seen without sending alerts."
+        )
+        record_success()
+        write_step_summary("First-run baseline: existing feed posts marked as seen; new posts will be evaluated next scan.")
+        return
+    seen_ads = set(seen_ads or [])
     if not listings:
+        if stats.get("seen_boundary_reached"):
+            print("[bloxswaps] Feed is current: first visible offers were already processed.")
+            record_success()
+            write_step_summary("Feed current: no new trade posts before the seen cursor boundary.")
+            return
         if stats["candidate_count"] > 0 and stats["addition_count"] == stats["candidate_count"]:
             print(f"[bloxswaps] No eligible listings: all {stats['addition_count']} candidate cards contained Ajouts.")
+            save_seen_ads(seen_ads | set(stats.get("addition_ids", [])))
             record_success()
-            write_step_summary("Successful scan: all visible candidates excluded for Ajouts.")
+            write_step_summary("Successful scan: all current candidates excluded for Ajouts.")
             return
-        if stats["candidate_count"] == 0:
+        if stats["candidate_count"] == 0 and stats.get("pagination_source") == "html-only":
             raise RuntimeError("[bloxswaps] No trade cards parsed; page structure may have changed or feed is empty.")
-        raise RuntimeError(f"[bloxswaps] Parser could not read {stats['malformed_count']} non-Ajouts cards.")
+        if stats["candidate_count"] == 0 and not stats.get("pagination_complete"):
+            raise RuntimeError("[bloxswaps] No feed entries parsed and pagination could not be verified.")
     print(f"[bloxswaps] Eligible listings after Ajouts filter: {len(listings)}")
     print(f"[bloxswaps] Direct owner profiles parsed: {stats.get('owner_link_count', 0)}/{len(listings)}")
+    print(
+        f"[pagination] pages={stats.get('pagination_pages', 1)} "
+        f"api_posts={stats.get('pagination_api_posts', 0)} "
+        f"complete={stats.get('pagination_complete', False)} "
+        f"seen_boundary={stats.get('seen_boundary_reached', False)}"
+    )
+    addition_ids = set(stats.get("addition_ids", []))
+    if addition_ids:
+        seen_ads.update(addition_ids)
+        save_seen_ads(seen_ads)
+    malformed_count = int(stats.get("malformed_count", 0))
+    if malformed_count:
+        print(
+            f"[maintenance] {malformed_count} card(s) could not be parsed; "
+            f"unparsed IDs: {', '.join(stats.get('unparsed_ad_ids', [])[:10])}"
+        )
+    if not stats.get("pagination_complete", False) and stats.get("pagination_source") != "html-only":
+        print("[maintenance] Feed pagination is incomplete; more recent posts may remain beyond the scan limit.")
     # Runtime visibility for real-feed quantity validation: log only explicit stacks.
     for listing in listings:
         for side_label, field in (("Propose/receive", "receive_items"), ("Recherche/give", "give_items")):
