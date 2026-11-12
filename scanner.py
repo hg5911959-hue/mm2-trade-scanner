@@ -2501,17 +2501,16 @@ def scan_once():
             listing, op["give_total"], op["give_lines"],
             op["receive_total"], op["receive_lines"], op["difference"]
         )
-        message += (
-            f"\nPROFIT RANGE: worst-case {format_number(op['profit_worst'])}; "
-            f"best-case {format_number(op['profit_best'])}"
-        )
         if op.get("manual_review"):
             message = (
-                "⚠️ MANUAL VERIFICATION REQUIRED — best case is profitable, "
-                "but worst case is not guaranteed. Do not trade before checking the stack.\n\n"
+                "⚠️ MANUAL CHECK — profit is not guaranteed; verify the stack before trading.\n\n"
                 + message
             )
-        message += f"\nPROFIT MARGIN (scenario): {op['margin']:.2f}%"
+            message += (
+                f"\n⚠️ POSSIBLE PROFIT RANGE: {format_number(op['profit_worst'])} "
+                f"to {format_number(op['profit_best'])}"
+            )
+        message += f"\n📊 MARGIN: {op['margin']:.2f}%"
         large_stacks = [
             item["name"] for field in ("give_items", "receive_items")
             for item in listing.get(field, [])
