@@ -198,26 +198,36 @@ def quantity_from_image_node(image_node):
     if alt_quantity is not None:
         return alt_quantity
 
-    current = image_node
-    for _ in range(3):
-        if current is None:
+    # Inspect only the immediate item wrapper and its parent wrapper for
+    # sibling badges. Never walk higher into a whole offer/card where a badge
+    # belonging to another weapon or the opposite side could be picked up.
+    branch = image_node
+    ancestor = image_node.parent
+    for _ in range(2):
+        if ancestor is None:
             break
-        # Structured data attributes are authoritative and may contain a bare integer.
-        for key in ("data-quantity", "data-count", "data-amount", "data-stack",
-                    "data-stack-count"):
-            quantity = _quantity_marker(current.attrs.get(key, ""))
-            if quantity is not None:
-                return quantity
-        # Titles/accessibility labels must contain an explicit xN marker;
-        # prices such as "750" must never be interpreted as quantities.
-        for key in ("aria-label", "title"):
-            quantity = _explicit_stack_quantity(current.attrs.get(key, ""))
-            if quantity is not None:
-                return quantity
-        current = current.parent
-    # Do not inspect arbitrary ancestor siblings here: that can borrow x2
-    # from the previous/next weapon or even from the opposite trade side.
-    # Ordered event parsing associates nearby badges with their exact item.
+        for kind, sibling in ancestor.events:
+            if kind != "node" or sibling is branch:
+                continue
+            if any(
+                child.tag == "img" and clean_item_name(child.attrs.get("alt", ""))
+                for child in walk_nodes(sibling)
+            ):
+                continue
+            classes = " ".join((
+                sibling.attrs.get("class", ""), sibling.attrs.get("id", ""),
+                sibling.attrs.get("aria-label", ""), sibling.attrs.get("data-testid", "")
+            )).casefold()
+            marker_text = node_text(sibling)
+            explicit = _explicit_stack_quantity(marker_text)
+            semantic = bool(re.search(r"quant|count|amount|stack|badge|counter", classes))
+            bare = _quantity_marker(marker_text) if semantic else None
+            if explicit is not None:
+                return explicit
+            if bare is not None:
+                return bare
+        branch = ancestor
+        ancestor = ancestor.parent
     return None
 
 
