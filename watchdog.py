@@ -43,6 +43,8 @@ def latest_success_age_minutes(token):
 
 
 def latest_active_scan_age_minutes(token):
+    if not token:
+        raise RuntimeError("Missing GitHub Actions token.")
     repository = os.environ.get("GITHUB_REPOSITORY", "").strip()
     if not repository or repository.count("/") != 1:
         raise RuntimeError("GITHUB_REPOSITORY must be set to owner/repository.")
