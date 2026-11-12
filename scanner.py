@@ -32,11 +32,12 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 MIN_DIFF = float(os.environ.get("MIN_VALUE_DIFFERENCE", "0"))
 MIN_PROFIT_PERCENT = float(os.environ.get("MIN_PROFIT_PERCENT", "5"))
 FAILURE_THRESHOLD = int(os.environ.get("FAILURE_ALERT_THRESHOLD", "3"))
-MAX_ALERTS_PER_RUN = max(1, int(os.environ.get("MAX_ALERTS_PER_RUN", "3")))
+MAX_ALERTS_PER_RUN = max(0, int(os.environ.get("MAX_ALERTS_PER_RUN", "0")))
 _SESSION_ALERTS_SENT = 0
 _SESSION_ALERT_LIMIT = MAX_ALERTS_PER_RUN
 ALERT_DELAY_SECONDS = max(0.0, float(os.environ.get("ALERT_DELAY_SECONDS", "1")) )
 VALUES_FILE = Path("data/supreme_values.json")
+VALUES_AUDIT_FILE = Path("data/supreme_values_audit.json")
 FAILURE_FILE = Path("data/failure_state.json")
 HISTORY_FILE = Path("data/history.csv")
 MAX_ALERTED = 5000
@@ -51,7 +52,7 @@ ALIASES_FILE = Path("aliases.json")
 UNMATCHED_FILE = Path("data/unmatched_names.json")
 MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
 BLOXSWAPS_PAGE_SIZE = 20
-MAX_FEED_PAGES = max(1, min(100, int(os.environ.get("MAX_FEED_PAGES", "50"))))
+MAX_FEED_PAGES = max(1, min(100, int(os.environ.get("MAX_FEED_PAGES", "100"))))
 VALUES_TTL_SECONDS = max(60, int(os.environ.get("VALUES_TTL_SECONDS", "300")))
 BLOXSWAPS_ITEMS_TTL_SECONDS = max(300, int(os.environ.get("BLOXSWAPS_ITEMS_TTL_SECONDS", "3600")))
 PENDING_TTL_SECONDS = max(86400, int(os.environ.get("PENDING_TTL_SECONDS", str(7 * 86400))))
@@ -1859,12 +1860,57 @@ def _read_values_cache():
         return None, None
 
 
+def _write_supreme_values_audit(values, fetched_at=None):
+    """Persist a complete row-by-row audit of every Supreme source record."""
+    rows = []
+    counts = {"records": 0, "numeric": 0, "non_numeric": 0, "identity_collisions": 0}
+    for key, record in sorted((values or {}).items()):
+        variants = record.get("variants") if isinstance(record, dict) else None
+        variants = variants if isinstance(variants, list) and variants else [record]
+        if len(variants) > 1:
+            counts["identity_collisions"] += 1
+        for variant in variants:
+            if not isinstance(variant, dict):
+                continue
+            counts["records"] += 1
+            numeric = variant.get("value")
+            is_numeric = isinstance(numeric, (int, float)) and math.isfinite(float(numeric)) and float(numeric) > 0
+            counts["numeric" if is_numeric else "non_numeric"] += 1
+            rows.append({
+                "name": str(variant.get("name") or record.get("name") or key),
+                "id": str(variant.get("id") or ""),
+                "slug": str(variant.get("slug") or ""),
+                "category": str(variant.get("category") or ""),
+                "type": str(variant.get("type") or ""),
+                "value": numeric if is_numeric else None,
+                "value_min": variant.get("value_min"),
+                "value_max": variant.get("value_max"),
+                "raw_source_value": variant.get("raw_source_value"),
+                "value_status": str(variant.get("value_status") or ("numeric" if is_numeric else "not_numeric")),
+                "last_updated": variant.get("last_updated"),
+            })
+    VALUES_AUDIT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(VALUES_AUDIT_FILE, json.dumps({
+        "schema_version": 1,
+        "source": "RBLXValue API v2 value_source_b (Supreme Values)",
+        "fetched_at": fetched_at or time.time(),
+        "counts": counts,
+        "items": rows,
+    }, ensure_ascii=False, indent=2) + "\n")
+    print(
+        f"[supreme-audit] Complete audit saved: {counts['records']} identities; "
+        f"{counts['numeric']} numeric; {counts['non_numeric']} non-numeric; "
+        f"{counts['identity_collisions']} same-name collision groups"
+    )
+
+
 def load_supreme_values():
     # Schema v3 preserves item identity; schema-v2 caches discarded category/type/slug.
     cached_document = _read_values_cache_document()
     cached_values, cached_age = _read_values_cache()
     if cached_values is not None and cached_age is not None and cached_age <= VALUES_TTL_SECONDS:
         print(f"[supreme] Using fresh source_b snapshot (age {cached_age}s; TTL {VALUES_TTL_SECONDS}s)")
+        _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
         return cached_values
     if not RBLXVALUE_API_KEY:
         raise RuntimeError("[supreme] API key missing and no fresh cached source_b snapshot; refusing stale values.")
@@ -1983,6 +2029,7 @@ def load_supreme_values():
     }, ensure_ascii=False, indent=2) + "\n")
     collisions = sum(1 for record in all_values.values() if len(record.get("variants", [])) > 1)
     print(f"[supreme] Loaded {numeric_count} numeric Supreme source_b values across {len(all_values)} names; {collisions} collisions kept separate")
+    _write_supreme_values_audit(all_values, fetched_at=time.time())
     return all_values
 
 
@@ -2498,11 +2545,12 @@ def ignored_item_names(listing):
     return names
 
 
-def _compact_telegram_items(items, limit=8):
+def _compact_telegram_items(items, limit=None):
+    """Render every valued item; never silently hide weapon/value lines in Telegram."""
     items = list(items or [])
-    shown = items[:limit]
-    if len(items) > limit:
-        shown.append(f"• … and {len(items) - limit} more items")
+    shown = items if limit is None else items[:max(0, int(limit))]
+    if limit is not None and len(items) > limit:
+        shown.append(f"• … and {len(items) - limit} more items (see diagnostics)")
     return shown or ["• No items"]
 
 
@@ -2995,12 +3043,10 @@ def scan_once():
             continue
         opportunities.append(result)
 
-    opportunities.sort(key=lambda item: (item["difference"], item["margin"]), reverse=True)
-    remaining_session_alerts = max(0, _SESSION_ALERT_LIMIT - _SESSION_ALERTS_SENT)
-    selected_opportunities = opportunities[:min(MAX_ALERTS_PER_RUN, remaining_session_alerts)]
-    deferred = max(0, len(opportunities) - len(selected_opportunities))
-    for deferred_op in opportunities[len(selected_opportunities):]:
-        mark_pending(deferred_op["listing"])
+    # Do not discard qualified trades because of an arbitrary per-run/session cap.
+    # Keep feed order to avoid starving older opportunities during busy periods.
+    selected_opportunities = opportunities
+    deferred = 0
     for op in selected_opportunities:
         listing = op["listing"]
         trade_id = listing["id"]
@@ -3214,7 +3260,7 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
     duration_seconds = max(1, int(duration_seconds))
     interval_seconds = max(30, min(60, int(interval_seconds)))
     _SESSION_ALERTS_SENT = 0
-    _SESSION_ALERT_LIMIT = max(1, int(os.environ.get("MAX_ALERTS_PER_SESSION", str(MAX_ALERTS_PER_RUN))))
+    _SESSION_ALERT_LIMIT = max(0, int(os.environ.get("MAX_ALERTS_PER_SESSION", str(MAX_ALERTS_PER_RUN))))
     started = time.monotonic()
     deadline = started + duration_seconds
     stop = {"requested": False}
