@@ -323,7 +323,24 @@ jobs:
           listings, stats, _ = scanner.fetch_bloxswaps_all({seen_boundary})
           all_items = [item for listing in listings for item in listing["receive_items"] + listing["give_items"]]
           unknown_ids = [item.get("unmatched_item_id") for item in all_items if item.get("unmatched_item_id")]
-          uncertain = [item for item in all_items if item.get("quantity_source") == "uncertain"]
+          uncertain = [
+              {
+                  "ad": listing.get("source_ad_id"),
+                  "side": side,
+                  "name": item["name"],
+                  "quantity_min": item.get("quantity_min"),
+                  "quantity_max": item.get("quantity_max"),
+                  "html_quantity": item.get("html_quantity"),
+                  "html_source": item.get("html_quantity_source"),
+                  "rsc_quantity": item.get("structured_quantity"),
+                  "reason": item.get("quantity_reason"),
+                  "raw": item.get("raw_excerpt", "")[:140],
+              }
+              for listing in listings
+              for side, field in (("receive", "receive_items"), ("give", "give_items"))
+              for item in listing[field]
+              if item.get("quantity_source") == "uncertain"
+          ]
           stacked = [
               {"ad": listing.get("source_ad_id"), "name": item["name"], "quantity": item["quantity"]}
               for listing in listings
@@ -341,6 +358,7 @@ jobs:
               "stacked_examples": stacked[:10],
               "unknown_item_ids": len(unknown_ids),
               "uncertain_quantities": len(uncertain),
+              "uncertain_examples": uncertain[:5],
               "html_parse_warnings": stats.get("html_parse_warning_count"),
               "seen_boundary": stats.get("seen_boundary_reached"),
           })
