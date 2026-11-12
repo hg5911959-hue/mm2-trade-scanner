@@ -862,7 +862,7 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.compare_secondary_values", return_value=""):
                 scanner.main()
                 scanner.main()
-            # Unknown-valued offers are silently excluded, then re-evaluated.
+            # Unknown-valued offers generate a maintenance notice, remain pending, and are re-evaluated.
             trade_messages = [message for message in sent if "💎 MM2 TRADE" in message]
             self.assertEqual(len(trade_messages), 1)
             self.assertNotIn("MANUAL VALUE CHECK", "".join(trade_messages))
