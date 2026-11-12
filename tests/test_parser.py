@@ -544,9 +544,10 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(reason, ["one side has no valued items"])
 
     def test_watchdog_should_alert_windows(self):
-        self.assertFalse(watchdog.should_alert(29))
-        self.assertTrue(watchdog.should_alert(30))
-        self.assertFalse(watchdog.should_alert(45))
+        self.assertFalse(watchdog.should_alert(24))
+        self.assertTrue(watchdog.should_alert(25))
+        self.assertTrue(watchdog.should_alert(29))
+        self.assertFalse(watchdog.should_alert(30))
         self.assertTrue(watchdog.should_alert(360))
         self.assertFalse(watchdog.should_alert(380))
 
