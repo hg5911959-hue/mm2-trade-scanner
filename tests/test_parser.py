@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from scanner import parse_listings, parse_page, calculate_side, load_supreme_values
+from scanner import parse_listings, parse_page, calculate_side, load_supreme_values, load_seen, save_seen
 
 
 class ParserTests(unittest.TestCase):
@@ -109,6 +109,18 @@ class ParserTests(unittest.TestCase):
             ):
                 loaded = load_supreme_values()
         self.assertEqual(len(loaded), 100)
+
+    def test_legacy_seen_file_is_detected_and_upgraded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            seen_path = Path(directory) / "seen.json"
+            seen_path.write_text(json.dumps({"seen": ["legacy-id"]}), encoding="utf-8")
+            with patch("scanner.SEEN_FILE", seen_path):
+                state = load_seen()
+                self.assertEqual(state["id_version"], 1)
+                save_seen(state["seen"])
+                upgraded = load_seen()
+        self.assertEqual(upgraded["id_version"], 2)
+        self.assertEqual(upgraded["seen"], ["legacy-id"])
 
 
 if __name__ == "__main__":
