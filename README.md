@@ -47,8 +47,9 @@ Items without a numeric Supreme value are not partially valued. Brew and Drool r
 
 The scanner uses RBLXValue API v2 and calculates all trade totals from `value_source_b` (Supreme Values). `value_source_a` is secondary information only and is never blended into Supreme totals.
 
-- A successful Supreme snapshot is reused for **5 minutes**. Once expired, the scanner must refresh from the API; if refresh fails or the API key is missing, it fails closed rather than using stale values.
+- A successful Supreme snapshot is reused for **5 minutes**. Once expired, the scanner conditionally revalidates each cached API page with its HTTP `ETag` (`If-None-Match`); unchanged pages are reused only after a matching `304 Not Modified`. Pages without a stored ETag are fetched normally. If refresh/revalidation fails, a 304 has no matching cached page, or the API key is missing, it fails closed rather than using stale values.
 - The site item catalogue is loaded from `https://api.bloxswaps.com/items` and cached for **1 hour**.
+- The `BloxSwaps Source Diagnostics` workflow performs a public-feed, RSC, cursor-pagination, and quantity cross-check without Telegram sends; it stores only a redacted HTML card fixture for regression tests.
 - The first BloxSwaps page is read from its HTML/RSC payload, then every new RSC post is converted through the site's item catalogue—even if its HTML card could not be parsed. Parsed HTML is cross-checked for quantity and contributes visible-price/raw-text diagnostics. Further pages are fetched from `https://api.bloxswaps.com/trade-posts` with `cursor` and `pageSize=20`.
 - Pagination continues through recent pages until a previously seen ad ID is reached. The default safety cap is 50 pages; reaching it with a cursor remaining raises a maintenance warning rather than claiming complete coverage.
 - Structured item IDs are mapped to BloxSwaps display names through the site catalogue. Unknown IDs are not assigned guessed names or values.
@@ -78,7 +79,7 @@ Never commit or share these secrets. The scanner does not print API keys or Tele
 - `MAX_ALERTS_PER_RUN` defaults to 10 and `ALERT_DELAY_SECONDS` defaults to 1 second. Deferred opportunities remain unalerted for a later scan.
 - A definite Telegram API rejection clears its pre-send guard so the offer can be retried later. A timeout, connection failure, invalid response, or HTTP 5xx is treated as **uncertain delivery**: the listing is quarantined and is not automatically resent. Check Telegram before manually clearing its entry in `data/telegram_uncertain.json`.
 - A failed Telegram message does not stop later opportunities in the same batch.
-- Unparsed cards trigger a throttled maintenance alert when their count/rate crosses the configured threshold. Unmatched item names are summarized once per name and rechecked on later scans.
+- Any unparsed or malformed card triggers a maintenance alert in long-loop mode; a persisted one-hour cooldown prevents spam even when only one card fails. Unmatched item names are summarized once per name and rechecked on later scans.
 - The watchdog checks successful scan runs every 15 minutes. It recognizes an active 50-minute scan loop and suppresses false stale-success alerts while that job is running; it uses `GITHUB_REPOSITORY`, not a hard-coded repository path.
 - Recommended independent monitoring: configure Healthchecks.io and store its ping URL as `HEALTHCHECKS_PING_URL`. The workflow pings when the long scan job finishes.
 

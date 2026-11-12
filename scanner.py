@@ -880,15 +880,18 @@ def parse_listings(html):
     return parse_page(html)[0]
 
 
-def request_with_retry(req, timeout, label, attempts=4):
+def request_with_retry(req, timeout, label, attempts=4, return_headers=False, allow_not_modified=False):
     """Retry transient failures with exponential backoff and respect Retry-After."""
     for attempt in range(attempts):
         try:
             with urllib.request.urlopen(req, timeout=timeout) as response:
                 body = response.read()
                 print(f"[http] {label}: HTTP {response.status} ({len(body)} bytes)")
-                return body
+                return (body, response.headers) if return_headers else body
         except HTTPError as exc:
+            if exc.code == 304 and allow_not_modified:
+                print(f"[http] {label}: HTTP 304 (ETag unchanged)")
+                return None, exc.headers
             detail = exc.read(400).decode("utf-8", errors="replace")
             challenge_markers = ("cloudflare", "captcha", "just a moment", "challenge-platform", "cf-chl-")
             if exc.code in (403, 503) and any(marker in detail.casefold() for marker in challenge_markers):
@@ -1354,26 +1357,65 @@ def api_get_json(path, params=None):
         raise RuntimeError("[rblxvalue] Invalid JSON response") from exc
 
 
-def _read_values_cache():
+def api_get_json_conditional(path, params=None, etag=None):
+    """Fetch one RBLXValue page conditionally; a 304 is safe only with its cached page."""
+    if not RBLXVALUE_API_KEY:
+        raise RuntimeError("Missing RBLXVALUE_API_KEY GitHub Actions secret.")
+    query = "?" + urlencode(params or {}) if params else ""
+    url = RBLXVALUE_API_BASE + path + query
+    headers = {
+        "X-Api-Key": RBLXVALUE_API_KEY,
+        "Accept": "application/json",
+        "User-Agent": "MM2TradeScanner/2.1",
+    }
+    if etag:
+        headers["If-None-Match"] = str(etag)
+    req = urllib.request.Request(url, headers=headers)
+    raw, response_headers = request_with_retry(
+        req, 30, "RBLXValue API", return_headers=True, allow_not_modified=True
+    )
+    response_etag = response_headers.get("ETag") or etag
+    if raw is None:
+        return None, response_etag, True
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("[rblxvalue] Invalid JSON response") from exc
+    return payload, response_etag, False
+
+
+def _read_values_cache_document():
     try:
         cached = json.loads(VALUES_FILE.read_text(encoding="utf-8"))
         if cached.get("schema_version") != 2:
-            return None, None
+            return None
         values = cached.get("values", {})
         if (
             isinstance(values, dict) and len(values) >= 100
             and all(isinstance(record, dict) and isinstance(record.get("variants"), list) and record["variants"] for record in values.values())
         ):
-            age = max(0, int(time.time() - float(cached.get("fetched_at", 0))))
-            return values, age
+            return cached
     except (ValueError, OSError, json.JSONDecodeError, AttributeError, TypeError):
         pass
-    return None, None
+    return None
+
+
+def _read_values_cache():
+    cached = _read_values_cache_document()
+    if cached is None:
+        return None, None
+    try:
+        age = max(0, int(time.time() - float(cached.get("fetched_at", 0))))
+        return cached["values"], age
+    except (TypeError, ValueError, KeyError):
+        return None, None
 
 
 def load_supreme_values():
-    # Reuse a short-lived, successfully fetched snapshot; never fall back to stale
-    # values after the TTL because that can manufacture false-profit alerts.
+    # Reuse a short-lived, successfully fetched snapshot; after TTL, revalidate
+    # each cached API page with its ETag. A 304 is accepted only when that exact
+    # page's raw items are present in the durable cache.
+    cached_document = _read_values_cache_document()
     cached_values, cached_age = _read_values_cache()
     if cached_values is not None and cached_age is not None and cached_age <= VALUES_TTL_SECONDS:
         print(f"[supreme] Using fresh source_b snapshot (age {cached_age}s; TTL {VALUES_TTL_SECONDS}s)")
@@ -1381,22 +1423,47 @@ def load_supreme_values():
     if not RBLXVALUE_API_KEY:
         raise RuntimeError("[supreme] API key missing and no fresh cached source_b snapshot; refusing stale values.")
     if cached_values is not None:
-        print(f"[supreme] Cached snapshot expired (age {cached_age}s); refreshing API")
+        print(f"[supreme] Cached snapshot expired (age {cached_age}s); conditionally refreshing API")
+    cached_pages = cached_document.get("pages", {}) if isinstance(cached_document, dict) else {}
+    if not isinstance(cached_pages, dict):
+        cached_pages = {}
 
     all_values = {}
+    refreshed_pages = {}
     try:
         offset = 0
         page_size = 100
         total = None
         while total is None or offset < total:
-            payload = api_get_json("/items", {"limit": page_size, "offset": offset})
-            items = payload.get("items")
-            if not isinstance(items, list) or not items:
-                if offset == 0:
-                    raise RuntimeError("[supreme] API returned no item list; no trade values will be guessed")
-                break
-            total = int(payload.get("total", len(items)))
+            page_key = str(offset)
+            old_page = cached_pages.get(page_key, {})
+            old_page = old_page if isinstance(old_page, dict) else {}
+            payload, etag, not_modified = api_get_json_conditional(
+                "/items", {"limit": page_size, "offset": offset}, old_page.get("etag")
+            )
+            if not_modified:
+                items = old_page.get("items")
+                if not isinstance(items, list) or not items:
+                    raise RuntimeError(f"[supreme] API returned 304 for offset {offset} without a cached page.")
+                total = int(old_page.get("total", len(items)))
+                print(f"[supreme] Page offset={offset} unchanged by ETag; reusing {len(items)} cached rows")
+            else:
+                if not isinstance(payload, dict):
+                    raise RuntimeError("[supreme] API returned an invalid page structure.")
+                items = payload.get("items")
+                if not isinstance(items, list) or not items:
+                    if offset == 0:
+                        raise RuntimeError("[supreme] API returned no item list; no trade values will be guessed")
+                    break
+                total = int(payload.get("total", len(items)))
+            refreshed_pages[page_key] = {
+                "etag": etag,
+                "total": total,
+                "items": items,
+            }
             for item in items:
+                if not isinstance(item, dict):
+                    continue
                 name = item.get("name")
                 source_value = item.get("value_source_b")
                 if not name or source_value is None:
@@ -1458,8 +1525,10 @@ def load_supreme_values():
 
     VALUES_FILE.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(VALUES_FILE, json.dumps({
+        "schema_version": 2,
         "fetched_at": time.time(),
         "source": "Supreme Values via RBLXValue API value_source_b",
+        "pages": refreshed_pages,
         "values": all_values,
     }, ensure_ascii=False, indent=2) + "\n")
     print(f"[supreme] Loaded {len(all_values)} numeric Supreme source_b values via API")
@@ -2123,6 +2192,14 @@ def qualifies(result, min_diff=None, min_percent=None):
     return metric > 0 and metric >= min_diff and result["margin"] >= min_percent
 
 
+def should_alert_malformed_cards(issue_count):
+    """Any malformed card is actionable; rate limits belong to the persisted cooldown."""
+    try:
+        return int(issue_count) > 0
+    except (TypeError, ValueError):
+        return False
+
+
 def write_step_summary(line):
     path = os.environ.get("GITHUB_STEP_SUMMARY")
     if path:
@@ -2251,7 +2328,7 @@ def scan_once():
             f"HTML warning IDs: {', '.join(stats.get('html_parse_warning_ids', [])[:10])}"
         )
         ratio = issue_count / max(1, stats.get("candidate_count", 0))
-        if os.environ.get("MM2_SCAN_LOOP") == "1" and (issue_count >= 3 or ratio >= 0.05):
+        if os.environ.get("MM2_SCAN_LOOP") == "1" and should_alert_malformed_cards(issue_count):
             samples = " | ".join(stats.get("malformed_samples", [])[:3])
             send_maintenance_alert(
                 "malformed-feed-cards",

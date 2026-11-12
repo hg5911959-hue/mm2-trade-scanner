@@ -299,7 +299,7 @@ class ParserTests(unittest.TestCase):
             with patch("scanner.VALUES_FILE", cache_path), patch(
                 "scanner.RBLXVALUE_API_KEY", "test-key"
             ), patch(
-                "scanner.api_get_json", side_effect=RuntimeError("API unavailable")
+                "scanner.api_get_json_conditional", side_effect=RuntimeError("API unavailable")
             ):
                 with self.assertRaisesRegex(RuntimeError, "refusing stale-cache calculations"):
                     load_supreme_values()
@@ -329,7 +329,7 @@ class ReliabilityTests(unittest.TestCase):
                 with (
                     patch("scanner.VALUES_FILE", cache_path),
                     patch("scanner.RBLXVALUE_API_KEY", "test-key"),
-                    patch("scanner.api_get_json", return_value={"items": items, "total": len(items)}),
+                    patch("scanner.api_get_json_conditional", return_value=({"items": items, "total": len(items)}, None, False)),
                     patch("scanner.time.sleep"),
                 ):
                     values = load_supreme_values()
@@ -361,7 +361,7 @@ class ReliabilityTests(unittest.TestCase):
             with (
                 patch("scanner.VALUES_FILE", cache_path),
                 patch("scanner.RBLXVALUE_API_KEY", "test-key"),
-                patch("scanner.api_get_json", return_value={"items": items, "total": len(items)}),
+                patch("scanner.api_get_json_conditional", return_value=({"items": items, "total": len(items)}, None, False)),
                 patch("scanner.time.sleep"),
             ):
                 values = load_supreme_values()
@@ -939,7 +939,7 @@ class CacheTTLTests(unittest.TestCase):
                 patch("scanner.VALUES_TTL_SECONDS", 300),
                 patch("scanner.time.time", return_value=1000),
                 patch("scanner.RBLXVALUE_API_KEY", ""),
-                patch("scanner.api_get_json") as api,
+                patch("scanner.api_get_json_conditional") as api,
             ):
                 loaded = scanner.load_supreme_values()
             self.assertEqual(len(loaded), 100)
@@ -1665,6 +1665,103 @@ class DuplicateBatchRegressionTests(unittest.TestCase):
         first_id = scanner.stable_listing_id(owner, first_receive, give, url)
         second_id = scanner.stable_listing_id(owner, second_receive, give, url)
         self.assertEqual(first_id, second_id)
+
+
+class SupremeETagCacheTests(unittest.TestCase):
+    def test_expired_cache_reuses_page_only_after_matching_etag_304(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "supreme.json"
+            rows = [
+                {"name": f"ETag Item {i}", "value_source_b": i + 1, "value_source_a": None}
+                for i in range(100)
+            ]
+            cached_values = {
+                scanner.normalize_name(row["name"]): {
+                    "name": row["name"], "value": row["value_source_b"],
+                    "secondary_value": None,
+                    "variants": [{
+                        "name": row["name"], "value": row["value_source_b"],
+                        "secondary_value": None,
+                    }],
+                }
+                for row in rows
+            }
+            etag = '"supreme-page-v1"'
+            path.write_text(json.dumps({
+                "schema_version": 2,
+                "fetched_at": 1,
+                "values": cached_values,
+                "pages": {"0": {"etag": etag, "total": 100, "items": rows}},
+            }), encoding="utf-8")
+            captured = {}
+
+            def not_modified(request, timeout, label, **kwargs):
+                captured["request"] = request
+                self.assertTrue(kwargs.get("return_headers"))
+                self.assertTrue(kwargs.get("allow_not_modified"))
+                return None, {"ETag": etag}
+
+            with (
+                patch("scanner.VALUES_FILE", path),
+                patch("scanner.VALUES_TTL_SECONDS", 300),
+                patch("scanner.time.time", return_value=1000),
+                patch("scanner.time.sleep"),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.request_with_retry", side_effect=not_modified),
+            ):
+                loaded = scanner.load_supreme_values()
+
+            self.assertEqual(len(loaded), 100)
+            self.assertEqual(
+                captured["request"].get_header("If-none-match"), etag
+            )
+
+    def test_conditional_helper_reports_304_for_caller_cache_validation(self):
+        with patch("scanner.RBLXVALUE_API_KEY", "test-key"), patch(
+            "scanner.request_with_retry", return_value=(None, {"ETag": '"missing"'})
+        ):
+            payload, etag, not_modified = scanner.api_get_json_conditional(
+                "/items", {"limit": 100, "offset": 0}, '"missing"'
+            )
+        self.assertIsNone(payload)
+        self.assertEqual(etag, '"missing"')
+        self.assertTrue(not_modified)
+
+
+class AdditionalHardeningRegressionTests(unittest.TestCase):
+    def test_single_malformed_card_is_reportable(self):
+        self.assertTrue(scanner.should_alert_malformed_cards(1))
+        self.assertTrue(scanner.should_alert_malformed_cards(3))
+        self.assertFalse(scanner.should_alert_malformed_cards(0))
+        self.assertFalse(scanner.should_alert_malformed_cards(None))
+
+    def test_initial_supreme_fetch_persists_server_etag(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "supreme.json"
+            rows = [
+                {"name": f"Initial ETag Item {i}", "value_source_b": i + 1, "value_source_a": None}
+                for i in range(100)
+            ]
+            etag = '"supreme-initial-v1"'
+            captured = {}
+
+            def first_page(request, timeout, label, **kwargs):
+                captured["request"] = request
+                self.assertIsNone(request.get_header("If-none-match"))
+                return json.dumps({"items": rows, "total": 100}).encode(), {"ETag": etag}
+
+            with (
+                patch("scanner.VALUES_FILE", path),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.request_with_retry", side_effect=first_page),
+                patch("scanner.time.sleep"),
+            ):
+                values = scanner.load_supreme_values()
+
+            cache = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(len(values), 100)
+            self.assertEqual(cache["pages"]["0"]["etag"], etag)
+            self.assertEqual(len(cache["pages"]["0"]["items"]), 100)
 
 
 if __name__ == "__main__":
