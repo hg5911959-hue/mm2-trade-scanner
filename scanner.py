@@ -937,6 +937,12 @@ def main():
             f"[telegram] {len(uncertain_ids)} listing(s) have uncertain delivery status "
             "and are quarantined to prevent duplicate messages."
         )
+    print(
+        f"[state] Loaded {len(alerted_set)} previously alerted listing IDs; "
+        f"{len(uncertain_ids)} uncertain-delivery IDs."
+    )
+    already_alerted_skipped = 0
+    uncertain_skipped = 0
 
     def mark_alerted(trade_id):
         if trade_id not in alerted_set:
@@ -950,7 +956,11 @@ def main():
     opportunities = []
     for listing in listings:
         trade_id = listing["id"]
-        if trade_id in alerted_set or trade_id in uncertain_ids:
+        if trade_id in alerted_set:
+            already_alerted_skipped += 1
+            continue
+        if trade_id in uncertain_ids:
+            uncertain_skipped += 1
             continue
         result, missing = evaluate_listing(listing, values)
         evaluated += 1
@@ -987,7 +997,10 @@ def main():
         if secondary_note:
             message += "\nSECOND-SOURCE CHECK (MM2Values): " + secondary_note
         trade_id = listing["id"]
-        print(f"[telegram] Sending ranked trade; profit={op['difference']:g}")
+        print(
+            f"[telegram] Sending ranked trade id={trade_id}; "
+            f"profit={op['difference']:g}"
+        )
         # Persist a delivery guard before the non-idempotent Telegram request.
         # It is cleared only after a definite success or definite API rejection.
         uncertain_ids.add(trade_id)
@@ -1012,7 +1025,11 @@ def main():
         if sent < len(selected_opportunities) and ALERT_DELAY_SECONDS > 0:
             time.sleep(ALERT_DELAY_SECONDS)
 
-    summary = f"Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | qualified={len(opportunities)} | alerts={sent} | deferred={deferred}"
+    summary = (
+        f"Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | "
+        f"already_alerted={already_alerted_skipped} | uncertain_quarantined={uncertain_skipped} | "
+        f"qualified={len(opportunities)} | alerts={sent} | deferred={deferred}"
+    )
     print(f"[summary] {summary}")
     write_step_summary(summary)
     record_success()
