@@ -1280,6 +1280,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     seen = set(str(value) for value in seen_ad_ids)
     pending_remaining = set(str(value) for value in (pending_ad_ids or []))
     watch_ids = set(str(value) for value in (watch_ad_ids or []))
+    watch_remaining = set(watch_ids)
     pending_found_ids = []
     by_ad_id = {
         str(listing.get("source_ad_id")): listing
@@ -1304,7 +1305,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     item_map = initial_item_map
 
     def consume_raw_posts(raw_posts, compare_html=False):
-        nonlocal boundary_reached, seen_streak, additions, malformed, api_listings_added, candidate_count, item_map
+        nonlocal boundary_reached, seen_streak, additions, malformed, api_listings_added, candidate_count, item_map, watch_remaining
         for raw in raw_posts:
             if not isinstance(raw, dict) or not raw.get("id"):
                 malformed += 1
@@ -1317,10 +1318,12 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                 refreshed_ts is not None and last_success_ts is not None
                 and refreshed_ts >= last_success_ts - 90
             )
+            if post_id in watch_remaining:
+                watch_remaining.discard(post_id)
             if post_id in seen and post_id not in pending_remaining and post_id not in watch_ids and not recently_refreshed:
                 seen_ids_skipped.append(post_id)
-                if pending_remaining:
-                    # Pending ads take priority over an early boundary.
+                if pending_remaining or watch_remaining:
+                    # Pending and watched ads take priority over an early boundary.
                     seen_streak = 0
                     continue
                 seen_streak += 1
@@ -1440,6 +1443,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
         "seen_boundary_reached": boundary_reached,
         "seen_streak": seen_streak,
         "seen_ids_skipped": seen_ids_skipped,
+        "watch_remaining_ids": sorted(watch_remaining),
         "pending_found_ids": pending_found_ids,
         "pending_remaining_ids": sorted(pending_remaining),
         "pending_complete": not pending_remaining,
