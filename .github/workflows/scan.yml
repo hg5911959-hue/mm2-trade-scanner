@@ -1,6 +1,8 @@
 name: MM2 Trade Scanner
 
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
