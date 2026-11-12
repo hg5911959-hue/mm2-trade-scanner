@@ -361,7 +361,7 @@ class ReliabilityTests(unittest.TestCase):
             with (
                 patch("scanner.VALUES_FILE", cache_path),
                 patch("scanner.RBLXVALUE_API_KEY", "test-key"),
-                patch("scanner.api_get_json", return_value={"items": items, "total": len(items)}),
+                patch("scanner.api_get_json_conditional", return_value=({"items": items, "total": len(items)}, None, False)),
                 patch("scanner.time.sleep"),
             ):
                 values = load_supreme_values()
