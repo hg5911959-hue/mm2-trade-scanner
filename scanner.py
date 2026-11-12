@@ -2557,10 +2557,10 @@ def format_unvalued_message(listing, missing):
     lines = [
         "⚠️ MM2 MANUAL VALUE CHECK",
         "",
-        f"👤 OWNER PROFILE: {owner_link}",
+        f"👤 {owner_link}",
     ]
     if listing.get("url") and listing.get("url") != owner_link:
-        lines.extend(["", f"🔗 LISTING DETAILS: {listing['url']}"])
+        lines.extend(["", f"🔗 {listing['url']}"])
     lines.extend([
         "",
         "📤 GIVE:",
