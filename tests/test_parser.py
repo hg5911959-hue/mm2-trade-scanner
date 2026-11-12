@@ -243,6 +243,31 @@ class ReliabilityTests(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text()), {"ok": True})
             self.assertFalse(path.with_name("state.json.tmp").exists())
 
+    def test_realistic_harvester_two_for_spirit_uses_supreme_values(self):
+        html = """
+        <article>
+          <div>Propose <img alt="Spirit"></div>
+          <div>Recherche
+            <div class="trade-item">
+              <span class="item-quantity">2</span>
+              <img alt="Harvester">
+            </div>
+          </div>
+        </article>
+        """
+        listing = parse_listings(html)[0]
+        supreme_values = {
+            "harvester": {"name": "Harvester", "value": 265},
+            "spirit": {"name": "Spirit", "value": 540},
+        }
+        result, missing = scanner.evaluate_listing(listing, supreme_values)
+        self.assertEqual(missing, [])
+        self.assertEqual(listing["give_items"][0]["quantity"], 2)
+        self.assertEqual(result["give_total"], 530)
+        self.assertEqual(result["receive_total"], 540)
+        self.assertEqual(result["difference"], 10)
+        self.assertAlmostEqual(result["margin"], 10 / 530 * 100, places=2)
+
     def test_evaluate_listing_accounts_for_quantities(self):
         listing = {
             "give_items": [{"name": "Knife A", "quantity": 2}],
