@@ -35,6 +35,7 @@ FAILURE_FILE = Path("data/failure_state.json")
 HISTORY_FILE = Path("data/history.csv")
 MAX_ALERTED = 5000
 ALERTED_FILE = Path("data/alerted.json")
+UNCERTAIN_FILE = Path("data/telegram_uncertain.json")
 VALUES_TTL_SECONDS = 4 * 60 * 60
 SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "200"))
 TELEGRAM_MAX_CHARS = 4000
@@ -661,6 +662,10 @@ def format_number(value):
     return f"{value:,.2f}".rstrip("0").rstrip(".")
 
 
+class TelegramDeliveryUncertain(RuntimeError):
+    """Telegram may have accepted a message but the response was not received."""
+
+
 def send_telegram(message):
     message = str(message)
     if len(message) > TELEGRAM_MAX_CHARS:
@@ -671,23 +676,55 @@ def send_telegram(message):
         "text": message,
         "disable_web_page_preview": True,
     }).encode()
+
+    # sendMessage is non-idempotent. Never apply generic network/5xx retries:
+    # Telegram may have accepted the message even when its response was lost.
     for attempt in range(4):
         req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-        raw = request_with_retry(req, 20, "Telegram sendMessage", attempts=4)
+        try:
+            with urllib.request.urlopen(req, timeout=20) as response:
+                raw = response.read()
+        except HTTPError as exc:
+            raw = exc.read(2000)
+            if exc.code == 429 and attempt < 3:
+                try:
+                    result = json.loads(raw.decode("utf-8"))
+                    retry_after = result.get("parameters", {}).get("retry_after", 2 ** (attempt + 1))
+                except (ValueError, UnicodeDecodeError):
+                    retry_after = 2 ** (attempt + 1)
+                delay = min(60, max(1, int(retry_after)))
+                print(f"[retry] Telegram explicitly rejected sendMessage with 429; waiting {delay}s")
+                time.sleep(delay)
+                continue
+            if exc.code >= 500:
+                raise TelegramDeliveryUncertain(
+                    f"[telegram] HTTP {exc.code}; delivery status is uncertain, not retrying."
+                ) from exc
+            raise RuntimeError(
+                f"[telegram] API rejected message: HTTP {exc.code}: "
+                f"{raw.decode('utf-8', errors='replace')[:300]}"
+            ) from exc
+        except (URLError, TimeoutError, OSError) as exc:
+            raise TelegramDeliveryUncertain(
+                "[telegram] Network response missing; delivery status is uncertain, not retrying."
+            ) from exc
+
         try:
             result = json.loads(raw.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise RuntimeError("[telegram] Invalid JSON response") from exc
+            raise TelegramDeliveryUncertain(
+                "[telegram] Invalid response; delivery status is uncertain, not retrying."
+            ) from exc
         if result.get("ok"):
             return
         if int(result.get("error_code", 0) or 0) == 429 and attempt < 3:
             retry_after = result.get("parameters", {}).get("retry_after", 2 ** (attempt + 1))
             delay = min(60, max(1, int(retry_after)))
-            print(f"[retry] Telegram rate limit; waiting {delay}s")
+            print(f"[retry] Telegram explicitly rejected sendMessage with 429; waiting {delay}s")
             time.sleep(delay)
             continue
         raise RuntimeError(f"[telegram] API rejected message: {result.get('description', 'unknown error')}")
-    raise RuntimeError("[telegram] Rate limit persisted after retries")
+    raise RuntimeError("[telegram] Rate limit persisted after explicit 429 responses")
 
 
 def load_alerted():
@@ -734,6 +771,27 @@ def load_alerted():
 def save_alerted(alerted):
     ordered = list(dict.fromkeys(str(value) for value in alerted))[-MAX_ALERTED:]
     atomic_write_text(ALERTED_FILE, json.dumps({"version": 2, "alerted": ordered}, indent=2) + "\n")
+
+
+def load_uncertain_ids():
+    if not UNCERTAIN_FILE.exists():
+        return set()
+    try:
+        data = json.loads(UNCERTAIN_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(
+            "[state] Telegram uncertain-delivery file is unreadable; refusing to risk duplicate alerts."
+        ) from exc
+    if not isinstance(data, list):
+        raise RuntimeError(
+            "[state] Telegram uncertain-delivery file has an invalid structure; refusing duplicate-risk sends."
+        )
+    return {str(value) for value in data}
+
+
+def save_uncertain_ids(ids):
+    ordered = sorted(set(str(value) for value in ids))
+    atomic_write_text(UNCERTAIN_FILE, json.dumps({"ids": ordered}, indent=2) + "\n")
 
 
 def ignored_item_names(listing):
@@ -871,6 +929,12 @@ def main():
                     )
     alerted = load_alerted()
     alerted_set = set(alerted)
+    uncertain_ids = load_uncertain_ids()
+    if uncertain_ids:
+        print(
+            f"[telegram] {len(uncertain_ids)} listing(s) have uncertain delivery status "
+            "and are quarantined to prevent duplicate messages."
+        )
 
     def mark_alerted(trade_id):
         if trade_id not in alerted_set:
@@ -884,7 +948,7 @@ def main():
     opportunities = []
     for listing in listings:
         trade_id = listing["id"]
-        if trade_id in alerted:
+        if trade_id in alerted_set or trade_id in uncertain_ids:
             continue
         result, missing = evaluate_listing(listing, values)
         evaluated += 1
@@ -920,9 +984,27 @@ def main():
         secondary_note = compare_secondary_values(listing["give_items"] + listing["receive_items"], values)
         if secondary_note:
             message += "\nSECOND-SOURCE CHECK (MM2Values): " + secondary_note
+        trade_id = listing["id"]
         print(f"[telegram] Sending ranked trade; profit={op['difference']:g}")
-        send_telegram(message)
-        mark_alerted(listing["id"])
+        # Persist a delivery guard before the non-idempotent Telegram request.
+        # It is cleared only after a definite success or definite API rejection.
+        uncertain_ids.add(trade_id)
+        save_uncertain_ids(uncertain_ids)
+        try:
+            send_telegram(message)
+        except TelegramDeliveryUncertain:
+            print(
+                f"[telegram] Delivery uncertain for listing {trade_id}; "
+                "quarantined and will not be resent automatically."
+            )
+            raise
+        except Exception:
+            uncertain_ids.discard(trade_id)
+            save_uncertain_ids(uncertain_ids)
+            raise
+        mark_alerted(trade_id)
+        uncertain_ids.discard(trade_id)
+        save_uncertain_ids(uncertain_ids)
         append_history(listing, op)
         sent += 1
         if sent < len(selected_opportunities) and ALERT_DELAY_SECONDS > 0:
