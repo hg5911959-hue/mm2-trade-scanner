@@ -241,9 +241,12 @@ def _item_wrapper(image_node):
     while ancestor is not None:
         if len(collect_images_in_order(ancestor)) != 1:
             break
+        # The nearest one-image wrapper is still safe even if it contains the
+        # side label. Keep it, then stop climbing so no opposite-side/card data
+        # can enter the quantity search.
+        wrapper = ancestor
         if _side_marker_count(node_text(ancestor)):
             break
-        wrapper = ancestor
         ancestor = ancestor.parent
     return wrapper
 
