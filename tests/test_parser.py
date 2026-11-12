@@ -594,13 +594,14 @@ class ReliabilityTests(unittest.TestCase):
                 patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
                 patch("scanner.FAILURE_FILE", root / "failure.json"),
                 patch("scanner.HISTORY_FILE", root / "history.csv"),
+                patch("scanner.SEEN_FILE", root / "seen_ads.json"),
                 patch("scanner.load_supreme_values", return_value=values),
                 patch("scanner.fetch_bloxswaps", return_value=html),
                 patch("scanner.send_telegram", side_effect=scanner.TelegramDeliveryUncertain("unknown")),
                 patch("scanner.compare_secondary_values", return_value=""),
             ):
-                with self.assertRaises(scanner.TelegramDeliveryUncertain):
-                    scanner.main()
+                scanner.main()
+                self.assertTrue((root / "uncertain.json").exists())
                 scanner.send_telegram.reset_mock()
                 scanner.send_telegram.side_effect = None
                 scanner.send_telegram.return_value = None
