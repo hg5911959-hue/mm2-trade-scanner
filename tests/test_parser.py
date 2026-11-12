@@ -25,6 +25,22 @@ class ParserTests(unittest.TestCase):
         self.assertIn("ad=abc123", listings[0]["url"])
         self.assertIn("/users/12345", listings[0]["owner_url"])
 
+    def test_owner_link_outside_nested_trade_side_panel_is_found(self):
+        html = """
+        <article>
+          <div class="trade-items">
+            <div>Propose <img alt="Chroma Gemstone"></div>
+            <div>Recherche <img alt="Chroma Laser"></div>
+          </div>
+          <a href="/fr/users/98765?tab=trade-ads">Owner</a>
+          <a href="/fr/trade-mm2?ad=nested-card">Discussion</a>
+        </article>
+        """
+        listings, stats = parse_page(html)
+        self.assertEqual(len(listings), 1)
+        self.assertIn("/fr/users/98765", listings[0]["owner_url"])
+        self.assertEqual(stats["owner_link_count"], 1)
+
     def test_excludes_addition_listings(self):
         html = """
         <article>
