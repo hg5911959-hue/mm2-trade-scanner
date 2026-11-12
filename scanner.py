@@ -2841,10 +2841,18 @@ def scan_once():
     for op in selected_opportunities:
         listing = op["listing"]
         trade_id = listing["id"]
-        # Re-check immediately before every non-idempotent send. This also
-        # protects against duplicates that enter through a future code path.
-        if trade_id in alerted_set or trade_id in uncertain_ids:
-            print(f"[dedupe] Skipping already guarded listing {trade_id} before Telegram send.")
+        # Re-check immediately before every non-idempotent send. A previously
+        # alerted stable ad may be sent again only when its content or value
+        # fingerprint changed; uncertain Telegram deliveries remain quarantined.
+        watch_id = str(listing.get("source_ad_id") or "")
+        previous_watch = watch_state.get(watch_id, {})
+        current_content_hash, current_values_hash = listing_watch_fingerprints(listing, values, aliases)
+        variant_changed = bool(previous_watch) and (
+            previous_watch.get("content_hash") != current_content_hash
+            or previous_watch.get("values_hash") != current_values_hash
+        )
+        if (trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids:
+            print(f"[dedupe] Skipping unchanged or uncertain listing {trade_id} before Telegram send.")
             continue
         listing["alert_attempted_at_utc"] = datetime.now(timezone.utc).isoformat()
         message = format_trade_message(
