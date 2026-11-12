@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: mm2-trade-scanner
@@ -88,16 +88,3 @@ jobs:
             data/
           key: mm2-state-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - name: Remove tracked runtime data after cache is seeded
-        if: always() && steps.save_state.outcome == 'success'
-        run: |
-          if [ -n "$(git ls-files data/)" ]; then
-            git rm -r --cached data/
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit -m "chore: stop tracking runtime data [skip ci]"
-            git pull --rebase origin main
-            git push origin HEAD:main
-          else
-            echo "Runtime data is already untracked."
-          fi
