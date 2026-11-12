@@ -755,6 +755,35 @@ class ReliabilityTests(unittest.TestCase):
 
 
 
+class MaintenanceAndUnmatchedNameTests(unittest.TestCase):
+    def test_unmatched_names_are_alerted_once_and_kept_for_recheck(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with (
+                patch("scanner.UNMATCHED_FILE", root / "unmatched.json"),
+                patch("scanner.MAINTENANCE_FILE", root / "maintenance.json"),
+                patch("scanner.send_telegram") as send,
+            ):
+                first = scanner.record_unmatched_names(["Mystery Blade", "Mystery Blade", "Odd Gun"])
+                second = scanner.record_unmatched_names(["Mystery Blade", "Odd Gun"])
+            self.assertEqual(set(first), {"Mystery Blade", "Odd Gun"})
+            self.assertEqual(second, [])
+            self.assertEqual(send.call_count, 1)
+            saved = json.loads((root / "unmatched.json").read_text(encoding="utf-8"))
+            self.assertEqual(set(saved), {"mystery blade", "odd gun"})
+
+    def test_maintenance_alerts_are_throttled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch("scanner.MAINTENANCE_FILE", Path(directory) / "maintenance.json"),
+                patch("scanner.send_telegram") as send,
+                patch("scanner.time.time", return_value=1000),
+            ):
+                self.assertTrue(scanner.send_maintenance_alert("parser", "bad card", 3600))
+                self.assertFalse(scanner.send_maintenance_alert("parser", "bad card", 3600))
+            self.assertEqual(send.call_count, 1)
+
+
 class SafeNameResolutionTests(unittest.TestCase):
     def test_irregular_plural_matches_unique_singular_item(self):
         values = {"knife": {"name": "Knife", "value": 100}}
