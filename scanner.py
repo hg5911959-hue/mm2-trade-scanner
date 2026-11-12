@@ -253,13 +253,6 @@ def _structured_quantity_from_nodes(image_node, wrapper):
                 if quantity is None:
                     return None, True
                 found.append(quantity)
-        for key in ("aria-label", "title"):
-            raw = node.attrs.get(key, "")
-            quantities = _explicit_stack_quantities(raw)
-            if quantities:
-                found.extend(quantities)
-            elif raw and re.search(r"(?:^|\s)(?:x|×)\s*(?:$|[^0-9])", _normalize_quantity_text(raw), re.I):
-                return None, True
     if found and len(set(found)) != 1:
         return None, True
     return (found[0], False) if found else (None, False)
@@ -297,6 +290,10 @@ def _has_unreadable_quantity_hint(raw, wrapper=None):
         return True
     if wrapper is not None:
         for node in walk_nodes(wrapper):
+            for key in ("aria-label", "title"):
+                label = node.attrs.get(key, "")
+                if label and re.search(r"(?:^|\s)(?:x|×)\s*(?:$|[^0-9])", _normalize_quantity_text(label), re.I):
+                    return True
             classes = " ".join((
                 node.attrs.get("class", ""), node.attrs.get("id", ""),
                 node.attrs.get("data-testid", "")
@@ -373,9 +370,14 @@ def _item_quantity_details(image_node, segment_text):
     alt_name, alt_quantity = split_item_label(image_node.attrs.get("alt", ""))
     structured, invalid_structured = _structured_quantity_from_nodes(image_node, wrapper)
     local_text = " ".join(part for part in (wrapper_text, segment_text) if part)
-    explicit = _explicit_stack_quantities(local_text)
+    attribute_text = " ".join(
+        str(node.attrs.get(key, ""))
+        for node in ([image_node] + (list(walk_nodes(wrapper)) if wrapper is not None else []))
+        for key in ("aria-label", "title")
+    )
+    explicit = _explicit_stack_quantities(local_text + " " + attribute_text)
     semantic_quantity = _semantic_badge_quantity(wrapper)
-    unreadable = _has_unreadable_quantity_hint(local_text, wrapper)
+    unreadable = _has_unreadable_quantity_hint(local_text + " " + attribute_text, wrapper)
     if alt_quantity is not None:
         explicit.append(alt_quantity)
     if semantic_quantity is not None:
