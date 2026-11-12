@@ -260,6 +260,21 @@ def api_get_json(path, params=None):
             return data
     except HTTPError as exc:
         detail = exc.read(1000).decode("utf-8", errors="replace")
+        if exc.code == 403:
+            raise RuntimeError(
+                "[rblxvalue] HTTP 403: the API key was rejected or is inactive. "
+                "Open https://rblxvalue.com/developer, confirm the key belongs to your account, "
+                "complete any email verification, and check that the key status is active. "
+                "If needed, create/regenerate a FREE key, then replace the GitHub Actions secret "
+                "RBLXVALUE_API_KEY with the new value (paste the raw key only, without quotes/spaces). "
+                "The key must start with 'rbx_'. The secret value is never printed by this scanner. "
+                f"Provider response: {detail[:300]}"
+            ) from exc
+        if exc.code == 429:
+            raise RuntimeError(
+                "[rblxvalue] HTTP 429: API rate limit reached. Wait 60 seconds and retry; "
+                "the scanner is designed to use one paginated values refresh and a local cache."
+            ) from exc
         raise RuntimeError(f"[rblxvalue] HTTP {exc.code}: {detail[:500]}") from exc
     except URLError as exc:
         raise RuntimeError(f"[rblxvalue] Network error: {exc.reason}") from exc
@@ -400,6 +415,16 @@ def main():
     if not BOT_TOKEN or not CHAT_ID:
         raise RuntimeError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in GitHub Actions secrets.")
 
+    print("[stage] Checking RBLXValue API credential")
+    if not RBLXVALUE_API_KEY:
+        raise RuntimeError("Missing GitHub Actions secret RBLXVALUE_API_KEY.")
+    if not RBLXVALUE_API_KEY.startswith("rbx_"):
+        raise RuntimeError(
+            "RBLXVALUE_API_KEY is present but does not have the documented rbx_ prefix. "
+            "Replace the GitHub secret with the raw key copied from https://rblxvalue.com/developer. "
+            "Do not add quotes or the variable name."
+        )
+    print("[stage] API key present; secret contents are intentionally never logged")
     print("[stage] Loading Supreme Values before evaluating trades")
     values = load_supreme_values()
     print("[stage] Fetching BloxSwaps listings")
