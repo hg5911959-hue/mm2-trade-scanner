@@ -1134,7 +1134,7 @@ def _api_trade_post_to_listing(post, item_map):
             continue
         item_id = str(row.get("itemDetailsId") or "")
         details = item_map.get(item_id)
-        name = str(details.get("displayName")) if details else str(row.get("displayName") or row.get("name") or f"Unknown item ID {item_id}")
+        name = str(details.get("displayName")) if details else f"Unknown item ID {item_id or 'missing'}"
         try:
             quantity = int(row.get("quantity"))
         except (TypeError, ValueError):
@@ -1151,6 +1151,10 @@ def _api_trade_post_to_listing(post, item_map):
             "listed_price": None,
             "raw_excerpt": f"API itemDetailsId={item_id}; role={role}; quantity={row.get('quantity')}",
             "structured_item_id": item_id,
+            "catalog_slug": str(details.get("slug") or "") if details else "",
+            "catalog_rarity": str(details.get("rarity") or "") if details else "",
+            "catalog_type": str(details.get("type") or "") if details else "",
+            "catalog_chroma": bool(details.get("chroma")) if details else False,
         }
         if not details:
             item["unmatched_item_id"] = item_id
@@ -1598,10 +1602,15 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
 
 
 def normalize_name(name):
-    value = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    value = unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode()
     value = value.casefold().replace("&", "and")
+    value = value.replace("'", "").replace("’", "")
     value = re.sub(r"[^a-z0-9]+", " ", value)
     return " ".join(value.split())
+
+
+def normalize_slug(value):
+    return re.sub(r"[^a-z0-9]+", "-", str(value or "").casefold()).strip("-")
 
 
 def _plural_keys(name):
@@ -1640,43 +1649,135 @@ def load_aliases():
     return aliases
 
 
-def resolve_value_record(name, values, aliases=None):
-    key = normalize_name(name)
-    exact = values.get(key)
-    if exact:
-        return exact, "exact", []
-    aliases = aliases or {}
-    canonical = aliases.get(key)
-    if canonical:
-        record = values.get(normalize_name(canonical))
-        if record:
-            return record, "alias", []
+def _iter_value_variants(values):
+    for parent_key, record in values.items():
+        if not isinstance(record, dict):
+            continue
+        variants = record.get("variants")
+        if isinstance(variants, list) and variants:
+            for variant in variants:
+                if isinstance(variant, dict):
+                    yield parent_key, record, variant
+        else:
+            yield parent_key, record, record
 
-    plural = _plural_keys(name)
-    plural_matches = [
-        (candidate_key, record)
-        for candidate_key, record in values.items()
-        if _plural_keys(candidate_key).intersection(plural)
+
+def _catalog_value_metadata(item):
+    if not isinstance(item, dict):
+        return "", "", "", ""
+    slug = normalize_slug(item.get("catalog_slug") or item.get("slug") or "")
+    rarity = str(item.get("catalog_rarity") or "").strip().casefold()
+    chroma = item.get("catalog_chroma")
+    if chroma is True or str(chroma).casefold() in {"true", "1", "yes"}:
+        rarity = "chroma"
+    item_type = str(item.get("catalog_type") or item.get("type") or "").strip().casefold()
+    return slug, rarity, item_type, normalize_name(item.get("name") or "")
+
+
+def _filter_variants_by_catalog(candidates, item):
+    slug, rarity, item_type, _ = _catalog_value_metadata(item)
+    if slug:
+        slug_matches = [row for row in candidates if normalize_slug(row[2].get("slug")) == slug]
+        if slug_matches:
+            candidates = slug_matches
+    if rarity:
+        candidates = [row for row in candidates if str(row[2].get("category") or "").strip().casefold() == rarity]
+    if item_type:
+        candidates = [row for row in candidates if str(row[2].get("type") or "").strip().casefold() == item_type]
+    return candidates
+
+
+def _record_for_variant(variant):
+    selected = dict(variant)
+    selected["variants"] = [dict(variant)]
+    return selected
+
+
+def resolve_value_record(name, values, aliases=None, item=None):
+    """Resolve by exact source slug/name, catalogue identity or reviewed alias; never fuzzy-guess."""
+    name_key = normalize_name(name)
+    all_variants = list(_iter_value_variants(values))
+    metadata_item = dict(item) if isinstance(item, dict) else {}
+    metadata_item["name"] = name
+    catalog_slug, catalog_rarity, catalog_type, _ = _catalog_value_metadata(metadata_item)
+
+    if catalog_slug:
+        slug_candidates = [row for row in all_variants if normalize_slug(row[2].get("slug")) == catalog_slug]
+        if slug_candidates:
+            filtered = _filter_variants_by_catalog(slug_candidates, metadata_item)
+            if len(filtered) == 1:
+                return _record_for_variant(filtered[0][2]), "slug", []
+            unresolved = filtered or slug_candidates
+            return None, "ambiguous", [str(row[2].get("name") or row[0]) for row in unresolved[:8]]
+
+    candidates = [
+        row for row in all_variants
+        if normalize_name(row[2].get("name") or row[0]) == name_key
     ]
-    if len(plural_matches) == 1:
-        return plural_matches[0][1], "plural", []
-    if len(plural_matches) > 1:
-        return None, "ambiguous", [record.get("name", candidate_key) for candidate_key, record in plural_matches[:5]]
+    source = "exact"
+    if not candidates and (catalog_rarity or catalog_type):
+        candidates = [
+            row for row in all_variants
+            if normalize_name(row[2].get("name") or row[0]).startswith(name_key + " ")
+        ]
+        source = "metadata"
 
-    scored = []
-    for candidate_key, record in values.items():
-        score = max(
-            difflib.SequenceMatcher(None, left, right).ratio()
-            for left in plural for right in _plural_keys(candidate_key)
-        )
-        if score >= 0.97:
-            scored.append((score, candidate_key, record))
-    scored.sort(key=lambda row: row[0], reverse=True)
-    if scored and (len(scored) == 1 or scored[0][0] - scored[1][0] >= 0.03):
-        return scored[0][2], "fuzzy", []
-    if scored:
-        return None, "ambiguous", [row[2].get("name", row[1]) for row in scored[:5]]
-    return None, "unmatched", []
+    aliases = aliases or {}
+    if not candidates:
+        canonical = aliases.get(name_key)
+        if canonical:
+            canonical_key = normalize_name(canonical)
+            candidates = [
+                row for row in all_variants
+                if normalize_name(row[2].get("name") or row[0]) == canonical_key
+            ]
+            source = "alias"
+    if not candidates:
+        return None, "unmatched", []
+
+    filtered = _filter_variants_by_catalog(candidates, metadata_item)
+    if len(filtered) == 1:
+        if len(candidates) > 1 and source == "exact":
+            source = "metadata"
+        return _record_for_variant(filtered[0][2]), source, []
+    unresolved = filtered or candidates
+    return None, "ambiguous", [
+        str(row[2].get("name") or row[0])
+        + (f" [{row[2].get('category')}/{row[2].get('type')}]" if row[2].get("category") or row[2].get("type") else "")
+        for row in unresolved[:8]
+    ]
+
+
+def _supreme_numeric_value(item):
+    """Return scalar Supreme value; small Common/Uncommon/Rare xN counts are not scalar values."""
+    try:
+        value = float(item.get("value_source_b"))
+    except (TypeError, ValueError):
+        return None, "not_numeric"
+    if not math.isfinite(value) or value <= 0:
+        return None, "not_listed"
+    category = str(item.get("category") or "").strip().casefold()
+    if category in {"common", "uncommon", "rare"} and value < 10:
+        return None, "tier_item_count"
+    return value, "numeric"
+
+
+def _parse_numeric_value_range(raw_range, base_value):
+    if base_value is None:
+        return None, None
+    if raw_range is None or not str(raw_range).strip():
+        return base_value, base_value
+    text = str(raw_range).replace(",", "")
+    match = re.search(r"(\d+(?:\.\d+)?)\s*(?:-|–|to)\s*(\d+(?:\.\d+)?)", text, re.IGNORECASE)
+    if not match:
+        return base_value, base_value
+    try:
+        low, high = float(match.group(1)), float(match.group(2))
+    except (TypeError, ValueError):
+        return base_value, base_value
+    if not all(math.isfinite(v) and v > 0 for v in (low, high)) or low > high:
+        return base_value, base_value
+    return low, high
 
 
 def api_get_json(path, params=None):
@@ -1726,7 +1827,7 @@ def api_get_json_conditional(path, params=None, etag=None):
 def _read_values_cache_document():
     try:
         cached = json.loads(VALUES_FILE.read_text(encoding="utf-8"))
-        if cached.get("schema_version") != 2:
+        if cached.get("schema_version") != 3:
             return None
         values = cached.get("values", {})
         if (
@@ -1751,9 +1852,7 @@ def _read_values_cache():
 
 
 def load_supreme_values():
-    # Reuse a short-lived, successfully fetched snapshot; after TTL, revalidate
-    # each cached API page with its ETag. A 304 is accepted only when that exact
-    # page's raw items are present in the durable cache.
+    # Schema v3 preserves item identity; schema-v2 caches discarded category/type/slug.
     cached_document = _read_values_cache_document()
     cached_values, cached_age = _read_values_cache()
     if cached_values is not None and cached_age is not None and cached_age <= VALUES_TTL_SECONDS:
@@ -1767,12 +1866,9 @@ def load_supreme_values():
     if not isinstance(cached_pages, dict):
         cached_pages = {}
 
-    all_values = {}
-    refreshed_pages = {}
+    all_values, refreshed_pages, numeric_count = {}, {}, 0
     try:
-        offset = 0
-        page_size = 100
-        total = None
+        offset, page_size, total = 0, 100, None
         while total is None or offset < total:
             page_key = str(offset)
             old_page = cached_pages.get(page_key, {})
@@ -1795,113 +1891,134 @@ def load_supreme_values():
                         raise RuntimeError("[supreme] API returned no item list; no trade values will be guessed")
                     break
                 total = int(payload.get("total", len(items)))
-            refreshed_pages[page_key] = {
-                "etag": etag,
-                "total": total,
-                "items": items,
-            }
+            refreshed_pages[page_key] = {"etag": etag, "total": total, "items": items}
+
             for item in items:
-                if not isinstance(item, dict):
+                if not isinstance(item, dict) or not item.get("name"):
                     continue
-                name = item.get("name")
-                source_value = item.get("value_source_b")
-                if not name or source_value is None:
-                    continue
+                name = str(item["name"])
+                value, value_status = _supreme_numeric_value(item)
+                value_min, value_max = _parse_numeric_value_range(item.get("range"), value)
+                secondary = item.get("value_source_a")
                 try:
-                    source_value = float(source_value)
-                except (TypeError, ValueError):
-                    continue
-                if source_value > 0 and math.isfinite(source_value):
-                    secondary = item.get("value_source_a")
-                    try:
-                        secondary = float(secondary) if secondary is not None else None
-                        if secondary is not None and not math.isfinite(secondary):
-                            secondary = None
-                    except (TypeError, ValueError):
+                    secondary = float(secondary) if secondary is not None else None
+                    if secondary is not None and (not math.isfinite(secondary) or secondary <= 0):
                         secondary = None
-                    key = normalize_name(name)
-                    candidate = {
-                        "name": name, "value": source_value, "secondary_value": secondary
-                    }
-                    existing = all_values.get(key)
-                    if existing is None:
-                        candidate["variants"] = [candidate.copy()]
-                        all_values[key] = candidate
-                    else:
-                        variants = existing.get("variants") or [{
-                            "name": existing.get("name", name),
-                            "value": float(existing["value"]),
-                            "secondary_value": existing.get("secondary_value"),
-                        }]
-                        if not any(
-                            float(variant.get("value", 0)) == source_value
-                            and normalize_name(variant.get("name", "")) == normalize_name(name)
-                            for variant in variants
-                        ):
-                            variants.append(candidate.copy())
-                        existing["variants"] = variants
-                        high = max(float(variant["value"]) for variant in variants)
-                        low = min(float(variant["value"]) for variant in variants)
-                        existing["value"] = high
-                        high_variant = next(variant for variant in variants if float(variant["value"]) == high)
-                        existing["name"] = high_variant.get("name", name)
-                        existing["secondary_value"] = high_variant.get("secondary_value")
-                        print(
-                            f"[supreme] Duplicate normalized name {name!r}: "
-                            f"preserving range {low:g}..{high:g}; give uses {high:g}, receive uses {low:g}"
-                        )
+                except (TypeError, ValueError):
+                    secondary = None
+                category = str(item.get("category") or "").strip().casefold()
+                item_type = str(item.get("type") or "").strip().casefold()
+                candidate = {
+                    "id": str(item.get("id") or ""), "slug": str(item.get("slug") or ""),
+                    "name": name, "value": value, "value_min": value_min, "value_max": value_max,
+                    "raw_source_value": item.get("value_source_b"), "value_status": value_status,
+                    "secondary_value": secondary, "category": category, "type": item_type,
+                    "last_updated": item.get("last_updated"),
+                }
+                key = normalize_name(name)
+                existing = all_values.setdefault(key, {
+                    "name": name, "value": value, "value_min": value_min,
+                    "value_max": value_max, "secondary_value": secondary, "variants": [],
+                })
+                variants = existing["variants"]
+                identity = (
+                    candidate["id"] or candidate["slug"] or normalize_slug(name),
+                    category, item_type,
+                )
+                previous_index = next((
+                    index for index, variant in enumerate(variants)
+                    if (
+                        variant.get("id") or variant.get("slug") or normalize_slug(variant.get("name")),
+                        str(variant.get("category") or "").casefold(),
+                        str(variant.get("type") or "").casefold(),
+                    ) == identity
+                ), None)
+                if previous_index is None:
+                    variants.append(candidate)
+                    if value is not None:
+                        numeric_count += 1
+                else:
+                    previous = variants[previous_index]
+                    variants[previous_index] = candidate
+                    if previous.get("value") is None and value is not None:
+                        numeric_count += 1
+                    elif previous.get("value") is not None and value is None:
+                        numeric_count -= 1
+                if len(variants) == 1:
+                    existing.update({
+                        "name": name, "value": value, "value_min": value_min,
+                        "value_max": value_max, "secondary_value": secondary,
+                    })
+                else:
+                    # Same-name identities must never become a synthetic high/low range.
+                    existing["value"] = existing["value_min"] = existing["value_max"] = None
+                    existing["secondary_value"] = None
             offset += len(items)
             if len(items) < page_size:
                 break
             time.sleep(0.25)
-        if len(all_values) < 100:
-            raise RuntimeError(f"[supreme] Only {len(all_values)} numeric source_b values loaded; refusing to calculate")
+        if numeric_count < 100:
+            raise RuntimeError(f"[supreme] Only {numeric_count} numeric source_b values loaded; refusing to calculate")
     except Exception as exc:
-        # Fail closed: stale Supreme values can manufacture false-profit alerts.
         raise RuntimeError(
             f"[supreme] Could not refresh current source_b values; refusing stale-cache calculations ({type(exc).__name__})"
         ) from exc
 
     VALUES_FILE.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(VALUES_FILE, json.dumps({
-        "schema_version": 2,
-        "fetched_at": time.time(),
+        "schema_version": 3, "fetched_at": time.time(),
         "source": "Supreme Values via RBLXValue API value_source_b",
-        "pages": refreshed_pages,
-        "values": all_values,
+        "pages": refreshed_pages, "values": all_values,
     }, ensure_ascii=False, indent=2) + "\n")
-    print(f"[supreme] Loaded {len(all_values)} numeric Supreme source_b values via API")
+    collisions = sum(1 for record in all_values.values() if len(record.get("variants", [])) > 1)
+    print(f"[supreme] Loaded {numeric_count} numeric Supreme source_b values across {len(all_values)} names; {collisions} collisions kept separate")
     return all_values
+
+
+def _variant_numeric_bounds(variant):
+    if not isinstance(variant, dict):
+        return None, None
+    try:
+        base = float(variant.get("value"))
+    except (TypeError, ValueError):
+        return None, None
+    if not math.isfinite(base) or base <= 0:
+        return None, None
+    try:
+        low, high = float(variant.get("value_min", base)), float(variant.get("value_max", base))
+    except (TypeError, ValueError):
+        low, high = base, base
+    if not all(math.isfinite(v) and v > 0 for v in (low, high)) or low > high:
+        low, high = base, base
+    return low, high
 
 
 def _select_conservative_variant(record, side):
     variants = record.get("variants") if isinstance(record, dict) else None
     variants = variants if isinstance(variants, list) and variants else [record]
-    valid = []
-    for variant in variants:
-        try:
-            value = float(variant["value"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        if math.isfinite(value) and value > 0:
-            valid.append((value, variant))
-    if not valid:
+    if len(variants) != 1:
         return None, None
-    value, selected = (max(valid, key=lambda row: row[0]) if side == "give"
-                       else min(valid, key=lambda row: row[0]))
-    return value, selected
+    selected = variants[0]
+    low, high = _variant_numeric_bounds(selected)
+    if low is None or high is None:
+        return None, None
+    return (high if side == "give" else low), selected
+
+
+def _resolved_item_group_key(record, item):
+    variant = (record.get("variants") or [record])[0] if isinstance(record, dict) else {}
+    return variant.get("slug") or variant.get("id") or (
+        normalize_name(variant.get("name") or item.get("name", ""))
+        + "|" + str(variant.get("category") or "") + "|" + str(variant.get("type") or "")
+    )
 
 
 def calculate_side(items, values, aliases=None, side="give"):
-    total = 0.0
-    breakdown = []
-    missing = []
-    grouped = {}
+    total, breakdown, missing, grouped = 0.0, [], [], {}
     for item in items:
-        key = normalize_name(item["name"])
-        if key in IGNORED_VALUE_ITEMS:
+        if normalize_name(item["name"]) in IGNORED_VALUE_ITEMS:
             continue
-        record, match_source, candidates = resolve_value_record(item["name"], values, aliases)
+        record, match_source, candidates = resolve_value_record(item["name"], values, aliases, item=item)
         if not record:
             suffix = f" (ambiguous: {', '.join(candidates)})" if candidates else ""
             missing.append(f"{item['name']}{suffix}")
@@ -1913,8 +2030,8 @@ def calculate_side(items, values, aliases=None, side="give"):
         if match_source != "exact":
             item["value_match_source"] = match_source
             item["resolved_value_name"] = selected.get("name", record.get("name", item["name"]))
-        resolved_key = normalize_name(record.get("name", item["name"]))
-        entry = grouped.setdefault(resolved_key, {
+        group_key = _resolved_item_group_key(record, item)
+        entry = grouped.setdefault(group_key, {
             "name": selected.get("name", record.get("name", item["name"])),
             "quantity": 0, "unit_value": unit_value,
         })
@@ -1926,61 +2043,50 @@ def calculate_side(items, values, aliases=None, side="give"):
             missing.append(f"{item['name']} (quantity outside supported range)")
             continue
         entry["quantity"] += int(quantity)
-
-    for item in grouped.values():
-        quantity = item["quantity"]
-        item_total = item["unit_value"] * quantity
+    for entry in grouped.values():
+        item_total = entry["unit_value"] * entry["quantity"]
         total += item_total
-        suffix = f" x{quantity}" if quantity > 1 else ""
-        breakdown.append(
-            f"• {item['name']}{suffix} — {item['unit_value']:g} each = {item_total:g}"
-        )
+        suffix = f" x{entry['quantity']}" if entry["quantity"] > 1 else ""
+        breakdown.append(f"• {entry['name']}{suffix} — {entry['unit_value']:g} each = {item_total:g}")
     return total, breakdown, missing
 
 
 def calculate_side_bounds(items, values, aliases=None, side="give"):
-    """Calculate conservative lower/upper totals without inventing an unknown stack count."""
-    grouped = {}
-    missing = []
-    uncertain = []
+    grouped, missing, uncertain = {}, [], []
     for item in items:
-        key = normalize_name(item["name"])
-        if key in IGNORED_VALUE_ITEMS:
+        if normalize_name(item["name"]) in IGNORED_VALUE_ITEMS:
             continue
-        record, match_source, candidates = resolve_value_record(item["name"], values, aliases)
+        record, match_source, candidates = resolve_value_record(item["name"], values, aliases, item=item)
         if not record:
             suffix = f" (ambiguous: {', '.join(candidates)})" if candidates else ""
             missing.append(f"{item['name']}{suffix}")
             continue
-        unit_value, selected = _select_conservative_variant(record, side)
-        if unit_value is None:
+        selected = (record.get("variants") or [record])[0]
+        unit_min, unit_max = _variant_numeric_bounds(selected)
+        if unit_min is None or unit_max is None:
             missing.append(item["name"])
             continue
         if match_source != "exact":
             item["value_match_source"] = match_source
             item["resolved_value_name"] = selected.get("name", record.get("name", item["name"]))
-        resolved_key = normalize_name(record.get("name", item["name"]))
-        entry = grouped.setdefault(resolved_key, {
+        group_key = _resolved_item_group_key(record, item)
+        entry = grouped.setdefault(group_key, {
             "name": selected.get("name", record.get("name", item["name"])),
             "min_quantity": 0, "max_quantity": 0, "unbounded": False,
-            "unit_value": unit_value,
+            "unit_value_min": unit_min, "unit_value_max": unit_max,
         })
-        quantity = item.get("quantity")
-        source = item.get("quantity_source", "implicit_single")
-        qmin = item.get("quantity_min")
-        qmax = item.get("quantity_max")
+        quantity, source = item.get("quantity"), item.get("quantity_source", "implicit_single")
+        qmin, qmax = item.get("quantity_min"), item.get("quantity_max")
         if qmin is None:
             qmin = quantity if quantity is not None else 1
         if qmax is None and quantity is not None and source != "uncertain":
             qmax = quantity
         try:
-            qmin = int(qmin)
-            qmax = int(qmax) if qmax is not None else None
+            qmin, qmax = int(qmin), int(qmax) if qmax is not None else None
         except (TypeError, ValueError):
-            qmin, qmax = 1, None
+            qmin, qmax, source = 1, None, "uncertain"
         if qmin < 1 or qmin > 100 or (qmax is not None and (qmax < qmin or qmax > 100)):
-            qmin, qmax = 1, None
-            source = "uncertain"
+            qmin, qmax, source = 1, None, "uncertain"
         entry["min_quantity"] += qmin
         if qmax is None:
             entry["unbounded"] = True
@@ -1988,34 +2094,26 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
             entry["max_quantity"] += qmax
         if source == "uncertain":
             uncertain.append({
-                "name": item["name"], "quantity_min": qmin,
-                "quantity_max": qmax, "quantity_source": source,
-                "quantity_reason": item.get("quantity_reason", ""),
+                "name": item["name"], "quantity_min": qmin, "quantity_max": qmax,
+                "quantity_source": source, "quantity_reason": item.get("quantity_reason", ""),
                 "listed_price": item.get("listed_price"), "raw_excerpt": item.get("raw_excerpt", ""),
             })
 
-    total_min = 0.0
-    total_max = 0.0
-    unbounded_total = False
-    breakdown = []
-    for item in grouped.values():
-        low = item["min_quantity"]
-        high = None if item["unbounded"] else item["max_quantity"]
-        low_total = item["unit_value"] * low
+    total_min, total_max, unbounded_total, breakdown = 0.0, 0.0, False, []
+    for entry in grouped.values():
+        low, high = entry["min_quantity"], None if entry["unbounded"] else entry["max_quantity"]
+        low_total = entry["unit_value_min"] * low
         total_min += low_total
         if high is None:
             unbounded_total = True
-            quantity_label = f"x? ({low}..∞)"
-            total_label = f"{low_total:g}..∞"
+            quantity_label, total_label = f"x? ({low}..∞)", f"{low_total:g}..∞"
         else:
-            high_total = item["unit_value"] * high
+            high_total = entry["unit_value_max"] * high
             total_max += high_total
             quantity_label = f"x{low}" if low == high else f"x? ({low}..{high})"
-            total_label = f"{low_total:g}" if low == high else f"{low_total:g}..{high_total:g}"
-        breakdown.append(
-            f"• {item['name']} {quantity_label} — "
-            f"{item['unit_value']:g} each = {total_label}"
-        )
+            total_label = f"{low_total:g}" if low == high and entry["unit_value_min"] == entry["unit_value_max"] else f"{low_total:g}..{high_total:g}"
+        value_label = f"{entry['unit_value_min']:g}" if entry["unit_value_min"] == entry["unit_value_max"] else f"{entry['unit_value_min']:g}..{entry['unit_value_max']:g}"
+        breakdown.append(f"• {entry['name']} {quantity_label} — {value_label} each = {total_label}")
     return total_min, (math.inf if unbounded_total else total_max), breakdown, missing, uncertain
 
 
@@ -2545,11 +2643,20 @@ def listing_watch_fingerprints(listing, values, aliases=None):
     for side, field in (('give', 'give_items'), ('receive', 'receive_items')):
         for item in listing.get(field, []):
             name = str(item.get('name') or '')
-            content.append((side, normalize_name(name), str(item.get('structured_item_id') or ''), item.get('quantity'), item.get('quantity_min'), item.get('quantity_max')))
-            record, match_source, _ = resolve_value_record(name, values, aliases)
+            content.append((
+                side, normalize_name(name), str(item.get('structured_item_id') or ''),
+                normalize_slug(item.get('catalog_slug')), str(item.get('catalog_rarity') or ''),
+                str(item.get('catalog_type') or ''), bool(item.get('catalog_chroma')),
+                item.get('quantity'), item.get('quantity_min'), item.get('quantity_max')
+            ))
+            record, match_source, _ = resolve_value_record(name, values, aliases, item=item)
             unit_value = None
-            if record: unit_value, _selected = _select_conservative_variant(record, side)
-            valuation.append((side, normalize_name(name), unit_value, match_source))
+            unit_min = unit_max = None
+            if record:
+                unit_value, _selected = _select_conservative_variant(record, side)
+                if _selected:
+                    unit_min, unit_max = _variant_numeric_bounds(_selected)
+            valuation.append((side, normalize_name(name), unit_value, unit_min, unit_max, match_source))
     content_hash = hashlib.sha256(json.dumps(sorted(content, key=lambda row: json.dumps(row, sort_keys=True, default=str)), sort_keys=True, default=str).encode()).hexdigest()
     values_hash = hashlib.sha256(json.dumps(sorted(valuation, key=lambda row: json.dumps(row, sort_keys=True, default=str)), sort_keys=True, default=str).encode()).hexdigest()
     return content_hash, values_hash
@@ -2992,12 +3099,15 @@ def scan_once():
 def compare_secondary_values(items, values):
     differences = []
     for item in items:
-        record = values.get(normalize_name(item["name"]), {})
-        primary, secondary = record.get("value"), record.get("secondary_value")
+        record, _source, _candidates = resolve_value_record(item["name"], values, item=item)
+        if not record:
+            continue
+        variant = (record.get("variants") or [record])[0]
+        primary, secondary = variant.get("value"), variant.get("secondary_value")
         if primary and secondary and primary > 0:
             pct = abs(primary - secondary) / primary * 100.0
             if pct >= 30:
-                differences.append(f"{record.get('name', item['name'])}: {pct:.0f}%")
+                differences.append(f"{variant.get('name', item['name'])}: {pct:.0f}%")
     return ", ".join(differences[:5])
 
 
