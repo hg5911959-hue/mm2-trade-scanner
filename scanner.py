@@ -198,6 +198,24 @@ def quantity_from_image_node(image_node):
     if alt_quantity is not None:
         return alt_quantity
 
+    current = image_node
+    for _ in range(3):
+        if current is None:
+            break
+        # Structured item data is authoritative; bare numeric counts are safe here.
+        for key in ("data-quantity", "data-count", "data-amount", "data-stack",
+                    "data-stack-count"):
+            quantity = _quantity_marker(current.attrs.get(key, ""))
+            if quantity is not None:
+                return quantity
+        # Accessibility labels/titles need an explicit xN marker to avoid
+        # mistaking an item's market price for its quantity.
+        for key in ("aria-label", "title"):
+            quantity = _explicit_stack_quantity(current.attrs.get(key, ""))
+            if quantity is not None:
+                return quantity
+        current = current.parent
+
     # Inspect only the immediate item wrapper and its parent wrapper for
     # sibling badges. Never walk higher into a whole offer/card where a badge
     # belonging to another weapon or the opposite side could be picked up.
