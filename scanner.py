@@ -815,7 +815,7 @@ def _apply_structured_quantities(listing, structured, item_map=None):
         for row in rows:
             item_id = str(row.get('itemDetailsId') or '')
             details = (item_map or {}).get(item_id) or {}
-            row_items.append({'name': str(details.get('displayName') or row.get('displayName') or row.get('name') or ''), 'structured_item_id': item_id})
+            row_items.append({'name': str(details.get('displayName') or row.get('displayName') or row.get('name') or '')})
         pairs = _match_by_identity(items, row_items)
         matched_items = {i for i, _ in pairs}
         if len(pairs) != len(items) or len(pairs) != len(rows):
