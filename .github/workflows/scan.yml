@@ -16,7 +16,6 @@ concurrency:
 
 jobs:
   scan:
-    if: false # TEMPORARY: protect alert-state migration before first post-upgrade scan
     runs-on: ubuntu-latest
     timeout-minutes: 55
     env:
