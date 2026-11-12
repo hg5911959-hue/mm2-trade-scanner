@@ -108,7 +108,7 @@ jobs:
         run: |
           set -e
           if git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
-            git fetch origin state
+            git fetch origin refs/heads/state:refs/remotes/origin/state
             git worktree add -B state /tmp/mm2-state origin/state
           else
             git worktree add --detach /tmp/mm2-state HEAD
