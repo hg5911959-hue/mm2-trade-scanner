@@ -189,6 +189,24 @@ class ParserTests(unittest.TestCase):
              {"name": "Spirit", "quantity": 3}],
         )
 
+    def test_overlay_quantity_badge_before_nested_weapon_image_is_detected(self):
+        html = """
+        <article>
+          <div>Propose
+            <div class="offer-items">
+              <div class="item-wrap">
+                <span class="overlay">×2</span>
+                <div class="weapon-image"><img alt="Snowcannon"></div>
+              </div>
+            </div>
+          </div>
+          <div>Recherche <img alt="Spirit"></div>
+          <span class="price">750.0</span>
+        </article>
+        """
+        listing = parse_listings(html)[0]
+        self.assertEqual(listing["receive_items"], [{"name": "Snowcannon", "quantity": 2}])
+
     def test_quantity_from_data_attribute_is_parsed(self):
         html = """
         <article>
@@ -199,7 +217,7 @@ class ParserTests(unittest.TestCase):
         listing = parse_listings(html)[0]
         self.assertEqual(listing["receive_items"][0]["quantity"], 2)
 
-    def test_stale_supreme_cache_is_used_when_api_fails(self):
+    def test_stale_supreme_cache_is_never_used_when_api_fails(self):
         values = {
             f"item {i}": {"name": f"Item {i}", "value": i + 1, "secondary_value": None}
             for i in range(100)
@@ -210,8 +228,8 @@ class ParserTests(unittest.TestCase):
             with patch("scanner.VALUES_FILE", cache_path), patch(
                 "scanner.api_get_json", side_effect=RuntimeError("API unavailable")
             ):
-                loaded = load_supreme_values()
-        self.assertEqual(len(loaded), 100)
+                with self.assertRaisesRegex(RuntimeError, "refusing stale-cache calculations"):
+                    load_supreme_values()
 
 
 
