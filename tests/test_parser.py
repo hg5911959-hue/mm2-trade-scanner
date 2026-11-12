@@ -632,9 +632,11 @@ class ReliabilityTests(unittest.TestCase):
             "owner_url": "https://bloxswaps.com/fr/users/12345?tab=trade-ads",
         }
         message = scanner.format_trade_message(listing, 10, ["give"], 20, ["receive"], 10)
-        self.assertIn("OPEN OWNER PROFILE: https://bloxswaps.com/fr/users/12345", message)
-        self.assertLess(message.index("OPEN OWNER PROFILE"), message.index("Listing details"))
-        self.assertLess(message.index("OPEN OWNER PROFILE"), message.index("YOU GIVE"))
+        self.assertIn("👤 https://bloxswaps.com/fr/users/12345", message)
+        self.assertLess(message.index("👤 "), message.index("🔗 "))
+        self.assertLess(message.index("👤 "), message.index("📤 GIVE"))
+        self.assertNotIn("QUANTITY PROVENANCE", message)
+        self.assertNotIn("raw=", message)
 
     def test_unvalued_trade_message_is_explicit_and_links_owner(self):
         listing = {
@@ -646,7 +648,7 @@ class ReliabilityTests(unittest.TestCase):
         message = scanner.format_unvalued_message(listing, ["Knife B"])
         self.assertIn("Knife A x2", message)
         self.assertIn("PROFIT: NOT CALCULATED", message)
-        self.assertIn("OPEN OWNER PROFILE: https://bloxswaps.com/fr/users/123", message)
+        self.assertIn("👤 https://bloxswaps.com/fr/users/123", message)
 
     def test_owner_link_survives_telegram_truncation(self):
         listing = {
@@ -664,7 +666,8 @@ class ReliabilityTests(unittest.TestCase):
             "scanner.urllib.request.urlopen", side_effect=fake_open
         ):
             scanner.send_telegram(message)
-        self.assertIn("OPEN OWNER PROFILE: https://bloxswaps.com/fr/users/12345", captured["text"])
+        self.assertIn("👤 https://bloxswaps.com/fr/users/12345", captured["text"])
+        self.assertIn("and 492 more items", captured["text"])
 
     def test_one_definite_telegram_failure_does_not_stop_later_alerts(self):
         html = """
@@ -707,7 +710,7 @@ class ReliabilityTests(unittest.TestCase):
             second_message = send.call_args_list[1].args[0]
             self.assertIn("WARNING: quantity 5+", second_message)
             self.assertIn("WARNING: unusually high profit", second_message)
-            self.assertIn("5 (explicit)", second_message)
+            self.assertIn("Knife B x5", second_message)
             alerted = json.loads((root / "alerted.json").read_text(encoding="utf-8"))["alerted"]
             self.assertEqual(len(alerted), 1)
             seen = json.loads((root / "seen_ads.json").read_text(encoding="utf-8"))["ad_ids"]
@@ -748,10 +751,10 @@ class ReliabilityTests(unittest.TestCase):
                 scanner.main()
             self.assertEqual(send.call_count, 1)
             message = send.call_args.args[0]
-            self.assertIn("MANUAL VERIFICATION REQUIRED", message)
-            self.assertIn("worst-case -∞", message)
-            self.assertIn("best-case 275", message)
-            self.assertIn("uncertain (1..∞)", message)
+            self.assertIn("MANUAL CHECK", message)
+            self.assertIn("POSSIBLE PROFIT RANGE: -∞ to 275", message)
+            self.assertIn("Harvester x? (1..∞)", message)
+            self.assertNotIn("raw=", message)
 
 
     def test_main_quarantines_uncertain_telegram_delivery_on_next_scan(self):
@@ -825,7 +828,7 @@ class ReliabilityTests(unittest.TestCase):
                 scanner.main()
             # Unknown-valued offers are silently excluded, then re-evaluated.
             self.assertEqual(len(sent), 1)
-            self.assertIn("SUPREME TRADE SCANNER", sent[0])
+            self.assertIn("💎 MM2 TRADE", sent[0])
             self.assertNotIn("MANUAL VALUE CHECK", "".join(sent))
             self.assertTrue((root / "alerted.json").exists())
 

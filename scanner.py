@@ -17,7 +17,7 @@ import urllib.request
 from urllib.error import HTTPError, URLError
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import urljoin, urlencode, urlsplit, parse_qs
+from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 
 BLOXSWAPS_URL = os.environ.get(
     "BLOXSWAPS_URL",
@@ -31,7 +31,7 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 MIN_DIFF = float(os.environ.get("MIN_VALUE_DIFFERENCE", "0"))
 MIN_PROFIT_PERCENT = float(os.environ.get("MIN_PROFIT_PERCENT", "5"))
 FAILURE_THRESHOLD = int(os.environ.get("FAILURE_ALERT_THRESHOLD", "3"))
-MAX_ALERTS_PER_RUN = max(1, int(os.environ.get("MAX_ALERTS_PER_RUN", "10")))
+MAX_ALERTS_PER_RUN = max(1, int(os.environ.get("MAX_ALERTS_PER_RUN", "3")))
 ALERT_DELAY_SECONDS = max(0.0, float(os.environ.get("ALERT_DELAY_SECONDS", "1")) )
 VALUES_FILE = Path("data/supreme_values.json")
 FAILURE_FILE = Path("data/failure_state.json")
@@ -2100,55 +2100,43 @@ def ignored_item_names(listing):
     return names
 
 
+def _compact_telegram_items(items, limit=8):
+    items = list(items or [])
+    shown = items[:limit]
+    if len(items) > limit:
+        shown.append(f"• … and {len(items) - limit} more items")
+    return shown or ["• No items"]
+
+
+def _clean_owner_link(url):
+    parsed = urlsplit(str(url or ""))
+    if parsed.scheme and parsed.netloc and parsed.path:
+        return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
+    return str(url or BLOXSWAPS_URL)
+
+
 def format_trade_message(listing, give_total, give_lines, receive_total, receive_lines, difference):
+    """Short trade-first Telegram alert; parser diagnostics remain in Actions logs."""
     result = "WIN" if difference > 0 else ("FAIR" if difference == 0 else "LOSS")
-    owner_link = listing.get("owner_url") or listing.get("url") or BLOXSWAPS_URL
+    owner_link = _clean_owner_link(listing.get("owner_url") or listing.get("url"))
     lines = [
-        "MM2 SUPREME TRADE SCANNER",
-        f"OPEN OWNER PROFILE: {owner_link}",
-        *( [f"Listing details: {listing['url']}"] if listing.get("url") and listing.get("url") != owner_link else [] ),
-        *( [f"FIRST SEEN UTC: {listing['first_seen_at_utc']}"] if listing.get("first_seen_at_utc") else [] ),
-        *( [f"ALERT ATTEMPT UTC: {listing['alert_attempted_at_utc']}"] if listing.get("alert_attempted_at_utc") else [] ),
-        "",
-        "YOU GIVE (BloxSwaps: Recherche):",
-        *(give_lines or ["• No items"]),
-        f"TOTAL YOU GIVE (scenario): {format_number(give_total)}",
-        "",
-        "YOU RECEIVE (BloxSwaps: Propose):",
-        *(receive_lines or ["• No items"]),
-        f"TOTAL YOU RECEIVE (scenario): {format_number(receive_total)}",
-        "",
-        f"SUPREME PROFIT (scenario): {format_number(difference)}",
-        f"CALCULATED RESULT: {result}",
-        "",
-        "QUANTITY PROVENANCE (listed prices are diagnostic only, never used for Supreme value):",
+        "💎 MM2 TRADE",
+        f"👤 {owner_link}",
     ]
-    for side, field in (("Propose/receive", "receive_items"), ("Recherche/give", "give_items")):
-        for item in listing.get(field, []):
-            source = item.get("quantity_source", "uncertain")
-            quantity = item.get("quantity")
-            if source == "uncertain":
-                low = item.get("quantity_min", 1)
-                high = item.get("quantity_max")
-                label = f"uncertain ({low}..{high if high is not None else '∞'})"
-            else:
-                label = f"{quantity} ({source})"
-            price = f"; listed_price={item['listed_price']}" if item.get("listed_price") is not None else ""
-            reason = item.get("quantity_reason", "")
-            comparison = ""
-            if item.get("html_quantity") is not None or item.get("structured_quantity") is not None:
-                comparison = (
-                    f"; HTML={item.get('html_quantity')} ({item.get('html_quantity_source', 'n/a')})"
-                    f" vs RSC={item.get('structured_quantity')}"
-                )
-            raw = str(item.get("raw_excerpt", "")).replace("\n", " ")[:150]
-            lines.append(
-                f"• {side}: {item['name']} — {label}{price}{comparison}; "
-                f"reason={reason!r}; raw={raw!r}"
-            )
+    if listing.get("url") and listing.get("url") != owner_link:
+        lines.append(f"🔗 {listing['url']}")
     lines.extend([
         "",
-        "Values: Supreme Values source_b via RBLXValue API (Data from rblxvalue.com).",
+        "📤 GIVE:",
+        *_compact_telegram_items(give_lines),
+        f"Total: {format_number(give_total)}",
+        "",
+        "📥 GET:",
+        *_compact_telegram_items(receive_lines),
+        f"Total: {format_number(receive_total)}",
+        "",
+        f"💰 PROFIT: {'+' if difference > 0 else ''}{format_number(difference)}",
+        f"RESULT: {result}",
     ])
     return "\n".join(lines)
 
@@ -2158,7 +2146,6 @@ def format_unvalued_message(listing, missing):
         lines = []
         for item in items:
             quantity = item.get("quantity")
-            source = item.get("quantity_source", "uncertain")
             if quantity is None:
                 low = item.get("quantity_min", 1)
                 high = item.get("quantity_max")
@@ -2166,22 +2153,26 @@ def format_unvalued_message(listing, missing):
             else:
                 label = f" x{quantity}" if quantity > 1 else ""
             lines.append(f"• {item['name']}{label}")
-        return lines or ["• No items"]
-    owner_link = listing.get("owner_url") or listing.get("url") or BLOXSWAPS_URL
+        return _compact_telegram_items(lines)
+
+    owner_link = _clean_owner_link(listing.get("owner_url") or listing.get("url"))
     lines = [
-        "MM2 TRADE SCANNER — MANUAL VALUE CHECK",
-        f"OPEN OWNER PROFILE: {owner_link}",
-        *( [f"Listing details: {listing['url']}"] if listing.get("url") and listing.get("url") != owner_link else [] ),
+        "⚠️ MM2 MANUAL VALUE CHECK",
+        f"👤 {owner_link}",
+    ]
+    if listing.get("url") and listing.get("url") != owner_link:
+        lines.append(f"🔗 {listing['url']}")
+    lines.extend([
         "",
-        "YOU GIVE (Recherche):",
+        "📤 GIVE:",
         *describe(listing.get("give_items", [])),
         "",
-        "YOU RECEIVE (Propose):",
+        "📥 GET:",
         *describe(listing.get("receive_items", [])),
         "",
-        "UNMATCHED SUPREME ITEMS: " + ", ".join(sorted(set(missing))),
+        "UNMATCHED: " + ", ".join(sorted(set(missing))[:8]),
         "PROFIT: NOT CALCULATED — no value was guessed.",
-    ]
+    ])
     return "\n".join(lines)
 
 
@@ -2528,17 +2519,16 @@ def scan_once():
             listing, op["give_total"], op["give_lines"],
             op["receive_total"], op["receive_lines"], op["difference"]
         )
-        message += (
-            f"\nPROFIT RANGE: worst-case {format_number(op['profit_worst'])}; "
-            f"best-case {format_number(op['profit_best'])}"
-        )
         if op.get("manual_review"):
             message = (
-                "⚠️ MANUAL VERIFICATION REQUIRED — best case is profitable, "
-                "but worst case is not guaranteed. Do not trade before checking the stack.\n\n"
+                "⚠️ MANUAL CHECK — profit is not guaranteed; verify the stack before trading.\n\n"
                 + message
             )
-        message += f"\nPROFIT MARGIN (scenario): {op['margin']:.2f}%"
+            message += (
+                f"\n⚠️ POSSIBLE PROFIT RANGE: {format_number(op['profit_worst'])} "
+                f"to {format_number(op['profit_best'])}"
+            )
+        message += f"\n📊 MARGIN: {op['margin']:.2f}%"
         large_stacks = [
             item["name"] for field in ("give_items", "receive_items")
             for item in listing.get(field, [])
@@ -2696,36 +2686,8 @@ def record_failure(error):
 
 
 def main():
-    if os.environ.get("MM2_SCAN_LOOP") != "1":
-        return scan_once()
-    duration = max(60, min(3300, int(os.environ.get("MM2_SCAN_DURATION_SECONDS", "3000"))))
-    interval = max(30, min(60, int(os.environ.get("MM2_SCAN_INTERVAL_SECONDS", "45"))))
-    deadline = time.monotonic() + duration
-    cycle = 0
-    successful_cycles = 0
-    while time.monotonic() < deadline:
-        cycle += 1
-        cycle_started = time.monotonic()
-        print(f"[loop] Starting scan cycle {cycle}; target start-to-start interval={interval}s")
-        try:
-            scan_once()
-            successful_cycles += 1
-        except Exception as exc:
-            print(f"[loop] Scan cycle {cycle} failed: {type(exc).__name__}: {str(exc)[:300]}")
-            try:
-                record_failure(exc)
-            except Exception as state_exc:
-                print(f"[loop] Could not record cycle failure: {type(state_exc).__name__}")
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
-        elapsed = time.monotonic() - cycle_started
-        wait_seconds = max(0.0, interval - elapsed)
-        time.sleep(min(wait_seconds, remaining))
-    print(f"[loop] Completed {cycle} scan cycles; successful={successful_cycles} within {duration}s.")
-    if successful_cycles == 0:
-        raise RuntimeError("No scan cycle completed successfully during the loop window.")
-
+    # One feed snapshot per workflow invocation; cadence is controlled by GitHub cron.
+    return scan_once()
 
 if __name__ == "__main__":
     try:
