@@ -32,6 +32,7 @@ VALUES_FILE = Path("data/supreme_values.json")
 FAILURE_FILE = Path("data/failure_state.json")
 HISTORY_FILE = Path("data/history.csv")
 MAX_SEEN = 5000
+ALERTED_FILE = Path("data/alerted.json")
 VALUES_TTL_SECONDS = 4 * 60 * 60
 SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "200"))
 TELEGRAM_MAX_CHARS = 4000
@@ -117,21 +118,31 @@ def smallest_matching_nodes(node, predicate):
     return [node] if predicate(node_text(node)) else []
 
 
-def clean_item_name(raw):
+def split_item_label(raw):
+    """Return an item name and any quantity embedded in its accessible label."""
     name = (raw or "").strip()
     for prefix in ("Image de ", "Image of ", "Image: "):
         if name.casefold().startswith(prefix.casefold()):
             name = name[len(prefix):]
     name = re.sub(r"\s+(dans|in) Murder Mystery 2$", "", name, flags=re.I)
     name = re.sub(r"\s+", " ", name).strip()
-    if not name or name.casefold() in {
+    quantity = 1
+    match = re.search(r"(?:[x×]\s*(\d{1,3})|(\d{1,3})\s*[x×])\s*$", name, flags=re.I)
+    if match:
+        quantity = max(1, min(int(match.group(1) or match.group(2)), 100))
+        name = name[:match.start()].strip()
+    ignored = {
         "coin", "offers", "offres", "ajouts", "ajout", "item stability",
         "déclassements", "declassements", "surclassements",
-        "downgrades", "upgrades",
-        "murder mystery 2", "mm2", "image"
-    }:
-        return ""
-    return name
+        "downgrades", "upgrades", "murder mystery 2", "mm2", "image"
+    }
+    if not name or name.casefold() in ignored:
+        return "", 1
+    return name, quantity
+
+
+def clean_item_name(raw):
+    return split_item_label(raw)[0]
 
 
 def collect_images_in_order(node):
@@ -155,7 +166,8 @@ def collect_ordered_events(node):
             if kind == "text":
                 result.append(("text", value))
             elif value.tag == "img":
-                result.append(("img", clean_item_name(value.attrs.get("alt", ""))))
+                name, quantity = split_item_label(value.attrs.get("alt", ""))
+                result.append(("img", {"name": name, "quantity": quantity}))
             else:
                 visit(value)
     visit(node)
@@ -179,21 +191,23 @@ def extract_side_items(node):
                 side = "receive"
             elif re.search(r"\brecherche\b|\blooking for\b|\brequest\b", low):
                 side = "give"
-        elif kind == "img" and value and side:
-            # BloxSwaps shows an optional xN stack count after the item name.
-            quantity = 1
-            for next_kind, next_value in events[i + 1:]:
-                # Coin/value icons are represented as empty image events; they
-                # must not stop the search for the xN stack label after the price.
-                if next_kind == "img" and next_value:
-                    break
-                if next_kind == "text":
-                    match = re.search(r"\bx\s*(\d+)\b", next_value, flags=re.I)
-                    if match:
-                        quantity = max(1, min(int(match.group(1)), 100))
+        elif kind == "img" and value and value["name"] and side:
+            # Quantity may be embedded in alt text or rendered nearby as x3, 3x, ×3.
+            quantity = value["quantity"]
+            if quantity == 1:
+                for next_kind, next_value in events[i + 1:]:
+                    if next_kind == "img" and next_value and next_value["name"]:
                         break
+                    if next_kind == "text":
+                        match = re.search(
+                            r"(?:[x×]\s*(\d{1,3})|(\d{1,3})\s*x)\b",
+                            next_value, flags=re.I
+                        )
+                        if match:
+                            quantity = max(1, min(int(match.group(1) or match.group(2)), 100))
+                            break
             target = received if side == "receive" else requested
-            target.append({"name": value, "quantity": quantity})
+            target.append({"name": value["name"], "quantity": quantity})
     return received, requested
 
 
@@ -204,7 +218,7 @@ def listing_links(node):
         if child.tag == "a" and child.attrs.get("href"):
             href = child.attrs["href"]
             links.append(href)
-            if "/users/" in href.casefold() and not owner_url:
+            if re.search(r"/(?:[a-z]{2}/)?users?/\d+(?:/|$|[?#])", href, flags=re.I) and not owner_url:
                 owner_url = urljoin(BLOXSWAPS_URL, href)
     discussion_url = ""
     for href in links:
@@ -512,8 +526,34 @@ def save_seen(seen_list):
     atomic_write_text(SEEN_FILE, json.dumps({"id_version": 3, "seen": ordered}, indent=2) + "\n")
 
 
+def load_alerted():
+    """Load only successfully alerted listings; unknown or unprofitable offers stay eligible."""
+    alerted = set()
+    try:
+        data = json.loads(ALERTED_FILE.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and isinstance(data.get("alerted"), list):
+            alerted.update(str(value) for value in data["alerted"])
+    except (OSError, ValueError, TypeError):
+        pass
+    # Backfill alerts sent by older scanner versions from the durable trade history.
+    try:
+        with HISTORY_FILE.open("r", newline="", encoding="utf-8") as handle:
+            for row in csv.DictReader(handle):
+                if row.get("listing_id"):
+                    alerted.add(str(row["listing_id"]))
+    except (OSError, csv.Error):
+        pass
+    return alerted
+
+
+def save_alerted(alerted):
+    ordered = sorted(set(str(value) for value in alerted))[-MAX_SEEN:]
+    atomic_write_text(ALERTED_FILE, json.dumps({"version": 1, "alerted": ordered}, indent=2) + "\n")
+
+
 def format_trade_message(listing, give_total, give_lines, receive_total, receive_lines, difference):
     result = "WIN" if difference > 0 else ("FAIR" if difference == 0 else "LOSS")
+    owner_link = listing.get("owner_url") or listing.get("url") or BLOXSWAPS_URL
     lines = [
         "MM2 SUPREME TRADE SCANNER",
         "",
@@ -529,8 +569,8 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
         f"CALCULATED RESULT: {result}",
         "",
         "Values: Supreme Values source_b via RBLXValue API (Data from rblxvalue.com).",
-        f"Listing / discussion: {listing['url']}",
-        *( [f"Owner profile: {listing['owner_url']}"] if listing.get("owner_url") else [] ),
+        f"OPEN OWNER PROFILE: {owner_link}",
+        *( [f"Listing details: {listing['url']}"] if listing.get("url") and listing.get("url") != owner_link else [] ),
     ]
     return "\n".join(lines)
 
@@ -593,26 +633,12 @@ def main():
         raise RuntimeError(f"[bloxswaps] Parser could not read {stats['malformed_count']} non-Ajouts cards.")
     print(f"[bloxswaps] Eligible listings after Ajouts filter: {len(listings)}")
 
-    state = load_seen()
-    seen_order = list(dict.fromkeys(state["seen"]))
-    seen = set(seen_order)
+    alerted = load_alerted()
 
-    def mark_seen(trade_id):
-        if trade_id not in seen:
-            seen.add(trade_id)
-            seen_order.append(trade_id)
-            save_seen(seen_order)
-
-    if state["fresh"] or state["id_version"] < 3:
-        for listing in listings:
-            if listing["id"] not in seen:
-                seen.add(listing["id"])
-                seen_order.append(listing["id"])
-        save_seen(seen_order)
-        print(f"[baseline] Recorded {len(listings)} visible cards without alerts (fresh/legacy state).")
-        write_step_summary(f"Baseline run: {len(listings)} listings recorded, no alerts sent.")
-        record_success()
-        return
+    def mark_alerted(trade_id):
+        if trade_id not in alerted:
+            alerted.add(trade_id)
+            save_alerted(alerted)
 
     skipped_unknown = 0
     sent = 0
@@ -620,17 +646,17 @@ def main():
     opportunities = []
     for listing in listings:
         trade_id = listing["id"]
-        if trade_id in seen:
+        if trade_id in alerted:
             continue
         result, missing = evaluate_listing(listing, values)
         evaluated += 1
         if result is None:
             skipped_unknown += 1
-            print(f"[skip] Unmatched Supreme item(s): {', '.join(missing)}")
-            mark_seen(trade_id)
+            print(f"[retry-next-scan] Unmatched Supreme item(s): {', '.join(missing)}")
+            # Keep the listing eligible: API refresh or corrected mapping may resolve it.
             continue
         if not qualifies(result):
-            mark_seen(trade_id)
+            # Re-evaluate while visible; source values may change during the listing's lifetime.
             continue
         opportunities.append(result)
 
@@ -649,7 +675,7 @@ def main():
             message += "\nSECOND-SOURCE CHECK (MM2Values): " + secondary_note
         print(f"[telegram] Sending ranked trade; profit={op['difference']:g}")
         send_telegram(message)
-        mark_seen(listing["id"])
+        mark_alerted(listing["id"])
         append_history(listing, op)
         sent += 1
 
