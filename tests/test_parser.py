@@ -2126,6 +2126,9 @@ class WorkflowSecurityTests(unittest.TestCase):
         self.assertIn("cancel-in-progress: false", workflow)
         self.assertIn('MM2_SCAN_DURATION_SECONDS: "720"', scan_job)
         self.assertIn('MM2_SCAN_INTERVAL_SECONDS: "45"', scan_job)
+        job_defaults = scan_job.split("    steps:", 1)[0]
+        self.assertNotIn("MM2_SCAN_DURATION_SECONDS", job_defaults)
+        self.assertNotIn("MM2_SCAN_INTERVAL_SECONDS", job_defaults)
         self.assertIn("contents: read", scan_job)
         self.assertNotIn("contents: write", scan_job)
         self.assertIn("contents: write", state_job)
