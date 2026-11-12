@@ -49,7 +49,7 @@ jobs:
 
       - name: Save scanner state and Supreme cache
         run: |
-          git add data/seen.json data/supreme_values.json
+          git add -A data/
           if ! git diff --cached --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
