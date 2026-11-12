@@ -991,7 +991,7 @@ def _merge_html_quantity_diagnostics(api_listing, html_listing):
     return api_listing
 
 
-def fetch_bloxswaps_all(seen_ad_ids=None):
+def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None):
     """Fetch all recent RSC/API posts up to the first previously seen ad ID."""
     html = fetch_bloxswaps()
     first_listings, stats = parse_page(html)
@@ -1021,6 +1021,8 @@ def fetch_bloxswaps_all(seen_ad_ids=None):
         return [], stats, seed_ids
 
     seen = set(str(value) for value in seen_ad_ids)
+    pending_remaining = set(str(value) for value in (pending_ad_ids or []))
+    pending_found_ids = []
     by_ad_id = {
         str(listing.get("source_ad_id")): listing
         for listing in first_listings if listing.get("source_ad_id")
@@ -1047,9 +1049,16 @@ def fetch_bloxswaps_all(seen_ad_ids=None):
                 malformed += 1
                 continue
             post_id = str(raw["id"])
-            if post_id in seen:
+            if post_id in seen and post_id not in pending_remaining:
+                if pending_remaining:
+                    # Keep paging past already-processed ads to find unresolved
+                    # listings that were deliberately left pending for recheck.
+                    continue
                 boundary_reached = True
                 break
+            if post_id in pending_remaining:
+                pending_remaining.discard(post_id)
+                pending_found_ids.append(post_id)
             if post_id in discovered_ids:
                 continue
             discovered_ids.append(post_id)
@@ -1123,6 +1132,9 @@ def fetch_bloxswaps_all(seen_ad_ids=None):
         "pagination_complete": pagination_complete,
         "pagination_source": "RSC + cursor API",
         "seen_boundary_reached": boundary_reached,
+        "pending_found_ids": pending_found_ids,
+        "pending_remaining_ids": sorted(pending_remaining),
+        "pending_complete": not pending_remaining,
         "api_listings_added": api_listings_added,
         "addition_ids": addition_ids,
         "unparsed_ad_ids": unparsed_ids,
