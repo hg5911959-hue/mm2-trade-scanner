@@ -64,42 +64,71 @@ jobs:
           parser.feed(html)
           print("SCRIPT_COUNT", len(parser.scripts), "LINK_COUNT", len(parser.links), "IMAGE_COUNT", len(parser.images))
           print("SCRIPT_TAGS")
-          for i, s in enumerate(parser.scripts):
-              a = s["attrs"]
-              print(i, "type=", a.get("type"), "id=", a.get("id"), "src=", a.get("src"), "chars=", len(s["text"]))
-              if a.get("id") == "__NEXT_DATA__" or "application/json" in a.get("type", ""):
-                  try:
-                      obj = json.loads(s["text"])
-                      print("JSON_SCRIPT", i, "TOP_KEYS", list(obj)[:40])
-                      def scan(o, path="$", depth=0):
-                          if depth > 7: return
-                          if isinstance(o, dict):
-                              keys = set(o)
-                              if keys.intersection({"quantity","count","amount","stack","items","tradeItems","offering","requesting"}):
-                                  sample = {k:o[k] for k in o if k in {"id","name","title","quantity","count","amount","stack","items","tradeItems","offering","requesting","page","pageInfo","nextCursor","hasNextPage"}}
-                                  print("JSON_CANDIDATE", path, json.dumps(sample, ensure_ascii=False)[:1200])
-                              for k,v in list(o.items())[:300]: scan(v, path+"."+str(k), depth+1)
-                          elif isinstance(o, list):
-                              for j,v in enumerate(o[:300]): scan(v, path+f"[{j}]", depth+1)
-                      scan(obj)
-                  except Exception as e:
-                      print("JSON_SCRIPT_PARSE_ERROR", i, type(e).__name__)
-              if "__next_f.push" in s["text"]:
-                  print("RSC_SCRIPT_SAMPLE", re.sub(r"\\s+", " ", s["text"])[:1800])
+          rsc_payloads = []
+          for script in parser.scripts:
+              src = script["text"]
+              if "__next_f.push" in src:
+                  for match in re.finditer(r'self\\.__next_f\\.push\\(\\[1,("(?:\\\\.|[^"\\\\])*")\\]\\)', src):
+                      try:
+                          rsc_payloads.append(json.loads(match.group(1)))
+                      except Exception:
+                          pass
+          def extract_object_after(text, marker):
+              pos = text.find(marker)
+              if pos < 0: return None
+              start = text.find("{", pos + len(marker))
+              if start < 0: return None
+              depth, quoted, escaped = 0, False, False
+              for i in range(start, len(text)):
+                  ch = text[i]
+                  if quoted:
+                      if escaped: escaped = False
+                      elif ch == "\\\\": escaped = True
+                      elif ch == '"': quoted = False
+                  else:
+                      if ch == '"': quoted = True
+                      elif ch == "{": depth += 1
+                      elif ch == "}":
+                          depth -= 1
+                          if depth == 0:
+                              try: return json.loads(text[start:i+1])
+                              except Exception: return None
+              return None
+          for i, payload in enumerate(rsc_payloads):
+              if "initialPage" in payload:
+                  page_obj = extract_object_after(payload, '"initialPage":')
+                  if isinstance(page_obj, dict):
+                      print("RSC_INITIAL_PAGE_KEYS", list(page_obj))
+                      items = page_obj.get("items", [])
+                      print("RSC_INITIAL_PAGE_ITEM_COUNT", len(items))
+                      print("RSC_PAGE_META", {k:v for k,v in page_obj.items() if k != "items"})
+                      for item in items[:12]:
+                          print("RSC_LISTING", json.dumps({
+                              "id": item.get("id"),
+                              "keys": list(item),
+                              "tradePostItems": item.get("tradePostItems"),
+                              "requestedWildcards": item.get("requestedWildcards"),
+                          }, ensure_ascii=False)[:2400])
+                  else:
+                      print("RSC_INITIAL_PAGE_PARSE_FAILED", i, payload.find('"initialPage":'))
           print("PAGINATION_LINKS", [x for x in parser.links if re.search(r"page|cursor|offset|next", x, re.I)][:80])
           print("PAGE_QUERY_HINTS", sorted(set(re.findall(r"(?i)(?:page|cursor|offset|limit|take|skip)[A-Za-z0-9_]*", html)))[:80])
           print("APP_DATA_MARKERS", [m for m in re.findall(r"(?i)(?:/api/|graphql|trades|listings)[^\\\"'\\s]{0,140}", html)[:80]])
           scripts = [urljoin(final_url, s["attrs"]["src"]) for s in parser.scripts if s["attrs"].get("src")]
-          print("SCRIPT_URLS", scripts[:80])
-          for script_url in scripts[:25]:
+          print("SCRIPT_URLS", scripts[:100])
+          for script_url in scripts:
+              if urlsplit(script_url).netloc != "bloxswaps.com": continue
               try:
                   rq = urllib.request.Request(script_url, headers=HEADERS)
                   with urllib.request.urlopen(rq, timeout=12) as response:
-                      js = response.read(2_000_000).decode("utf-8", "replace")
+                      js = response.read(3_000_000).decode("utf-8", "replace")
+                  if any(term in js for term in ("tradePostItems", "initialPage", "useInfiniteQuery", "getTradePosts", "trade-posts")):
+                      print("TRADE_BUNDLE", script_url)
+                      for term in ("tradePostItems", "initialPage", "useInfiniteQuery", "getTradePosts", "trade-posts"):
+                          p = js.find(term)
+                          if p >= 0: print("TRADE_BUNDLE_CONTEXT", term, re.sub(r"\\s+", " ", js[max(0,p-500):p+1200])[:1700])
                   patterns = re.findall(r"""(?:"|')((?:/api/|/trpc/|/graphql)[^"'\\s]{0,160})(?:"|')""", js)
-                  page_terms = sorted(set(re.findall(r"(?i)(?:page|cursor|offset|limit|take|skip)[A-Za-z0-9_]*", js)))
-                  if patterns or page_terms:
-                      print("BUNDLE_HINT", script_url, "ENDPOINTS", patterns[:40], "PAGE_TERMS", page_terms[:40])
+                  if patterns: print("BUNDLE_ENDPOINTS", script_url, patterns[:80])
               except Exception as e:
                   print("BUNDLE_FETCH_ERROR", script_url, type(e).__name__)
           with open("bloxswaps-live.html", "wb") as f:
