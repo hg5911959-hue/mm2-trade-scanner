@@ -224,3 +224,5 @@ The dashboard workflow checks GitHub Pages before deployment. If the Pages site 
 - The watchdog also runs after every completed `MM2 Scanner Scheduler` workflow, regardless of success or failure, so a finished scan is checked immediately as well as by the five-minute cron.
 
 - The scanner scheduler checks whether its own cron workflow or the watchdog cron workflow was disabled by GitHub. With the narrowly scoped `actions: write` token, it attempts to re-enable only those two known workflows; failure is non-fatal to the scan and is logged as a warning.
+
+- Pending rechecks are batched to at most 500 IDs per scan by default (`MAX_PENDING_RECHECK_PER_SCAN`). Never-checked IDs are prioritized ahead of already retried IDs, preventing a large legacy queue from monopolizing every scan. The recent-feed cursor still processes new listings normally.

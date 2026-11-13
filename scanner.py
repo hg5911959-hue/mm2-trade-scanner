@@ -54,6 +54,7 @@ SEEN_FILE = Path("data/seen_ads.json")
 PENDING_FILE = Path("data/pending_recheck.json")
 PENDING_RECHECK_SCHEDULE_FILE = Path("data/pending_recheck_schedule.json")
 PENDING_RECHECK_BACKOFF_SECONDS = (300, 900, 1800, 3600, 21600)
+MAX_PENDING_RECHECK_PER_SCAN = max(1, int(os.environ.get('MAX_PENDING_RECHECK_PER_SCAN', '500')))
 FIRST_SEEN_FILE = Path("data/first_seen_ads.json")
 LAST_SUCCESS_FILE = Path("data/last_successful_scan.json")
 WATCH_FILE = Path("data/watch_ads.json")
@@ -2699,15 +2700,26 @@ def save_pending_recheck_schedule(schedule):
     }, sort_keys=True, indent=2) + "\n")
 
 
-def due_pending_ids_for_scan(pending, schedule, now=None):
-    """Return only unresolved listing IDs whose retry backoff has elapsed."""
+def due_pending_ids_for_scan(pending, schedule, now=None, limit=MAX_PENDING_RECHECK_PER_SCAN):
+    """Return due unresolved IDs, prioritizing never-checked items and applying a per-scan cap."""
     current = time.time() if now is None else float(now)
-    due = {}
+    candidates = []
     for ad_id, first_seen in pending.items():
-        entry = schedule.get(str(ad_id))
-        if not isinstance(entry, dict) or float(entry.get("next_check_at", 0)) <= current:
-            due[str(ad_id)] = first_seen
-    return due
+        key = str(ad_id)
+        entry = schedule.get(key)
+        if not isinstance(entry, dict):
+            candidates.append((0, 0.0, float(first_seen), key, first_seen))
+            continue
+        next_check = float(entry.get("next_check_at", 0))
+        if next_check <= current:
+            candidates.append((
+                int(entry.get("attempts", 0)), next_check, float(first_seen), key, first_seen
+            ))
+    candidates.sort(key=lambda row: (row[0], row[1], row[2], row[3]))
+    cap = int(limit) if limit is not None else 0
+    if cap > 0:
+        candidates = candidates[:cap]
+    return {row[3]: row[4] for row in candidates}
 
 
 def record_pending_recheck_attempts(due_ids, pending, schedule, now=None):
@@ -3242,6 +3254,9 @@ def scan_once():
     seen_ads = load_seen_ads()
     pending_ids = load_pending_ids()
     pending_schedule = load_pending_recheck_schedule()
+    all_due_pending_ids = due_pending_ids_for_scan(
+        pending_ids, pending_schedule, limit=0
+    )
     due_pending_ids = due_pending_ids_for_scan(pending_ids, pending_schedule)
     watch_state = load_watch_state()
     # If the seen file was lost but pending items survive, do not cold-start:
@@ -3250,7 +3265,8 @@ def scan_once():
         seen_ads = set()
     print(
         f"[state] Pending listings: {len(pending_ids)} total; "
-        f"{len(due_pending_ids)} due for recheck"
+        f"{len(all_due_pending_ids)} due; "
+        f"{len(due_pending_ids)} selected for this scan (cap={MAX_PENDING_RECHECK_PER_SCAN})"
     )
     print("[stage] Fetching BloxSwaps listings and cursor pages")
     bloxswaps_watch_ids = [key for key in watch_state if not str(key).startswith("discord:")]

@@ -23,6 +23,25 @@ class PendingRecheckScheduleTests(unittest.TestCase):
             {"due-ad": 200.0},
         )
 
+
+    def test_pending_rechecks_are_capped_and_oldest_never_checked_are_prioritized(self):
+        pending = {f"ad-{i}": float(i) for i in range(5)}
+        selected = scanner.due_pending_ids_for_scan(pending, {}, now=1000, limit=2)
+        self.assertEqual(list(selected), ["ad-0", "ad-1"])
+
+    def test_never_checked_pending_items_are_prioritized_over_retried_items(self):
+        pending = {"retried": 1.0, "never-checked-a": 2.0, "never-checked-b": 3.0}
+        schedule = {
+            "retried": {"attempts": 1, "next_check_at": 900.0},
+        }
+        selected = scanner.due_pending_ids_for_scan(pending, schedule, now=1000, limit=2)
+        self.assertEqual(set(selected), {"never-checked-a", "never-checked-b"})
+
+    def test_zero_limit_means_all_due_items(self):
+        pending = {f"ad-{i}": float(i) for i in range(5)}
+        selected = scanner.due_pending_ids_for_scan(pending, {}, now=1000, limit=0)
+        self.assertEqual(len(selected), 5)
+
     def test_backoff_escalates_and_caps_at_six_hours(self):
         pending = {"ad": 100.0}
         with tempfile.TemporaryDirectory() as directory:
