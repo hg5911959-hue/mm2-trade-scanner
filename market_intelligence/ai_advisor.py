@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import os
 import urllib.error
-import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -52,10 +51,10 @@ def _extract_json(text: str) -> dict[str, Any]:
         raise ValueError("Gemini did not return a JSON object")
     result = json.loads(text[start:end + 1])
     if not isinstance(result, dict):
-        raise ValueError("Gemini response must be an object")
+        raise TypeError("Gemini response must be an object")
     for key, expected in (("summary", str), ("risks", list), ("opportunities", list), ("data_gaps", list)):
         if not isinstance(result.get(key), expected):
-            raise ValueError(f"Invalid Gemini response field: {key}")
+            raise TypeError(f"Invalid Gemini response field: {key}")
     return result
 
 
@@ -69,7 +68,6 @@ def review_with_gemini(payload: dict[str, Any], timeout: int = 25) -> dict[str, 
         return {"status": "error", "reason": "Invalid GEMINI_MODEL name"}
     endpoint = (
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-        f"?key={urllib.parse.quote(api_key, safe='')}"
     )
     body = {
         "system_instruction": {"parts": [{"text": _RULES}]},
@@ -79,7 +77,7 @@ def review_with_gemini(payload: dict[str, Any], timeout: int = 25) -> dict[str, 
     request = urllib.request.Request(
         endpoint,
         data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
         method="POST",
     )
     try:

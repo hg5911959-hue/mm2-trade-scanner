@@ -6,7 +6,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from html import unescape
 from typing import Any
 
@@ -105,12 +105,12 @@ def collect_public_feeds(urls: list[str]) -> dict[str, Any]:
     for url in urls[:10]:
         try:
             items.extend(fetch_reddit_feed(url))
-        except Exception as exc:
+        except (ValueError, RuntimeError, OSError, ET.ParseError, UnicodeDecodeError) as exc:
             errors.append({"feed": str(url)[:300], "error": str(exc)[:300]})
     unique = {item["url"]: item for item in items}
     ordered = sorted(unique.values(), key=lambda row: row.get("published_at", ""), reverse=True)
     return {
-        "collected_at_utc": datetime.now(timezone.utc).isoformat(),
+        "collected_at_utc": datetime.now(UTC).isoformat(),
         "source_count": min(len(urls), 10),
         "item_count": len(ordered),
         "items": ordered,

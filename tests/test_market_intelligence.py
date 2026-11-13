@@ -1,6 +1,12 @@
+import json
 import unittest
+from unittest.mock import MagicMock, patch
 
-from market_intelligence.ai_advisor import build_analysis_payload, build_deepseek_manual_prompt
+from market_intelligence.ai_advisor import (
+    build_analysis_payload,
+    build_deepseek_manual_prompt,
+    review_with_gemini,
+)
 from market_intelligence.public_sources import parse_rss, validate_reddit_feed_url
 
 
@@ -48,6 +54,34 @@ class AIAdvisorTests(unittest.TestCase):
         prompt = build_deepseek_manual_prompt({"listings": [{"id": "x"}]})
         self.assertIn("deterministic", prompt)
         self.assertIn('"id": "x"', prompt)
+
+    def test_gemini_key_is_sent_in_header_not_url(self):
+        response = MagicMock()
+        response.read.return_value = json.dumps({
+            "candidates": [{
+                "content": {
+                    "parts": [{
+                        "text": json.dumps({
+                            "summary": "Review only",
+                            "risks": [],
+                            "opportunities": [],
+                            "data_gaps": [],
+                        })
+                    }]
+                }
+            }]
+        }).encode("utf-8")
+        response.__enter__.return_value = response
+        secret = "test-gemini-secret"
+        with (
+            patch.dict("os.environ", {"GEMINI_API_KEY": secret, "GEMINI_MODEL": "gemini-test"}),
+            patch("urllib.request.urlopen", return_value=response) as urlopen,
+        ):
+            result = review_with_gemini({"listings": []})
+        request = urlopen.call_args.args[0]
+        self.assertEqual(result["status"], "ok")
+        self.assertNotIn(secret, request.full_url)
+        self.assertEqual(request.get_header("X-goog-api-key"), secret)
 
 
 if __name__ == "__main__":

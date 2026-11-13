@@ -10,9 +10,6 @@ on:
         required: false
         type: boolean
         default: false
-  repository_dispatch:
-    types: [mm2-scan]
-
 permissions:
   contents: read
 
