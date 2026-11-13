@@ -2740,7 +2740,7 @@ def save_pending_recheck_schedule(schedule):
     }, sort_keys=True, indent=2) + "\n")
 
 
-def due_pending_ids_for_scan(pending, schedule, now=None, limit=MAX_PENDING_RECHECK_PER_SCAN):
+def due_pending_ids_for_scan(pending, schedule, now=None, limit=MAX_PENDING_RECHECK_PER_SCAN, force=False):
     """Return due unresolved IDs, prioritizing never-checked items and applying a per-scan cap."""
     current = time.time() if now is None else float(now)
     candidates = []
@@ -2751,7 +2751,7 @@ def due_pending_ids_for_scan(pending, schedule, now=None, limit=MAX_PENDING_RECH
             candidates.append((0, 0.0, float(first_seen), key, first_seen))
             continue
         next_check = float(entry.get("next_check_at", 0))
-        if next_check <= current:
+        if force or next_check <= current:
             candidates.append((
                 int(entry.get("attempts", 0)), next_check, float(first_seen), key, first_seen
             ))
@@ -3282,11 +3282,13 @@ def scan_once(include_backlog_rechecks=True):
         print("[stage] API key present; secret contents are intentionally never logged")
     print("[stage] Loading Supreme Values before evaluating trades")
     values = load_supreme_values()
+    values_snapshot_changed = False
     history_store = None
     try:
         from market_history import MarketHistory
         history_store = MarketHistory()
         if history_store.record_values_snapshot(values):
+            values_snapshot_changed = True
             print("[market-history] New Supreme/secondary value snapshot stored")
     except Exception as history_error:
         print(f"[market-history] Value snapshot storage skipped safely: {type(history_error).__name__}")
@@ -3299,9 +3301,12 @@ def scan_once(include_backlog_rechecks=True):
     all_due_pending_ids = due_pending_ids_for_scan(
         pending_ids, pending_schedule, limit=0
     )
+    run_backlog_rechecks = include_backlog_rechecks or values_snapshot_changed
     due_pending_ids = (
-        due_pending_ids_for_scan(pending_ids, pending_schedule)
-        if include_backlog_rechecks else {}
+        due_pending_ids_for_scan(
+            pending_ids, pending_schedule, force=values_snapshot_changed
+        )
+        if run_backlog_rechecks else {}
     )
     watch_state = load_watch_state()
     # If the seen file was lost but pending items survive, do not cold-start:
@@ -3316,9 +3321,13 @@ def scan_once(include_backlog_rechecks=True):
     print("[stage] Fetching BloxSwaps listings and cursor pages")
     bloxswaps_watch_ids = (
         [key for key in watch_state if not str(key).startswith("discord:")]
-        if include_backlog_rechecks else []
+        if run_backlog_rechecks else []
     )
-    scan_mode = "backlog-recheck" if include_backlog_rechecks else "fast-new-feed"
+    scan_mode = (
+        "values-refresh-backlog" if values_snapshot_changed
+        else "backlog-recheck" if include_backlog_rechecks
+        else "fast-new-feed"
+    )
     print(f"[scan-mode] {scan_mode}; backlog_recheck_cap={MAX_PENDING_RECHECK_PER_SCAN}; page_lookahead={MAX_BACKLOG_RECHECK_PAGES}")
     listings, stats, discovered_ids = fetch_bloxswaps_all(
         seen_ads, due_pending_ids.keys(), bloxswaps_watch_ids
@@ -3553,14 +3562,14 @@ def scan_once(include_backlog_rechecks=True):
                 save_pending_recheck_schedule(pending_schedule)
             save_pending_ids(pending_ids)
 
-    def mark_seen_ad(listing):
+    def mark_seen_ad(listing, clear_pending=True):
         if listing.get("source") == "discord":
             return  # Never add Discord snowflakes to BloxSwaps seen/pending cursors.
         source_id = str(listing.get("source_ad_id") or "")
         if source_id and source_id not in seen_ads:
             seen_ads.add(source_id)
             save_seen_ads(seen_ads)
-        if source_id and source_id in pending_ids:
+        if clear_pending and source_id and source_id in pending_ids:
             pending_ids.pop(source_id, None)
             pending_schedule.pop(source_id, None)
             save_pending_ids(pending_ids)
@@ -3737,6 +3746,9 @@ def scan_once(include_backlog_rechecks=True):
             if unknown_names:
                 record_unmatched_names(unknown_names)
             update_watch_entry(watch_state, listing, values, aliases)
+            # Keep it out of the hot feed loop, but retain its pending marker so
+            # a later bounded recheck or a changed value snapshot can resolve it.
+            mark_seen_ad(listing, clear_pending=False)
             continue
         if not qualifies(result):
             if result.get("uncertain_items"):
