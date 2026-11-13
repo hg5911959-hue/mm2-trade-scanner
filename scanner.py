@@ -1785,7 +1785,7 @@ def resolve_value_record(name, values, aliases=None, item=None):
     all_variants = list(_iter_value_variants(values))
     metadata_item = dict(item) if isinstance(item, dict) else {}
     metadata_item["name"] = name
-    catalog_slug, catalog_rarity, catalog_type, _ = _catalog_value_metadata(metadata_item)
+    catalog_slug, catalog_rarity, catalog_type, _, _ = _catalog_value_metadata(metadata_item)
 
     if catalog_slug:
         slug_candidates = [row for row in all_variants if normalize_slug(row[2].get("slug")) == catalog_slug]
