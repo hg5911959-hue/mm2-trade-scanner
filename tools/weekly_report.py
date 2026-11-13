@@ -15,8 +15,8 @@ def build_report(metrics, discord_status=None, key_state=None, daily_limit=60, n
     requests = sum(int(row.get("rblxvalue_requests", 0)) for row in rows)
     success = 100.0 * max(0, scans - failures) / scans if scans else 0.0
     today = metrics.get(current.date().isoformat(), {})
-    blocked = bool(key_state and key_state.get("permanent"))
-    key_label = "permanently blocked" if blocked else ("blocked" if key_state else "not blocked")
+    blocked = bool(key_state and (key_state.get("permanent") or float(key_state.get("blocked_until_epoch", 0) or 0) > current.timestamp()))
+    key_label = "permanently blocked" if key_state and key_state.get("permanent") else ("blocked" if blocked else "not blocked")
     stale = bool(discord_status is None or discord_status.get("stale", True))
     trend = " | ".join(f"{day[5:]}:{int(metrics.get(day, {}).get('alerts_sent', 0))}" for day in days)
     return ("MM2 Market Intelligence — weekly report\n"
