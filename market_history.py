@@ -198,6 +198,8 @@ class MarketHistory:
                 if not listing_id:
                     continue
                 source = str(listing.get("source") or "bloxswaps")[:32].casefold()
+                if source == "discord":
+                    continue  # Private-server content is not written to the public state branch.
                 source_id = str(
                     listing.get("discord_message_id") or listing.get("source_ad_id") or listing_id
                 )[:160]
@@ -247,6 +249,8 @@ class MarketHistory:
         if not isinstance(listing, dict) or not listing.get("id"):
             return False
         source = str(listing.get("source") or "bloxswaps")[:32].casefold()
+        if source == "discord":
+            return False  # Never persist private Discord opportunities in public GitHub state.
         details = {
             "give_items": _safe_items(listing.get("give_items")),
             "receive_items": _safe_items(listing.get("receive_items")),
