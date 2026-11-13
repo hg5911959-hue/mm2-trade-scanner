@@ -31,7 +31,7 @@ If a quantity is uncertain, the scanner computes a conservative best/worst profi
 - If only the best-case profit is positive, it is held for recheck/manual review and is not advertised as a WIN.
 - If even the best-case profit is not positive, it does not send a trade alert.
 
-Telegram alerts show owner/listing links and every valued item line (Supreme unit value, quantity and line total), both side totals, profit and result. Uncertain quantities, large stacks, and suspiciously high profit retain short safety warnings. Parser provenance, raw excerpts, and HTML/API diagnostics stay in GitHub Actions logs.
+Telegram alerts show owner/listing links and every valued item line (Supreme unit value, quantity, line total, and the exact Supreme stability label such as Rising/Stable/Decreasing when the source provides it; missing labels show N/A), both side totals, profit and result. Uncertain quantities, large stacks, and suspiciously high profit retain short safety warnings. Parser provenance, raw excerpts, and HTML/API diagnostics stay in GitHub Actions logs.
 
 ### Item names and duplicate values
 
@@ -85,7 +85,7 @@ Never commit or share these secrets. The scanner does not print API keys or Tele
 ## Item identity and Supreme-value safety
 
 - BloxSwaps catalogue metadata (slug, rarity, weapon type, and chroma flag) is carried with each item ID. A missing catalogue ID is never rescued by a similarly named weapon.
-- Supreme records retain their own source slug, category, type, ID, scalar value, and any explicit numeric range. Same-display-name records are never merged into a synthetic high/low range.
+- Supreme records retain their own source slug, category, type, ID, scalar value, explicit numeric range, and published stability label. The stability label is display-only; it never changes the arithmetic used to calculate trade profit. The cache schema is versioned so an older snapshot without stability is refreshed before it can be used. Same-display-name records are never merged into a synthetic high/low range.
 - Resolution uses exact source slug, exact normalized name plus catalogue identity, or a unique base-name match constrained by rarity and type (for catalogue labels such as Latte). Reviewed aliases are allowed; automatic fuzzy and plural matching are disabled.
 - If more than one Supreme identity remains possible, or Supreme has no numeric value, the item is marked unvalued and the trade is not sent as a profitable alert.
 - RBLXValue encodes some Common/Uncommon/Rare xN T1-item notation as a small integer. Values below 10 in those categories are treated as tier-item counts, not ordinary Supreme value units. Higher numeric exceptions remain eligible.

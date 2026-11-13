@@ -167,7 +167,7 @@ class ParserTests(unittest.TestCase):
         total, breakdown, missing = calculate_side(items, values)
         self.assertEqual(total, 250)
         self.assertEqual(missing, [])
-        self.assertEqual(breakdown, ["• Snowstorm — 250 each = 250"])
+        self.assertEqual(breakdown, ["• Snowstorm — 250 each = 250 | Stability: N/A"])
 
     def test_calculate_side_multiplies_quantities_and_groups_duplicates(self):
         items = [
@@ -1222,7 +1222,7 @@ class CacheTTLTests(unittest.TestCase):
                 "same name": {
                     "name": "Same Name",
                     "variants": [
-                        {"name": "Same Name", "id": "1", "slug": "same-a", "category": "godly", "type": "knife", "value": 10, "raw_source_value": 10, "value_status": "numeric"},
+                        {"name": "Same Name", "id": "1", "slug": "same-a", "category": "godly", "type": "knife", "value": 10, "raw_source_value": 10, "value_status": "numeric", "stability": "Rising"},
                         {"name": "Same Name", "id": "2", "slug": "same-b", "category": "ancient", "type": "knife", "value": 20, "raw_source_value": 20, "value_status": "numeric"},
                     ],
                 },
@@ -1241,6 +1241,46 @@ class CacheTTLTests(unittest.TestCase):
             self.assertEqual(report["counts"]["non_numeric"], 1)
             self.assertEqual(report["counts"]["identity_collisions"], 1)
             self.assertEqual({row["id"] for row in report["items"]}, {"1", "2", "3"})
+            self.assertEqual(next(row for row in report["items"] if row["id"] == "1")["stability"], "Rising")
+
+    def test_supreme_stability_is_preserved_and_shown_for_each_weapon(self):
+        rows = [
+            {"id": 1, "slug": "harvester", "name": "Harvester",
+             "category": "ancient", "type": "knife", "value_source_b": 265,
+             "stability": "Doing Well"},
+            {"id": 2, "slug": "spirit", "name": "Spirit",
+             "category": "godly", "type": "knife", "value_source_b": 540,
+             "stability": "Stable"},
+        ] + [
+            {"id": i + 100, "slug": f"stability-test-{i}", "name": f"Stability Test {i}",
+             "category": "godly", "type": "knife", "value_source_b": i + 20,
+             "stability": None if i == 0 else "Stable"}
+            for i in range(98)
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            cache_path = Path(directory) / "supreme_values.json"
+            audit_path = Path(directory) / "supreme_values_audit.json"
+            with (
+                patch("scanner.VALUES_FILE", cache_path),
+                patch("scanner.VALUES_AUDIT_FILE", audit_path),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.api_get_json_conditional", return_value=({"items": rows, "total": len(rows)}, None, False)),
+                patch("scanner.time.sleep"),
+            ):
+                values = load_supreme_values()
+            total, lines, missing = scanner.calculate_side(
+                [{"name": "Harvester", "quantity": 1, "catalog_slug": "harvester"}],
+                values, side="give"
+            )
+            self.assertEqual(total, 265)
+            self.assertEqual(missing, [])
+            self.assertIn("Stability: Doing Well", lines[0])
+            self.assertEqual(values["spirit"]["variants"][0]["stability"], "Stable")
+            self.assertEqual(values["stability test 0"]["variants"][0]["stability"], None)
+            saved = json.loads(cache_path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["schema_version"], 4)
+            audit = json.loads(audit_path.read_text(encoding="utf-8"))
+            self.assertEqual(next(row for row in audit["items"] if row["slug"] == "harvester")["stability"], "Doing Well")
 
     def test_fresh_supreme_snapshot_is_reused_within_ttl(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1252,7 +1292,7 @@ class CacheTTLTests(unittest.TestCase):
                 }
                 for i in range(100)
             }
-            path.write_text(json.dumps({"schema_version": 3, "fetched_at": 990, "values": values}), encoding="utf-8")
+            path.write_text(json.dumps({"schema_version": 4, "fetched_at": 990, "values": values}), encoding="utf-8")
             with (
                 patch("scanner.VALUES_FILE", path),
                 patch("scanner.VALUES_TTL_SECONDS", 300),
@@ -2026,7 +2066,7 @@ class SupremeETagCacheTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "supreme.json"
             rows = [
-                {"id": i, "slug": f"etag-item-{i}", "name": f"ETag Item {i}", "category": "godly", "type": "knife", "value_source_b": i + 1, "value_source_a": None}
+                {"id": i, "slug": f"etag-item-{i}", "name": f"ETag Item {i}", "category": "godly", "type": "knife", "value_source_b": i + 1, "value_source_a": None, "stability": "Stable"}
                 for i in range(100)
             ]
             cached_values = {
@@ -2037,14 +2077,14 @@ class SupremeETagCacheTests(unittest.TestCase):
                         "id": str(row["id"]), "slug": row["slug"], "name": row["name"],
                         "category": row["category"], "type": row["type"],
                         "value": row["value_source_b"], "value_min": row["value_source_b"],
-                        "value_max": row["value_source_b"], "secondary_value": None,
+                        "value_max": row["value_source_b"], "secondary_value": None, "stability": row["stability"],
                     }],
                 }
                 for row in rows
             }
             etag = '"supreme-page-v1"'
             path.write_text(json.dumps({
-                "schema_version": 3,
+                "schema_version": 4,
                 "fetched_at": 1,
                 "values": cached_values,
                 "pages": {"0": {"etag": etag, "total": 100, "items": rows}},

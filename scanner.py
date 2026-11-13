@@ -1761,6 +1761,16 @@ def resolve_value_record(name, values, aliases=None, item=None):
     ]
 
 
+def _normalize_stability(value):
+    """Preserve the published stability label without inventing a fallback."""
+    if not isinstance(value, str):
+        return None
+    label = " ".join(value.split()).strip()
+    if not label or len(label) > 48:
+        return None
+    return label
+
+
 def _supreme_numeric_value(item):
     """Return scalar Supreme value; small Common/Uncommon/Rare xN counts are not scalar values."""
     try:
@@ -1840,7 +1850,7 @@ def api_get_json_conditional(path, params=None, etag=None):
 def _read_values_cache_document():
     try:
         cached = json.loads(VALUES_FILE.read_text(encoding="utf-8"))
-        if cached.get("schema_version") != 3:
+        if cached.get("schema_version") != 4:
             return None
         values = cached.get("values", {})
         if (
@@ -1891,6 +1901,7 @@ def _write_supreme_values_audit(values, fetched_at=None):
                 "value_max": variant.get("value_max"),
                 "raw_source_value": variant.get("raw_source_value"),
                 "value_status": str(variant.get("value_status") or ("numeric" if is_numeric else "not_numeric")),
+                "stability": _normalize_stability(variant.get("stability")),
                 "last_updated": variant.get("last_updated"),
             })
     VALUES_AUDIT_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -1909,7 +1920,7 @@ def _write_supreme_values_audit(values, fetched_at=None):
 
 
 def load_supreme_values():
-    # Schema v3 preserves item identity; schema-v2 caches discarded category/type/slug.
+    # Schema v4 preserves item identity and Supreme stability; older caches lack stability.
     cached_document = _read_values_cache_document()
     cached_values, cached_age = _read_values_cache()
     if cached_values is not None and cached_age is not None and cached_age <= VALUES_TTL_SECONDS:
@@ -1971,6 +1982,9 @@ def load_supreme_values():
                     "name": name, "value": value, "value_min": value_min, "value_max": value_max,
                     "raw_source_value": item.get("value_source_b"), "value_status": value_status,
                     "secondary_value": secondary, "category": category, "type": item_type,
+                    # RBLXValue's stability field is sourced from the Supreme Values item data.
+                    # Keep the source label verbatim; never infer a missing stability.
+                    "stability": _normalize_stability(item.get("stability")),
                     "last_updated": item.get("last_updated"),
                 }
                 key = normalize_name(name)
@@ -2027,7 +2041,7 @@ def load_supreme_values():
 
     VALUES_FILE.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(VALUES_FILE, json.dumps({
-        "schema_version": 3, "fetched_at": time.time(),
+        "schema_version": 4, "fetched_at": time.time(),
         "source": "Supreme Values via RBLXValue API value_source_b",
         "pages": refreshed_pages, "values": all_values,
     }, ensure_ascii=False, indent=2) + "\n")
@@ -2096,6 +2110,7 @@ def calculate_side(items, values, aliases=None, side="give"):
         entry = grouped.setdefault(group_key, {
             "name": selected.get("name", record.get("name", item["name"])),
             "quantity": 0, "unit_value": unit_value,
+            "stability": _normalize_stability(selected.get("stability")),
         })
         quantity = item.get("quantity")
         if quantity is None or item.get("quantity_source") == "uncertain":
@@ -2109,7 +2124,11 @@ def calculate_side(items, values, aliases=None, side="give"):
         item_total = entry["unit_value"] * entry["quantity"]
         total += item_total
         suffix = f" x{entry['quantity']}" if entry["quantity"] > 1 else ""
-        breakdown.append(f"• {entry['name']}{suffix} — {entry['unit_value']:g} each = {item_total:g}")
+        stability = entry.get("stability") or "N/A"
+        breakdown.append(
+            f"• {entry['name']}{suffix} — {entry['unit_value']:g} each = {item_total:g}"
+            f" | Stability: {stability}"
+        )
     return total, breakdown, missing
 
 
@@ -2840,7 +2859,7 @@ def scan_once():
 
     print("[stage] Checking RBLXValue API credential")
     if not RBLXVALUE_API_KEY:
-        print("[supreme] API key missing; only a fresh schema-v3 Supreme cache can be used")
+        print("[supreme] API key missing; only a fresh schema-v4 Supreme cache can be used")
     elif not RBLXVALUE_API_KEY.startswith("rbx_"):
         print("[supreme] API key format looks invalid; cached values will be used if available")
     else:
