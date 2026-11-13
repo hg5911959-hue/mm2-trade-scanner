@@ -2645,7 +2645,7 @@ class WorkflowSecurityTests(unittest.TestCase):
 
     def test_workflows_use_node24_compatible_action_releases(self):
         workflow_dir = Path(".github/workflows")
-        sources = "\\n".join(path.read_text(encoding="utf-8") for path in workflow_dir.glob("*.yml"))
+        sources = "\n".join(path.read_text(encoding="utf-8") for path in workflow_dir.glob("*.yml"))
         self.assertNotIn("actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683", sources)
         self.assertNotIn("actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065", sources)
         self.assertNotIn("actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02", sources)
