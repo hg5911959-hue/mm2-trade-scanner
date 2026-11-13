@@ -2312,7 +2312,6 @@ def load_supreme_values():
                 source_meta = _fetch_rblxvalue_meta()
             except Exception as exc:
                 print(f"[rblxvalue-meta] Poll failed safely: {type(exc).__name__}; cached snapshot policy remains in force")
-        cached_source_updated = (cached_document or {}).get("source_last_updated")
         if source_meta and _source_snapshot_matches_meta(cached_document, source_meta):
             print(
                 "[supreme] Source metadata and catalogue size unchanged "
