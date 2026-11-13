@@ -1425,6 +1425,46 @@ class CloudflareDetectionTests(unittest.TestCase):
                 scanner.http_get("https://bloxswaps.com/fr/trade-mm2")
 
 
+class RblxValueMetaPollingTests(unittest.TestCase):
+    def test_meta_is_cached_for_one_hour_and_refreshed_when_due(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rblxvalue_meta.json"
+            payload = {
+                "last_updated": "2026-11-14 00:00:00",
+                "totals": {"items": 1091, "sets": 40},
+                "update_interval_hours": 12,
+            }
+            with (
+                patch("scanner.RBLXVALUE_META_FILE", path),
+                patch("scanner.RBLXVALUE_META_POLL_ENABLED", True),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.time.time", side_effect=[1000, 1500, 3701]),
+                patch("scanner.api_get_json", return_value=payload) as api,
+            ):
+                first = scanner._fetch_rblxvalue_meta()
+                second = scanner._fetch_rblxvalue_meta()
+                third = scanner._fetch_rblxvalue_meta()
+            self.assertEqual(first["last_updated"], payload["last_updated"])
+            self.assertEqual(second, first)
+            self.assertEqual(third["items_total"], 1091)
+            self.assertEqual(api.call_count, 2)
+            self.assertEqual(api.call_args_list[0].args, ("/meta",))
+
+    def test_meta_rejects_implausible_catalogue_totals(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch("scanner.RBLXVALUE_META_FILE", Path(directory) / "meta.json"),
+                patch("scanner.RBLXVALUE_META_POLL_ENABLED", True),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.time.time", return_value=1000),
+                patch("scanner.api_get_json", return_value={
+                    "last_updated": "2026-11-14 00:00:00", "totals": {"items": 1}
+                }),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "Implausible source item total"):
+                    scanner._fetch_rblxvalue_meta()
+
+
 class CacheTTLTests(unittest.TestCase):
     def test_supreme_audit_records_every_identity_and_collision(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1444,6 +1484,7 @@ class CacheTTLTests(unittest.TestCase):
                     ],
                 },
             }
+            values["unvalued"]["variants"][0].update({"demand": 4, "rarity": 2, "acronym": "UV"})
             with patch("scanner.VALUES_AUDIT_FILE", audit_path):
                 scanner._write_supreme_values_audit(values, fetched_at=123)
             report = json.loads(audit_path.read_text(encoding="utf-8"))
@@ -1451,8 +1492,14 @@ class CacheTTLTests(unittest.TestCase):
             self.assertEqual(report["counts"]["numeric"], 2)
             self.assertEqual(report["counts"]["non_numeric"], 1)
             self.assertEqual(report["counts"]["identity_collisions"], 1)
+            self.assertEqual(report["counts"]["weapons"], 3)
+            self.assertEqual(report["counts"]["knives"], 2)
+            self.assertEqual(report["counts"]["guns"], 1)
+            self.assertEqual(report["counts"]["weapons_missing_stability"], 2)
             self.assertEqual({row["id"] for row in report["items"]}, {"1", "2", "3"})
             self.assertEqual(next(row for row in report["items"] if row["id"] == "1")["stability"], "Rising")
+            self.assertEqual(next(row for row in report["items"] if row["id"] == "3")["demand"], 4)
+            self.assertEqual(next(row for row in report["items"] if row["id"] == "3")["acronym"], "UV")
 
     def test_supreme_stability_is_preserved_and_shown_for_each_weapon(self):
         rows = [
