@@ -47,15 +47,20 @@ class PendingRecheckScheduleTests(unittest.TestCase):
 
     def test_priority_pending_reasons_are_not_seeded_as_seen(self):
         seen = {"already-seen"}
-        pending = {"ordinary": 1.0, "deferred": 2.0, "failed": 3.0}
+        pending = {
+            "ordinary": 1.0, "deferred": 2.0, "failed": 3.0,
+            "quantity": 4.0, "unparsed": 5.0,
+        }
         schedule = {
             "ordinary": {"attempts": 1, "next_check_at": 1000, "reason": "unmatched_value"},
             "deferred": {"attempts": 0, "next_check_at": 1000, "reason": "deferred_offer"},
             "failed": {"attempts": 0, "next_check_at": 1000, "reason": "telegram_failure"},
+            "quantity": {"attempts": 0, "next_check_at": 1000, "reason": "quantity_uncertain"},
+            "unparsed": {"attempts": 0, "next_check_at": 1000, "reason": "unparsed_feed"},
         }
         result = scanner.seed_pending_ids_as_seen(seen, pending, schedule)
         self.assertEqual(result, {"already-seen", "ordinary"})
-        self.assertEqual(set(pending), {"ordinary", "deferred", "failed"})
+        self.assertEqual(set(pending), {"ordinary", "deferred", "failed", "quantity", "unparsed"})
 
     def test_pending_reason_classification_is_fail_closed(self):
         self.assertEqual(scanner.pending_reason_from_missing(["Knife (quantity unknown)"]), "quantity_uncertain")
