@@ -3462,13 +3462,15 @@ def record_failure(error):
     atomic_write_text(FAILURE_FILE, json.dumps(state, indent=2) + "\n")
     print(f"[failure] Consecutive failures: {count}")
     error_text = str(error)
+    safe_reason = redact(error_text)[:240]
     if "[rblxvalue-key-blocked]" in error_text:
         if rblxvalue_guard.claim_block_alert(key=RBLXVALUE_API_KEY):
             try:
                 fingerprint = rblxvalue_guard.key_fingerprint(RBLXVALUE_API_KEY)
                 send_telegram(
-                    "MM2 RBLXValue API KEY BLOCKED\n"
-                    "The API rejected the configured credential (401/403 or inactive/suspended key).\n"
+                    "MM2 RBLXValue API CREDENTIAL REJECTED\n"
+                    "The upstream rejected the configured credential; no trade calculations will use stale values.\n"
+                    f"Safe diagnostic: {safe_reason}\n"
                     "No further API calls will be made for 6 hours, or until the key changes.\n"
                     f"Key fingerprint: {fingerprint}\n"
                     "Trade calculations remain Fail-Closed; only a fresh valid Supreme cache may be used."
@@ -3534,7 +3536,7 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
                 successful_cycles += 1
             except Exception as exc:
                 last_failure = exc
-                print(f"[loop] Scan cycle {cycles} failed safely: {type(exc).__name__}; details are recorded with secret redaction.")
+                print(f"[loop] Scan cycle {cycles} failed safely: {type(exc).__name__}; reason={redact(exc)[:240]}")
                 record_failure(exc)
             cycle_elapsed = time.monotonic() - cycle_started
             remaining = deadline - time.monotonic()
@@ -3598,6 +3600,6 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as exc:
-        print(f"ERROR: {type(exc).__name__}; details are recorded with secret redaction.", file=sys.stderr)
+        print(f"ERROR: {type(exc).__name__}; reason={redact(exc)[:300]}", file=sys.stderr)
         record_failure(exc)
         sys.exit(1)
