@@ -1993,8 +1993,9 @@ def load_supreme_values():
         _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
         return cached_values
     if rblxvalue_guard.is_key_blocked(key=RBLXVALUE_API_KEY):
-        raise rblxvalue_guard.RblxValueKeyBlocked(
-            "[rblxvalue-key-blocked] API key circuit breaker active; no request sent"
+        raise RuntimeError(
+            "[supreme] API key circuit breaker active; refusing stale-cache calculations "
+            "[rblxvalue-key-blocked] no request sent"
         )
     if not RBLXVALUE_API_KEY:
         raise RuntimeError("[supreme] API key missing and no fresh cached source_b snapshot; refusing stale values.")
