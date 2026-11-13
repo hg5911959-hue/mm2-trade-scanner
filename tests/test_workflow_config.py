@@ -39,9 +39,11 @@ class WorkflowReliabilityTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/dashboard-pages.yml").read_text(encoding="utf-8")
         self.assertIn("pages_enabled: ${{ steps.pages-preflight.outputs.enabled }}", workflow)
         self.assertIn("id: pages-preflight", workflow)
-        self.assertIn("pages: read", workflow)
+        self.assertIn("pages: write", workflow)
+        self.assertIn("request POST", workflow)
+        self.assertIn('"build_type":"workflow"', workflow)
         self.assertIn("if: needs.build.outputs.pages_enabled == 'true'", workflow)
-        self.assertIn("Enable Pages in Settings > Pages", workflow)
+        self.assertIn("Repository administrator permission may be required", workflow)
 
 
 if __name__ == "__main__":
