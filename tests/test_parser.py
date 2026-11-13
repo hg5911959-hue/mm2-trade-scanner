@@ -1515,6 +1515,28 @@ class CursorPaginationTests(unittest.TestCase):
         self.assertEqual(listings[1]["owner_url"], "https://bloxswaps.com/fr/users/123")
         self.assertIn("ad=post-2", listings[1]["url"])
 
+    def test_missing_success_checkpoint_does_not_stop_at_seen_streak(self):
+        responses = [{
+            "items": [self._post(f"seen-no-checkpoint-{i}") for i in range(25)]
+                     + [self._post("new-after-seen-streak")],
+            "meta": {"cursor": None},
+        }]
+        with (
+            patch("scanner.fetch_bloxswaps", return_value=self._first_page_html()),
+            patch("scanner.fetch_bloxswaps_items_map", return_value={
+                "a-id": {"id": "a-id", "displayName": "Knife A"},
+                "b-id": {"id": "b-id", "displayName": "Knife B"},
+            }),
+            patch("scanner._last_successful_scan_timestamp", return_value=None),
+            patch("scanner.bloxswaps_api_get_json", side_effect=responses),
+        ):
+            listings, stats, _ = scanner.fetch_bloxswaps_all(
+                {"first-post"} | {f"seen-no-checkpoint-{i}" for i in range(25)}
+            )
+        self.assertIn("new-after-seen-streak", [item["source_ad_id"] for item in listings])
+        self.assertFalse(stats["seen_boundary_reached"])
+        self.assertTrue(stats["pagination_complete"])
+
     def test_pending_listing_is_found_after_an_already_seen_boundary(self):
         pending_post = self._post("pending-post")
         responses = [{
