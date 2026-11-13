@@ -107,7 +107,7 @@ def mark_key_blocked(reason: str, *, now: float | None = None, key: str | None =
     same_key = old.get("key_fingerprint") == fingerprint
     consecutive = int(old.get("consecutive_blocks", 0)) + 1 if same_key else 1
     permanent = consecutive >= PERMANENT_BLOCK_AFTER
-    seconds = 0 if permanent else BLOCK_STEPS[min(consecutive - 1, len(BLOCK_STEPS) - 1)]
+    seconds = BLOCK_STEPS[min(consecutive - 1, len(BLOCK_STEPS) - 1)]
     state = {
         "schema_version": 2, "blocked_at_utc": _now_iso(current),
         "blocked_until_utc": None if permanent else _now_iso(current + seconds),
