@@ -4,7 +4,6 @@ import csv
 import difflib
 import itertools
 import hashlib
-import random
 import json
 import math
 import os
@@ -3463,6 +3462,7 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
 
     cycles = 0
     successful_cycles = 0
+    last_failure = None
     try:
         while not stop["requested"] and time.monotonic() < deadline:
             cycle_started = time.monotonic()
@@ -3472,6 +3472,7 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
                 scan_once()
                 successful_cycles += 1
             except Exception as exc:
+                last_failure = exc
                 print(f"[loop] Scan cycle {cycles} failed safely: {type(exc).__name__}; details are recorded with secret redaction.")
                 record_failure(exc)
             cycle_elapsed = time.monotonic() - cycle_started
@@ -3495,6 +3496,11 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
     rblxvalue_guard.log_request_count()
     print(f"[loop] Finished: cycles={cycles}, successful={successful_cycles}, elapsed={elapsed:.1f}s")
     if successful_cycles == 0:
+        if last_failure and (
+            "[rblxvalue-key-blocked]" in str(last_failure)
+            or "[rblxvalue-budget-exhausted]" in str(last_failure)
+        ):
+            raise RuntimeError(str(last_failure))
         raise RuntimeError("No scan cycle completed successfully during the scheduled polling window.")
     return {"cycles": cycles, "successful_cycles": successful_cycles, "elapsed_seconds": elapsed}
 
