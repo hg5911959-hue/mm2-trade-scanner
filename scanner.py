@@ -2130,6 +2130,10 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
         group_key = _resolved_item_group_key(record, item)
         entry = grouped.setdefault(group_key, {
             "name": selected.get("name", record.get("name", item["name"])),
+            "category": str(selected.get("category") or "").strip(),
+            "type": str(selected.get("type") or "").strip(),
+            "source_slug": str(selected.get("slug") or ""),
+            "source_id": str(selected.get("id") or ""),
             "min_quantity": 0, "max_quantity": 0, "unbounded": False,
             "unit_value_min": unit_min, "unit_value_max": unit_max,
         })
@@ -2169,7 +2173,9 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
         quantity_label = f"x{low}" if low == high else f"x? ({low}..{high})"
         total_label = f"{low_total:g}" if low == high and entry["unit_value_min"] == entry["unit_value_max"] else f"{low_total:g}..{high_total:g}"
         value_label = f"{entry['unit_value_min']:g}" if entry["unit_value_min"] == entry["unit_value_max"] else f"{entry['unit_value_min']:g}..{entry['unit_value_max']:g}"
-        breakdown.append(f"• {entry['name']} {quantity_label} — {value_label} each = {total_label}")
+        identity = " / ".join(part for part in (entry.get("category"), entry.get("type")) if part)
+        display_name = f"{entry['name']} [{identity}]" if identity else entry["name"]
+        breakdown.append(f"• {display_name} {quantity_label} — {value_label} each = {total_label}")
     return total_min, total_max, breakdown, missing, uncertain
 
 
