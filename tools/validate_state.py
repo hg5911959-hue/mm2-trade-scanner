@@ -32,7 +32,12 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
         return ["state directory is missing"] if require_cache else []
     files = [path for path in root.rglob("*") if path.is_file()]
     if not files:
-        return ["successful scan produced no state files"] if require_cache else []
+        if require_cache:
+            return [
+                "successful scan is missing supreme_values.json",
+                "successful scan is missing market_history.sqlite3",
+            ]
+        return []
 
     errors: list[str] = []
     if any(path.name == "discord_messages.json" for path in files):
