@@ -9,12 +9,11 @@ import scanner
 
 
 # A scan may run for 20 minutes, followed by a 5-minute state-persistence job.
-# Keep a small buffer so the watchdog does not report a healthy long-running scan.
 ACTIVE_RUN_GRACE_MINUTES = 27
 
 
-def should_alert(age, threshold=20, interval=5, reminder=360):
-    """Alert in the first interval after threshold, then once per reminder window."""
+def should_alert(age, threshold=20, interval=5, reminder=30):
+    """Alert at the threshold, then every reminder window while scans stay stale."""
     return (
         threshold <= age < threshold + interval
         or (age >= reminder and age % reminder < interval)
@@ -26,15 +25,19 @@ def should_suppress_stale_success(active_age, active_run, grace=ACTIVE_RUN_GRACE
     return active_run is not None and active_age is not None and active_age < grace
 
 
-def latest_success_age_minutes(token):
-    if not token:
-        raise RuntimeError("Missing GitHub Actions token.")
+def _repository():
     repository = os.environ.get("GITHUB_REPOSITORY", "").strip()
     if not repository or repository.count("/") != 1:
         raise RuntimeError("GITHUB_REPOSITORY must be set to owner/repository.")
+    return repository
+
+
+def _workflow_runs(token, query, label):
+    if not token:
+        raise RuntimeError("Missing GitHub Actions token.")
     url = (
-        f"https://api.github.com/repos/{repository}/actions/workflows/scan.yml/runs"
-        "?status=success&per_page=1"
+        f"https://api.github.com/repos/{_repository()}/actions/workflows/scan.yml/runs"
+        f"?{query}"
     )
     request = Request(url, headers={
         "Accept": "application/vnd.github+json",
@@ -42,40 +45,41 @@ def latest_success_age_minutes(token):
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "MM2-Scanner-Watchdog",
     })
-    raw = scanner.request_with_retry(request, 20, "GitHub latest successful scan")
+    raw = scanner.request_with_retry(request, 20, label)
     payload = json.loads(raw.decode("utf-8"))
     runs = payload.get("workflow_runs", [])
-    if not runs:
-        raise RuntimeError("GitHub returned no successful scan workflow runs.")
-    completed = datetime.fromisoformat(runs[0]["updated_at"].replace("Z", "+00:00"))
+    if not isinstance(runs, list):
+        raise RuntimeError("GitHub returned an invalid workflow-runs payload.")
+    return runs
+
+
+def latest_success_age_minutes(token):
+    """Find the latest successful completed run (GitHub status is 'completed')."""
+    runs = _workflow_runs(token, "status=completed&per_page=100", "GitHub completed scan runs")
+    successful = [run for run in runs if isinstance(run, dict) and run.get("conclusion") == "success"]
+    if not successful:
+        raise RuntimeError("GitHub returned no successful completed scan workflow runs.")
+    successful.sort(key=lambda run: run.get("completed_at") or "", reverse=True)
+    completed_at = successful[0].get("completed_at")
+    if not completed_at:
+        raise RuntimeError("Latest successful scan is missing completed_at.")
+    completed = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
     age = max(0.0, (datetime.now(timezone.utc) - completed).total_seconds() / 60.0)
-    return age, runs[0]
+    return age, successful[0]
 
 
 def latest_active_scan_age_minutes(token):
-    if not token:
-        raise RuntimeError("Missing GitHub Actions token.")
-    repository = os.environ.get("GITHUB_REPOSITORY", "").strip()
-    if not repository or repository.count("/") != 1:
-        raise RuntimeError("GITHUB_REPOSITORY must be set to owner/repository.")
-    url = (
-        f"https://api.github.com/repos/{repository}/actions/workflows/scan.yml/runs"
-        "?status=in_progress&per_page=1"
-    )
-    request = Request(url, headers={
-        "Accept": "application/vnd.github+json",
-        "Authorization": "Bearer " + token,
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "MM2-Scanner-Watchdog",
-    })
-    raw = scanner.request_with_retry(request, 20, "GitHub active scan run")
-    payload = json.loads(raw.decode("utf-8"))
-    runs = payload.get("workflow_runs", [])
+    """Return the age of the newest currently running scan, if any."""
+    runs = _workflow_runs(token, "status=in_progress&per_page=1", "GitHub active scan run")
     if not runs:
         return None, None
-    created = datetime.fromisoformat(runs[0]["created_at"].replace("Z", "+00:00"))
+    run = runs[0]
+    created_at = run.get("created_at") if isinstance(run, dict) else None
+    if not created_at:
+        raise RuntimeError("Active scan is missing created_at.")
+    created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
     age = max(0.0, (datetime.now(timezone.utc) - created).total_seconds() / 60.0)
-    return age, runs[0]
+    return age, run
 
 
 def main():
