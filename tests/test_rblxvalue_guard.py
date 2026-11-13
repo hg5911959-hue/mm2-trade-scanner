@@ -106,8 +106,6 @@ class RblxValueGuardTests(unittest.TestCase):
         self.assertEqual(guard.requests_this_run(), 1)
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
     def test_corrupt_budget_json_fails_closed_without_overwriting_file(self):
@@ -142,3 +140,7 @@ if __name__ == "__main__":
         state = json.loads(self.budget.read_text(encoding="utf-8"))
         self.assertEqual(count, 2)
         self.assertEqual(len(state["request_timestamps_epoch"]), 2)
+
+
+if __name__ == "__main__":
+    unittest.main()
