@@ -2215,7 +2215,7 @@ def send_telegram(message):
             chunks.append(current)
         total_chunks = len(chunks)
         for index, chunk in enumerate(chunks, start=1):
-            send_telegram(f"💎 MM2 TRADE DETAILS ({index}/{total_chunks})\\n{chunk}")
+            send_telegram(f"💎 MM2 TRADE DETAILS ({index}/{total_chunks})\n{chunk}")
         return
     url = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage"
     body = json.dumps({
