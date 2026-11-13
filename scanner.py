@@ -2653,6 +2653,7 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
     )
     lines = [
         "💎 MM2 TRADE",
+        f"SOURCE: {str(listing.get('source', 'bloxswaps')).upper()}",
         "",
         f"👤 {owner_link}",
     ]
@@ -2691,9 +2692,14 @@ def format_unvalued_message(listing, missing):
             lines.append(f"• {item['name']}{label}")
         return _compact_telegram_items(lines)
 
-    owner_link = _clean_owner_link(listing.get("owner_url") or listing.get("url"))
+    owner_link = (
+        str(listing.get("owner_url") or listing.get("url") or "Discord message link unavailable")
+        if listing.get("source") == "discord"
+        else _clean_owner_link(listing.get("owner_url") or listing.get("url"))
+    )
     lines = [
         "⚠️ MM2 MANUAL VALUE CHECK",
+        f"SOURCE: {str(listing.get('source', 'bloxswaps')).upper()}",
         "",
         f"👤 {owner_link}",
     ]
