@@ -2,17 +2,20 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-from discord_collector import merge_messages, normalize_message, parse_channel_ids
+from discord_collector import merge_messages, normalize_message, parse_guild_ids
 
 
 class DiscordCollectorTests(unittest.TestCase):
-    def test_parse_channel_ids_deduplicates(self):
-        self.assertEqual(parse_channel_ids("123456789012345;223456789012345,123456789012345"), [123456789012345, 223456789012345])
+    def test_parse_guild_ids_deduplicates(self):
+        self.assertEqual(
+            parse_guild_ids("1125462206151143464;482699890741477376,1125462206151143464"),
+            [1125462206151143464, 482699890741477376],
+        )
 
-    def test_parse_channel_ids_rejects_invalid_values(self):
+    def test_parse_guild_ids_rejects_invalid_values(self):
         for raw in ("abc", "123", "-123456789012345", "123456789012345, nope"):
             with self.subTest(raw=raw), self.assertRaises(ValueError):
-                parse_channel_ids(raw)
+                parse_guild_ids(raw)
 
     def test_normalize_message_keeps_jump_url_and_content(self):
         created = datetime(2026, 11, 13, tzinfo=timezone.utc)
@@ -47,5 +50,4 @@ class DiscordCollectorTests(unittest.TestCase):
         self.assertEqual(next(row for row in rows if row["message_id"] == "1")["content"], "updated")
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __ (unknown) `unittest.main()`
