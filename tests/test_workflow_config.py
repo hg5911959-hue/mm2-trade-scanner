@@ -16,6 +16,7 @@ class WorkflowReliabilityTests(unittest.TestCase):
         self.assertIn("group: mm2-trade-scanner", workflow)
         self.assertIn("cancel-in-progress: false", workflow)
         self.assertIn('          MAX_PENDING_RECHECK_PER_SCAN: "50"\n', workflow)
+        self.assertIn('          RBLXVALUE_META_POLL_ENABLED: "true"\n', workflow)
         self.assertIn('          MAX_BACKLOG_RECHECK_PAGES: "25"\n', workflow)
         self.assertIn('          BACKLOG_RECHECK_EVERY_CYCLES: "4"\n', workflow)
         self.assertNotIn('\n      MAX_PENDING_RECHECK_PER_SCAN:', workflow)

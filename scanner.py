@@ -74,6 +74,9 @@ MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
 BLOXSWAPS_PAGE_SIZE = 20
 MAX_FEED_PAGES = max(1, min(1000, int(os.environ.get("MAX_FEED_PAGES", "1000"))))
 VALUES_REVALIDATION_INTERVAL_SECONDS = 12 * 60 * 60
+RBLXVALUE_META_POLL_INTERVAL_SECONDS = 60 * 60
+RBLXVALUE_META_FILE = Path("data/rblxvalue_meta.json")
+RBLXVALUE_META_POLL_ENABLED = os.environ.get("RBLXVALUE_META_POLL_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 VALUES_TTL_SECONDS = min(VALUES_REVALIDATION_INTERVAL_SECONDS, max(60, int(os.environ.get("VALUES_TTL_SECONDS", str(VALUES_REVALIDATION_INTERVAL_SECONDS)))))
 BLOXSWAPS_ITEMS_TTL_SECONDS = max(300, int(os.environ.get("BLOXSWAPS_ITEMS_TTL_SECONDS", "3600")))
 PENDING_TTL_SECONDS = max(86400, int(os.environ.get("PENDING_TTL_SECONDS", str(7 * 86400))))
@@ -1898,6 +1901,56 @@ BLOCKED_RECEIVE_STABILITY = frozenset({
 })
 
 
+def _optional_bounded_int(value, minimum, maximum):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if minimum <= parsed <= maximum else None
+
+
+def _read_rblxvalue_meta_state():
+    try:
+        state = json.loads(RBLXVALUE_META_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    return state if isinstance(state, dict) else {}
+
+
+def _fetch_rblxvalue_meta(force=False):
+    """Poll source metadata hourly; the upstream dataset itself updates every ~12h."""
+    if not RBLXVALUE_META_POLL_ENABLED or not RBLXVALUE_API_KEY:
+        return None
+    now = time.time()
+    state = _read_rblxvalue_meta_state()
+    try:
+        checked_at = float(state.get("checked_at_epoch", 0))
+    except (TypeError, ValueError):
+        checked_at = 0
+    if not force and checked_at > 0 and 0 <= now - checked_at < RBLXVALUE_META_POLL_INTERVAL_SECONDS:
+        return state
+    payload = api_get_json("/meta")
+    if not isinstance(payload, dict) or not isinstance(payload.get("last_updated"), str):
+        raise RuntimeError("[rblxvalue-meta] Missing or invalid last_updated metadata")
+    totals = payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
+    try:
+        item_total = int(totals.get("items", 0))
+    except (TypeError, ValueError):
+        item_total = 0
+    if item_total < 100:
+        raise RuntimeError("[rblxvalue-meta] Implausible source item total; refusing metadata")
+    updated = {
+        "schema_version": 1,
+        "checked_at_epoch": now,
+        "last_updated": payload["last_updated"],
+        "items_total": item_total,
+        "sets_total": int(totals.get("sets", 0) or 0),
+        "update_interval_hours": payload.get("update_interval_hours"),
+    }
+    atomic_write_text(RBLXVALUE_META_FILE, json.dumps(updated, ensure_ascii=False, indent=2) + "\n")
+    return updated
+
+
 def _supreme_numeric_value(item):
     """Return scalar Supreme value; small Common/Uncommon/Rare xN counts are not scalar values."""
     try:
@@ -2053,7 +2106,13 @@ def _read_values_cache():
 def _write_supreme_values_audit(values, fetched_at=None):
     """Persist a complete row-by-row audit of every Supreme source record."""
     rows = []
-    counts = {"records": 0, "numeric": 0, "non_numeric": 0, "identity_collisions": 0}
+    counts = {
+        "records": 0, "numeric": 0, "non_numeric": 0, "identity_collisions": 0,
+        "weapons": 0, "knives": 0, "guns": 0,
+        "weapons_missing_stability": 0, "weapons_untradeable": 0,
+        "weapons_missing_demand": 0, "weapons_missing_rarity": 0,
+        "records_missing_type": 0, "weapon_candidates_unclassified": 0,
+    }
     for key, record in sorted((values or {}).items()):
         variants = record.get("variants") if isinstance(record, dict) else None
         variants = variants if isinstance(variants, list) and variants else [record]
@@ -2066,6 +2125,23 @@ def _write_supreme_values_audit(values, fetched_at=None):
             numeric = variant.get("value")
             is_numeric = isinstance(numeric, (int, float)) and math.isfinite(float(numeric)) and float(numeric) > 0
             counts["numeric" if is_numeric else "non_numeric"] += 1
+            item_type = str(variant.get("type") or "").strip().casefold()
+            stability = _normalize_stability(variant.get("stability"))
+            if not item_type:
+                counts["records_missing_type"] += 1
+                if str(variant.get("category") or "").strip().casefold() not in {"", "pets", "misc"}:
+                    counts["weapon_candidates_unclassified"] += 1
+            if item_type in {"knife", "gun"}:
+                counts["weapons"] += 1
+                counts["knives" if item_type == "knife" else "guns"] += 1
+                if not stability:
+                    counts["weapons_missing_stability"] += 1
+                if stability and stability.casefold() == "untradeable":
+                    counts["weapons_untradeable"] += 1
+                if variant.get("demand") is None:
+                    counts["weapons_missing_demand"] += 1
+                if variant.get("rarity") is None:
+                    counts["weapons_missing_rarity"] += 1
             rows.append({
                 "name": str(variant.get("name") or record.get("name") or key),
                 "id": str(variant.get("id") or ""),
@@ -2077,7 +2153,12 @@ def _write_supreme_values_audit(values, fetched_at=None):
                 "value_max": variant.get("value_max"),
                 "raw_source_value": variant.get("raw_source_value"),
                 "value_status": str(variant.get("value_status") or ("numeric" if is_numeric else "not_numeric")),
-                "stability": _normalize_stability(variant.get("stability")),
+                "stability": stability,
+                "demand": variant.get("demand"),
+                "rarity": variant.get("rarity"),
+                "acronym": str(variant.get("acronym") or ""),
+                "event_name": variant.get("event_name"),
+                "tier": variant.get("tier"),
                 "last_updated": variant.get("last_updated"),
             })
     VALUES_AUDIT_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -2192,22 +2273,60 @@ def verify_rblxvalue_key_if_due():
 
 
 def load_supreme_values():
-    # Schema v4 preserves item identity and Supreme stability; older caches lack stability.
-    cached_document = _read_values_cache_document()
-    cached_values, cached_age = _read_values_cache()
-    if cached_values is not None and cached_age is not None and cached_age <= VALUES_TTL_SECONDS:
-        if RBLXVALUE_API_KEY:
-            verify_rblxvalue_key_if_due()
-        print(f"[supreme] Using fresh source_b snapshot (age {cached_age}s; TTL {VALUES_TTL_SECONDS}s)")
-        _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
-        return cached_values
-    if rblxvalue_guard.is_key_blocked(key=RBLXVALUE_API_KEY):
+    # Never spend API budget or perform health checks for a credential already blocked.
+    if RBLXVALUE_API_KEY and rblxvalue_guard.is_key_blocked(key=RBLXVALUE_API_KEY):
         raise RuntimeError(
             "[supreme] API key circuit breaker active; refusing stale-cache calculations "
             "[rblxvalue-key-blocked] no request sent"
         )
+    # Schema v4 preserves item identity and Supreme stability; older caches lack stability.
+    cached_document = _read_values_cache_document()
+    cached_values, cached_age = _read_values_cache()
+    source_meta = None
+    if (
+        cached_values is not None and RBLXVALUE_API_KEY
+        and cached_age is not None and cached_age <= VALUES_TTL_SECONDS
+    ):
+        verify_rblxvalue_key_if_due()
+        if RBLXVALUE_META_POLL_ENABLED:
+            try:
+                source_meta = _fetch_rblxvalue_meta()
+            except Exception as exc:
+                print(f"[rblxvalue-meta] Poll failed safely: {type(exc).__name__}; cached snapshot policy remains in force")
+        cached_source_updated = (cached_document or {}).get("source_last_updated")
+        if source_meta and cached_source_updated and source_meta.get("last_updated") == cached_source_updated:
+            print(
+                "[supreme] Source metadata unchanged "
+                f"(source updated {cached_source_updated}); reusing complete cached catalogue"
+            )
+            _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
+            return cached_values
+        if source_meta and cached_source_updated and source_meta.get("last_updated") != cached_source_updated:
+            print(
+                "[supreme] Upstream source update detected "
+                f"({cached_source_updated} -> {source_meta.get('last_updated')}); refreshing catalogue now"
+            )
+            cached_age = VALUES_TTL_SECONDS + 1
+        elif source_meta and not cached_source_updated:
+            print("[supreme] Cached catalogue has no source-version marker; refreshing once to establish verified provenance")
+            cached_age = VALUES_TTL_SECONDS + 1
+        elif source_meta and cached_document and source_meta.get("items_total") != cached_document.get("source_items_total"):
+            print("[supreme] Upstream catalogue size changed; refreshing the full item catalogue")
+            cached_age = VALUES_TTL_SECONDS + 1
+    if cached_values is not None and cached_age is not None and cached_age <= VALUES_TTL_SECONDS:
+        print(f"[supreme] Using fresh source_b snapshot (age {cached_age}s; TTL {VALUES_TTL_SECONDS}s)")
+        _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
+        return cached_values
     if not RBLXVALUE_API_KEY:
         raise RuntimeError("[supreme] API key missing and no fresh cached source_b snapshot; refusing stale values.")
+    if RBLXVALUE_META_POLL_ENABLED and source_meta is None:
+        try:
+            source_meta = _fetch_rblxvalue_meta(force=True)
+        except Exception as exc:
+            raise RuntimeError(
+                f"[supreme] Could not verify source version before pagination ({type(exc).__name__}); "
+                "refusing an unverified catalogue refresh"
+            ) from exc
     if cached_values is not None:
         print(f"[supreme] Cached snapshot expired (age {cached_age}s); conditionally refreshing API")
     cached_pages = cached_document.get("pages", {}) if isinstance(cached_document, dict) else {}
@@ -2279,6 +2398,14 @@ def load_supreme_values():
                     # RBLXValue's stability field is sourced from the Supreme Values item data.
                     # Keep the source label verbatim; never infer a missing stability.
                     "stability": _normalize_stability(item.get("stability")),
+                    "demand": _optional_bounded_int(item.get("demand"), 0, 10),
+                    "rarity": _optional_bounded_int(item.get("rarity"), 0, 10),
+                    "acronym": str(item.get("acronym") or ""),
+                    "event_name": str(item.get("event_name") or ""),
+                    "tier": _optional_bounded_int(item.get("tier"), 0, 100),
+                    "description": str(item.get("description") or "")[:500],
+                    "image_url": str(item.get("image_url") or ""),
+                    "fandom_url": str(item.get("fandom_url") or ""),
                     "last_updated": item.get("last_updated"),
                 }
                 key = normalize_name(name)
@@ -2338,9 +2465,34 @@ def load_supreme_values():
             f"({type(exc).__name__}: {reason})"
         ) from exc
 
+    if RBLXVALUE_META_POLL_ENABLED and RBLXVALUE_API_KEY:
+        try:
+            latest_meta = _fetch_rblxvalue_meta(force=True)
+            if source_meta and latest_meta and (
+                source_meta.get("last_updated") != latest_meta.get("last_updated")
+                or source_meta.get("items_total") != latest_meta.get("items_total")
+            ):
+                raise RuntimeError(
+                    "[supreme] Source version or catalogue size changed during pagination; "
+                    "refusing a mixed-version catalogue snapshot"
+                )
+            if latest_meta and sum(
+                len(page.get("items", [])) for page in refreshed_pages.values()
+            ) != latest_meta.get("items_total"):
+                raise RuntimeError(
+                    "[supreme] Paginated row count does not match the source metadata total; "
+                    "refusing an incomplete catalogue"
+                )
+            source_meta = latest_meta or source_meta
+        except Exception as exc:
+            raise RuntimeError(
+                f"[supreme] Could not verify source version after pagination ({type(exc).__name__}); refusing snapshot"
+            ) from exc
     VALUES_FILE.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(VALUES_FILE, json.dumps({
         "schema_version": 4, "fetched_at": time.time(),
+        "source_last_updated": source_meta.get("last_updated") if source_meta else None,
+        "source_items_total": source_meta.get("items_total") if source_meta else None,
         "source": "Supreme Values via RBLXValue API value_source_b",
         "pages": refreshed_pages, "values": all_values,
     }, ensure_ascii=False, indent=2) + "\n")
@@ -2468,6 +2620,8 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
             "source_slug": str(selected.get("slug") or ""),
             "source_id": str(selected.get("id") or ""),
             "stability": stability or "N/A",
+            "demand": selected.get("demand"),
+            "rarity": selected.get("rarity"),
             "min_quantity": 0, "max_quantity": 0, "unbounded": False,
             "unit_value_min": unit_min, "unit_value_max": unit_max,
         })
@@ -2509,9 +2663,15 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
         value_label = f"{entry['unit_value_min']:g}" if entry["unit_value_min"] == entry["unit_value_max"] else f"{entry['unit_value_min']:g}..{entry['unit_value_max']:g}"
         identity = " / ".join(part for part in (entry.get("category"), entry.get("type")) if part)
         display_name = f"{entry['name']} [{identity}]" if identity else entry["name"]
+        quality_labels = []
+        if entry.get("demand") is not None:
+            quality_labels.append(f"Demand: {entry['demand']}/10")
+        if entry.get("rarity") is not None:
+            quality_labels.append(f"Rarity: {entry['rarity']}/10")
         breakdown.append(
             f"• {display_name} {quantity_label} — {value_label} each = {total_label}"
             f" | Stability (RBLXValue): {entry['stability']}"
+            + (f" | {' | '.join(quality_labels)}" if quality_labels else "")
         )
     return total_min, total_max, breakdown, missing, uncertain
 
@@ -3164,6 +3324,73 @@ def format_unvalued_message(listing, missing):
     return "\n".join(lines)
 
 
+def _receive_market_quality(items, values, aliases=None):
+    """Conservative value-weighted demand/stability quality for items we receive."""
+    stability_scores = {
+        "rising": 9, "overpaid for": 8, "overpaid for ": 8,
+        "doing well": 7, "improving": 6, "fluctuating": 5,
+        "receding": 4, "stable": 3, "underpaid for": 2,
+        "decreasing": 1, "unsafe": 0, "untradeable": 0,
+        "unstable": 0, "volatile": 0,
+    }
+    weighted_demand = 0.0
+    weighted_stability = 0.0
+    total_weight = 0.0
+    issues = []
+    for item in items:
+        record, _match_source, candidates = resolve_value_record(
+            item["name"], values, aliases, item=item
+        )
+        if not record:
+            continue  # calculate_side_bounds reports identity/value failures
+        variants = record.get("variants") or [record]
+        if len(variants) != 1:
+            continue  # ambiguous identities are already rejected by valuation
+        selected = variants[0]
+        low, _high = _variant_numeric_bounds(selected)
+        if low is None:
+            continue
+        # Production API rows always include these keys (possibly null). Older
+        # unit fixtures and legacy caches may not; those are handled by the
+        # explicit source-version refresh before production use.
+        if "demand" not in selected or "stability" not in selected:
+            continue
+        demand = _optional_bounded_int(selected.get("demand"), 0, 10)
+        stability = _normalize_stability(selected.get("stability"))
+        if demand is None:
+            issues.append(f"{item['name']} (Demand unverified)")
+            continue
+        stability_key = stability.casefold() if stability else ""
+        stability_score = stability_scores.get(stability_key)
+        if stability_score is None:
+            issues.append(f"{item['name']} (Stability unverified)")
+            continue
+        quantity = item.get("quantity_min")
+        if quantity is None:
+            quantity = item.get("quantity")
+        try:
+            quantity = max(1, int(quantity or 1))
+        except (TypeError, ValueError):
+            quantity = 1
+        weight = low * quantity
+        if weight <= 0:
+            continue
+        total_weight += weight
+        weighted_demand += demand * weight
+        weighted_stability += stability_score * weight
+    if issues:
+        return None, None, issues
+    if total_weight <= 0:
+        return None, None, []
+    demand_score = weighted_demand / total_weight
+    stability_score = weighted_stability / total_weight
+    if demand_score < 4.0:
+        issues.append(f"received-side value-weighted Demand is low ({demand_score:.2f}/10; minimum 4.00)")
+    if stability_score < 3.0:
+        issues.append(f"received-side value-weighted Stability is weak ({stability_score:.2f}/9; minimum 3.00)")
+    return demand_score, stability_score, issues
+
+
 def evaluate_listing(listing, values, aliases=None):
     # Items deliberately omitted from numeric Supreme valuation must still block
     # a WIN: treating an unpriced item as zero can manufacture a false profit.
@@ -3181,6 +3408,11 @@ def evaluate_listing(listing, values, aliases=None):
         return None, missing
     if not give_lines or not receive_lines:
         return None, ["one side has no valued items"]
+    receive_demand_score, receive_stability_score, quality_issues = _receive_market_quality(
+        listing["receive_items"], values, aliases
+    )
+    if quality_issues:
+        return None, quality_issues
     uncertain_items = (
         [{"side": "Recherche/give", **item} for item in give_uncertain]
         + [{"side": "Propose/receive", **item} for item in receive_uncertain]
@@ -3211,6 +3443,8 @@ def evaluate_listing(listing, values, aliases=None):
         "manual_review": manual_review, "uncertain_items": uncertain_items,
         "give_total_min": give_min, "give_total_max": give_max,
         "receive_total_min": receive_min, "receive_total_max": receive_max,
+        "receive_demand_score": receive_demand_score,
+        "receive_stability_score": receive_stability_score,
     }, []
 
 
@@ -3694,6 +3928,11 @@ def scan_once(include_backlog_rechecks=True):
                 f"to {format_number(op['profit_best'])}"
             )
         message += f"\n📊 MARGIN: {op['margin']:.2f}%"
+        if op.get("receive_demand_score") is not None and op.get("receive_stability_score") is not None:
+            message += (
+                f"\n📈 GET QUALITY: Demand {op['receive_demand_score']:.2f}/10"
+                f" | Stability {op['receive_stability_score']:.2f}/9"
+            )
         large_stacks = [
             item["name"] for field in ("give_items", "receive_items")
             for item in listing.get(field, [])
