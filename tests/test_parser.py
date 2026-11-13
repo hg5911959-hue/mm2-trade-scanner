@@ -2667,6 +2667,42 @@ class PollingLoopTests(unittest.TestCase):
 
 
 class AliasSuggestionToolTests(unittest.TestCase):
+    def test_suggestions_only_target_unique_numeric_supreme_records(self):
+        from tools.suggest_aliases import build_suggestions
+        report = build_suggestions(
+            {"1": {"displayName": "Harvaster"}},
+            {
+                "harvester": {
+                    "name": "Harvester", "value": None,
+                    "variants": [{"name": "Harvester", "value": None}],
+                },
+                "harvest": {
+                    "name": "Harvest", "value": 100,
+                    "variants": [{"name": "Harvest", "value": 100}],
+                },
+            },
+        )
+        self.assertEqual(len(report), 1)
+        candidates = report[0].get("candidates", [])
+        candidate_names = [row["name"] for row in candidates]
+        if report[0].get("candidate"):
+            candidate_names.append(report[0]["candidate"])
+        self.assertNotIn("Harvester", candidate_names)
+
+    def test_alias_approval_rejects_non_numeric_supreme_targets(self):
+        from tools.suggest_aliases import apply_reviewed_aliases
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "unique numeric"):
+                apply_reviewed_aliases(
+                    {"Snowcannon": "Snow Cannon"},
+                    {"snow-id": {"displayName": "Snowcannon"}},
+                    {"snow cannon": {
+                        "name": "Snow Cannon", "value": None,
+                        "variants": [{"name": "Snow Cannon", "value": None}],
+                    }},
+                    Path(directory) / "aliases.json",
+                )
+
     def test_ambiguous_candidates_are_suggestions_only(self):
         from tools.suggest_aliases import build_suggestions
         report = build_suggestions(
