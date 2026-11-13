@@ -69,7 +69,6 @@ def review_with_gemini(payload: dict[str, Any], timeout: int = 25) -> dict[str, 
         return {"status": "error", "reason": "Invalid GEMINI_MODEL name"}
     endpoint = (
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-        f"?key={urllib.parse.quote(api_key, safe='')}"
     )
     body = {
         "system_instruction": {"parts": [{"text": _RULES}]},
@@ -79,7 +78,7 @@ def review_with_gemini(payload: dict[str, Any], timeout: int = 25) -> dict[str, 
     request = urllib.request.Request(
         endpoint,
         data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
         method="POST",
     )
     try:
