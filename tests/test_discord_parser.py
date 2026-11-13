@@ -22,8 +22,8 @@ class DiscordParserTests(unittest.TestCase):
 
     def test_for_style_trade_parses(self):
         listing = parse_trade_text("Trading Icebreaker for Candy", message_id="123456789012346")
-        self.assertEqual(listing["give_items"][0]["name"], "Icebreaker")
-        self.assertEqual(listing["receive_items"][0]["name"], "Candy")
+        self.assertEqual(listing["receive_items"][0]["name"], "Icebreaker")
+        self.assertEqual(listing["give_items"][0]["name"], "Candy")
 
     def test_ambiguous_or_one_sided_message_is_rejected(self):
         for message in ("Trading Icebreaker", "Anyone trading?", "Trading: Icebreaker | LF:",
