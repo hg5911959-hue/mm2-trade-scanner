@@ -64,6 +64,14 @@ Open **Settings → Secrets and variables → Actions → New repository secret*
 
 Never commit or share these secrets. The scanner does not print API keys or Telegram bot tokens in logs.
 
+### RBLXValue free-plan compliance and key safety
+
+- The scanner displays the exact `Data from rblxvalue.com` credit in every Telegram message and on the public dashboard. It is shown unconditionally, so the project remains compliant if the API response requires free-plan attribution.
+- RBLXValue documents one free API key per account. Do not create alternate accounts or spread requests across keys to bypass limits. If a key is compromised or needs replacement, rotate the existing key through the official developer dashboard and update the `RBLXVALUE_API_KEY` repository secret.
+- HTTP 429 is a rate-limit response, not a key suspension; the scanner respects retry guidance and its own persistent rolling request budget. HTTP 401 indicates a missing/wrong/rotated key; HTTP 403 may indicate a key that is not activated, expired, or suspended.
+- The scanner never stores the key itself in repository state. The private state branch stores only a truncated SHA-256 fingerprint and timestamps for health checks and circuit-breaker recovery.
+
+
 ## Runtime, deduplication, and persistence
 
 - **Trigger cadence:** GitHub cron starts the scanner every 15 minutes. Manual `workflow_dispatch` and `repository_dispatch` event type `mm2-scan` remain available.
