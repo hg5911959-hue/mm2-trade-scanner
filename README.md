@@ -12,7 +12,7 @@ From the scanner user's perspective:
 - Profit = total Supreme Values of received items minus total Supreme Values of given items.
 - The scheduled workflow uses a minimum absolute difference of **0** and minimum percentage of **5%**, but a Telegram trade alert requires a conservative positive profit and a margin of at least **5%**.
 - The scanner never uses BloxSwaps' own Win/Loss label, never uses the visible listing price as an item value, and never invents a missing item value or quantity.
-- A listing is excluded if any item on the received (`Propose`) side has Supreme stability `Decreasing` or `Unsafe`. If the authorized RBLXValue source provides a missing or unrecognized stability label for a received item, the listing is held back rather than assumed safe. Stability is displayed beside every valued item in Telegram alerts.
+- A listing is excluded if any item on the received (`Propose`) side has a risky RBLXValue stability label: `Decreasing`, `Unsafe`, `Untradeable`, `Unstable`, or `Volatile`. If the RBLXValue source provides a missing or unrecognized stability label for a received item, the listing is held back rather than assumed safe. Telegram labels the field `Stability (RBLXValue)` to avoid implying direct verification against the Supreme website; exact Supreme-specific `Decreasing` verification requires an authorized data source.
 
 ### Quantity handling
 
