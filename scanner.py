@@ -1528,7 +1528,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
             is_pinned = bool(raw.get("isPinned") or raw.get("pinned"))
             if post_id in watch_remaining:
                 watch_remaining.discard(post_id)
-            if boundary_reached and post_id not in pending_remaining and post_id not in watch_remaining and not recently_refreshed:
+            if boundary_reached and post_id not in pending_remaining and post_id not in watch_ids and not recently_refreshed:
                 # Once the new-feed boundary is proven, only inspect the bounded
                 # pending/watch backlog. Do not let old unresolved IDs pull the
                 # hot path through the entire historical feed.
@@ -1613,7 +1613,6 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     cursor = (initial_page.get("meta") or {}).get("cursor")
     pages_scanned = 1
     seen_cursors = {str(cursor)} if cursor else set()
-    boundary_page = 1 if boundary_reached else None
     backlog_pages_scanned = 0
     backlog_page_limit_reached = False
     if cursor:
@@ -1636,8 +1635,6 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
             if boundary_before_page:
                 backlog_pages_scanned += 1
             consume_raw_posts(page_items, compare_html=False)
-            if boundary_reached and boundary_page is None:
-                boundary_page = pages_scanned
             if boundary_reached and not (pending_remaining or watch_remaining):
                 break
             next_cursor = (payload.get("meta") or {}).get("cursor")
@@ -3309,7 +3306,7 @@ def scan_once(include_backlog_rechecks=True):
     watch_state = load_watch_state()
     # If the seen file was lost but pending items survive, do not cold-start:
     # search due unresolved IDs before establishing a baseline.
-    if seen_ads is None and (pending_ids or watch_state):
+    if seen_ads is None and include_backlog_rechecks and (pending_ids or watch_state):
         seen_ads = set()
     print(
         f"[state] Pending listings: {len(pending_ids)} total; "
