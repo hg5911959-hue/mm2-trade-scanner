@@ -2529,7 +2529,8 @@ class PaginationHealthCheckpointTests(unittest.TestCase):
             patch("scanner.record_success") as record_success,
             patch("scanner.write_step_summary") as summary,
         ):
-            self.assertFalse(scanner.record_success_if_complete({"pagination_complete": False}))
+            with self.assertRaisesRegex(RuntimeError, "pagination incomplete"):
+                scanner.record_success_if_complete({"pagination_complete": False})
         record_success.assert_not_called()
         summary.assert_called_once()
 
