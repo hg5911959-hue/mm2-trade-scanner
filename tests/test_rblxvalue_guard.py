@@ -86,9 +86,21 @@ class RblxValueGuardTests(unittest.TestCase):
                                key="rbx_test_key", block_path=self.block)
         self.assertTrue(guard.claim_block_alert(now=1_800_000_000,
                                                 key="rbx_test_key", block_path=self.block))
+        self.assertTrue(guard.mark_block_alert_sent(now=1_800_000_001,
+                                                    key="rbx_test_key", block_path=self.block))
         self.assertFalse(guard.claim_block_alert(now=1_800_000_000 + 3600,
                                                  key="rbx_test_key", block_path=self.block))
-        self.assertTrue(guard.claim_block_alert(now=1_800_000_000 + 86400,
+        self.assertTrue(guard.claim_block_alert(now=1_800_000_000 + 86401,
+                                                key="rbx_test_key", block_path=self.block))
+
+    def test_failed_block_alert_retries_after_five_minutes_not_24_hours(self):
+        guard.mark_key_blocked("HTTP 401", now=1_800_000_000,
+                               key="rbx_test_key", block_path=self.block)
+        self.assertTrue(guard.claim_block_alert(now=1_800_000_000,
+                                                key="rbx_test_key", block_path=self.block))
+        self.assertFalse(guard.claim_block_alert(now=1_800_000_000 + 299,
+                                                 key="rbx_test_key", block_path=self.block))
+        self.assertTrue(guard.claim_block_alert(now=1_800_000_000 + 300,
                                                 key="rbx_test_key", block_path=self.block))
 
     def test_fingerprint_is_truncated_sha256_and_never_raw_key(self):
