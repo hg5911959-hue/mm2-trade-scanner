@@ -50,4 +50,5 @@ class DiscordCollectorTests(unittest.TestCase):
         self.assertEqual(next(row for row in rows if row["message_id"] == "1")["content"], "updated")
 
 
-if __ (unknown) `unittest.main()`
+if __name__ == "__main__":
+    unittest.main()
