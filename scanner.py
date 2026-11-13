@@ -2972,7 +2972,11 @@ def scan_once():
     # normalized schema, but keep its IDs namespaced away from BloxSwaps cursors.
     from discord_parser import load_discord_listings
 
-    discord_listings, discord_rejected = load_discord_listings()
+    try:
+        discord_listings, discord_rejected = load_discord_listings()
+    except Exception as discord_error:
+        discord_listings, discord_rejected = [], 0
+        print(f"[discord-parser] source skipped safely: {type(discord_error).__name__}; BloxSwaps scan continues")
     if discord_listings:
         existing_ids = {str(row.get("id") or "") for row in listings}
         fresh_discord = [row for row in discord_listings if str(row.get("id") or "") not in existing_ids]
