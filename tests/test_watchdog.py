@@ -36,3 +36,12 @@ class WatchdogPollingWindowTests(unittest.TestCase):
         self.assertTrue(watchdog.should_alert(20))
         self.assertTrue(watchdog.should_alert(24.9))
         self.assertFalse(watchdog.should_alert(25))
+
+
+class WatchdogActiveRunGraceTests(unittest.TestCase):
+    def test_suppresses_alert_while_scan_and_state_persistence_can_still_be_running(self):
+        self.assertTrue(watchdog.should_suppress_stale_success(26.9, {"id": 1}))
+        self.assertFalse(watchdog.should_suppress_stale_success(27, {"id": 1}))
+
+    def test_does_not_suppress_when_no_active_scan_exists(self):
+        self.assertFalse(watchdog.should_suppress_stale_success(None, None))
