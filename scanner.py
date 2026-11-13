@@ -21,6 +21,8 @@ from pathlib import Path
 from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 
 import rblxvalue_guard
+from tools.metrics import update_metrics
+from tools.alert_policy import rank_and_split
 
 BLOXSWAPS_URL = os.environ.get(
     "BLOXSWAPS_URL",
@@ -76,11 +78,35 @@ IGNORED_VALUE_ITEMS = {"brew", "drool"}
 def redact(text):
     """Remove configured credentials and known credential formats from text."""
     safe = str(text)
-    configured = {os.environ.get("TELEGRAM_BOT_TOKEN", "").strip(), os.environ.get("TELEGRAM_CHAT_ID", "").strip(), os.environ.get("RBLXVALUE_API_KEY", "").strip(), BOT_TOKEN, CHAT_ID, RBLXVALUE_API_KEY}
+    configured = {
+        os.environ.get(name, "").strip()
+        for name in (
+            "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "RBLXVALUE_API_KEY",
+            "DISCORD_BOT_TOKEN", "DISCORD_MANUAL_MESSAGES_JSON",
+            "DISCORD_MANUAL_MESSAGES_JSON_2",
+        )
+    } | {BOT_TOKEN, CHAT_ID, RBLXVALUE_API_KEY}
+    # Also redact individual text fields from manual-import JSON in case a
+    # diagnostic accidentally emits a parsed field rather than the full secret.
+    for env_name in ("DISCORD_MANUAL_MESSAGES_JSON", "DISCORD_MANUAL_MESSAGES_JSON_2"):
+        try:
+            payload = json.loads(os.environ.get(env_name, "") or "{}")
+            stack = [payload]
+            while stack:
+                item = stack.pop()
+                if isinstance(item, dict):
+                    stack.extend(item.values())
+                elif isinstance(item, list):
+                    stack.extend(item)
+                elif isinstance(item, str) and len(item) >= 6:
+                    configured.add(item)
+        except (ValueError, TypeError):
+            pass
     for secret in sorted((v for v in configured if v and len(v) >= 6), key=len, reverse=True):
         safe = safe.replace(secret, "[REDACTED]")
     safe = re.sub(r"https://api\.telegram\.org/bot[^/\s]+", "https://api.telegram.org/bot[REDACTED]", safe)
     safe = re.sub(r"rbx_[A-Za-z0-9_-]+", "rbx_[REDACTED]", safe)
+    safe = re.sub(r"(?i)(?:mfa\.[A-Za-z0-9_-]{20,}|[A-Za-z0-9_-]{23,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{20,})", "[REDACTED_DISCORD_TOKEN]", safe)
     safe = re.sub(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s]+", r"\1[REDACTED]", safe)
     return safe
 
@@ -1847,6 +1873,7 @@ def api_get_json(path, params=None):
         if isinstance(payload, dict):
             error_fields = {key: payload.get(key) for key in ("message", "error", "detail", "status", "code")}
             rblxvalue_guard.raise_for_key_error(200, json.dumps(error_fields), key=RBLXVALUE_API_KEY)
+        rblxvalue_guard.mark_key_success(key=RBLXVALUE_API_KEY)
         return payload
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RuntimeError("[rblxvalue] Invalid JSON response") from exc
@@ -1871,6 +1898,7 @@ def api_get_json_conditional(path, params=None, etag=None):
     )
     response_etag = response_headers.get("ETag") or etag
     if raw is None:
+        rblxvalue_guard.mark_key_success(key=RBLXVALUE_API_KEY)
         return None, response_etag, True
     try:
         payload = json.loads(raw.decode("utf-8"))
@@ -1879,6 +1907,7 @@ def api_get_json_conditional(path, params=None, etag=None):
     if isinstance(payload, dict):
         error_fields = {key: payload.get(key) for key in ("message", "error", "detail", "status", "code")}
         rblxvalue_guard.raise_for_key_error(200, json.dumps(error_fields), key=RBLXVALUE_API_KEY)
+    rblxvalue_guard.mark_key_success(key=RBLXVALUE_API_KEY)
     return payload, response_etag, False
 
 
@@ -2757,6 +2786,9 @@ def _load_json_state(path, default, label):
 
 
 def send_maintenance_alert(key, message, cooldown_seconds=3600):
+    if os.environ.get("DRY_RUN", "").strip().casefold() == "true":
+        print(f"[dry-run] would send maintenance alert: {key}")
+        return False
     state = _load_json_state(MAINTENANCE_FILE, {}, "maintenance alert state")
     if not isinstance(state, dict):
         raise RuntimeError("[state] Maintenance alert state has an invalid structure.")
@@ -3068,8 +3100,10 @@ def record_success_if_complete(stats):
 
 def scan_once():
     global _SESSION_ALERTS_SENT
-    if not BOT_TOKEN or not CHAT_ID:
+    dry_run = os.environ.get("DRY_RUN", "").strip().casefold() == "true"
+    if not dry_run and (not BOT_TOKEN or not CHAT_ID):
         raise RuntimeError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in GitHub Actions secrets.")
+    update_metrics(increments={"scans": 1})
 
     print("[stage] Checking RBLXValue API credential")
     if not RBLXVALUE_API_KEY:
@@ -3187,6 +3221,7 @@ def scan_once():
                 cooldown_seconds=3600,
             )
     if not listings:
+        update_metrics(increments={"parse_empty": 1})
         html_issue_count = max(
             int(stats.get("html_malformed_count", 0)),
             int(stats.get("html_parse_warning_count", 0)),
@@ -3340,6 +3375,9 @@ def scan_once():
         if (trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids:
             print(f"[dedupe] Skipping unchanged or uncertain listing {trade_id} before Telegram send.")
             return
+        if os.environ.get("DRY_RUN", "").strip().casefold() == "true":
+            print(f"[dry-run] would send: {trade_id} profit={op['difference']:g}")
+            return
         listing["alert_attempted_at_utc"] = datetime.now(timezone.utc).isoformat()
         message = format_trade_message(
             listing, op["give_total"], op["give_lines"],
@@ -3424,6 +3462,7 @@ def scan_once():
             f"first_seen_to_alert={latency_label}"
         )
         sent += 1
+        update_metrics(increments={"alerts_sent": 1})
 
     for listing in listings:
         trade_id = listing["id"]
@@ -3499,9 +3538,25 @@ def scan_once():
                 history_store.record_opportunity(result)
             except Exception as history_error:
                 print(f"[market-history] Opportunity storage skipped safely: {type(history_error).__name__}")
-        deliver_opportunity(result)
+        # Delivery is deferred until all candidates are ranked.
 
-    deferred = 0
+    max_per_scan = max(0, int(os.environ.get("MAX_ALERTS_PER_SCAN", "15")))
+    selected, deferred_items = rank_and_split(opportunities, max_per_scan)
+    deferred = len(deferred_items)
+    if deferred:
+        update_metrics(increments={"alerts_deferred": deferred})
+    for opportunity in deferred_items:
+        if os.environ.get("DRY_RUN", "").strip().casefold() != "true":
+            mark_pending(opportunity["listing"])
+    for opportunity in selected:
+        deliver_opportunity(opportunity)
+    if deferred and os.environ.get("DRY_RUN", "").strip().casefold() != "true":
+        try:
+            send_telegram(f"{deferred} more qualifying offers deferred to the next scan")
+        except Exception as exc:
+            print(f"[telegram] Deferred notice failed: {type(exc).__name__}")
+    elif deferred:
+        print(f"[dry-run] {deferred} qualifying offers deferred")
 
     summary = (
         f"Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | "
@@ -3589,23 +3644,32 @@ def record_failure(error):
     except (OSError, ValueError):
         state = {"consecutive_failures": 0}
     count = int(state.get("consecutive_failures", 0)) + 1
+    update_metrics(increments={"scan_failures": 1})
     state["consecutive_failures"] = count
     atomic_write_text(FAILURE_FILE, json.dumps(state, indent=2) + "\n")
     print(f"[failure] Consecutive failures: {count}")
     error_text = str(error)
     safe_reason = redact(error_text)[:240]
+    if os.environ.get("DRY_RUN", "").strip().casefold() == "true":
+        print("[dry-run] failure alert suppressed")
+        return
     if "[rblxvalue-key-blocked]" in error_text:
+        block_metrics = rblxvalue_guard._read_json(rblxvalue_guard.BLOCK_FILE)
+        update_metrics(increments={"key_blocked_seconds": int(block_metrics.get("blocked_seconds", 0))})
         if rblxvalue_guard.claim_block_alert(key=RBLXVALUE_API_KEY):
             try:
                 fingerprint = rblxvalue_guard.key_fingerprint(RBLXVALUE_API_KEY)
-                send_telegram(
-                    "MM2 RBLXValue API CREDENTIAL REJECTED\n"
-                    "The upstream rejected the configured credential; no trade calculations will use stale values.\n"
-                    f"Safe diagnostic: {safe_reason}\n"
-                    "No further API calls will be made for 6 hours, or until the key changes.\n"
-                    f"Key fingerprint: {fingerprint}\n"
-                    "Trade calculations remain Fail-Closed; only a fresh valid Supreme cache may be used."
-                )
+                block_state = rblxvalue_guard._read_json(rblxvalue_guard.BLOCK_FILE)
+                if block_state.get("permanent"):
+                    send_telegram("RBLXValue key rejected 3 times - replace the key or contact RBLXValue on Discord")
+                else:
+                    send_telegram(
+                        "MM2 RBLXValue API CREDENTIAL REJECTED\n"
+                        "The upstream rejected the configured credential; calculations remain Fail-Closed.\n"
+                        f"Safe diagnostic: {safe_reason}\n"
+                        f"Blocked for {int(block_state.get('blocked_seconds', 0)) // 3600} hours or until key rotation.\n"
+                        f"Key fingerprint: {fingerprint}"
+                    )
                 rblxvalue_guard.mark_block_alert_sent(key=RBLXVALUE_API_KEY)
                 print("[telegram] RBLXValue key-block alert sent (24-hour cooldown)")
             except Exception as notify_error:
@@ -3706,6 +3770,7 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
                 pass
     elapsed = time.monotonic() - started
     rblxvalue_guard.log_request_count()
+    update_metrics(increments={"rblxvalue_requests": rblxvalue_guard.requests_this_run()})
     print(f"[loop] Finished: cycles={cycles}, successful={successful_cycles}, elapsed={elapsed:.1f}s")
     if successful_cycles == 0:
         if last_failure and (
@@ -3740,9 +3805,11 @@ def main():
     try:
         result = scan_once()
         rblxvalue_guard.log_request_count()
+        update_metrics(increments={"rblxvalue_requests": rblxvalue_guard.requests_this_run()})
         return result
     except Exception:
         rblxvalue_guard.log_request_count()
+        update_metrics(increments={"rblxvalue_requests": rblxvalue_guard.requests_this_run()})
         raise
 
 if __name__ == "__main__":

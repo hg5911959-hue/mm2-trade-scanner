@@ -13,7 +13,8 @@ from typing import Any
 BUDGET_FILE = Path("data/rblxvalue_request_budget.json")
 BLOCK_FILE = Path("data/api_key_blocked.json")
 DAILY_REQUEST_LIMIT = max(1, int(os.environ.get("RBLXVALUE_DAILY_REQUEST_LIMIT", "60")))
-BLOCK_SECONDS = 6 * 60 * 60
+BLOCK_STEPS = (21600, 43200, 86400, 172800)
+PERMANENT_BLOCK_AFTER = 3
 ALERT_INTERVAL_SECONDS = 24 * 60 * 60
 ALERT_RETRY_SECONDS = 5 * 60
 REQUESTS_THIS_RUN = 0
@@ -104,12 +105,15 @@ def mark_key_blocked(reason: str, *, now: float | None = None, key: str | None =
     old = _read_json(path)
     fingerprint = key_fingerprint(secret)
     same_key = old.get("key_fingerprint") == fingerprint
+    consecutive = int(old.get("consecutive_blocks", 0)) + 1 if same_key else 1
+    permanent = consecutive >= PERMANENT_BLOCK_AFTER
+    seconds = BLOCK_STEPS[min(consecutive - 1, len(BLOCK_STEPS) - 1)]
     state = {
-        "schema_version": 1,
-        "blocked_at_utc": _now_iso(current),
-        "blocked_until_utc": _now_iso(current + BLOCK_SECONDS),
-        "blocked_until_epoch": current + BLOCK_SECONDS,
-        "key_fingerprint": fingerprint,
+        "schema_version": 2, "blocked_at_utc": _now_iso(current),
+        "blocked_until_utc": None if permanent else _now_iso(current + seconds),
+        "blocked_until_epoch": 1e30 if permanent else current + seconds,
+        "blocked_seconds": seconds, "permanent": permanent,
+        "consecutive_blocks": consecutive, "key_fingerprint": fingerprint,
         "reason": str(reason)[:120],
         "last_alert_attempt_epoch": old.get("last_alert_attempt_epoch") if same_key else None,
         "last_alert_sent_epoch": old.get("last_alert_sent_epoch") if same_key else None,
@@ -117,6 +121,19 @@ def mark_key_blocked(reason: str, *, now: float | None = None, key: str | None =
     _atomic_json(path, state)
     return state
 
+
+def mark_key_success(*, key: str | None = None, block_path: Path | None = None) -> bool:
+    """Reset consecutive credential rejections after a successful API response."""
+    secret = os.environ.get("RBLXVALUE_API_KEY", "") if key is None else key
+    path = block_path or BLOCK_FILE
+    state = _read_json(path)
+    if not state or state.get("key_fingerprint") != key_fingerprint(secret):
+        return False
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+    return True
 
 def claim_block_alert(*, now: float | None = None, key: str | None = None,
                       block_path: Path | None = None) -> bool:
@@ -126,6 +143,19 @@ def claim_block_alert(*, now: float | None = None, key: str | None = None,
     state = _read_json(path)
     if not state or state.get("key_fingerprint") != key_fingerprint(secret):
         return False
+    if state.get("permanent"):
+        if state.get("permanent_notice_sent"):
+            return False
+        try:
+            last_permanent_attempt = float(state.get("permanent_notice_attempt_epoch") or 0)
+        except (TypeError, ValueError):
+            last_permanent_attempt = 0
+        if last_permanent_attempt > 0 and current - last_permanent_attempt < ALERT_RETRY_SECONDS:
+            return False
+        state["permanent_notice_attempt_epoch"] = current
+        state["permanent_notice_attempt_at_utc"] = _now_iso(current)
+        _atomic_json(path, state)
+        return True
     try:
         last_sent = float(state.get("last_alert_sent_epoch") or 0)
     except (TypeError, ValueError):
@@ -155,6 +185,9 @@ def mark_block_alert_sent(*, now: float | None = None, key: str | None = None,
         return False
     state["last_alert_sent_epoch"] = current
     state["last_alert_sent_at_utc"] = _now_iso(current)
+    if state.get("permanent"):
+        state["permanent_notice_sent"] = True
+        state["permanent_notice_sent_at_utc"] = _now_iso(current)
     _atomic_json(path, state)
     return True
 
@@ -243,6 +276,8 @@ def is_key_error(status: int, detail: str) -> bool:
         "invalid", "inactive", "suspended", "deactivated", "revoked", "expired",
         "not activated", "not been activated", "has not activated", "not active", "unactivated", "activation required", "disabled",
     ))
+    if int(status) == 403 and any(marker in text for marker in ("cloudflare", "captcha", "challenge-platform", "cf-chl-", "cf-mitigated")):
+        return False
     return int(status) == 401 or (key_context and invalid_marker)
 
 

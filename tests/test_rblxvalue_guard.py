@@ -157,6 +157,44 @@ class RblxValueGuardTests(unittest.TestCase):
         self.assertEqual(count, 2)
         self.assertEqual(len(state["request_timestamps_epoch"]), 2)
 
+    def test_escalating_blocks_and_permanent_third_rejection(self):
+        now = 1_800_000_000
+        expected = [6 * 3600, 12 * 3600, 0]
+        for index, seconds in enumerate(expected, 1):
+            state = guard.mark_key_blocked("HTTP 401", now=now + index,
+                                           key="rbx_test_key", block_path=self.block)
+            self.assertEqual(state["consecutive_blocks"], index)
+            if index < 3:
+                self.assertEqual(state["blocked_seconds"], seconds)
+                self.assertFalse(state["permanent"])
+            else:
+                self.assertEqual(state["blocked_seconds"], 24 * 3600)
+                self.assertTrue(state["permanent"])
+        with self.assertRaises(guard.RblxValueKeyBlocked):
+            guard.reserve_request(now=now + 100000, key="rbx_test_key",
+                                  budget_path=self.budget, block_path=self.block)
+
+    def test_success_resets_consecutive_blocks(self):
+        guard.mark_key_blocked("HTTP 401", now=1_800_000_000,
+                               key="rbx_test_key", block_path=self.block)
+        self.assertTrue(guard.mark_key_success(key="rbx_test_key", block_path=self.block))
+        self.assertFalse(self.block.exists())
+        state = guard.mark_key_blocked("HTTP 401", now=1_800_100_000,
+                                       key="rbx_test_key", block_path=self.block)
+        self.assertEqual(state["consecutive_blocks"], 1)
+        self.assertEqual(state["blocked_seconds"], 6 * 3600)
+
+    def test_new_fingerprint_resets_counter_and_allows_request(self):
+        for index in range(3):
+            guard.mark_key_blocked("HTTP 401", now=1_800_000_000 + index,
+                                   key="rbx_old_key", block_path=self.block)
+        count = guard.reserve_request(now=1_800_000_100, key="rbx_new_key",
+                                      budget_path=self.budget, block_path=self.block)
+        self.assertEqual(count, 1)
+
+    def test_cloudflare_challenge_does_not_count_as_key_rejection(self):
+        self.assertFalse(guard.is_key_error(403, "Cloudflare challenge platform cf-chl"))
+
 
 if __name__ == "__main__":
     unittest.main()
