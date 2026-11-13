@@ -1877,13 +1877,17 @@ def _normalize_stability(value):
         return None
     return label
 
-# Labels documented by Supreme Values. Unknown/missing labels are never treated
-# as a healthy status when evaluating an item we would receive.
-SUPREME_STABILITY_LABELS = frozenset({
+# RBLXValue exposes its own stability labels; they are not guaranteed to be a
+# verbatim copy of Supreme Values' website taxonomy. Unknown/missing labels are
+# never treated as a healthy status for an item we would receive.
+RBLXVALUE_STABILITY_LABELS = frozenset({
     "rising", "overpaid for", "doing well", "improving", "fluctuating",
     "receding", "stable", "underpaid for", "decreasing", "unsafe",
+    "untradeable", "unstable", "volatile",
 })
-BLOCKED_RECEIVE_STABILITY = frozenset({"decreasing", "unsafe"})
+BLOCKED_RECEIVE_STABILITY = frozenset({
+    "decreasing", "unsafe", "untradeable", "unstable", "volatile",
+})
 
 
 def _supreme_numeric_value(item):
@@ -2433,7 +2437,7 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
         stability = _normalize_stability(selected.get("stability"))
         if side == "receive" and "stability" in selected:
             stability_key = stability.casefold() if stability else ""
-            if stability_key not in SUPREME_STABILITY_LABELS:
+            if stability_key not in RBLXVALUE_STABILITY_LABELS:
                 missing.append(f"{item['name']} (Supreme Stability unverified)")
                 continue
             if stability_key in BLOCKED_RECEIVE_STABILITY:
@@ -2499,7 +2503,7 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
         display_name = f"{entry['name']} [{identity}]" if identity else entry["name"]
         breakdown.append(
             f"• {display_name} {quantity_label} — {value_label} each = {total_label}"
-            f" | Stability: {entry['stability']}"
+            f" | Stability (RBLXValue): {entry['stability']}"
         )
     return total_min, total_max, breakdown, missing, uncertain
 
