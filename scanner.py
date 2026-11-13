@@ -1477,7 +1477,10 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                     seen_streak = 0
                     continue
                 seen_streak += 1
-                if seen_streak >= 25:
+                # Without a trusted success checkpoint, the seen streak cannot
+                # prove that older pages were already covered. Keep paging so a
+                # prior capped/incomplete run cannot permanently hide older posts.
+                if seen_streak >= 25 and last_success_ts is not None:
                     boundary_reached = True
                     break
                 continue
