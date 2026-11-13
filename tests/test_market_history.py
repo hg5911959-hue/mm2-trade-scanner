@@ -57,6 +57,15 @@ class MarketHistoryTests(unittest.TestCase):
             ).fetchall()
         self.assertEqual([row[0] for row in rows], ["cross_checked", "conflict"])
 
+    def test_secondary_only_value_is_classified_as_estimated(self):
+        rows = market_history.MarketHistory._value_rows({
+            "item": {"name": "Item", "variants": [{
+                "id": "secondary-only", "name": "Secondary only",
+                "value": None, "secondary_value": 25,
+            }]}
+        })
+        self.assertEqual(rows[0]["confidence"], "estimated")
+
     def test_listing_upsert_preserves_first_seen_and_updates_last_seen(self):
         self.assertEqual(self.store.record_listings([self.listing()]), 1)
         self.assertEqual(self.store.record_listings([self.listing()]), 1)
