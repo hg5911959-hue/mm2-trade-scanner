@@ -2669,7 +2669,7 @@ class MinimumProfitMarginTests(unittest.TestCase):
 
 
 class UpstreamForbiddenDiagnosticsTests(unittest.TestCase):
-    def test_api_403_opens_key_breaker_without_retrying_or_exposing_secret(self):
+    def test_api_403_with_explicit_suspended_key_opens_breaker_without_exposing_secret(self):
         from io import BytesIO
         from urllib.error import HTTPError
 
@@ -2685,10 +2685,9 @@ class UpstreamForbiddenDiagnosticsTests(unittest.TestCase):
                 patch("rblxvalue_guard.BLOCK_FILE", root / "blocked.json"),
                 patch("scanner.urllib.request.urlopen", side_effect=error) as request,
             ):
-                with self.assertRaisesRegex(RuntimeError, r"\[cloudflare\].*HTTP 403"):
+                with self.assertRaisesRegex(RuntimeError, "rblxvalue-key-blocked"):
                     scanner.request_with_retry("https://api.rblxvalue.com/v2/items", 10, "RBLXValue API", attempts=4)
                 self.assertEqual(request.call_count, 1)
-                self.assertFalse((root / "blocked.json").exists())
                 self.assertTrue((root / "blocked.json").exists())
             saved = (root / "blocked.json").read_text()
             self.assertNotIn("rbx_test_secret", saved)
@@ -2713,6 +2712,7 @@ class UpstreamForbiddenDiagnosticsTests(unittest.TestCase):
                 patch("rblxvalue_guard.BLOCK_FILE", root / "blocked.json"),
                 patch("scanner.urllib.request.urlopen", side_effect=error) as request,
             ):
-                with self.assertRaisesRegex(RuntimeError, "rblxvalue-key-blocked"):
+                with self.assertRaisesRegex(RuntimeError, r"\\[cloudflare\\].*HTTP 403"):
                     scanner.request_with_retry("https://api.rblxvalue.com/v2/items", 10, "RBLXValue API", attempts=4)
                 self.assertEqual(request.call_count, 1)
+                self.assertFalse((root / "blocked.json").exists())
