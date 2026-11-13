@@ -3445,9 +3445,13 @@ def scan_once(include_backlog_rechecks=True):
     for ad_id in stats.get("unparsed_ad_ids", []):
         key = str(ad_id)
         pending_ids.setdefault(key, time.time())
-        if key not in pending_schedule:
+        if key in seen_ads:
+            seen_ads.discard(key)
+            save_seen_ads(seen_ads)
+        if key not in pending_schedule or pending_schedule[key].get("reason") != "unparsed_feed":
+            previous_attempts = int(pending_schedule.get(key, {}).get("attempts", 0))
             pending_schedule[key] = {
-                "attempts": 0,
+                "attempts": previous_attempts,
                 "next_check_at": time.time(),
                 "reason": "unparsed_feed",
             }
