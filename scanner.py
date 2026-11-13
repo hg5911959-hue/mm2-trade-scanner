@@ -3006,6 +3006,7 @@ def scan_once():
     opportunities = []
     def deliver_opportunity(op):
         nonlocal sent
+        global _SESSION_ALERTS_SENT
         listing = op["listing"]
         trade_id = listing["id"]
         # Re-check immediately before every non-idempotent send. A previously
