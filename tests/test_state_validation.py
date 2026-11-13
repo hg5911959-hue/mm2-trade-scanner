@@ -66,6 +66,35 @@ class StateValidationTests(unittest.TestCase):
         (self.root / "discord_messages.json").write_text('{"messages":[]}', encoding="utf-8")
         self.assertTrue(any("private Discord" in error for error in validate_state(self.root)))
 
+    def test_pending_retry_reason_must_be_a_known_value(self):
+        self._write_valid_state()
+        (self.root / "pending_recheck_schedule.json").write_text(json.dumps({
+            "version": 1,
+            "schedule": {
+                "ad-1": {
+                    "attempts": 0,
+                    "next_check_at": 1_800_000_000,
+                    "reason": "invented_reason",
+                }
+            },
+        }), encoding="utf-8")
+        errors = validate_state(self.root, require_cache=True)
+        self.assertTrue(any("pending recheck schedule counter" in error for error in errors))
+
+    def test_valid_pending_retry_reason_passes_state_validation(self):
+        self._write_valid_state()
+        (self.root / "pending_recheck_schedule.json").write_text(json.dumps({
+            "version": 1,
+            "schedule": {
+                "ad-1": {
+                    "attempts": 0,
+                    "next_check_at": 1_800_000_000,
+                    "reason": "deferred_offer",
+                }
+            },
+        }), encoding="utf-8")
+        self.assertEqual(validate_state(self.root, require_cache=True), [])
+
     def test_unfinished_atomic_write_blocks_persistence(self):
         (self.root / "seen_ads.json.tmp").write_text("{}", encoding="utf-8")
         self.assertTrue(any("temporary file" in error for error in validate_state(self.root)))
