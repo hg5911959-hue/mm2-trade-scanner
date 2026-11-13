@@ -23,6 +23,18 @@ class WorkflowReliabilityTests(unittest.TestCase):
         self.assertIn("secrets: inherit", scheduler)
         self.assertIn("contents: write", scheduler)
 
+
+    def test_watchdog_uses_a_dedicated_scheduled_entrypoint(self):
+        workflow = (ROOT / ".github/workflows/watchdog.yml").read_text(encoding="utf-8")
+        scheduler = (ROOT / ".github/workflows/watchdog-scheduler.yml").read_text(encoding="utf-8")
+        self.assertIn("  workflow_call:", workflow)
+        self.assertIn("  workflow_dispatch:", workflow)
+        self.assertNotIn("  schedule:", workflow)
+        self.assertIn('cron: "*/5 * * * *"', scheduler)
+        self.assertIn("uses: ./.github/workflows/watchdog.yml", scheduler)
+        self.assertIn("secrets: inherit", scheduler)
+        self.assertIn("actions: read", scheduler)
+
     def test_dashboard_skips_deploy_when_pages_is_not_enabled(self):
         workflow = (ROOT / ".github/workflows/dashboard-pages.yml").read_text(encoding="utf-8")
         self.assertIn("pages_enabled: ${{ steps.pages-preflight.outputs.enabled }}", workflow)
