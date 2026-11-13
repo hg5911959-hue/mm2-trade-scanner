@@ -24,10 +24,10 @@ class PendingRecheckScheduleTests(unittest.TestCase):
         )
 
 
-    def test_pending_rechecks_are_capped_and_oldest_never_checked_are_prioritized(self):
+    def test_pending_rechecks_are_capped_and_newest_never_checked_are_prioritized(self):
         pending = {f"ad-{i}": float(i) for i in range(5)}
         selected = scanner.due_pending_ids_for_scan(pending, {}, now=1000, limit=2)
-        self.assertEqual(list(selected), ["ad-0", "ad-1"])
+        self.assertEqual(list(selected), ["ad-4", "ad-3"])
 
     def test_never_checked_pending_items_are_prioritized_over_retried_items(self):
         pending = {"retried": 1.0, "never-checked-a": 2.0, "never-checked-b": 3.0}
@@ -36,6 +36,24 @@ class PendingRecheckScheduleTests(unittest.TestCase):
         }
         selected = scanner.due_pending_ids_for_scan(pending, schedule, now=1000, limit=2)
         self.assertEqual(set(selected), {"never-checked-a", "never-checked-b"})
+
+    def test_backlog_recheck_runs_only_on_configured_cycle(self):
+        self.assertEqual(
+            [cycle for cycle in range(1, 9) if scanner.should_run_backlog_recheck(cycle, every=4)],
+            [4, 8],
+        )
+        self.assertFalse(scanner.should_run_backlog_recheck(0, every=4))
+
+    def test_value_snapshot_refresh_can_force_a_bounded_pending_recheck(self):
+        pending = {"older": 100.0, "newer": 200.0}
+        schedule = {
+            "older": {"attempts": 3, "next_check_at": 5000.0},
+            "newer": {"attempts": 2, "next_check_at": 6000.0},
+        }
+        selected = scanner.due_pending_ids_for_scan(
+            pending, schedule, now=1000, limit=1, force=True
+        )
+        self.assertEqual(list(selected), ["newer"])
 
     def test_zero_limit_means_all_due_items(self):
         pending = {f"ad-{i}": float(i) for i in range(5)}

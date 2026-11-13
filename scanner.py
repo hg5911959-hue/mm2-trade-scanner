@@ -54,7 +54,9 @@ SEEN_FILE = Path("data/seen_ads.json")
 PENDING_FILE = Path("data/pending_recheck.json")
 PENDING_RECHECK_SCHEDULE_FILE = Path("data/pending_recheck_schedule.json")
 PENDING_RECHECK_BACKOFF_SECONDS = (300, 900, 1800, 3600, 21600)
-MAX_PENDING_RECHECK_PER_SCAN = max(1, int(os.environ.get('MAX_PENDING_RECHECK_PER_SCAN', '500')))
+MAX_PENDING_RECHECK_PER_SCAN = max(1, int(os.environ.get('MAX_PENDING_RECHECK_PER_SCAN', '50')))
+MAX_BACKLOG_RECHECK_PAGES = max(1, int(os.environ.get('MAX_BACKLOG_RECHECK_PAGES', '25')))
+BACKLOG_RECHECK_EVERY_CYCLES = max(1, int(os.environ.get('BACKLOG_RECHECK_EVERY_CYCLES', '4')))
 FIRST_SEEN_FILE = Path("data/first_seen_ads.json")
 LAST_SUCCESS_FILE = Path("data/last_successful_scan.json")
 WATCH_FILE = Path("data/watch_ads.json")
@@ -1526,13 +1528,14 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
             is_pinned = bool(raw.get("isPinned") or raw.get("pinned"))
             if post_id in watch_remaining:
                 watch_remaining.discard(post_id)
+            if boundary_reached and post_id not in pending_remaining and post_id not in watch_ids and not recently_refreshed:
+                # Once the new-feed boundary is proven, only inspect the bounded
+                # pending/watch backlog. Do not let old unresolved IDs pull the
+                # hot path through the entire historical feed.
+                continue
             if post_id in seen and post_id not in pending_remaining and post_id not in watch_ids and not recently_refreshed:
                 seen_ids_skipped.append(post_id)
                 if is_pinned:
-                    seen_streak = 0
-                    continue
-                if pending_remaining or watch_remaining:
-                    # Pending and watched ads take priority over an early boundary.
                     seen_streak = 0
                     continue
                 seen_streak += 1
@@ -1541,7 +1544,6 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                 # prior capped/incomplete run cannot permanently hide older posts.
                 if seen_streak >= 25 and last_success_ts is not None:
                     boundary_reached = True
-                    break
                 continue
             seen_streak = 0
             if post_id in pending_remaining:
@@ -1611,8 +1613,16 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     cursor = (initial_page.get("meta") or {}).get("cursor")
     pages_scanned = 1
     seen_cursors = {str(cursor)} if cursor else set()
-    if cursor and not boundary_reached:
+    backlog_pages_scanned = 0
+    backlog_page_limit_reached = False
+    if cursor:
         while cursor and pages_scanned < MAX_FEED_PAGES:
+            if boundary_reached:
+                if not (pending_remaining or watch_remaining):
+                    break
+                if backlog_pages_scanned >= MAX_BACKLOG_RECHECK_PAGES:
+                    backlog_page_limit_reached = True
+                    break
             payload = bloxswaps_api_get_json(
                 "/trade-posts", {"cursor": cursor, "pageSize": BLOXSWAPS_PAGE_SIZE}
             )
@@ -1620,9 +1630,12 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                 raise RuntimeError("[bloxswaps] Cursor API returned an invalid page structure.")
             page_items = payload["items"]
             api_posts_scanned += len(page_items)
-            consume_raw_posts(page_items, compare_html=False)
+            boundary_before_page = boundary_reached
             pages_scanned += 1
-            if boundary_reached:
+            if boundary_before_page:
+                backlog_pages_scanned += 1
+            consume_raw_posts(page_items, compare_html=False)
+            if boundary_reached and not (pending_remaining or watch_remaining):
                 break
             next_cursor = (payload.get("meta") or {}).get("cursor")
             if not next_cursor:
@@ -1634,6 +1647,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
             cursor = next_cursor
 
     pagination_complete = not cursor or boundary_reached
+    watch_search_complete = not watch_remaining or not cursor
     unique = {}
     for listing in collected:
         unique[listing["id"]] = listing
@@ -1658,6 +1672,9 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
         "pending_found_ids": pending_found_ids,
         "pending_remaining_ids": sorted(pending_remaining),
         "pending_complete": not pending_remaining,
+        "watch_search_complete": watch_search_complete,
+        "backlog_pages_scanned": backlog_pages_scanned,
+        "backlog_page_limit_reached": backlog_page_limit_reached,
         "api_listings_added": api_listings_added,
         "addition_ids": addition_ids,
         "unparsed_ad_ids": unparsed_ids,
@@ -2723,7 +2740,7 @@ def save_pending_recheck_schedule(schedule):
     }, sort_keys=True, indent=2) + "\n")
 
 
-def due_pending_ids_for_scan(pending, schedule, now=None, limit=MAX_PENDING_RECHECK_PER_SCAN):
+def due_pending_ids_for_scan(pending, schedule, now=None, limit=MAX_PENDING_RECHECK_PER_SCAN, force=False):
     """Return due unresolved IDs, prioritizing never-checked items and applying a per-scan cap."""
     current = time.time() if now is None else float(now)
     candidates = []
@@ -2734,11 +2751,13 @@ def due_pending_ids_for_scan(pending, schedule, now=None, limit=MAX_PENDING_RECH
             candidates.append((0, 0.0, float(first_seen), key, first_seen))
             continue
         next_check = float(entry.get("next_check_at", 0))
-        if next_check <= current:
+        if force or next_check <= current:
             candidates.append((
                 int(entry.get("attempts", 0)), next_check, float(first_seen), key, first_seen
             ))
-    candidates.sort(key=lambda row: (row[0], row[1], row[2], row[3]))
+    # Recheck the newest unresolved listings first: they are nearest the feed
+    # head and can be verified without paging through hours of stale history.
+    candidates.sort(key=lambda row: (row[0], row[1], -row[2], row[3]))
     cap = int(limit) if limit is not None else 0
     if cap > 0:
         candidates = candidates[:cap]
@@ -3247,7 +3266,7 @@ def record_success_if_complete(stats):
     return True
 
 
-def scan_once():
+def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     dry_run = os.environ.get("DRY_RUN", "").strip().casefold() == "true"
     if not dry_run and (not BOT_TOKEN or not CHAT_ID):
@@ -3263,11 +3282,13 @@ def scan_once():
         print("[stage] API key present; secret contents are intentionally never logged")
     print("[stage] Loading Supreme Values before evaluating trades")
     values = load_supreme_values()
+    values_snapshot_changed = False
     history_store = None
     try:
         from market_history import MarketHistory
         history_store = MarketHistory()
         if history_store.record_values_snapshot(values):
+            values_snapshot_changed = True
             print("[market-history] New Supreme/secondary value snapshot stored")
     except Exception as history_error:
         print(f"[market-history] Value snapshot storage skipped safely: {type(history_error).__name__}")
@@ -3280,11 +3301,17 @@ def scan_once():
     all_due_pending_ids = due_pending_ids_for_scan(
         pending_ids, pending_schedule, limit=0
     )
-    due_pending_ids = due_pending_ids_for_scan(pending_ids, pending_schedule)
+    run_backlog_rechecks = include_backlog_rechecks or values_snapshot_changed
+    due_pending_ids = (
+        due_pending_ids_for_scan(
+            pending_ids, pending_schedule, force=values_snapshot_changed
+        )
+        if run_backlog_rechecks else {}
+    )
     watch_state = load_watch_state()
     # If the seen file was lost but pending items survive, do not cold-start:
     # search due unresolved IDs before establishing a baseline.
-    if seen_ads is None and (pending_ids or watch_state):
+    if seen_ads is None and include_backlog_rechecks and (pending_ids or watch_state):
         seen_ads = set()
     print(
         f"[state] Pending listings: {len(pending_ids)} total; "
@@ -3292,8 +3319,19 @@ def scan_once():
         f"{len(due_pending_ids)} selected for this scan (cap={MAX_PENDING_RECHECK_PER_SCAN})"
     )
     print("[stage] Fetching BloxSwaps listings and cursor pages")
-    bloxswaps_watch_ids = [key for key in watch_state if not str(key).startswith("discord:")]
-    listings, stats, discovered_ids = fetch_bloxswaps_all(seen_ads, due_pending_ids.keys(), bloxswaps_watch_ids)
+    bloxswaps_watch_ids = (
+        [key for key in watch_state if not str(key).startswith("discord:")]
+        if run_backlog_rechecks else []
+    )
+    scan_mode = (
+        "values-refresh-backlog" if values_snapshot_changed
+        else "backlog-recheck" if include_backlog_rechecks
+        else "fast-new-feed"
+    )
+    print(f"[scan-mode] {scan_mode}; backlog_recheck_cap={MAX_PENDING_RECHECK_PER_SCAN}; page_lookahead={MAX_BACKLOG_RECHECK_PAGES}")
+    listings, stats, discovered_ids = fetch_bloxswaps_all(
+        seen_ads, due_pending_ids.keys(), bloxswaps_watch_ids
+    )
     pending_schedule = record_pending_recheck_attempts(
         due_pending_ids, pending_ids, pending_schedule
     )
@@ -3368,14 +3406,14 @@ def scan_once():
         save_seen_ads(seen_ads)
         save_pending_ids(pending_ids)
         save_pending_recheck_schedule(pending_schedule)
-    if stats.get("watch_remaining_ids") and stats.get("pagination_complete"):
+    if stats.get("watch_remaining_ids") and stats.get("watch_search_complete", False):
         missing_watch_ids = set(stats.get("watch_remaining_ids", []))
         for ad_id in missing_watch_ids:
             watch_state.pop(str(ad_id), None)
         save_watch_state(watch_state)
         send_maintenance_alert(
             "watch-ads-not-found",
-            f"{len(missing_watch_ids)} watched listing(s) were no longer present in the complete recent feed; "
+            f"{len(missing_watch_ids)} watched listing(s) were no longer present in the searched feed window; "
             "they were removed from the six-hour watch window.",
             cooldown_seconds=3600,
         )
@@ -3389,8 +3427,13 @@ def scan_once():
                 "pending-ads-not-found",
                 f"Could not locate {len(stats['pending_remaining_ids'])} pending listing(s) "
                 "in the recent cursor pages. They remain queued for recheck.",
-                cooldown_seconds=3600,
+                cooldown_seconds=21600,
             )
+    if stats.get("backlog_page_limit_reached"):
+        print(
+            f"[pending] Backlog page lookahead capped at {MAX_BACKLOG_RECHECK_PAGES}; "
+            "unresolved IDs remain queued without blocking the new-feed boundary."
+        )
     if not listings:
         update_metrics(increments={"parse_empty": 1})
         html_issue_count = max(
@@ -3519,14 +3562,14 @@ def scan_once():
                 save_pending_recheck_schedule(pending_schedule)
             save_pending_ids(pending_ids)
 
-    def mark_seen_ad(listing):
+    def mark_seen_ad(listing, clear_pending=True):
         if listing.get("source") == "discord":
             return  # Never add Discord snowflakes to BloxSwaps seen/pending cursors.
         source_id = str(listing.get("source_ad_id") or "")
         if source_id and source_id not in seen_ads:
             seen_ads.add(source_id)
             save_seen_ads(seen_ads)
-        if source_id and source_id in pending_ids:
+        if clear_pending and source_id and source_id in pending_ids:
             pending_ids.pop(source_id, None)
             pending_schedule.pop(source_id, None)
             save_pending_ids(pending_ids)
@@ -3703,6 +3746,9 @@ def scan_once():
             if unknown_names:
                 record_unmatched_names(unknown_names)
             update_watch_entry(watch_state, listing, values, aliases)
+            # Keep it out of the hot feed loop, but retain its pending marker so
+            # a later bounded recheck or a changed value snapshot can resolve it.
+            mark_seen_ad(listing, clear_pending=False)
             continue
         if not qualifies(result):
             if result.get("uncertain_items"):
@@ -3891,6 +3937,11 @@ def should_start_scan_cycle(remaining_seconds, duration_seconds):
     """Do not begin a full scan cycle when the polling window is nearly exhausted."""
     return float(remaining_seconds) >= minimum_cycle_start_window(duration_seconds)
 
+def should_run_backlog_recheck(cycle_number, every=None):
+    """Schedule expensive pending/watch work separately from the hot new-feed path."""
+    cadence = BACKLOG_RECHECK_EVERY_CYCLES if every is None else max(1, int(every))
+    return int(cycle_number) > 0 and int(cycle_number) % cadence == 0
+
 
 def run_scan_loop(duration_seconds=720, interval_seconds=45):
     """Poll repeatedly in one Actions job while preserving one alert budget per job."""
@@ -3924,7 +3975,8 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
             cycles += 1
             print(f"[loop] Starting scan cycle {cycles}; elapsed={cycle_started - started:.1f}s")
             try:
-                scan_once()
+                include_backlog = should_run_backlog_recheck(cycles)
+                scan_once(include_backlog_rechecks=include_backlog)
                 successful_cycles += 1
             except Exception as exc:
                 last_failure = exc
@@ -3982,7 +4034,7 @@ def main():
     _SESSION_ALERTS_SENT = 0
     _SESSION_ALERT_LIMIT = max(0, int(os.environ.get("MAX_ALERTS_PER_SESSION", str(MAX_ALERTS_PER_RUN))))
     try:
-        result = scan_once()
+        result = scan_once(include_backlog_rechecks=False)
         rblxvalue_guard.log_request_count()
         update_metrics(increments={"rblxvalue_requests": rblxvalue_guard.requests_this_run()})
         return result

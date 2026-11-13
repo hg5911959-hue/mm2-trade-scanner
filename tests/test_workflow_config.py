@@ -15,7 +15,9 @@ class WorkflowReliabilityTests(unittest.TestCase):
         self.assertNotIn("repository_dispatch:", workflow)
         self.assertIn("group: mm2-trade-scanner", workflow)
         self.assertIn("cancel-in-progress: false", workflow)
-        self.assertIn('          MAX_PENDING_RECHECK_PER_SCAN: "500"\n', workflow)
+        self.assertIn('          MAX_PENDING_RECHECK_PER_SCAN: "50"\n', workflow)
+        self.assertIn('          MAX_BACKLOG_RECHECK_PAGES: "25"\n', workflow)
+        self.assertIn('          BACKLOG_RECHECK_EVERY_CYCLES: "4"\n', workflow)
         self.assertNotIn('\n      MAX_PENDING_RECHECK_PER_SCAN:', workflow)
         self.assertIn("python tools/validate_state.py --directory state-artifact/data --require-cache", workflow)
         restore = workflow.split("      - name: Restore durable state branch", 1)[1].split("      - name:", 1)[0]
