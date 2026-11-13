@@ -143,6 +143,19 @@ def claim_block_alert(*, now: float | None = None, key: str | None = None,
     state = _read_json(path)
     if not state or state.get("key_fingerprint") != key_fingerprint(secret):
         return False
+    if state.get("permanent"):
+        if state.get("permanent_notice_sent"):
+            return False
+        try:
+            last_permanent_attempt = float(state.get("permanent_notice_attempt_epoch") or 0)
+        except (TypeError, ValueError):
+            last_permanent_attempt = 0
+        if last_permanent_attempt > 0 and current - last_permanent_attempt < ALERT_RETRY_SECONDS:
+            return False
+        state["permanent_notice_attempt_epoch"] = current
+        state["permanent_notice_attempt_at_utc"] = _now_iso(current)
+        _atomic_json(path, state)
+        return True
     try:
         last_sent = float(state.get("last_alert_sent_epoch") or 0)
     except (TypeError, ValueError):
@@ -172,6 +185,9 @@ def mark_block_alert_sent(*, now: float | None = None, key: str | None = None,
         return False
     state["last_alert_sent_epoch"] = current
     state["last_alert_sent_at_utc"] = _now_iso(current)
+    if state.get("permanent"):
+        state["permanent_notice_sent"] = True
+        state["permanent_notice_sent_at_utc"] = _now_iso(current)
     _atomic_json(path, state)
     return True
 
