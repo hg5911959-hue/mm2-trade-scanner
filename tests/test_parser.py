@@ -2577,6 +2577,12 @@ class PollingLoopTests(unittest.TestCase):
         self.assertEqual(result["cycles"], 1)
         self.assertEqual(result["successful_cycles"], 1)
 
+    def test_does_not_start_a_cycle_with_only_a_few_seconds_remaining(self):
+        self.assertTrue(scanner.should_start_scan_cycle(262, 780))
+        self.assertFalse(scanner.should_start_scan_cycle(4.7, 780))
+        self.assertFalse(scanner.should_start_scan_cycle(194, 780))
+        self.assertTrue(scanner.should_start_scan_cycle(0.5, 1))
+
 
 class AliasSuggestionToolTests(unittest.TestCase):
     def test_ambiguous_candidates_are_suggestions_only(self):
