@@ -2105,7 +2105,7 @@ def _write_supreme_values_audit(values, fetched_at=None):
         "weapons": 0, "knives": 0, "guns": 0,
         "weapons_missing_stability": 0, "weapons_untradeable": 0,
         "weapons_missing_demand": 0, "weapons_missing_rarity": 0,
-        "records_missing_type": 0,
+        "records_missing_type": 0, "weapon_candidates_unclassified": 0,
     }
     for key, record in sorted((values or {}).items()):
         variants = record.get("variants") if isinstance(record, dict) else None
@@ -2123,6 +2123,8 @@ def _write_supreme_values_audit(values, fetched_at=None):
             stability = _normalize_stability(variant.get("stability"))
             if not item_type:
                 counts["records_missing_type"] += 1
+                if str(variant.get("category") or "").strip().casefold() not in {"", "pets", "misc"}:
+                    counts["weapon_candidates_unclassified"] += 1
             if item_type in {"knife", "gun"}:
                 counts["weapons"] += 1
                 counts["knives" if item_type == "knife" else "guns"] += 1
@@ -2154,8 +2156,21 @@ def _write_supreme_values_audit(values, fetched_at=None):
                 "last_updated": variant.get("last_updated"),
             })
     weapon_rows = [
-        row for row in rows
-        if str(row.get("type") or "").strip().casefold() in {"knife", "gun"}
+        {
+            **row,
+            "type_status": (
+                "classified" if str(row.get("type") or "").strip().casefold() in {"knife", "gun"}
+                else "unclassified - verify against source"
+            ),
+        }
+        for row in rows
+        if (
+            str(row.get("type") or "").strip().casefold() in {"knife", "gun"}
+            or (
+                not str(row.get("type") or "").strip()
+                and str(row.get("category") or "").strip().casefold() not in {"", "pets", "misc"}
+            )
+        )
     ]
     weapon_rows.sort(key=lambda row: (
         str(row.get("type") or ""), str(row.get("category") or ""),
@@ -2163,9 +2178,9 @@ def _write_supreme_values_audit(values, fetched_at=None):
     ))
     catalog_buffer = io.StringIO(newline="")
     catalog_fields = [
-        "id", "name", "slug", "type", "category", "value", "value_min",
+        "id", "name", "slug", "type", "type_status", "category", "value", "value_min",
         "value_max", "stability", "demand", "rarity", "acronym", "event_name",
-        "tier", "value_status", "last_updated",
+        "tier", "value_status", "last_updated", "description", "image_url", "fandom_url",
     ]
     writer = csv.DictWriter(catalog_buffer, fieldnames=catalog_fields, extrasaction="ignore")
     writer.writeheader()
