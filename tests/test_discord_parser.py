@@ -55,7 +55,7 @@ class DiscordParserTests(unittest.TestCase):
             self.assertEqual(len(listings), 1)
             self.assertEqual(rejected, 1)
             path.write_text("{}", encoding="utf-8")
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(TypeError):
                 load_discord_listings(path)
 
 
