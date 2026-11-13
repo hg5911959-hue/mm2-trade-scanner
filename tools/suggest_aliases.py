@@ -5,11 +5,30 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
+import math
 import os
 import tempfile
 from pathlib import Path
 
 import scanner
+
+
+def _has_unique_numeric_value(record):
+    """Only suggest Supreme targets that the scanner can safely value."""
+    if not isinstance(record, dict):
+        return False
+    variants = record.get("variants")
+    if variants is not None:
+        if not isinstance(variants, list) or len(variants) != 1:
+            return False
+        record = variants[0]
+    if not isinstance(record, dict):
+        return False
+    try:
+        value = float(record.get("value"))
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(value) and value > 0
 
 
 def build_suggestions(catalogue, values):
@@ -22,7 +41,7 @@ def build_suggestions(catalogue, values):
     supreme_names = {
         key: str(record.get("name") or key)
         for key, record in values.items()
-        if isinstance(record, dict)
+        if _has_unique_numeric_value(record)
     }
     report = []
     for name in names:
@@ -92,6 +111,10 @@ def apply_reviewed_aliases(approved, catalogue, values, aliases_path):
             raise ValueError(f"'{alias}' is not an exact name in the current BloxSwaps catalogue.")
         if canonical_key not in values:
             raise ValueError(f"'{canonical}' is not an exact normalized Supreme source_b name.")
+        if not _has_unique_numeric_value(values[canonical_key]):
+            raise ValueError(
+                f"'{canonical}' does not resolve to a unique numeric Supreme value."
+            )
         if alias_key in values:
             raise ValueError(f"'{alias}' already matches Supreme exactly; no alias is needed.")
         if alias_key in updated and scanner.normalize_name(updated[alias_key]) != canonical_key:
