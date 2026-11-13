@@ -40,6 +40,9 @@ _SESSION_ALERT_LIMIT = MAX_ALERTS_PER_RUN
 ALERT_DELAY_SECONDS = max(0.0, float(os.environ.get("ALERT_DELAY_SECONDS", "1.1")) )
 VALUES_FILE = Path("data/supreme_values.json")
 VALUES_AUDIT_FILE = Path("data/supreme_values_audit.json")
+RBLXVALUE_KEY_HEALTH_FILE = Path("data/rblxvalue_key_health.json")
+RBLXVALUE_KEY_HEALTH_INTERVAL_SECONDS = 6 * 60 * 60
+RBLXVALUE_KEY_HEALTH_RETRY_SECONDS = 30 * 60
 FAILURE_FILE = Path("data/failure_state.json")
 HISTORY_FILE = Path("data/history.csv")
 MAX_ALERTED = 5000
@@ -1987,11 +1990,93 @@ def _write_supreme_values_audit(values, fetched_at=None):
     )
 
 
+def verify_rblxvalue_key_if_due():
+    """Verify the configured credential periodically without refreshing the full catalogue."""
+    if not RBLXVALUE_API_KEY:
+        return False
+
+    now = time.time()
+    fingerprint = rblxvalue_guard.key_fingerprint(RBLXVALUE_API_KEY)
+    try:
+        state = json.loads(RBLXVALUE_KEY_HEALTH_FILE.read_text(encoding="utf-8"))
+        if not isinstance(state, dict):
+            state = {}
+    except FileNotFoundError:
+        state = {}
+    except (OSError, ValueError, TypeError):
+        print("[rblxvalue-key-check] Health state is unreadable; performing a fresh one-request check")
+
+    same_key = state.get("key_fingerprint") == fingerprint
+    try:
+        last_success = float(state.get("last_success_at_epoch", 0)) if same_key else 0
+    except (TypeError, ValueError):
+        last_success = 0
+    if 0 <= now - last_success < RBLXVALUE_KEY_HEALTH_INTERVAL_SECONDS:
+        print(
+            f"[rblxvalue-key-check] Last successful check is "
+            f"{int(now - last_success)}s old; next check due after "
+            f"{RBLXVALUE_KEY_HEALTH_INTERVAL_SECONDS}s"
+        )
+        return False
+
+    try:
+        last_attempt = float(state.get("last_attempt_at_epoch", 0)) if same_key else 0
+    except (TypeError, ValueError):
+        last_attempt = 0
+    if 0 <= now - last_attempt < RBLXVALUE_KEY_HEALTH_RETRY_SECONDS:
+        print("[rblxvalue-key-check] Previous check was inconclusive; retry cooldown active")
+        return False
+
+    # Persist the attempt before network I/O so repeated scan cycles cannot
+    # hammer the endpoint when the provider is temporarily unavailable.
+    attempt_state = {
+        "schema_version": 1,
+        "key_fingerprint": fingerprint,
+        "last_attempt_at_epoch": now,
+        "last_success_at_epoch": last_success or None,
+    }
+    atomic_write_text(
+        RBLXVALUE_KEY_HEALTH_FILE,
+        json.dumps(attempt_state, ensure_ascii=False, indent=2) + "\\n",
+    )
+    try:
+        payload, _etag, not_modified = api_get_json_conditional(
+            "/items", {"limit": 1, "offset": 0}
+        )
+        if (
+            not_modified or not isinstance(payload, dict)
+            or not isinstance(payload.get("items"), list) or not payload["items"]
+        ):
+            raise RuntimeError("[rblxvalue-key-check] API returned no valid item payload")
+    except rblxvalue_guard.RblxValueKeyBlocked:
+        raise
+    except Exception as exc:
+        print(
+            f"[rblxvalue-key-check] INCONCLUSIVE: {type(exc).__name__}; "
+            f"fresh Supreme cache remains usable; retry after cooldown"
+        )
+        return False
+
+    atomic_write_text(
+        RBLXVALUE_KEY_HEALTH_FILE,
+        json.dumps({
+            "schema_version": 1,
+            "key_fingerprint": fingerprint,
+            "last_attempt_at_epoch": now,
+            "last_success_at_epoch": now,
+        }, ensure_ascii=False, indent=2) + "\\n",
+    )
+    print("[rblxvalue-key-check] PASS: configured API credential accepted (one item)")
+    return True
+
+
 def load_supreme_values():
     # Schema v4 preserves item identity and Supreme stability; older caches lack stability.
     cached_document = _read_values_cache_document()
     cached_values, cached_age = _read_values_cache()
     if cached_values is not None and cached_age is not None and cached_age <= VALUES_TTL_SECONDS:
+        if RBLXVALUE_API_KEY:
+            verify_rblxvalue_key_if_due()
         print(f"[supreme] Using fresh source_b snapshot (age {cached_age}s; TTL {VALUES_TTL_SECONDS}s)")
         _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
         return cached_values
