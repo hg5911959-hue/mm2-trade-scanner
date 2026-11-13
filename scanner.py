@@ -3813,6 +3813,7 @@ def scan_once(include_backlog_rechecks=True):
                 and not str(value).startswith("one side has")
                 and "quantity unknown" not in str(value).casefold()
                 and "quantity uncertain" not in str(value).casefold()
+                and "stability" not in str(value).casefold()
             ]
             if unknown_names:
                 record_unmatched_names(unknown_names)
