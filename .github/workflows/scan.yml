@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
+    inputs:
+      verify_rblxvalue_key:
+        description: "Send exactly one small /v2/items request to verify the configured API key"
+        required: false
+        type: boolean
+        default: false
   repository_dispatch:
     types: [mm2-scan]
 
@@ -92,6 +98,7 @@ jobs:
           MAX_FEED_PAGES: "1000"
           VALUES_TTL_SECONDS: "43200"
           RBLXVALUE_DAILY_REQUEST_LIMIT: "60"
+          RBLXVALUE_FORCE_KEY_CHECK: ${{ inputs.verify_rblxvalue_key && 'true' || 'false' }}
           BLOXSWAPS_ITEMS_TTL_SECONDS: "3600"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
