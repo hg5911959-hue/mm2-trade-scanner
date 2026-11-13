@@ -1295,6 +1295,8 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.HISTORY_FILE", root / "history.csv"), \
                  patch("scanner.SEEN_FILE", root / "seen_ads.json"), \
                  patch("scanner.PENDING_FILE", root / "pending.json"), \
+                 patch("scanner.PENDING_RECHECK_SCHEDULE_FILE", root / "pending_schedule.json"), \
+                 patch("scanner.WATCH_FILE", root / "watch.json"), \
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"), \
                  patch("scanner.load_supreme_values", side_effect=value_sets), \
                  patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)), \
@@ -1307,6 +1309,10 @@ class ReliabilityTests(unittest.TestCase):
             self.assertEqual(len(trade_messages), 1)
             self.assertNotIn("MANUAL VALUE CHECK", "".join(trade_messages))
             self.assertTrue((root / "alerted.json").exists())
+            seen = json.loads((root / "seen_ads.json").read_text(encoding="utf-8"))["ad_ids"]
+            pending = json.loads((root / "pending.json").read_text(encoding="utf-8"))["pending"]
+            self.assertIn("retry-me", seen)
+            self.assertEqual(pending, {})
 
     def test_all_qualified_offers_send_without_per_run_cap(self):
         def html(ad_ids):
