@@ -289,8 +289,8 @@ class MarketHistory:
 
     @staticmethod
     def _cleanup(db: sqlite3.Connection) -> None:
-        listing_cutoff = (datetime.now(timezone.utc) - timedelta(days=LISTING_RETENTION_DAYS)).isoformat()
-        history_cutoff = (datetime.now(timezone.utc) - timedelta(days=HISTORY_RETENTION_DAYS)).isoformat()
+        listing_cutoff = (datetime.now(UTC) - timedelta(days=LISTING_RETENTION_DAYS)).isoformat()
+        history_cutoff = (datetime.now(UTC) - timedelta(days=HISTORY_RETENTION_DAYS)).isoformat()
         db.execute("DELETE FROM listings WHERE last_seen_at_utc < ?", (listing_cutoff,))
         db.execute("DELETE FROM opportunities WHERE detected_at_utc < ?", (history_cutoff,))
         db.execute("DELETE FROM market_snapshots WHERE captured_at_utc < ?", (history_cutoff,))
