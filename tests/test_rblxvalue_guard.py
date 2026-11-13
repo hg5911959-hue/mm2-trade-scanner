@@ -65,7 +65,10 @@ class RblxValueGuardTests(unittest.TestCase):
     def test_generic_403_is_not_misclassified_as_invalid_key(self):
         self.assertFalse(guard.is_key_error(403, "Forbidden"))
         self.assertFalse(guard.is_key_error(403, "Cloudflare access denied"))
+        self.assertFalse(guard.is_key_error(403, "Your account is suspended"))
+        self.assertFalse(guard.is_key_error(403, "Account inactive"))
         self.assertTrue(guard.is_key_error(403, "API key suspended"))
+        self.assertTrue(guard.is_key_error(403, "Your access token has expired"))
         self.assertTrue(guard.is_key_error(401, "Unauthorized"))
 
     def test_breaker_expires_after_six_hours_or_key_rotation(self):
