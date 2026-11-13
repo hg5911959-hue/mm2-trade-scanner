@@ -767,6 +767,51 @@ class ReliabilityTests(unittest.TestCase):
                 scanner.send_telegram("X" * 5000)
         self.assertEqual(len(calls), 2)
 
+    def test_telegram_respects_minimum_chat_interval(self):
+        from io import BytesIO
+
+        monotonic_values = iter([100.0, 100.0, 100.2, 101.0])
+        with (
+            patch("scanner.BOT_TOKEN", "test-token"),
+            patch("scanner.CHAT_ID", "123"),
+            patch("scanner.ALERT_DELAY_SECONDS", 1.0),
+            patch("scanner._LAST_TELEGRAM_SEND_AT", 0.0),
+            patch("scanner.time.monotonic", side_effect=lambda: next(monotonic_values)),
+            patch("scanner.time.sleep") as sleep,
+            patch("scanner.urllib.request.urlopen", side_effect=lambda req, timeout: BytesIO(b'{"ok": true}')),
+        ):
+            scanner.send_telegram("first")
+            scanner.send_telegram("second")
+        sleep.assert_called_once()
+        self.assertAlmostEqual(sleep.call_args.args[0], 0.8, places=6)
+
+    def test_telegram_429_is_retried_only_once(self):
+        from io import BytesIO
+        from urllib.error import HTTPError
+
+        calls = []
+        def rate_limited(req, timeout):
+            calls.append(req)
+            raise HTTPError(
+                req.full_url, 429, "too many requests", {},
+                BytesIO(b'{"ok": false, "error_code": 429, "parameters": {"retry_after": 1}}')
+            )
+
+        monotonic_values = iter([200.0, 200.0, 201.0, 201.0])
+        with (
+            patch("scanner.BOT_TOKEN", "test-token"),
+            patch("scanner.CHAT_ID", "123"),
+            patch("scanner.ALERT_DELAY_SECONDS", 0.0),
+            patch("scanner._LAST_TELEGRAM_SEND_AT", 0.0),
+            patch("scanner.time.monotonic", side_effect=lambda: next(monotonic_values)),
+            patch("scanner.time.sleep") as sleep,
+            patch("scanner.urllib.request.urlopen", side_effect=rate_limited),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "HTTP 429"):
+                scanner.send_telegram("test")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(sleep.call_count, 1)
+
     def test_telegram_send_does_not_retry_uncertain_network_failure(self):
         calls = []
         def fail_open(req, timeout):
@@ -2392,6 +2437,7 @@ class WorkflowSecurityTests(unittest.TestCase):
         self.assertIn('MAX_ALERTS_PER_RUN: "0"', scan_job)
         self.assertIn('MAX_ALERTS_PER_SESSION: "0"', scan_job)
         self.assertIn('MAX_FEED_PAGES: "1000"', scan_job)
+        self.assertIn('ALERT_DELAY_SECONDS: "1.1"', scan_job)
         job_defaults = scan_job.split("    steps:", 1)[0]
         self.assertNotIn("MM2_SCAN_DURATION_SECONDS", job_defaults)
         self.assertNotIn("MM2_SCAN_INTERVAL_SECONDS", job_defaults)
