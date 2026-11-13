@@ -86,6 +86,22 @@ def redact(text):
             "DISCORD_MANUAL_MESSAGES_JSON_2",
         )
     } | {BOT_TOKEN, CHAT_ID, RBLXVALUE_API_KEY}
+    # Also redact individual text fields from manual-import JSON in case a
+    # diagnostic accidentally emits a parsed field rather than the full secret.
+    for env_name in ("DISCORD_MANUAL_MESSAGES_JSON", "DISCORD_MANUAL_MESSAGES_JSON_2"):
+        try:
+            payload = json.loads(os.environ.get(env_name, "") or "{}")
+            stack = [payload]
+            while stack:
+                item = stack.pop()
+                if isinstance(item, dict):
+                    stack.extend(item.values())
+                elif isinstance(item, list):
+                    stack.extend(item)
+                elif isinstance(item, str) and len(item) >= 6:
+                    configured.add(item)
+        except (ValueError, TypeError):
+            pass
     for secret in sorted((v for v in configured if v and len(v) >= 6), key=len, reverse=True):
         safe = safe.replace(secret, "[REDACTED]")
     safe = re.sub(r"https://api\.telegram\.org/bot[^/\s]+", "https://api.telegram.org/bot[REDACTED]", safe)
