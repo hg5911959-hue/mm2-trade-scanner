@@ -2328,6 +2328,14 @@ def load_supreme_values():
                 f"[supreme] Could not verify source version before pagination ({type(exc).__name__}); "
                 "refusing an unverified catalogue refresh"
             ) from exc
+    if RBLXVALUE_META_POLL_ENABLED and RBLXVALUE_API_KEY and source_meta is None:
+        try:
+            source_meta = _fetch_rblxvalue_meta(force=True)
+        except Exception as exc:
+            raise RuntimeError(
+                f"[supreme] Could not verify source version before pagination ({type(exc).__name__}); "
+                "refusing an unverified catalogue refresh"
+            ) from exc
     if rblxvalue_guard.is_key_blocked(key=RBLXVALUE_API_KEY):
         raise RuntimeError(
             "[supreme] API key circuit breaker active; refusing stale-cache calculations "
