@@ -519,6 +519,68 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(source, "metadata")
         self.assertEqual(record["value"], 140)
 
+
+    def test_catalog_year_disambiguates_only_an_exact_year_variant(self):
+        values = {
+            "candy corn 2020": {"name": "Candy Corn 2020", "variants": [{
+                "id": "cc20", "slug": "candy-corn-2020", "name": "Candy Corn 2020",
+                "category": "common", "type": "knife", "value": 2,
+            }]},
+            "candy corn 2025": {"name": "Candy Corn 2025", "variants": [{
+                "id": "cc25", "slug": "candy-corn-2025", "name": "Candy Corn 2025",
+                "category": "common", "type": "knife", "value": 8,
+            }]},
+        }
+        item = {
+            "name": "Candy Corn", "catalog_rarity": "COMMON",
+            "catalog_type": "Knife", "catalog_year": 2025,
+        }
+        record, source, _ = scanner.resolve_value_record("Candy Corn", values, item=item)
+        self.assertEqual(source, "metadata")
+        self.assertEqual(record["value"], 8)
+
+    def test_catalog_year_does_not_guess_when_no_exact_year_variant_exists(self):
+        values = {
+            "candy corn 2020": {"name": "Candy Corn 2020", "variants": [{
+                "id": "cc20", "slug": "candy-corn-2020", "name": "Candy Corn 2020",
+                "category": "common", "type": "knife", "value": 2,
+            }]},
+            "candy corn 2025": {"name": "Candy Corn 2025", "variants": [{
+                "id": "cc25", "slug": "candy-corn-2025", "name": "Candy Corn 2025",
+                "category": "common", "type": "knife", "value": 8,
+            }]},
+        }
+        item = {
+            "name": "Candy Corn", "catalog_rarity": "COMMON",
+            "catalog_type": "Knife", "catalog_year": 2026,
+        }
+        record, source, candidates = scanner.resolve_value_record("Candy Corn", values, item=item)
+        self.assertIsNone(record)
+        self.assertEqual(source, "ambiguous")
+        self.assertEqual(len(candidates), 2)
+
+    def test_bloxswaps_api_item_preserves_catalogue_year(self):
+        post = {
+            "id": "year-post",
+            "user": {"robloxUserId": "123", "robloxUsername": "trader"},
+            "tradePostItems": [
+                {"tradeRole": "OFFERED", "itemDetailsId": "item-2025", "quantity": 1},
+                {"tradeRole": "REQUESTED", "itemDetailsId": "other", "quantity": 1},
+            ],
+        }
+        item_map = {
+            "item-2025": {
+                "displayName": "Candy Corn", "slug": "candy-corn-2025",
+                "rarity": "COMMON", "type": "Knife", "year": 2025,
+            },
+            "other": {
+                "displayName": "Harvester", "slug": "harvester",
+                "rarity": "GODLY", "type": "Knife", "year": 2018,
+            },
+        }
+        listing = scanner._api_trade_post_to_listing(post, item_map)
+        self.assertEqual(listing["receive_items"][0]["catalog_year"], 2025)
+
     def test_non_numeric_tier_notation_does_not_override_numeric_godly_value(self):
         items = [
             {"id": 470, "slug": "rainbow-gun-rare", "name": "Rainbow Gun",

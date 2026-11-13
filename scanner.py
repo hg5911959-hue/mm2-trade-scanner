@@ -1213,6 +1213,7 @@ def _api_trade_post_to_listing(post, item_map):
             "catalog_rarity": str(details.get("rarity") or "") if details else "",
             "catalog_type": str(details.get("type") or "") if details else "",
             "catalog_chroma": bool(details.get("chroma")) if details else False,
+            "catalog_year": details.get("year") if details else None,
         }
         if not details:
             item["unmatched_item_id"] = item_id
@@ -1727,7 +1728,7 @@ def _iter_value_variants(values):
 
 def _catalog_value_metadata(item):
     if not isinstance(item, dict):
-        return "", "", "", ""
+        return "", "", "", "", None
     # Only structured catalogue fields are trusted. HTML parser fields such as
     # "type" or "slug" are presentation hints, not canonical item identity.
     slug = normalize_slug(item.get("catalog_slug") or "")
@@ -1736,11 +1737,18 @@ def _catalog_value_metadata(item):
     if chroma is True or str(chroma).casefold() in {"true", "1", "yes"}:
         rarity = "chroma"
     item_type = str(item.get("catalog_type") or "").strip().casefold()
-    return slug, rarity, item_type, normalize_name(item.get("name") or "")
+    raw_year = item.get("catalog_year")
+    try:
+        year = int(raw_year)
+        if not 2000 <= year <= 2100:
+            year = None
+    except (TypeError, ValueError):
+        year = None
+    return slug, rarity, item_type, normalize_name(item.get("name") or ""), year
 
 
 def _filter_variants_by_catalog(candidates, item):
-    slug, rarity, item_type, _ = _catalog_value_metadata(item)
+    slug, rarity, item_type, _, year = _catalog_value_metadata(item)
     if slug:
         slug_matches = [row for row in candidates if normalize_slug(row[2].get("slug")) == slug]
         if slug_matches:
@@ -1749,6 +1757,17 @@ def _filter_variants_by_catalog(candidates, item):
         candidates = [row for row in candidates if str(row[2].get("category") or "").strip().casefold() == rarity]
     if item_type:
         candidates = [row for row in candidates if str(row[2].get("type") or "").strip().casefold() == item_type]
+    if year is not None:
+        year_pattern = re.compile(rf"(?<!\\d){year}(?!\\d)")
+        year_matches = [
+            row for row in candidates
+            if year_pattern.search(str(row[2].get("name") or ""))
+            or year_pattern.search(str(row[2].get("slug") or ""))
+        ]
+        # A year is a disambiguator only when the source catalogue year is
+        # explicitly represented by a Supreme variant. Never guess a nearby year.
+        if year_matches:
+            candidates = year_matches
     return candidates
 
 
@@ -1766,7 +1785,7 @@ def resolve_value_record(name, values, aliases=None, item=None):
     all_variants = list(_iter_value_variants(values))
     metadata_item = dict(item) if isinstance(item, dict) else {}
     metadata_item["name"] = name
-    catalog_slug, catalog_rarity, catalog_type, _ = _catalog_value_metadata(metadata_item)
+    catalog_slug, catalog_rarity, catalog_type, _, _ = _catalog_value_metadata(metadata_item)
 
     if catalog_slug:
         slug_candidates = [row for row in all_variants if normalize_slug(row[2].get("slug")) == catalog_slug]
