@@ -35,7 +35,7 @@ FAILURE_THRESHOLD = int(os.environ.get("FAILURE_ALERT_THRESHOLD", "3"))
 MAX_ALERTS_PER_RUN = max(0, int(os.environ.get("MAX_ALERTS_PER_RUN", "0")))
 _SESSION_ALERTS_SENT = 0
 _SESSION_ALERT_LIMIT = MAX_ALERTS_PER_RUN
-ALERT_DELAY_SECONDS = max(0.0, float(os.environ.get("ALERT_DELAY_SECONDS", "1")) )
+ALERT_DELAY_SECONDS = max(0.0, float(os.environ.get("ALERT_DELAY_SECONDS", "1.1")) )
 VALUES_FILE = Path("data/supreme_values.json")
 VALUES_AUDIT_FILE = Path("data/supreme_values_audit.json")
 FAILURE_FILE = Path("data/failure_state.json")
@@ -60,6 +60,7 @@ UNCERTAIN_TTL_SECONDS = max(3600, int(os.environ.get("UNCERTAIN_TTL_SECONDS", st
 BLOXSWAPS_ITEMS_FILE = Path("data/bloxswaps_items.json")
 SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "100"))
 TELEGRAM_MAX_CHARS = 4000
+_LAST_TELEGRAM_SEND_AT = 0.0
 _LAST_ITEMS_FORCE_REFRESH_AT = 0.0
 
 # Items without a numeric Supreme value are excluded from valuation.
@@ -2196,6 +2197,16 @@ class TelegramDeliveryUncertain(RuntimeError):
     """Telegram may have accepted a message but the response was not received."""
 
 
+def _wait_for_telegram_rate_limit():
+    """Respect the configured minimum spacing between messages to one chat."""
+    global _LAST_TELEGRAM_SEND_AT
+    now = time.monotonic()
+    wait = ALERT_DELAY_SECONDS - (now - _LAST_TELEGRAM_SEND_AT)
+    if wait > 0:
+        time.sleep(wait)
+    _LAST_TELEGRAM_SEND_AT = time.monotonic()
+
+
 def send_telegram(message):
     message = str(message)
     if len(message) > TELEGRAM_MAX_CHARS:
@@ -2241,14 +2252,15 @@ def send_telegram(message):
 
     # sendMessage is non-idempotent. Never apply generic network/5xx retries:
     # Telegram may have accepted the message even when its response was lost.
-    for attempt in range(4):
+    for attempt in range(2):
+        _wait_for_telegram_rate_limit()
         req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
         try:
             with urllib.request.urlopen(req, timeout=20) as response:
                 raw = response.read()
         except HTTPError as exc:
             raw = exc.read(2000)
-            if exc.code == 429 and attempt < 3:
+            if exc.code == 429 and attempt < 1:
                 try:
                     result = json.loads(raw.decode("utf-8"))
                     retry_after = result.get("parameters", {}).get("retry_after", 2 ** (attempt + 1))
@@ -2279,7 +2291,7 @@ def send_telegram(message):
             ) from exc
         if result.get("ok"):
             return
-        if int(result.get("error_code", 0) or 0) == 429 and attempt < 3:
+        if int(result.get("error_code", 0) or 0) == 429 and attempt < 1:
             retry_after = result.get("parameters", {}).get("retry_after", 2 ** (attempt + 1))
             delay = min(60, max(1, int(retry_after)))
             print(f"[retry] Telegram explicitly rejected sendMessage with 429; waiting {delay}s")
