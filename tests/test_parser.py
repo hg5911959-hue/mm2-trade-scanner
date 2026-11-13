@@ -860,17 +860,19 @@ class ReliabilityTests(unittest.TestCase):
         }
         many_items = [f"• Item {i} — 1 each = 1" for i in range(500)]
         message = scanner.format_trade_message(listing, 500, many_items, 500, many_items, 0)
-        captured = {}
+        captured = []
         def fake_open(req, timeout):
-            captured["text"] = json.loads(req.data.decode())["text"]
+            captured.append(json.loads(req.data.decode())["text"])
             from io import BytesIO
             return BytesIO(b'{"ok": true}')
         with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
             "scanner.urllib.request.urlopen", side_effect=fake_open
         ):
             scanner.send_telegram(message)
-        self.assertIn("👤 https://bloxswaps.com/fr/users/12345", captured["text"])
-        self.assertIn("and 492 more items", captured["text"])
+        self.assertIn("👤 https://bloxswaps.com/fr/users/12345", captured[0])
+        self.assertGreater(len(captured), 1)
+        self.assertTrue(all(len(part) <= scanner.TELEGRAM_MAX_CHARS for part in captured))
+        self.assertFalse(any("more items" in part for part in captured))
 
     def test_one_definite_telegram_failure_does_not_stop_later_alerts(self):
         html = """
@@ -2343,7 +2345,10 @@ class WorkflowSecurityTests(unittest.TestCase):
         self.assertIn("git checkout --orphan state-new", state_job)
         self.assertIn("git push --force origin state-new:state", state_job)
         self.assertIn("No scanner data files found", state_job)
-        self.assertIn('MM2_SCAN_INTERVAL_SECONDS: "45"', scan_job)
+        self.assertIn('MM2_SCAN_INTERVAL_SECONDS: "30"', scan_job)
+        self.assertIn('MAX_ALERTS_PER_RUN: "0"', scan_job)
+        self.assertIn('MAX_ALERTS_PER_SESSION: "0"', scan_job)
+        self.assertIn('MAX_FEED_PAGES: "1000"', scan_job)
         job_defaults = scan_job.split("    steps:", 1)[0]
         self.assertNotIn("MM2_SCAN_DURATION_SECONDS", job_defaults)
         self.assertNotIn("MM2_SCAN_INTERVAL_SECONDS", job_defaults)
