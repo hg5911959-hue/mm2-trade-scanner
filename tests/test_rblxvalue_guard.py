@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import rblxvalue_guard as guard
 
@@ -49,10 +50,11 @@ class RblxValueGuardTests(unittest.TestCase):
         for status, body in ((401, "unauthorized"), (403, "forbidden"),
                              (400, "API key suspended")):
             with self.subTest(status=status, body=body):
-                from unittest.mock import patch
-                with patch.object(guard, "BLOCK_FILE", self.block):
-                    with self.assertRaises(guard.RblxValueKeyBlocked):
-                        guard.raise_for_key_error(status, body, key="rbx_test_key", now=1_800_000_000)
+                with (
+                    patch.object(guard, "BLOCK_FILE", self.block),
+                    self.assertRaises(guard.RblxValueKeyBlocked),
+                ):
+                    guard.raise_for_key_error(status, body, key="rbx_test_key", now=1_800_000_000)
                 self.assertTrue(guard.is_key_blocked(now=1_800_000_001,
                                                     key="rbx_test_key", block_path=self.block))
                 with self.assertRaises(guard.RblxValueKeyBlocked):
