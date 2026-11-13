@@ -2038,7 +2038,7 @@ def verify_rblxvalue_key_if_due():
     }
     atomic_write_text(
         RBLXVALUE_KEY_HEALTH_FILE,
-        json.dumps(attempt_state, ensure_ascii=False, indent=2) + "\\n",
+        json.dumps(attempt_state, ensure_ascii=False, indent=2) + "\n",
     )
     try:
         payload, _etag, not_modified = api_get_json_conditional(
@@ -2065,7 +2065,7 @@ def verify_rblxvalue_key_if_due():
             "key_fingerprint": fingerprint,
             "last_attempt_at_epoch": now,
             "last_success_at_epoch": now,
-        }, ensure_ascii=False, indent=2) + "\\n",
+        }, ensure_ascii=False, indent=2) + "\n",
     )
     print("[rblxvalue-key-check] PASS: configured API credential accepted (one item)")
     return True
