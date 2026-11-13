@@ -37,6 +37,14 @@ class PendingRecheckScheduleTests(unittest.TestCase):
         selected = scanner.due_pending_ids_for_scan(pending, schedule, now=1000, limit=2)
         self.assertEqual(set(selected), {"never-checked-a", "never-checked-b"})
 
+    def test_pending_ids_are_seeded_as_seen_without_being_removed_from_queue(self):
+        seen = {"already-seen"}
+        pending = {"pending-1": 100.0, "pending-2": 200.0}
+        result = scanner.seed_pending_ids_as_seen(seen, pending)
+        self.assertEqual(result, {"already-seen", "pending-1", "pending-2"})
+        self.assertEqual(set(pending), {"pending-1", "pending-2"})
+        self.assertIsNone(scanner.seed_pending_ids_as_seen(None, pending))
+
     def test_backlog_recheck_runs_only_on_configured_cycle(self):
         self.assertEqual(
             [cycle for cycle in range(1, 9) if scanner.should_run_backlog_recheck(cycle, every=4)],
