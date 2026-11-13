@@ -54,6 +54,14 @@ SEEN_FILE = Path("data/seen_ads.json")
 PENDING_FILE = Path("data/pending_recheck.json")
 PENDING_RECHECK_SCHEDULE_FILE = Path("data/pending_recheck_schedule.json")
 PENDING_RECHECK_BACKOFF_SECONDS = (300, 900, 1800, 3600, 21600)
+VALID_PENDING_REASONS = frozenset({
+    "legacy_unclassified", "unmatched_value", "stability_unverified",
+    "stability_blocked", "quantity_uncertain", "unparsed_feed",
+    "telegram_failure", "deferred_offer",
+})
+PRIORITY_PENDING_REASONS = frozenset({
+    "quantity_uncertain", "unparsed_feed", "telegram_failure", "deferred_offer",
+})
 MAX_PENDING_RECHECK_PER_SCAN = max(1, int(os.environ.get('MAX_PENDING_RECHECK_PER_SCAN', '50')))
 MAX_BACKLOG_RECHECK_PAGES = max(1, int(os.environ.get('MAX_BACKLOG_RECHECK_PAGES', '25')))
 BACKLOG_RECHECK_EVERY_CYCLES = max(1, int(os.environ.get('BACKLOG_RECHECK_EVERY_CYCLES', '4')))
@@ -2733,7 +2741,14 @@ def load_pending_recheck_schedule():
             raise RuntimeError("[state] Pending recheck next_check_at is invalid.") from None
         if not math.isfinite(next_check) or next_check <= 0:
             raise RuntimeError("[state] Pending recheck next_check_at is invalid.")
+        reason = entry.get("reason")
+        if reason is not None and (
+            not isinstance(reason, str) or reason not in VALID_PENDING_REASONS
+        ):
+            raise RuntimeError("[state] Pending recheck reason is invalid.")
         result[str(ad_id)] = {"attempts": attempts, "next_check_at": next_check}
+        if reason:
+            result[str(ad_id)]["reason"] = reason
     return result
 
 
@@ -2769,15 +2784,27 @@ def due_pending_ids_for_scan(pending, schedule, now=None, limit=MAX_PENDING_RECH
 
 
 
-def seed_pending_ids_as_seen(seen_ads, pending_ids):
-    """Keep unresolved IDs out of the hot feed while retaining their recheck queue."""
+def seed_pending_ids_as_seen(seen_ads, pending_ids, schedule=None):
+    """Keep low-priority unresolved IDs out of the hot feed; leave urgent retries visible."""
     if seen_ads is None:
         return None
+    schedule = schedule or {}
     for ad_id in pending_ids or ():
         value = str(ad_id or "").strip()
-        if value:
+        reason = (schedule.get(value) or {}).get("reason", "legacy_unclassified")
+        if value and reason not in PRIORITY_PENDING_REASONS:
             seen_ads.add(value)
     return seen_ads
+
+
+def pending_reason_from_missing(missing):
+    """Classify why a listing cannot yet be valued without guessing its status."""
+    detail = " ".join(str(value).casefold() for value in (missing or []))
+    if "quantity unknown" in detail or "quantity uncertain" in detail:
+        return "quantity_uncertain"
+    if "stability" in detail:
+        return "stability_blocked" if "excluded" in detail else "stability_unverified"
+    return "unmatched_value"
 
 def record_pending_recheck_attempts(due_ids, pending, schedule, now=None):
     """Advance retry backoff for checked IDs and initialize newly pending IDs."""
@@ -2797,13 +2824,17 @@ def record_pending_recheck_attempts(due_ids, pending, schedule, now=None):
         delay = PENDING_RECHECK_BACKOFF_SECONDS[
             min(attempts - 1, len(PENDING_RECHECK_BACKOFF_SECONDS) - 1)
         ]
-        updated[key] = {"attempts": attempts, "next_check_at": current + delay}
+        reason = previous.get("reason", "legacy_unclassified")
+        updated[key] = {
+            "attempts": attempts, "next_check_at": current + delay, "reason": reason,
+        }
     for ad_id in pending:
         key = str(ad_id)
         if key not in updated:
             updated[key] = {
                 "attempts": 0,
                 "next_check_at": current + PENDING_RECHECK_BACKOFF_SECONDS[0],
+                "reason": "legacy_unclassified",
             }
     save_pending_recheck_schedule(updated)
     return updated
