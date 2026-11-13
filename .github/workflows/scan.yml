@@ -37,6 +37,7 @@ jobs:
 
       - name: Restore durable state branch
         run: |
+          set -euo pipefail
           mkdir -p data
           if git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
             git fetch origin refs/heads/state:refs/remotes/origin/state
