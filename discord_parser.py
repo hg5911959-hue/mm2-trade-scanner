@@ -107,7 +107,6 @@ def parse_trade_text(text: str, *, message_id: str, author: str = "",
     stable_message_id = str(message_id or "").strip()
     if not stable_message_id:
         return None
-    source_ad_id = "discord:" + stable_message_id
     url = str(message_url or "").strip()
     if not url.startswith("https://discord.com/channels/"):
         url = ""
