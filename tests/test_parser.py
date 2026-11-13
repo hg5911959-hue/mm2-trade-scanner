@@ -2052,6 +2052,10 @@ class CursorPaginationTests(unittest.TestCase):
             patch("scanner.parse_page", return_value=([], {
                 "addition_ids": [], "malformed_count": 0, "malformed_samples": [],
             })),
+            patch("scanner.fetch_bloxswaps_items_map", return_value={
+                "a-id": {"id": "a-id", "displayName": "Knife A"},
+                "b-id": {"id": "b-id", "displayName": "Knife B"},
+            }),
             patch("scanner._last_successful_scan_timestamp", return_value=2_000_000_000),
             patch("scanner.MAX_BACKLOG_RECHECK_PAGES", 2),
             patch("scanner.bloxswaps_api_get_json", side_effect=responses) as api,
