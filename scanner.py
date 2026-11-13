@@ -2889,6 +2889,21 @@ def scan_once():
     print(f"[state] Pending listings queued for recheck: {len(pending_ids)}")
     print("[stage] Fetching BloxSwaps listings and cursor pages")
     listings, stats, discovered_ids = fetch_bloxswaps_all(seen_ads, pending_ids.keys(), watch_state.keys())
+    # Discord is an additional source, normalized into the same listing schema.
+    # Missing/unreadable Discord state is handled fail-closed by the parser.
+    from discord_parser import load_discord_listings
+
+    discord_listings, discord_rejected = load_discord_listings()
+    if discord_listings:
+        existing_ids = {str(row.get("id") or "") for row in listings}
+        fresh_discord = [row for row in discord_listings if str(row.get("id") or "") not in existing_ids]
+        listings.extend(fresh_discord)
+    else:
+        fresh_discord = []
+    print(
+        f"[discord-parser] parsed={len(discord_listings)} "
+        f"new_for_batch={len(fresh_discord)} rejected={discord_rejected}"
+    )
     first_seen_ads = load_first_seen_ads()
     first_seen_changed = False
     observed_at = datetime.now(timezone.utc).isoformat()
