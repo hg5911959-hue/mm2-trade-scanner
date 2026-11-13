@@ -15,6 +15,7 @@ BLOCK_FILE = Path("data/api_key_blocked.json")
 DAILY_REQUEST_LIMIT = max(1, int(os.environ.get("RBLXVALUE_DAILY_REQUEST_LIMIT", "60")))
 BLOCK_SECONDS = 6 * 60 * 60
 ALERT_INTERVAL_SECONDS = 24 * 60 * 60
+ALERT_RETRY_SECONDS = 5 * 60
 REQUESTS_THIS_RUN = 0
 
 
@@ -111,6 +112,7 @@ def mark_key_blocked(reason: str, *, now: float | None = None, key: str | None =
         "key_fingerprint": fingerprint,
         "reason": str(reason)[:120],
         "last_alert_attempt_epoch": old.get("last_alert_attempt_epoch") if same_key else None,
+        "last_alert_sent_epoch": old.get("last_alert_sent_epoch") if same_key else None,
     }
     _atomic_json(path, state)
     return state
@@ -125,13 +127,34 @@ def claim_block_alert(*, now: float | None = None, key: str | None = None,
     if not state or state.get("key_fingerprint") != key_fingerprint(secret):
         return False
     try:
-        last = float(state.get("last_alert_attempt_epoch") or 0)
+        last_sent = float(state.get("last_alert_sent_epoch") or 0)
     except (TypeError, ValueError):
-        last = 0
-    if current - last < ALERT_INTERVAL_SECONDS:
+        last_sent = 0
+    if last_sent > 0 and current - last_sent < ALERT_INTERVAL_SECONDS:
+        return False
+    try:
+        last_attempt = float(state.get("last_alert_attempt_epoch") or 0)
+    except (TypeError, ValueError):
+        last_attempt = 0
+    if last_attempt > 0 and current - last_attempt < ALERT_RETRY_SECONDS:
         return False
     state["last_alert_attempt_epoch"] = current
     state["last_alert_attempt_at_utc"] = _now_iso(current)
+    _atomic_json(path, state)
+    return True
+
+
+def mark_block_alert_sent(*, now: float | None = None, key: str | None = None,
+                          block_path: Path | None = None) -> bool:
+    """Record successful Telegram delivery; failed attempts remain retryable."""
+    current = time.time() if now is None else float(now)
+    secret = os.environ.get("RBLXVALUE_API_KEY", "") if key is None else key
+    path = block_path or BLOCK_FILE
+    state = _read_json(path)
+    if not state or state.get("key_fingerprint") != key_fingerprint(secret):
+        return False
+    state["last_alert_sent_epoch"] = current
+    state["last_alert_sent_at_utc"] = _now_iso(current)
     _atomic_json(path, state)
     return True
 
