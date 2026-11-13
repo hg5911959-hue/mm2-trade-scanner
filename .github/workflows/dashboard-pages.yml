@@ -2,7 +2,7 @@ name: Publish MM2 Market Dashboard
 
 on:
   workflow_run:
-    workflows: ["MM2 Trade Scanner"]
+    workflows: ["MM2 Trade Scanner", "MM2 Scanner Scheduler"]
     types: [completed]
     branches: [main]
   workflow_dispatch:
