@@ -90,6 +90,24 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
                 errors.append("metrics contains an invalid counter")
                 break
 
+    pending_schedule = documents.get("pending_recheck_schedule.json")
+    pending_schedule_path = root / "pending_recheck_schedule.json"
+    if pending_schedule_path.exists():
+        if not isinstance(pending_schedule, dict) or pending_schedule.get("version") != 1:
+            errors.append("pending recheck schedule root or version is invalid")
+        elif not isinstance(pending_schedule.get("schedule"), dict):
+            errors.append("pending recheck schedule entries must be an object")
+        else:
+            for entry in pending_schedule["schedule"].values():
+                if not isinstance(entry, dict):
+                    errors.append("pending recheck schedule entry is invalid")
+                    break
+                attempts = entry.get("attempts")
+                next_check = entry.get("next_check_at")
+                if not isinstance(attempts, int) or attempts < 0 or not _finite_positive(next_check):
+                    errors.append("pending recheck schedule counter or timestamp is invalid")
+                    break
+
     budget = documents.get("rblxvalue_request_budget.json")
     if (root / "rblxvalue_request_budget.json").exists() and isinstance(budget, dict):
         timestamps = budget.get("request_timestamps_epoch")

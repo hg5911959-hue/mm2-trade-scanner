@@ -52,6 +52,8 @@ ALERTED_FILE = Path("data/alerted.json")
 UNCERTAIN_FILE = Path("data/telegram_uncertain.json")
 SEEN_FILE = Path("data/seen_ads.json")
 PENDING_FILE = Path("data/pending_recheck.json")
+PENDING_RECHECK_SCHEDULE_FILE = Path("data/pending_recheck_schedule.json")
+PENDING_RECHECK_BACKOFF_SECONDS = (300, 900, 1800, 3600, 21600)
 FIRST_SEEN_FILE = Path("data/first_seen_ads.json")
 LAST_SUCCESS_FILE = Path("data/last_successful_scan.json")
 WATCH_FILE = Path("data/watch_ads.json")
@@ -2659,6 +2661,85 @@ def save_pending_ids(pending):
     }, indent=2) + "\n")
 
 
+def load_pending_recheck_schedule():
+    """Load retry schedule metadata separately from first-seen/expiry timestamps."""
+    if not PENDING_RECHECK_SCHEDULE_FILE.exists():
+        return {}
+    try:
+        data = json.loads(PENDING_RECHECK_SCHEDULE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("[state] Pending recheck schedule is unreadable; refusing an unsafe reset.") from exc
+    if not isinstance(data, dict) or data.get("version") != 1:
+        raise RuntimeError("[state] Pending recheck schedule has an unsupported structure.")
+    schedule = data.get("schedule")
+    if not isinstance(schedule, dict):
+        raise RuntimeError("[state] Pending recheck schedule must contain an object.")
+    result = {}
+    for ad_id, entry in schedule.items():
+        if not isinstance(entry, dict):
+            raise RuntimeError("[state] Pending recheck schedule entry is invalid.")
+        attempts = entry.get("attempts")
+        next_check = entry.get("next_check_at")
+        if not isinstance(attempts, int) or attempts < 0:
+            raise RuntimeError("[state] Pending recheck attempt count is invalid.")
+        try:
+            next_check = float(next_check)
+        except (TypeError, ValueError):
+            raise RuntimeError("[state] Pending recheck next_check_at is invalid.") from None
+        if not math.isfinite(next_check) or next_check <= 0:
+            raise RuntimeError("[state] Pending recheck next_check_at is invalid.")
+        result[str(ad_id)] = {"attempts": attempts, "next_check_at": next_check}
+    return result
+
+
+def save_pending_recheck_schedule(schedule):
+    """Atomically persist bounded retry metadata for unresolved listings."""
+    atomic_write_text(PENDING_RECHECK_SCHEDULE_FILE, json.dumps({
+        "version": 1, "schedule": schedule,
+    }, sort_keys=True, indent=2) + "\n")
+
+
+def due_pending_ids_for_scan(pending, schedule, now=None):
+    """Return only unresolved listing IDs whose retry backoff has elapsed."""
+    current = time.time() if now is None else float(now)
+    due = {}
+    for ad_id, first_seen in pending.items():
+        entry = schedule.get(str(ad_id))
+        if not isinstance(entry, dict) or float(entry.get("next_check_at", 0)) <= current:
+            due[str(ad_id)] = first_seen
+    return due
+
+
+def record_pending_recheck_attempts(due_ids, pending, schedule, now=None):
+    """Advance retry backoff for checked IDs and initialize newly pending IDs."""
+    current = time.time() if now is None else float(now)
+    updated = {
+        str(ad_id): dict(entry)
+        for ad_id, entry in schedule.items()
+        if str(ad_id) in pending and isinstance(entry, dict)
+    }
+    for ad_id in due_ids:
+        key = str(ad_id)
+        if key not in pending:
+            updated.pop(key, None)
+            continue
+        previous = updated.get(key, {})
+        attempts = int(previous.get("attempts", 0)) + 1
+        delay = PENDING_RECHECK_BACKOFF_SECONDS[
+            min(attempts - 1, len(PENDING_RECHECK_BACKOFF_SECONDS) - 1)
+        ]
+        updated[key] = {"attempts": attempts, "next_check_at": current + delay}
+    for ad_id in pending:
+        key = str(ad_id)
+        if key not in updated:
+            updated[key] = {
+                "attempts": 0,
+                "next_check_at": current + PENDING_RECHECK_BACKOFF_SECONDS[0],
+            }
+    save_pending_recheck_schedule(updated)
+    return updated
+
+
 def save_seen_ads(ad_ids):
     ordered = sorted(set(str(value) for value in ad_ids if value))[-50000:]
     atomic_write_text(SEEN_FILE, json.dumps({
@@ -3160,15 +3241,23 @@ def scan_once():
     print("[stage] Loading seen-offer and pending-recheck state")
     seen_ads = load_seen_ads()
     pending_ids = load_pending_ids()
+    pending_schedule = load_pending_recheck_schedule()
+    due_pending_ids = due_pending_ids_for_scan(pending_ids, pending_schedule)
     watch_state = load_watch_state()
     # If the seen file was lost but pending items survive, do not cold-start:
-    # search the feed for those unresolved IDs before establishing a baseline.
+    # search due unresolved IDs before establishing a baseline.
     if seen_ads is None and (pending_ids or watch_state):
         seen_ads = set()
-    print(f"[state] Pending listings queued for recheck: {len(pending_ids)}")
+    print(
+        f"[state] Pending listings: {len(pending_ids)} total; "
+        f"{len(due_pending_ids)} due for recheck"
+    )
     print("[stage] Fetching BloxSwaps listings and cursor pages")
     bloxswaps_watch_ids = [key for key in watch_state if not str(key).startswith("discord:")]
-    listings, stats, discovered_ids = fetch_bloxswaps_all(seen_ads, pending_ids.keys(), bloxswaps_watch_ids)
+    listings, stats, discovered_ids = fetch_bloxswaps_all(seen_ads, due_pending_ids.keys(), bloxswaps_watch_ids)
+    pending_schedule = record_pending_recheck_attempts(
+        due_pending_ids, pending_ids, pending_schedule
+    )
     # The collector writes a bounded local JSON file; parse it into the same
     # normalized schema, but keep its IDs namespaced away from BloxSwaps cursors.
     from discord_parser import load_discord_listings
@@ -3220,16 +3309,26 @@ def scan_once():
         seen_ads = set(seen_ads or [])
     pending_count_before = len(pending_ids)
     for ad_id in stats.get("unparsed_ad_ids", []):
-        pending_ids.setdefault(str(ad_id), time.time())
+        key = str(ad_id)
+        pending_ids.setdefault(key, time.time())
+        if key not in pending_schedule:
+            pending_schedule[key] = {
+                "attempts": 0,
+                "next_check_at": time.time() + PENDING_RECHECK_BACKOFF_SECONDS[0],
+            }
     if len(pending_ids) != pending_count_before:
         save_pending_ids(pending_ids)
+        save_pending_recheck_schedule(pending_schedule)
     addition_ids = set(stats.get("addition_ids", []))
     if addition_ids:
         seen_ads.update(addition_ids)
         for ad_id in addition_ids:
-            pending_ids.pop(str(ad_id), None)
+            key = str(ad_id)
+            pending_ids.pop(key, None)
+            pending_schedule.pop(key, None)
         save_seen_ads(seen_ads)
         save_pending_ids(pending_ids)
+        save_pending_recheck_schedule(pending_schedule)
     if stats.get("watch_remaining_ids") and stats.get("pagination_complete"):
         missing_watch_ids = set(stats.get("watch_remaining_ids", []))
         for ad_id in missing_watch_ids:
@@ -3373,6 +3472,12 @@ def scan_once():
         source_id = str(listing.get("source_ad_id") or "")
         if source_id:
             pending_ids.setdefault(source_id, time.time())
+            if source_id not in pending_schedule:
+                pending_schedule[source_id] = {
+                    "attempts": 0,
+                    "next_check_at": time.time() + PENDING_RECHECK_BACKOFF_SECONDS[0],
+                }
+                save_pending_recheck_schedule(pending_schedule)
             save_pending_ids(pending_ids)
 
     def mark_seen_ad(listing):
@@ -3384,7 +3489,9 @@ def scan_once():
             save_seen_ads(seen_ads)
         if source_id and source_id in pending_ids:
             pending_ids.pop(source_id, None)
+            pending_schedule.pop(source_id, None)
             save_pending_ids(pending_ids)
+            save_pending_recheck_schedule(pending_schedule)
 
     skipped_unknown = 0
     sent = 0
