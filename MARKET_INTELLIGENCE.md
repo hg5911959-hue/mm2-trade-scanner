@@ -8,11 +8,11 @@ This extension is additive. The existing BloxSwaps scanner, Supreme valuation, T
 The existing production scanner continues to collect BloxSwaps listings and calculate trade values using the existing verified Supreme Values pipeline. No AI model is allowed to invent or replace these values.
 
 ### Discord (authorized read-only bot)
-The repository now includes `discord_collector.py`, an official Discord bot client that discovers readable text channels only inside server IDs explicitly configured by the owner. It does not send messages, moderate, join voice, enumerate unrelated channels, or use a personal account token/self-bot.
+The repository now includes `discord_collector.py`, an official Discord bot client that discovers readable text channels and active threads only inside the two server IDs configured in the workflow. It does not send messages, moderate, join voice, access other servers, or use a personal account token/self-bot.
 
 Configure:
 - GitHub Actions Secret: `DISCORD_BOT_TOKEN` — the bot token from Discord Developer Portal.
-- GitHub Actions Variable: `DISCORD_GUILD_IDS` — comma- or semicolon-separated numeric server IDs to monitor.
+- The two approved server IDs are configured directly in `.github/workflows/scan.yml` (they are public identifiers, not secrets).
 
 In Discord Developer Portal, enable **Message Content Intent**. Invite the bot into each server with only **View Channels** and **Read Message History**, and ensure those permissions are granted on the trading channels the bot should read. Do not grant Administrator, Send Messages, Manage Messages, or other write permissions.
 
@@ -39,4 +39,4 @@ Only public listing text, message links, and normalized trade details should be 
 
 ## Current implementation status
 
-The repository has a read-only Discord collector, a BloxSwaps scanner, optional Gemini free-tier commentary, a manual DeepSeek prompt exporter, and unit tests. Discord collection activates only after the owner configures the bot token secret and server ID variable. Parsing Discord messages into standardized item/quantity offers and combining them with BloxSwaps market data is the next integration stage.
+The repository has a read-only Discord collector, a BloxSwaps scanner, optional Gemini free-tier commentary, a manual DeepSeek prompt exporter, and unit tests. Discord collection activates after the owner configures the `DISCORD_BOT_TOKEN` secret and the bot is present in both configured servers with the required permissions. Parsing Discord messages into standardized item/quantity offers and combining them with BloxSwaps market data is the next integration stage.
