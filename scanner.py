@@ -3961,6 +3961,8 @@ def scan_once(include_backlog_rechecks=True):
             listing, op["give_total"], op["give_lines"],
             op["receive_total"], op["receive_lines"], op["difference"]
         )
+        if op.get("fast_lane"):
+            message = "⚡ PRIORITY — exceptional verified opportunity.\n\n" + message
         if op.get("manual_review"):
             message = (
                 "⚠️ MANUAL CHECK — profit is not guaranteed; verify the stack before trading.\n\n"
@@ -3996,7 +3998,7 @@ def scan_once(include_backlog_rechecks=True):
             message += "\nSECOND-SOURCE CHECK (MM2Values): " + secondary_note
         trade_id = listing["id"]
         print(
-            f"[telegram] Sending ranked trade id={trade_id}; "
+            f"[telegram] Sending trade id={trade_id}; "
             f"profit={op['difference']:g}"
         )
         # Persist a delivery guard before the non-idempotent Telegram request.
@@ -4130,6 +4132,7 @@ def scan_once(include_backlog_rechecks=True):
             max_per_scan == 0 or sent < max_per_scan
         ):
             before_send = sent
+            result["fast_lane"] = True
             print(
                 f"[fast-lane] Exceptional offer {trade_id} qualifies "
                 f"(margin={result['margin']:.2f}%, demand={result['receive_demand_score']:.2f}/10); "
