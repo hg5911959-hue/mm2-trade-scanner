@@ -705,7 +705,7 @@ class ReliabilityTests(unittest.TestCase):
         values["snowstorm"] = {"name": "Snowstorm", "value": 250}
         result, reason = scanner.evaluate_listing(ignored_only, values)
         self.assertIsNone(result)
-        self.assertEqual(reason, ["one side has no valued items"])
+        self.assertEqual(reason, ["Brew has no numeric Supreme value"])
 
     def test_watchdog_should_alert_windows(self):
         self.assertFalse(watchdog.should_alert(19))
@@ -1050,7 +1050,7 @@ class ReliabilityTests(unittest.TestCase):
             self.assertNotIn("MANUAL VALUE CHECK", "".join(trade_messages))
             self.assertTrue((root / "alerted.json").exists())
 
-    def test_main_caps_alerts_and_defers_remaining_offers_across_scans(self):
+    def test_all_qualified_offers_send_without_per_run_cap(self):
         def html(ad_ids):
             cards = []
             for ad in ad_ids:
@@ -1089,6 +1089,7 @@ class ReliabilityTests(unittest.TestCase):
                 patch("scanner.ALERT_DELAY_SECONDS", 0),
             ):
                 scanner.main()
+                self.assertEqual(len(sent), 5)
                 scanner.main()
                 scanner.main()
                 alerted = scanner.load_alerted()
