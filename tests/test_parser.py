@@ -2901,7 +2901,7 @@ class WorkflowSecurityTests(unittest.TestCase):
                     continue
                 reference = line.split("uses:", 1)[1].split("#", 1)[0].strip()
                 if reference.startswith("./.github/workflows/"):
-                    local_workflow = ROOT / reference.removeprefix("./")
+                    local_workflow = Path(reference.removeprefix("./"))
                     self.assertTrue(local_workflow.is_file(), msg=f"{path}: {reference}")
                     continue
                 self.assertIn("@", reference, msg=f"{path}: {reference}")
