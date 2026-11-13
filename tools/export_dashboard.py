@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +18,7 @@ def _decode_json(value: str | None, fallback: Any) -> Any:
 
 def build_dashboard_data(db_path: str | Path) -> dict[str, Any]:
     path = Path(db_path)
-    generated = datetime.now(timezone.utc).isoformat()
+    generated = datetime.now(UTC).isoformat()
     empty = {
         "generatedAt": generated,
         "summary": {
