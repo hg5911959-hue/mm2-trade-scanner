@@ -1544,6 +1544,28 @@ class ReceiveMarketQualityTests(unittest.TestCase):
         self.assertTrue(any("Demand unverified" in item for item in missing))
 
 
+class FastLaneQualificationTests(unittest.TestCase):
+    def _result(self, **overrides):
+        result = {
+            "difference": 100, "profit_worst": 100, "margin": 15,
+            "manual_review": False, "uncertain_items": [],
+            "receive_demand_score": 6, "receive_stability_score": 3,
+        }
+        result.update(overrides)
+        return result
+
+    def test_exceptional_verified_trade_qualifies_for_fast_lane(self):
+        self.assertTrue(scanner.qualifies_fast_lane(self._result()))
+
+    def test_fast_lane_rejects_below_margin_or_demand_threshold(self):
+        self.assertFalse(scanner.qualifies_fast_lane(self._result(margin=14.99)))
+        self.assertFalse(scanner.qualifies_fast_lane(self._result(receive_demand_score=5.99)))
+
+    def test_fast_lane_rejects_manual_review_or_missing_quality(self):
+        self.assertFalse(scanner.qualifies_fast_lane(self._result(manual_review=True)))
+        self.assertFalse(scanner.qualifies_fast_lane(self._result(receive_stability_score=None)))
+
+
 class SourceMetaSnapshotTests(unittest.TestCase):
     def test_cache_requires_both_source_timestamp_and_item_count_to_match(self):
         document = {"source_last_updated": "2026-11-14 00:00:00", "source_items_total": 1091}
