@@ -54,6 +54,14 @@ SEEN_FILE = Path("data/seen_ads.json")
 PENDING_FILE = Path("data/pending_recheck.json")
 PENDING_RECHECK_SCHEDULE_FILE = Path("data/pending_recheck_schedule.json")
 PENDING_RECHECK_BACKOFF_SECONDS = (300, 900, 1800, 3600, 21600)
+VALID_PENDING_REASONS = frozenset({
+    "legacy_unclassified", "unmatched_value", "stability_unverified",
+    "stability_blocked", "quantity_uncertain", "unparsed_feed",
+    "telegram_failure", "deferred_offer",
+})
+PRIORITY_PENDING_REASONS = frozenset({
+    "quantity_uncertain", "unparsed_feed", "telegram_failure", "deferred_offer",
+})
 MAX_PENDING_RECHECK_PER_SCAN = max(1, int(os.environ.get('MAX_PENDING_RECHECK_PER_SCAN', '50')))
 MAX_BACKLOG_RECHECK_PAGES = max(1, int(os.environ.get('MAX_BACKLOG_RECHECK_PAGES', '25')))
 BACKLOG_RECHECK_EVERY_CYCLES = max(1, int(os.environ.get('BACKLOG_RECHECK_EVERY_CYCLES', '4')))
@@ -2733,7 +2741,14 @@ def load_pending_recheck_schedule():
             raise RuntimeError("[state] Pending recheck next_check_at is invalid.") from None
         if not math.isfinite(next_check) or next_check <= 0:
             raise RuntimeError("[state] Pending recheck next_check_at is invalid.")
+        reason = entry.get("reason")
+        if reason is not None and (
+            not isinstance(reason, str) or reason not in VALID_PENDING_REASONS
+        ):
+            raise RuntimeError("[state] Pending recheck reason is invalid.")
         result[str(ad_id)] = {"attempts": attempts, "next_check_at": next_check}
+        if reason:
+            result[str(ad_id)]["reason"] = reason
     return result
 
 
@@ -2769,15 +2784,32 @@ def due_pending_ids_for_scan(pending, schedule, now=None, limit=MAX_PENDING_RECH
 
 
 
-def seed_pending_ids_as_seen(seen_ads, pending_ids):
-    """Keep unresolved IDs out of the hot feed while retaining their recheck queue."""
+def seed_pending_ids_as_seen(seen_ads, pending_ids, schedule=None):
+    """Keep low-priority unresolved IDs out of the hot feed; leave urgent retries visible."""
     if seen_ads is None:
         return None
+    schedule = schedule or {}
     for ad_id in pending_ids or ():
         value = str(ad_id or "").strip()
-        if value:
+        entry = schedule.get(value) or {}
+        reason = entry.get("reason")
+        attempts = int(entry.get("attempts", 0))
+        # Preserve one fast retry for legacy pending entries whose old schedule
+        # cannot tell whether they were deferred or failed to deliver.
+        legacy_needs_fast_retry = reason is None and attempts <= 1
+        if value and reason not in PRIORITY_PENDING_REASONS and not legacy_needs_fast_retry:
             seen_ads.add(value)
     return seen_ads
+
+
+def pending_reason_from_missing(missing):
+    """Classify why a listing cannot yet be valued without guessing its status."""
+    detail = " ".join(str(value).casefold() for value in (missing or []))
+    if "quantity unknown" in detail or "quantity uncertain" in detail:
+        return "quantity_uncertain"
+    if "stability" in detail:
+        return "stability_blocked" if "excluded" in detail else "stability_unverified"
+    return "unmatched_value"
 
 def record_pending_recheck_attempts(due_ids, pending, schedule, now=None):
     """Advance retry backoff for checked IDs and initialize newly pending IDs."""
@@ -2797,13 +2829,17 @@ def record_pending_recheck_attempts(due_ids, pending, schedule, now=None):
         delay = PENDING_RECHECK_BACKOFF_SECONDS[
             min(attempts - 1, len(PENDING_RECHECK_BACKOFF_SECONDS) - 1)
         ]
-        updated[key] = {"attempts": attempts, "next_check_at": current + delay}
+        reason = previous.get("reason", "legacy_unclassified")
+        updated[key] = {
+            "attempts": attempts, "next_check_at": current + delay, "reason": reason,
+        }
     for ad_id in pending:
         key = str(ad_id)
         if key not in updated:
             updated[key] = {
                 "attempts": 0,
                 "next_check_at": current + PENDING_RECHECK_BACKOFF_SECONDS[0],
+                "reason": "legacy_unclassified",
             }
     save_pending_recheck_schedule(updated)
     return updated
@@ -3316,7 +3352,7 @@ def scan_once(include_backlog_rechecks=True):
     if seen_ads is not None:
         new_pending_seen = set(pending_ids) - seen_ads
         if new_pending_seen:
-            seed_pending_ids_as_seen(seen_ads, new_pending_seen)
+            seed_pending_ids_as_seen(seen_ads, new_pending_seen, pending_schedule)
             save_seen_ads(seen_ads)
             print(
                 f"[state] Seeded {len(new_pending_seen)} pending IDs into the seen set; "
@@ -3398,7 +3434,7 @@ def scan_once(include_backlog_rechecks=True):
         seed_ids = set(str(value) for value in stats.get("cold_start_seed_ids", discovered_ids))
         save_seen_ads(seed_ids)
         seen_ads = seed_ids
-        seed_pending_ids_as_seen(seen_ads, pending_ids)
+        seed_pending_ids_as_seen(seen_ads, pending_ids, pending_schedule)
         save_seen_ads(seen_ads)
         print(
             f"[state] Cold-start baseline saved for {len(seed_ids)} historical posts; "
@@ -3414,10 +3450,15 @@ def scan_once(include_backlog_rechecks=True):
     for ad_id in stats.get("unparsed_ad_ids", []):
         key = str(ad_id)
         pending_ids.setdefault(key, time.time())
-        if key not in pending_schedule:
+        if key in seen_ads:
+            seen_ads.discard(key)
+            save_seen_ads(seen_ads)
+        if key not in pending_schedule or pending_schedule[key].get("reason") != "unparsed_feed":
+            previous_attempts = int(pending_schedule.get(key, {}).get("attempts", 0))
             pending_schedule[key] = {
-                "attempts": 0,
-                "next_check_at": time.time() + PENDING_RECHECK_BACKOFF_SECONDS[0],
+                "attempts": previous_attempts,
+                "next_check_at": time.time(),
+                "reason": "unparsed_feed",
             }
     if len(pending_ids) != pending_count_before:
         save_pending_ids(pending_ids)
@@ -3574,18 +3615,30 @@ def scan_once(include_backlog_rechecks=True):
             alerted_set.add(trade_id)
             save_alerted(alerted)
 
-    def mark_pending(listing):
+    def mark_pending(listing, reason="legacy_unclassified"):
         if listing.get("source") == "discord":
             return  # Discord messages are reloaded from their own bounded source file.
         source_id = str(listing.get("source_ad_id") or "")
         if source_id:
-            pending_ids.setdefault(source_id, time.time())
-            if source_id not in pending_schedule:
+            now = time.time()
+            pending_ids.setdefault(source_id, now)
+            previous = pending_schedule.get(source_id, {})
+            attempts = int(previous.get("attempts", 0))
+            if reason in PRIORITY_PENDING_REASONS:
                 pending_schedule[source_id] = {
-                    "attempts": 0,
-                    "next_check_at": time.time() + PENDING_RECHECK_BACKOFF_SECONDS[0],
+                    "attempts": attempts, "next_check_at": now, "reason": reason,
                 }
-                save_pending_recheck_schedule(pending_schedule)
+                if source_id in seen_ads:
+                    seen_ads.discard(source_id)
+                    save_seen_ads(seen_ads)
+            else:
+                next_check = previous.get("next_check_at")
+                if previous.get("reason") != reason or not next_check:
+                    next_check = now + PENDING_RECHECK_BACKOFF_SECONDS[0]
+                pending_schedule[source_id] = {
+                    "attempts": attempts, "next_check_at": float(next_check), "reason": reason,
+                }
+            save_pending_recheck_schedule(pending_schedule)
             save_pending_ids(pending_ids)
 
     def mark_seen_ad(listing, clear_pending=True):
@@ -3682,7 +3735,7 @@ def scan_once(include_backlog_rechecks=True):
         except Exception as exc:
             uncertain_ids.discard(trade_id)
             save_uncertain_ids(uncertain_ids)
-            mark_pending(listing)
+            mark_pending(listing, reason="telegram_failure")
             print(
                 f"[telegram] Definite send failure for listing {trade_id}: "
                 f"{type(exc).__name__}; queued for a later scan and continuing the batch."
@@ -3760,7 +3813,8 @@ def scan_once(include_backlog_rechecks=True):
                 f"[skip-unknown] Listing retained for recheck; missing/unvalued items: "
                 f"{', '.join(missing)}"
             )
-            mark_pending(listing)
+            pending_reason = pending_reason_from_missing(missing)
+            mark_pending(listing, reason=pending_reason)
             unknown_names = [
                 str(value).split(" (", 1)[0]
                 for value in missing
@@ -3768,17 +3822,19 @@ def scan_once(include_backlog_rechecks=True):
                 and not str(value).startswith("one side has")
                 and "quantity unknown" not in str(value).casefold()
                 and "quantity uncertain" not in str(value).casefold()
+                and "stability" not in str(value).casefold()
             ]
             if unknown_names:
                 record_unmatched_names(unknown_names)
             update_watch_entry(watch_state, listing, values, aliases)
-            # Keep it out of the hot feed loop, but retain its pending marker so
-            # a later bounded recheck or a changed value snapshot can resolve it.
-            mark_seen_ad(listing, clear_pending=False)
+            # Low-priority missing values/stability remain queued but leave the
+            # hot path. Urgent quantity uncertainty stays visible for quick retry.
+            if pending_reason not in PRIORITY_PENDING_REASONS:
+                mark_seen_ad(listing, clear_pending=False)
             continue
         if not qualifies(result):
             if result.get("uncertain_items"):
-                mark_pending(listing)
+                mark_pending(listing, reason="quantity_uncertain")
             else:
                 mark_seen_ad(listing)
             update_watch_entry(watch_state, listing, values, aliases)
@@ -3798,7 +3854,7 @@ def scan_once(include_backlog_rechecks=True):
         update_metrics(increments={"alerts_deferred": deferred})
     for opportunity in deferred_items:
         if os.environ.get("DRY_RUN", "").strip().casefold() != "true":
-            mark_pending(opportunity["listing"])
+            mark_pending(opportunity["listing"], reason="deferred_offer")
     for opportunity in selected:
         deliver_opportunity(opportunity)
     if deferred and os.environ.get("DRY_RUN", "").strip().casefold() != "true":

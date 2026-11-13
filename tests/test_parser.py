@@ -1175,6 +1175,7 @@ class ReliabilityTests(unittest.TestCase):
                 patch("scanner.HISTORY_FILE", root / "history.csv"),
                 patch("scanner.SEEN_FILE", root / "seen_ads.json"),
                  patch("scanner.PENDING_FILE", root / "pending.json"),
+                 patch("scanner.PENDING_RECHECK_SCHEDULE_FILE", root / "pending_schedule.json"),
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
                  patch("scanner.WATCH_FILE", root / "watch.json"),
                 patch("scanner.load_supreme_values", return_value=values),
@@ -1192,6 +1193,10 @@ class ReliabilityTests(unittest.TestCase):
             self.assertEqual(len(alerted), 1)
             seen = json.loads((root / "seen_ads.json").read_text(encoding="utf-8"))["ad_ids"]
             self.assertEqual(seen, ["offer-two"])
+            pending = json.loads((root / "pending.json").read_text(encoding="utf-8"))["pending"]
+            schedule = json.loads((root / "pending_schedule.json").read_text(encoding="utf-8"))["schedule"]
+            self.assertIn("offer-one", pending)
+            self.assertEqual(schedule["offer-one"]["reason"], "telegram_failure")
 
 
     def test_unbounded_unknown_stack_is_never_sent_as_a_profitable_trade(self):
@@ -1376,6 +1381,55 @@ class ReliabilityTests(unittest.TestCase):
             self.assertEqual(len(alerted), 5)
             self.assertEqual(len(set(alerted)), 5)
             self.assertEqual(len((root / "history.csv").read_text().splitlines()), 6)
+
+    def test_deferred_offers_are_retried_on_the_next_fast_scan(self):
+        cards = []
+        for ad in ("defer-a", "defer-b", "defer-c", "defer-d", "defer-e"):
+            cards.append(f"""
+            <article>
+              <div>Propose <img alt="Knife B"></div>
+              <div>Recherche <img alt="Knife A"></div>
+              <a href="/fr/trade-mm2?ad={ad}">Discussion</a>
+              <a href="/fr/users/123">Owner</a>
+            </article>""")
+        page = "<html><body>" + "".join(cards) + "</body></html>"
+        values = {
+            "knife a": {"name": "Knife A", "value": 10},
+            "knife b": {"name": "Knife B", "value": 20},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sent = []
+            with (
+                patch("scanner.BOT_TOKEN", "test-token"),
+                patch("scanner.CHAT_ID", "123"),
+                patch("scanner.ALERTED_FILE", root / "alerted.json"),
+                patch("scanner.FAILURE_FILE", root / "failure.json"),
+                patch("scanner.HISTORY_FILE", root / "history.csv"),
+                patch("scanner.SEEN_FILE", root / "seen_ads.json"),
+                patch("scanner.PENDING_FILE", root / "pending.json"),
+                patch("scanner.PENDING_RECHECK_SCHEDULE_FILE", root / "pending_schedule.json"),
+                patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
+                patch("scanner.WATCH_FILE", root / "watch.json"),
+                patch("scanner.load_supreme_values", return_value=values),
+                patch("scanner.fetch_bloxswaps", return_value=with_rsc(page)),
+                patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)),
+                patch("scanner.compare_secondary_values", return_value=""),
+                patch("scanner.ALERT_DELAY_SECONDS", 0),
+            ):
+                with patch.dict(os.environ, {"MAX_ALERTS_PER_SCAN": "2"}):
+                    scanner.main()
+                first_pending = json.loads((root / "pending.json").read_text(encoding="utf-8"))["pending"]
+                first_schedule = json.loads((root / "pending_schedule.json").read_text(encoding="utf-8"))["schedule"]
+                self.assertEqual(sum("MARGIN:" in message for message in sent), 2)
+                self.assertEqual(len(first_pending), 3)
+                self.assertTrue(all(first_schedule[key]["reason"] == "deferred_offer" for key in first_pending))
+                with patch.dict(os.environ, {"MAX_ALERTS_PER_SCAN": "5"}):
+                    scanner.main()
+            self.assertEqual(sum("MARGIN:" in message for message in sent), 5)
+            alerted = json.loads((root / "alerted.json").read_text(encoding="utf-8"))["alerted"]
+            self.assertEqual(len(alerted), 5)
+            self.assertEqual(json.loads((root / "pending.json").read_text(encoding="utf-8"))["pending"], {})
 
     def test_main_alerts_visible_qualifying_offers_once(self):
         def html(ad_ids):

@@ -37,13 +37,61 @@ class PendingRecheckScheduleTests(unittest.TestCase):
         selected = scanner.due_pending_ids_for_scan(pending, schedule, now=1000, limit=2)
         self.assertEqual(set(selected), {"never-checked-a", "never-checked-b"})
 
-    def test_pending_ids_are_seeded_as_seen_without_being_removed_from_queue(self):
+    def test_unclassified_pending_without_schedule_remains_retryable(self):
         seen = {"already-seen"}
         pending = {"pending-1": 100.0, "pending-2": 200.0}
         result = scanner.seed_pending_ids_as_seen(seen, pending)
-        self.assertEqual(result, {"already-seen", "pending-1", "pending-2"})
+        self.assertEqual(result, {"already-seen"})
         self.assertEqual(set(pending), {"pending-1", "pending-2"})
         self.assertIsNone(scanner.seed_pending_ids_as_seen(None, pending))
+
+    def test_priority_pending_reasons_are_not_seeded_as_seen(self):
+        seen = {"already-seen"}
+        pending = {
+            "ordinary": 1.0, "deferred": 2.0, "failed": 3.0,
+            "quantity": 4.0, "unparsed": 5.0,
+        }
+        schedule = {
+            "ordinary": {"attempts": 1, "next_check_at": 1000, "reason": "unmatched_value"},
+            "deferred": {"attempts": 0, "next_check_at": 1000, "reason": "deferred_offer"},
+            "failed": {"attempts": 0, "next_check_at": 1000, "reason": "telegram_failure"},
+            "quantity": {"attempts": 0, "next_check_at": 1000, "reason": "quantity_uncertain"},
+            "unparsed": {"attempts": 0, "next_check_at": 1000, "reason": "unparsed_feed"},
+        }
+        result = scanner.seed_pending_ids_as_seen(seen, pending, schedule)
+        self.assertEqual(result, {"already-seen", "ordinary"})
+        self.assertEqual(set(pending), {"ordinary", "deferred", "failed", "quantity", "unparsed"})
+
+    def test_legacy_pending_items_get_one_fast_retry_before_being_seeded(self):
+        seen = set()
+        pending = {"legacy-new": 1.0, "legacy-old": 2.0}
+        schedule = {
+            "legacy-new": {"attempts": 1, "next_check_at": 1000.0},
+            "legacy-old": {"attempts": 2, "next_check_at": 1000.0},
+        }
+        scanner.seed_pending_ids_as_seen(seen, pending, schedule)
+        self.assertEqual(seen, {"legacy-old"})
+
+    def test_pending_reason_classification_is_fail_closed(self):
+        self.assertEqual(scanner.pending_reason_from_missing(["Knife (quantity unknown)"]), "quantity_uncertain")
+        self.assertEqual(scanner.pending_reason_from_missing(["Knife (Supreme Stability unverified)"]), "stability_unverified")
+        self.assertEqual(scanner.pending_reason_from_missing(["Knife (Supreme Stability: Decreasing; excluded)"]), "stability_blocked")
+        self.assertEqual(scanner.pending_reason_from_missing(["Knife"]), "unmatched_value")
+
+    def test_schedule_loader_preserves_valid_retry_reason(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "schedule.json"
+            path.write_text(json.dumps({
+                "version": 1,
+                "schedule": {
+                    "deferred": {"attempts": 1, "next_check_at": 1000, "reason": "deferred_offer"}
+                },
+            }), encoding="utf-8")
+            with patch.object(scanner, "PENDING_RECHECK_SCHEDULE_FILE", path):
+                self.assertEqual(
+                    scanner.load_pending_recheck_schedule()["deferred"]["reason"],
+                    "deferred_offer",
+                )
 
     def test_backlog_recheck_runs_only_on_configured_cycle(self):
         self.assertEqual(
@@ -74,11 +122,11 @@ class PendingRecheckScheduleTests(unittest.TestCase):
             path = Path(directory) / "pending_recheck_schedule.json"
             with patch.object(scanner, "PENDING_RECHECK_SCHEDULE_FILE", path):
                 schedule = scanner.record_pending_recheck_attempts({"ad": 100.0}, pending, {}, now=1000)
-                self.assertEqual(schedule["ad"], {"attempts": 1, "next_check_at": 1300})
+                self.assertEqual(schedule["ad"], {"attempts": 1, "next_check_at": 1300, "reason": "legacy_unclassified"})
                 schedule = scanner.record_pending_recheck_attempts({"ad": 100.0}, pending, schedule, now=1300)
-                self.assertEqual(schedule["ad"], {"attempts": 2, "next_check_at": 2200})
+                self.assertEqual(schedule["ad"], {"attempts": 2, "next_check_at": 2200, "reason": "legacy_unclassified"})
                 schedule = scanner.record_pending_recheck_attempts({"ad": 100.0}, pending, schedule, now=2200)
-                self.assertEqual(schedule["ad"], {"attempts": 3, "next_check_at": 4000})
+                self.assertEqual(schedule["ad"], {"attempts": 3, "next_check_at": 4000, "reason": "legacy_unclassified"})
                 for now in (4000, 7600, 11200):
                     schedule = scanner.record_pending_recheck_attempts({"ad": 100.0}, pending, schedule, now=now)
                 self.assertEqual(schedule["ad"]["attempts"], 6)
@@ -98,7 +146,7 @@ class PendingRecheckScheduleTests(unittest.TestCase):
                     {"resolved": 1.0}, pending, schedule, now=2000
                 )
         self.assertNotIn("resolved", updated)
-        self.assertEqual(updated["new-pending"], {"attempts": 0, "next_check_at": 2300})
+        self.assertEqual(updated["new-pending"], {"attempts": 0, "next_check_at": 2300, "reason": "legacy_unclassified"})
         self.assertEqual(updated["still-pending"], {"attempts": 2, "next_check_at": 1000})
 
     def test_schedule_loader_rejects_corrupt_state(self):
