@@ -2022,17 +2022,32 @@ def load_supreme_values():
                 items = old_page.get("items")
                 if not isinstance(items, list) or not items:
                     raise RuntimeError(f"[supreme] API returned 304 for offset {offset} without a cached page.")
-                total = int(old_page.get("total", len(items)))
+                reported_total = int(old_page.get("total", len(items)))
                 print(f"[supreme] Page offset={offset} unchanged by ETag; reusing {len(items)} cached rows")
             else:
                 if not isinstance(payload, dict):
                     raise RuntimeError("[supreme] API returned an invalid page structure.")
                 items = payload.get("items")
-                if not isinstance(items, list) or not items:
-                    if offset == 0:
-                        raise RuntimeError("[supreme] API returned no item list; no trade values will be guessed")
-                    break
-                total = int(payload.get("total", len(items)))
+                if not isinstance(items, list):
+                    raise RuntimeError("[supreme] API returned a page without an item list.")
+                reported_total = int(payload.get("total", len(items)))
+            if reported_total < 0:
+                raise RuntimeError("[supreme] API returned a negative item total.")
+            if total is not None and reported_total != total:
+                raise RuntimeError(
+                    f"[supreme] API item total changed during pagination ({total} -> {reported_total}); refusing partial snapshot."
+                )
+            total = reported_total
+            if not items:
+                if offset < total:
+                    raise RuntimeError(
+                        f"[supreme] API returned an empty page at offset {offset} before reported total {total}."
+                    )
+                break
+            if len(items) > page_size or offset + len(items) > total:
+                raise RuntimeError(
+                    f"[supreme] API page at offset {offset} exceeds the reported pagination boundary ({total})."
+                )
             refreshed_pages[page_key] = {"etag": etag, "total": total, "items": items}
 
             for item in items:
@@ -2099,7 +2114,12 @@ def load_supreme_values():
                     existing["value"] = existing["value_min"] = existing["value_max"] = None
                     existing["secondary_value"] = None
             offset += len(items)
-            if len(items) < page_size:
+            if offset < total and len(items) < page_size:
+                raise RuntimeError(
+                    f"[supreme] API returned a short page at offset {page_key} ({len(items)} rows) "
+                    f"while {total - offset} rows were still reported; refusing partial snapshot."
+                )
+            if offset >= total:
                 break
             time.sleep(0.25)
         if numeric_count < 100:
