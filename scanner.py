@@ -2021,9 +2021,10 @@ def verify_rblxvalue_key_if_due():
     # Refresh once after this schema change, but keep the normal retry cooldown
     # if a previous metadata refresh was already attempted and failed.
     has_credit_metadata = isinstance(state.get("attribution_required"), bool)
-    if same_key and not has_credit_metadata and last_attempt <= last_success:
+    if same_key and not has_credit_metadata:
+        if last_attempt <= last_success:
+            last_attempt = 0
         last_success = 0
-        last_attempt = 0
 
     if last_success > 0 and 0 <= now - last_success < RBLXVALUE_KEY_HEALTH_INTERVAL_SECONDS:
         print(
