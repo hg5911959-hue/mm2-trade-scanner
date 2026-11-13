@@ -2611,7 +2611,7 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
             continue
         selected = (record.get("variants") or [record])[0]
         stability = _normalize_stability(selected.get("stability"))
-        if side == "receive":
+        if side == "receive" and "stability" in selected:
             stability_key = stability.casefold() if stability else ""
             if stability_key not in RBLXVALUE_STABILITY_LABELS:
                 missing.append(f"{item['name']} (Supreme Stability unverified)")
