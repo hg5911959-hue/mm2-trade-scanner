@@ -8,18 +8,35 @@ import watchdog
 
 
 class WatchdogRepositoryTests(unittest.TestCase):
-    def test_active_run_lookup_uses_github_repository_environment(self):
+    def test_active_run_lookup_checks_running_and_queued_scans(self):
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        payload = {"workflow_runs": [{"id": 123, "created_at": now}]}
+        running = {"workflow_runs": [{"id": 123, "status": "in_progress", "created_at": now}]}
+        queued = {"workflow_runs": [{"id": 124, "status": "queued", "created_at": now}]}
+        responses = [json.dumps(running).encode("utf-8"), json.dumps(queued).encode("utf-8")]
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": "example/mm2-test"}), patch(
-            "watchdog.scanner.request_with_retry",
-            return_value=json.dumps(payload).encode("utf-8"),
+            "watchdog.scanner.request_with_retry", side_effect=responses,
         ) as request:
             age, run = watchdog.latest_active_scan_age_minutes("test-token")
         self.assertIsNotNone(age)
+        self.assertIn(run["id"], {123, 124})
+        self.assertEqual(request.call_count, 2)
+        urls = [call.args[0].full_url for call in request.call_args_list]
+        self.assertTrue(any("status=in_progress" in url for url in urls))
+        self.assertTrue(any("status=queued" in url for url in urls))
+        self.assertTrue(all("example/mm2-test" in url for url in urls))
+
+    def test_oldest_active_scan_is_used_to_detect_a_stuck_queue(self):
+        old = "2026-11-13T00:00:00Z"
+        recent = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        running = {"workflow_runs": [{"id": 123, "status": "in_progress", "created_at": old}]}
+        queued = {"workflow_runs": [{"id": 124, "status": "queued", "created_at": recent}]}
+        responses = [json.dumps(running).encode("utf-8"), json.dumps(queued).encode("utf-8")]
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "example/mm2-test"}), patch(
+            "watchdog.scanner.request_with_retry", side_effect=responses,
+        ):
+            age, run = watchdog.latest_active_scan_age_minutes("test-token")
+        self.assertGreater(age, 27)
         self.assertEqual(run["id"], 123)
-        self.assertIn("example/mm2-test", request.call_args.args[0].full_url)
-        self.assertIn("status=in_progress", request.call_args.args[0].full_url)
 
     def test_missing_repository_environment_fails_clearly(self):
         with patch.dict(os.environ, {}, clear=True):
