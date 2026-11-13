@@ -43,6 +43,20 @@ class SecretRedactionTests(unittest.TestCase):
         self.assertNotIn("AbCdEf123", output)
         self.assertNotIn("token-value-123", output)
 
+    def test_discord_secrets_and_token_formats_are_redacted(self):
+        secrets = {
+            "DISCORD_BOT_TOKEN": "discord-bot-token-abcdef",
+            "DISCORD_MANUAL_MESSAGES_JSON": '{"messages":[{"content":"private-message-secret"}]}',
+            "DISCORD_MANUAL_MESSAGES_JSON_2": '{"messages":[{"content":"private-message-secret-two"}]}',
+        }
+        with patch.dict(os.environ, secrets, clear=False):
+            output = scanner.redact("discord-bot-token-abcdef private-message-secret private-message-secret-two "
+                                    "mfa.abcdefghijklmnopqrstuvwxyz1234567890")
+        for secret in secrets.values():
+            self.assertNotIn(secret, output)
+        self.assertNotIn("private-message-secret", output)
+        self.assertNotIn("abcdefghijklmnopqrstuvwxyz1234567890", output)
+
 
 if __name__ == "__main__":
     unittest.main()
