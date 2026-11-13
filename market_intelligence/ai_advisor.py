@@ -51,10 +51,10 @@ def _extract_json(text: str) -> dict[str, Any]:
         raise ValueError("Gemini did not return a JSON object")
     result = json.loads(text[start:end + 1])
     if not isinstance(result, dict):
-        raise ValueError("Gemini response must be an object")
+        raise TypeError("Gemini response must be an object")
     for key, expected in (("summary", str), ("risks", list), ("opportunities", list), ("data_gaps", list)):
         if not isinstance(result.get(key), expected):
-            raise ValueError(f"Invalid Gemini response field: {key}")
+            raise TypeError(f"Invalid Gemini response field: {key}")
     return result
 
 
