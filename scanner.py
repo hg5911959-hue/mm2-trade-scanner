@@ -1898,6 +1898,7 @@ def api_get_json_conditional(path, params=None, etag=None):
     )
     response_etag = response_headers.get("ETag") or etag
     if raw is None:
+        rblxvalue_guard.mark_key_success(key=RBLXVALUE_API_KEY)
         return None, response_etag, True
     try:
         payload = json.loads(raw.decode("utf-8"))
@@ -3544,6 +3545,9 @@ def scan_once():
     deferred = len(deferred_items)
     if deferred:
         update_metrics(increments={"alerts_deferred": deferred})
+    for opportunity in deferred_items:
+        if os.environ.get("DRY_RUN", "").strip().casefold() != "true":
+            mark_pending(opportunity["listing"])
     for opportunity in selected:
         deliver_opportunity(opportunity)
     if deferred and os.environ.get("DRY_RUN", "").strip().casefold() != "true":
@@ -3805,6 +3809,7 @@ def main():
         return result
     except Exception:
         rblxvalue_guard.log_request_count()
+        update_metrics(increments={"rblxvalue_requests": rblxvalue_guard.requests_this_run()})
         raise
 
 if __name__ == "__main__":
