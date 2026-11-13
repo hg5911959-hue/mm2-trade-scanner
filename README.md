@@ -10,7 +10,7 @@ From the scanner user's perspective:
 - **BloxSwaps Recherche** = items you give.
 - Any listing containing **Ajout / Ajouts** is excluded. The filter is applied to the individual card and also checks the structured `requestedWildcards` data for `ADD`.
 - Profit = total Supreme Values of received items minus total Supreme Values of given items.
-- The scheduled workflow uses a minimum absolute difference of **0** and minimum percentage of **0%**, but a Telegram trade alert still requires a strictly positive profit.
+- The scheduled workflow uses a minimum absolute difference of **0** and minimum percentage of **5%**, but a Telegram trade alert requires a conservative positive profit and a margin of at least **5%**.
 - The scanner never uses BloxSwaps' own Win/Loss label, never uses the visible listing price as an item value, and never invents a missing item value or quantity.
 
 ### Quantity handling
