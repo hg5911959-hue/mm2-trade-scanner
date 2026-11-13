@@ -3347,7 +3347,7 @@ def scan_once(include_backlog_rechecks=True):
     if seen_ads is not None:
         new_pending_seen = set(pending_ids) - seen_ads
         if new_pending_seen:
-            seed_pending_ids_as_seen(seen_ads, new_pending_seen)
+            seed_pending_ids_as_seen(seen_ads, new_pending_seen, pending_schedule)
             save_seen_ads(seen_ads)
             print(
                 f"[state] Seeded {len(new_pending_seen)} pending IDs into the seen set; "
@@ -3429,7 +3429,7 @@ def scan_once(include_backlog_rechecks=True):
         seed_ids = set(str(value) for value in stats.get("cold_start_seed_ids", discovered_ids))
         save_seen_ads(seed_ids)
         seen_ads = seed_ids
-        seed_pending_ids_as_seen(seen_ads, pending_ids)
+        seed_pending_ids_as_seen(seen_ads, pending_ids, pending_schedule)
         save_seen_ads(seen_ads)
         print(
             f"[state] Cold-start baseline saved for {len(seed_ids)} historical posts; "
@@ -3448,7 +3448,8 @@ def scan_once(include_backlog_rechecks=True):
         if key not in pending_schedule:
             pending_schedule[key] = {
                 "attempts": 0,
-                "next_check_at": time.time() + PENDING_RECHECK_BACKOFF_SECONDS[0],
+                "next_check_at": time.time(),
+                "reason": "unparsed_feed",
             }
     if len(pending_ids) != pending_count_before:
         save_pending_ids(pending_ids)
@@ -3605,18 +3606,30 @@ def scan_once(include_backlog_rechecks=True):
             alerted_set.add(trade_id)
             save_alerted(alerted)
 
-    def mark_pending(listing):
+    def mark_pending(listing, reason="legacy_unclassified"):
         if listing.get("source") == "discord":
             return  # Discord messages are reloaded from their own bounded source file.
         source_id = str(listing.get("source_ad_id") or "")
         if source_id:
-            pending_ids.setdefault(source_id, time.time())
-            if source_id not in pending_schedule:
+            now = time.time()
+            pending_ids.setdefault(source_id, now)
+            previous = pending_schedule.get(source_id, {})
+            attempts = int(previous.get("attempts", 0))
+            if reason in PRIORITY_PENDING_REASONS:
                 pending_schedule[source_id] = {
-                    "attempts": 0,
-                    "next_check_at": time.time() + PENDING_RECHECK_BACKOFF_SECONDS[0],
+                    "attempts": attempts, "next_check_at": now, "reason": reason,
                 }
-                save_pending_recheck_schedule(pending_schedule)
+                if source_id in seen_ads:
+                    seen_ads.discard(source_id)
+                    save_seen_ads(seen_ads)
+            else:
+                next_check = previous.get("next_check_at")
+                if previous.get("reason") != reason or not next_check:
+                    next_check = now + PENDING_RECHECK_BACKOFF_SECONDS[0]
+                pending_schedule[source_id] = {
+                    "attempts": attempts, "next_check_at": float(next_check), "reason": reason,
+                }
+            save_pending_recheck_schedule(pending_schedule)
             save_pending_ids(pending_ids)
 
     def mark_seen_ad(listing, clear_pending=True):
@@ -3713,7 +3726,7 @@ def scan_once(include_backlog_rechecks=True):
         except Exception as exc:
             uncertain_ids.discard(trade_id)
             save_uncertain_ids(uncertain_ids)
-            mark_pending(listing)
+            mark_pending(listing, reason="telegram_failure")
             print(
                 f"[telegram] Definite send failure for listing {trade_id}: "
                 f"{type(exc).__name__}; queued for a later scan and continuing the batch."
@@ -3791,7 +3804,8 @@ def scan_once(include_backlog_rechecks=True):
                 f"[skip-unknown] Listing retained for recheck; missing/unvalued items: "
                 f"{', '.join(missing)}"
             )
-            mark_pending(listing)
+            pending_reason = pending_reason_from_missing(missing)
+            mark_pending(listing, reason=pending_reason)
             unknown_names = [
                 str(value).split(" (", 1)[0]
                 for value in missing
@@ -3803,13 +3817,14 @@ def scan_once(include_backlog_rechecks=True):
             if unknown_names:
                 record_unmatched_names(unknown_names)
             update_watch_entry(watch_state, listing, values, aliases)
-            # Keep it out of the hot feed loop, but retain its pending marker so
-            # a later bounded recheck or a changed value snapshot can resolve it.
-            mark_seen_ad(listing, clear_pending=False)
+            # Low-priority missing values/stability remain queued but leave the
+            # hot path. Urgent quantity uncertainty stays visible for quick retry.
+            if pending_reason not in PRIORITY_PENDING_REASONS:
+                mark_seen_ad(listing, clear_pending=False)
             continue
         if not qualifies(result):
             if result.get("uncertain_items"):
-                mark_pending(listing)
+                mark_pending(listing, reason="quantity_uncertain")
             else:
                 mark_seen_ad(listing)
             update_watch_entry(watch_state, listing, values, aliases)
@@ -3829,7 +3844,7 @@ def scan_once(include_backlog_rechecks=True):
         update_metrics(increments={"alerts_deferred": deferred})
     for opportunity in deferred_items:
         if os.environ.get("DRY_RUN", "").strip().casefold() != "true":
-            mark_pending(opportunity["listing"])
+            mark_pending(opportunity["listing"], reason="deferred_offer")
     for opportunity in selected:
         deliver_opportunity(opportunity)
     if deferred and os.environ.get("DRY_RUN", "").strip().casefold() != "true":
