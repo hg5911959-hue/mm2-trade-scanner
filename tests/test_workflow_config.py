@@ -22,6 +22,8 @@ class WorkflowReliabilityTests(unittest.TestCase):
         self.assertIn("uses: ./.github/workflows/scan.yml", scheduler)
         self.assertIn("secrets: inherit", scheduler)
         self.assertIn("contents: write", scheduler)
+        self.assertIn('workflows: ["MM2 Scanner Tests"]', scheduler)
+        self.assertIn("github.event.workflow_run.conclusion == 'success'", scheduler)
 
 
     def test_watchdog_uses_a_dedicated_scheduled_entrypoint(self):
