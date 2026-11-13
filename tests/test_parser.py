@@ -2498,3 +2498,20 @@ class RealAlertReevaluationIntegrationTests(unittest.TestCase):
         trade_messages = [message for message in sent if "💎 MM2 TRADE" in message]
         self.assertEqual(len(trade_messages), 1)
         self.assertIn("PROFIT: +10", trade_messages[0])
+
+
+
+class PaginationHealthCheckpointTests(unittest.TestCase):
+    def test_incomplete_pagination_does_not_refresh_success_checkpoint(self):
+        with (
+            patch("scanner.record_success") as record_success,
+            patch("scanner.write_step_summary") as summary,
+        ):
+            self.assertFalse(scanner.record_success_if_complete({"pagination_complete": False}))
+        record_success.assert_not_called()
+        summary.assert_called_once()
+
+    def test_complete_pagination_refreshes_success_checkpoint(self):
+        with patch("scanner.record_success") as record_success:
+            self.assertTrue(scanner.record_success_if_complete({"pagination_complete": True}))
+        record_success.assert_called_once()
