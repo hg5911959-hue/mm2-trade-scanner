@@ -66,6 +66,9 @@ MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
 BLOXSWAPS_PAGE_SIZE = 20
 MAX_FEED_PAGES = max(1, min(1000, int(os.environ.get("MAX_FEED_PAGES", "1000"))))
 VALUES_REVALIDATION_INTERVAL_SECONDS = 12 * 60 * 60
+RBLXVALUE_META_POLL_INTERVAL_SECONDS = 60 * 60
+RBLXVALUE_META_FILE = Path("data/rblxvalue_meta.json")
+RBLXVALUE_META_POLL_ENABLED = os.environ.get("RBLXVALUE_META_POLL_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 VALUES_TTL_SECONDS = min(VALUES_REVALIDATION_INTERVAL_SECONDS, max(60, int(os.environ.get("VALUES_TTL_SECONDS", str(VALUES_REVALIDATION_INTERVAL_SECONDS)))))
 BLOXSWAPS_ITEMS_TTL_SECONDS = max(300, int(os.environ.get("BLOXSWAPS_ITEMS_TTL_SECONDS", "3600")))
 PENDING_TTL_SECONDS = max(86400, int(os.environ.get("PENDING_TTL_SECONDS", str(7 * 86400))))
@@ -1890,6 +1893,56 @@ BLOCKED_RECEIVE_STABILITY = frozenset({
 })
 
 
+def _optional_bounded_int(value, minimum, maximum):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if minimum <= parsed <= maximum else None
+
+
+def _read_rblxvalue_meta_state():
+    try:
+        state = json.loads(RBLXVALUE_META_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    return state if isinstance(state, dict) else {}
+
+
+def _fetch_rblxvalue_meta(force=False):
+    """Poll source metadata hourly; the upstream dataset itself updates every ~12h."""
+    if not RBLXVALUE_META_POLL_ENABLED or not RBLXVALUE_API_KEY:
+        return None
+    now = time.time()
+    state = _read_rblxvalue_meta_state()
+    try:
+        checked_at = float(state.get("checked_at_epoch", 0))
+    except (TypeError, ValueError):
+        checked_at = 0
+    if not force and checked_at > 0 and 0 <= now - checked_at < RBLXVALUE_META_POLL_INTERVAL_SECONDS:
+        return state
+    payload = api_get_json("/meta")
+    if not isinstance(payload, dict) or not isinstance(payload.get("last_updated"), str):
+        raise RuntimeError("[rblxvalue-meta] Missing or invalid last_updated metadata")
+    totals = payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
+    try:
+        item_total = int(totals.get("items", 0))
+    except (TypeError, ValueError):
+        item_total = 0
+    if item_total < 100:
+        raise RuntimeError("[rblxvalue-meta] Implausible source item total; refusing metadata")
+    updated = {
+        "schema_version": 1,
+        "checked_at_epoch": now,
+        "last_updated": payload["last_updated"],
+        "items_total": item_total,
+        "sets_total": int(totals.get("sets", 0) or 0),
+        "update_interval_hours": payload.get("update_interval_hours"),
+    }
+    atomic_write_text(RBLXVALUE_META_FILE, json.dumps(updated, ensure_ascii=False, indent=2) + "\n")
+    return updated
+
+
 def _supreme_numeric_value(item):
     """Return scalar Supreme value; small Common/Uncommon/Rare xN counts are not scalar values."""
     try:
@@ -2045,7 +2098,11 @@ def _read_values_cache():
 def _write_supreme_values_audit(values, fetched_at=None):
     """Persist a complete row-by-row audit of every Supreme source record."""
     rows = []
-    counts = {"records": 0, "numeric": 0, "non_numeric": 0, "identity_collisions": 0}
+    counts = {
+        "records": 0, "numeric": 0, "non_numeric": 0, "identity_collisions": 0,
+        "weapons": 0, "knives": 0, "guns": 0,
+        "weapons_missing_stability": 0, "weapons_untradeable": 0,
+    }
     for key, record in sorted((values or {}).items()):
         variants = record.get("variants") if isinstance(record, dict) else None
         variants = variants if isinstance(variants, list) and variants else [record]
@@ -2058,6 +2115,15 @@ def _write_supreme_values_audit(values, fetched_at=None):
             numeric = variant.get("value")
             is_numeric = isinstance(numeric, (int, float)) and math.isfinite(float(numeric)) and float(numeric) > 0
             counts["numeric" if is_numeric else "non_numeric"] += 1
+            item_type = str(variant.get("type") or "").strip().casefold()
+            stability = _normalize_stability(variant.get("stability"))
+            if item_type in {"knife", "gun"}:
+                counts["weapons"] += 1
+                counts["knives" if item_type == "knife" else "guns"] += 1
+                if not stability:
+                    counts["weapons_missing_stability"] += 1
+                if stability and stability.casefold() == "untradeable":
+                    counts["weapons_untradeable"] += 1
             rows.append({
                 "name": str(variant.get("name") or record.get("name") or key),
                 "id": str(variant.get("id") or ""),
@@ -2069,7 +2135,12 @@ def _write_supreme_values_audit(values, fetched_at=None):
                 "value_max": variant.get("value_max"),
                 "raw_source_value": variant.get("raw_source_value"),
                 "value_status": str(variant.get("value_status") or ("numeric" if is_numeric else "not_numeric")),
-                "stability": _normalize_stability(variant.get("stability")),
+                "stability": stability,
+                "demand": variant.get("demand"),
+                "rarity": variant.get("rarity"),
+                "acronym": str(variant.get("acronym") or ""),
+                "event_name": variant.get("event_name"),
+                "tier": variant.get("tier"),
                 "last_updated": variant.get("last_updated"),
             })
     VALUES_AUDIT_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -2187,9 +2258,29 @@ def load_supreme_values():
     # Schema v4 preserves item identity and Supreme stability; older caches lack stability.
     cached_document = _read_values_cache_document()
     cached_values, cached_age = _read_values_cache()
+    source_meta = None
+    if cached_values is not None and RBLXVALUE_API_KEY:
+        verify_rblxvalue_key_if_due()
+        if RBLXVALUE_META_POLL_ENABLED:
+            try:
+                source_meta = _fetch_rblxvalue_meta()
+            except Exception as exc:
+                print(f"[rblxvalue-meta] Poll failed safely: {type(exc).__name__}; cached snapshot policy remains in force")
+        cached_source_updated = (cached_document or {}).get("source_last_updated")
+        if source_meta and cached_source_updated and source_meta.get("last_updated") == cached_source_updated:
+            print(
+                "[supreme] Source metadata unchanged "
+                f"(source updated {cached_source_updated}); reusing complete cached catalogue"
+            )
+            _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
+            return cached_values
+        if source_meta and cached_source_updated and source_meta.get("last_updated") != cached_source_updated:
+            print(
+                "[supreme] Upstream source update detected "
+                f"({cached_source_updated} -> {source_meta.get('last_updated')}); refreshing catalogue now"
+            )
+            cached_age = VALUES_TTL_SECONDS + 1
     if cached_values is not None and cached_age is not None and cached_age <= VALUES_TTL_SECONDS:
-        if RBLXVALUE_API_KEY:
-            verify_rblxvalue_key_if_due()
         print(f"[supreme] Using fresh source_b snapshot (age {cached_age}s; TTL {VALUES_TTL_SECONDS}s)")
         _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
         return cached_values
@@ -2271,6 +2362,14 @@ def load_supreme_values():
                     # RBLXValue's stability field is sourced from the Supreme Values item data.
                     # Keep the source label verbatim; never infer a missing stability.
                     "stability": _normalize_stability(item.get("stability")),
+                    "demand": _optional_bounded_int(item.get("demand"), 0, 10),
+                    "rarity": _optional_bounded_int(item.get("rarity"), 0, 10),
+                    "acronym": str(item.get("acronym") or ""),
+                    "event_name": str(item.get("event_name") or ""),
+                    "tier": _optional_bounded_int(item.get("tier"), 0, 100),
+                    "description": str(item.get("description") or "")[:500],
+                    "image_url": str(item.get("image_url") or ""),
+                    "fandom_url": str(item.get("fandom_url") or ""),
                     "last_updated": item.get("last_updated"),
                 }
                 key = normalize_name(name)
@@ -2330,9 +2429,22 @@ def load_supreme_values():
             f"({type(exc).__name__}: {reason})"
         ) from exc
 
+    if RBLXVALUE_META_POLL_ENABLED and RBLXVALUE_API_KEY:
+        try:
+            latest_meta = _fetch_rblxvalue_meta(force=True)
+            if source_meta and latest_meta and source_meta.get("last_updated") != latest_meta.get("last_updated"):
+                raise RuntimeError(
+                    "[supreme] Source changed during pagination; refusing a mixed-version catalogue snapshot"
+                )
+            source_meta = latest_meta or source_meta
+        except Exception as exc:
+            raise RuntimeError(
+                f"[supreme] Could not verify source version after pagination ({type(exc).__name__}); refusing snapshot"
+            ) from exc
     VALUES_FILE.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(VALUES_FILE, json.dumps({
         "schema_version": 4, "fetched_at": time.time(),
+        "source_last_updated": source_meta.get("last_updated") if source_meta else None,
         "source": "Supreme Values via RBLXValue API value_source_b",
         "pages": refreshed_pages, "values": all_values,
     }, ensure_ascii=False, indent=2) + "\n")
