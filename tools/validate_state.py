@@ -15,6 +15,12 @@ REQUIRED_MARKET_TABLES = {
     "opportunities",
 }
 
+VALID_PENDING_REASONS = {
+    "legacy_unclassified", "unmatched_value", "stability_unverified",
+    "stability_blocked", "quantity_uncertain", "unparsed_feed",
+    "telegram_failure", "deferred_offer",
+}
+
 
 def _finite_positive(value: Any) -> bool:
     try:
@@ -104,8 +110,13 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
                     break
                 attempts = entry.get("attempts")
                 next_check = entry.get("next_check_at")
-                if not isinstance(attempts, int) or attempts < 0 or not _finite_positive(next_check):
-                    errors.append("pending recheck schedule counter or timestamp is invalid")
+                reason = entry.get("reason")
+                if (
+                    not isinstance(attempts, int) or attempts < 0
+                    or not _finite_positive(next_check)
+                    or (reason is not None and reason not in VALID_PENDING_REASONS)
+                ):
+                    errors.append("pending recheck schedule counter, timestamp, or reason is invalid")
                     break
 
     budget = documents.get("rblxvalue_request_budget.json")
