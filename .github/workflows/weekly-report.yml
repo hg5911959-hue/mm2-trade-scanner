@@ -1,0 +1,36 @@
+name: MM2 Weekly Health Report
+
+on:
+  schedule:
+    - cron: "0 8 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  weekly-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Restore durable metrics and status
+        run: |
+          set -euo pipefail
+          git fetch origin refs/heads/state:refs/remotes/origin/state || true
+          if git rev-parse --verify origin/state >/dev/null 2>&1; then
+            git archive origin/state data | tar -x
+          fi
+      - name: Send weekly report
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RBLXVALUE_DAILY_REQUEST_LIMIT: "60"
+        run: python tools/weekly_report.py
