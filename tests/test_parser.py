@@ -1475,6 +1475,35 @@ class RblxValueKeyHealthCheckTests(unittest.TestCase):
                 self.assertEqual(scanner.load_supreme_values(), expected)
             api.assert_not_called()
 
+
+    def test_legacy_success_state_without_credit_metadata_is_refreshed_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = root / "supreme.json"
+            health = root / "key-health.json"
+            expected = self._fresh_cache(cache)
+            health.write_text(json.dumps({
+                "schema_version": 1,
+                "key_fingerprint": scanner.rblxvalue_guard.key_fingerprint("test-key"),
+                "last_attempt_at_epoch": 900,
+                "last_success_at_epoch": 900,
+            }), encoding="utf-8")
+            with (
+                patch("scanner.VALUES_FILE", cache),
+                patch("scanner.VALUES_AUDIT_FILE", root / "audit.json"),
+                patch("scanner.RBLXVALUE_KEY_HEALTH_FILE", health),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.time.time", return_value=1000),
+                patch("scanner.api_get_json_conditional", return_value=(
+                    {"items": [{"id": 1}], "credit": "Data from rblxvalue.com"}, None, False
+                )) as api,
+            ):
+                self.assertEqual(scanner.load_supreme_values(), expected)
+            api.assert_called_once_with("/items", {"limit": 1, "offset": 0})
+            saved = json.loads(health.read_text(encoding="utf-8"))
+            self.assertTrue(saved["attribution_required"])
+
+
     def test_transient_health_check_failure_does_not_discard_fresh_cache_or_repeat_each_cycle(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
