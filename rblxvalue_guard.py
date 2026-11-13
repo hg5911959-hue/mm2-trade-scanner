@@ -183,9 +183,15 @@ def log_request_count() -> None:
 
 def is_key_error(status: int, detail: str) -> bool:
     text = str(detail or "").casefold()
-    markers = ("invalid api key", "api key invalid", "key is invalid",
-               "inactive", "suspended", "deactivated", "revoked")
-    return int(status) == 401 or any(marker in text for marker in markers)
+    # A generic "account suspended/inactive" message is not proof that the
+    # API credential itself is invalid. Require explicit credential context.
+    key_context = any(marker in text for marker in (
+        "api key", "api-key", "apikey", "access key", "credential", "token",
+    ))
+    invalid_marker = any(marker in text for marker in (
+        "invalid", "inactive", "suspended", "deactivated", "revoked", "expired",
+    ))
+    return int(status) == 401 or (key_context and invalid_marker)
 
 
 def raise_for_key_error(status: int, detail: str, *, key: str | None = None, now: float | None = None) -> None:
