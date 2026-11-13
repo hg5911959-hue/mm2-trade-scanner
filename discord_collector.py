@@ -1,7 +1,7 @@
-"""Read-only Discord trade-channel collector for MM2 Market Intelligence.
+"""Read-only Discord collector for explicitly approved MM2 servers.
 
-Only reads channel IDs explicitly configured by the repository owner. It never
-sends messages, joins servers, scrapes private endpoints, or uses user tokens.
+The bot discovers readable text channels only inside configured guild IDs. It
+never sends messages, moderates, or uses a personal account token/self-bot.
 """
 from __future__ import annotations
 
@@ -15,18 +15,18 @@ from pathlib import Path
 from typing import Any
 
 MAX_HISTORY_PER_CHANNEL = 100
-MAX_STORED_MESSAGES = 5000
+MAX_STORED_MESSAGES = 10000
 
 
-def parse_channel_ids(raw: str) -> list[int]:
-    """Parse a comma/semicolon-separated allowlist of Discord channel snowflakes."""
+def parse_guild_ids(raw: str) -> list[int]:
+    """Parse a comma/semicolon-separated allowlist of Discord server IDs."""
     ids: list[int] = []
     for token in str(raw or "").replace(";", ",").split(","):
         token = token.strip()
         if not token:
             continue
-        if not token.isdigit() or len(token) < 15 or len(token) > 22:
-            raise ValueError("Each Discord channel ID must be a 15–22 digit snowflake")
+        if not token.isdigit() or not 15 <= len(token) <= 22:
+            raise ValueError("Each Discord server ID must be a 15–22 digit snowflake")
         value = int(token)
         if value not in ids:
             ids.append(value)
@@ -34,7 +34,6 @@ def parse_channel_ids(raw: str) -> list[int]:
 
 
 def normalize_message(message: Any) -> dict[str, Any]:
-    """Keep only fields needed to identify and verify a public trade listing."""
     guild = getattr(message, "guild", None)
     channel = getattr(message, "channel", None)
     author = getattr(message, "author", None)
@@ -67,7 +66,6 @@ def normalize_message(message: Any) -> dict[str, Any]:
 
 
 def merge_messages(existing: list[dict[str, Any]], incoming: list[dict[str, Any]], retention_days: int = 7) -> list[dict[str, Any]]:
-    """Deduplicate by message ID and retain a bounded, recent history."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, min(int(retention_days), 30)))
     by_id: dict[str, dict[str, Any]] = {}
     for row in list(existing) + list(incoming):
@@ -82,8 +80,6 @@ def merge_messages(existing: list[dict[str, Any]], incoming: list[dict[str, Any]
             if parsed < cutoff:
                 continue
         except (ValueError, TypeError):
-            # Keep records with unknown timestamps for diagnosis, but do not
-            # let them displace valid newer records beyond the hard cap.
             pass
         by_id[message_id] = row
     return sorted(
@@ -101,17 +97,17 @@ def load_existing(path: Path) -> list[dict[str, Any]]:
         rows = payload.get("messages", []) if isinstance(payload, dict) else []
         return rows if isinstance(rows, list) else []
     except (OSError, json.JSONDecodeError):
-        # Corrupt prior state must not be silently overwritten.
         raise RuntimeError(f"Existing Discord state is unreadable: {path}") from None
 
 
-def atomic_save(path: Path, messages: list[dict[str, Any]], channels: list[int]) -> None:
+def atomic_save(path: Path, messages: list[dict[str, Any]], guild_ids: list[int], scanned_channels: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "source": "discord",
         "updated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "configured_channel_ids": [str(value) for value in channels],
+        "configured_guild_ids": [str(value) for value in guild_ids],
+        "scanned_channel_ids": sorted(set(scanned_channels)),
         "message_count": len(messages),
         "messages": messages,
     }
@@ -120,7 +116,7 @@ def atomic_save(path: Path, messages: list[dict[str, Any]], channels: list[int])
     os.replace(temp, path)
 
 
-async def collect(channel_ids: list[int], output: Path, limit: int, retention_days: int) -> int:
+async def collect(guild_ids: list[int], output: Path, limit: int, retention_days: int) -> int:
     try:
         import discord
     except ImportError:
@@ -131,8 +127,8 @@ async def collect(channel_ids: list[int], output: Path, limit: int, retention_da
     if not token:
         print("Discord collection skipped: DISCORD_BOT_TOKEN is not configured.")
         return 0
-    if not channel_ids:
-        print("Discord collection skipped: DISCORD_CHANNEL_IDS is empty.")
+    if not guild_ids:
+        print("Discord collection skipped: DISCORD_GUILD_IDS is empty.")
         return 0
 
     intents = discord.Intents.none()
@@ -143,38 +139,57 @@ async def collect(channel_ids: list[int], output: Path, limit: int, retention_da
     state = load_existing(output)
     collected: list[dict[str, Any]] = []
     errors: list[str] = []
+    scanned_channels: list[str] = []
 
     @client.event
     async def on_ready() -> None:
-        for channel_id in channel_ids:
-            channel = client.get_channel(channel_id)
-            if channel is None:
+        for guild_id in guild_ids:
+            guild = client.get_guild(guild_id)
+            if guild is None:
                 try:
-                    channel = await client.fetch_channel(channel_id)
-                except Exception as exc:
-                    errors.append(f"{channel_id}: {type(exc).__name__}")
+                    guild = await client.fetch_guild(guild_id)
+                except discord.Forbidden:
+                    errors.append(f"server {guild_id}: bot is not a member or lacks access")
                     continue
-            if not hasattr(channel, "history"):
-                errors.append(f"{channel_id}: not a readable text channel")
-                continue
-            try:
-                async for message in channel.history(limit=limit, oldest_first=False):
-                    if getattr(getattr(message, "author", None), "bot", False):
+                except discord.HTTPException as exc:
+                    errors.append(f"server {guild_id}: Discord HTTP {exc.status}")
+                    continue
+
+            me = guild.me
+            channels = list(getattr(guild, "text_channels", []) or [])
+            # Include active public/private threads only when their parent is
+            # in this explicitly allowlisted server and the bot can read them.
+            channels.extend(list(getattr(guild, "threads", []) or []))
+            unique_channels = {int(channel.id): channel for channel in channels if hasattr(channel, "history")}
+
+            for channel_id, channel in unique_channels.items():
+                parent = getattr(channel, "parent", None)
+                permission_target = parent or channel
+                try:
+                    permissions = permission_target.permissions_for(me)
+                    if not permissions.view_channel or not permissions.read_message_history:
                         continue
-                    row = normalize_message(message)
-                    if row["content"].strip() or row["embeds"] or row["attachments"]:
-                        collected.append(row)
-            except discord.Forbidden:
-                errors.append(f"{channel_id}: missing View Channel or Read Message History")
-            except discord.HTTPException as exc:
-                errors.append(f"{channel_id}: Discord HTTP {exc.status}")
-            except Exception as exc:
-                errors.append(f"{channel_id}: {type(exc).__name__}")
+                    async for message in channel.history(limit=limit, oldest_first=False):
+                        if getattr(getattr(message, "author", None), "bot", False):
+                            continue
+                        row = normalize_message(message)
+                        if row["content"].strip() or row["embeds"] or row["attachments"]:
+                            collected.append(row)
+                    scanned_channels.append(str(channel_id))
+                except discord.Forbidden:
+                    errors.append(f"channel {channel_id}: missing View Channel or Read Message History")
+                except discord.HTTPException as exc:
+                    errors.append(f"channel {channel_id}: Discord HTTP {exc.status}")
+                except Exception as exc:
+                    errors.append(f"channel {channel_id}: {type(exc).__name__}")
+
+        if not scanned_channels:
+            errors.append("No readable text channels found; check bot membership and channel permissions.")
         merged = merge_messages(state, collected, retention_days)
-        atomic_save(output, merged, channel_ids)
-        print(f"Discord collection complete: {len(collected)} fetched, {len(merged)} retained, {len(errors)} channel errors.")
+        atomic_save(output, merged, guild_ids, scanned_channels)
+        print(f"Discord collection complete: {len(collected)} fetched, {len(merged)} retained, {len(scanned_channels)} channels scanned, {len(errors)} warnings.")
         for error in errors:
-            print(f"Discord channel warning: {error}")
+            print(f"Discord warning: {error}")
         await client.close()
 
     try:
@@ -189,7 +204,7 @@ async def collect(channel_ids: list[int], output: Path, limit: int, retention_da
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Collect recent messages from configured Discord MM2 trade channels.")
+    parser = argparse.ArgumentParser(description="Collect recent messages from configured MM2 Discord servers.")
     parser.add_argument("--output", default="data/discord_messages.json")
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--retention-days", type=int, default=7)
@@ -197,10 +212,10 @@ def main() -> int:
     if not 1 <= args.limit <= MAX_HISTORY_PER_CHANNEL:
         parser.error("--limit must be between 1 and 100")
     try:
-        channels = parse_channel_ids(os.environ.get("DISCORD_CHANNEL_IDS", ""))
+        guilds = parse_guild_ids(os.environ.get("DISCORD_GUILD_IDS", ""))
     except ValueError as exc:
         parser.error(str(exc))
-    return asyncio.run(collect(channels, Path(args.output), args.limit, args.retention_days))
+    return asyncio.run(collect(guilds, Path(args.output), args.limit, args.retention_days))
 
 
 if __name__ == "__main__":
