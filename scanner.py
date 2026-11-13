@@ -56,8 +56,8 @@ UNMATCHED_FILE = Path("data/unmatched_names.json")
 MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
 BLOXSWAPS_PAGE_SIZE = 20
 MAX_FEED_PAGES = max(1, min(1000, int(os.environ.get("MAX_FEED_PAGES", "1000"))))
-VALUES_TTL_SECONDS = max(60, int(os.environ.get("VALUES_TTL_SECONDS", "43200")))
 VALUES_REVALIDATION_INTERVAL_SECONDS = 12 * 60 * 60
+VALUES_TTL_SECONDS = min(VALUES_REVALIDATION_INTERVAL_SECONDS, max(60, int(os.environ.get("VALUES_TTL_SECONDS", str(VALUES_REVALIDATION_INTERVAL_SECONDS)))))
 BLOXSWAPS_ITEMS_TTL_SECONDS = max(300, int(os.environ.get("BLOXSWAPS_ITEMS_TTL_SECONDS", "3600")))
 PENDING_TTL_SECONDS = max(86400, int(os.environ.get("PENDING_TTL_SECONDS", str(7 * 86400))))
 UNCERTAIN_TTL_SECONDS = max(3600, int(os.environ.get("UNCERTAIN_TTL_SECONDS", str(24 * 3600))))
@@ -1922,7 +1922,8 @@ def _read_values_cache_document():
             cached = dict(cached)
             cached["schema_version"] = 4
             cached["values"] = migrated
-            print("[supreme-cache] Compatible schema-v3 cache migrated in memory; no API request required")
+            atomic_write_text(VALUES_FILE, json.dumps(cached, ensure_ascii=False, indent=2) + "\n")
+            print("[supreme-cache] Compatible schema-v3 cache migrated and persisted as schema v4; no API request required")
         return cached
     except (ValueError, OSError, json.JSONDecodeError, AttributeError, TypeError):
         return None
