@@ -358,7 +358,10 @@ class ReliabilityTests(unittest.TestCase):
             with (
                 patch("scanner.VALUES_FILE", cache_path),
                 patch("scanner.RBLXVALUE_API_KEY", "test-key"),
-                patch("scanner.api_get_json_conditional", return_value=({"items": items, "total": len(items)}, None, False)),
+                patch("scanner.api_get_json_conditional", side_effect=[
+                    ({"items": items[:100], "total": len(items)}, None, False),
+                    ({"items": items[100:], "total": len(items)}, None, False),
+                ]),
                 patch("scanner.time.sleep"),
             ):
                 values = load_supreme_values()
@@ -532,7 +535,10 @@ class ReliabilityTests(unittest.TestCase):
             with (
                 patch("scanner.VALUES_FILE", cache_path),
                 patch("scanner.RBLXVALUE_API_KEY", "test-key"),
-                patch("scanner.api_get_json_conditional", return_value=({"items": items, "total": len(items)}, None, False)),
+                patch("scanner.api_get_json_conditional", side_effect=[
+                    ({"items": items[:100], "total": len(items)}, None, False),
+                    ({"items": items[100:], "total": len(items)}, None, False),
+                ]),
                 patch("scanner.time.sleep"),
             ):
                 values = load_supreme_values()
@@ -1346,6 +1352,44 @@ class CacheTTLTests(unittest.TestCase):
                 loaded = scanner.fetch_bloxswaps_items_map()
             self.assertEqual(loaded, items)
             api.assert_not_called()
+
+
+
+class SupremePaginationIntegrityTests(unittest.TestCase):
+    @staticmethod
+    def _rows(start, count):
+        return [
+            {"id": start + i, "slug": f"page-item-{start + i}",
+             "name": f"Page Item {start + i}", "category": "godly",
+             "type": "knife", "value_source_b": start + i + 1}
+            for i in range(count)
+        ]
+
+    def _assert_refresh_rejected(self, responses):
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "supreme_values.json"
+            with (
+                patch("scanner.VALUES_FILE", cache),
+                patch("scanner.VALUES_AUDIT_FILE", Path(directory) / "audit.json"),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.api_get_json_conditional", side_effect=responses),
+                patch("scanner.time.sleep"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "refusing partial snapshot"):
+                    scanner.load_supreme_values()
+            self.assertFalse(cache.exists(), "partial API data must never replace the trusted cache")
+
+    def test_short_non_final_page_is_rejected(self):
+        self._assert_refresh_rejected([
+            ({"items": self._rows(0, 100), "total": 150}, '"page-0"', False),
+            ({"items": self._rows(100, 20), "total": 150}, '"page-100"', False),
+        ])
+
+    def test_changing_total_during_pagination_is_rejected(self):
+        self._assert_refresh_rejected([
+            ({"items": self._rows(0, 100), "total": 150}, '"page-0"', False),
+            ({"items": self._rows(100, 50), "total": 200}, '"page-100"', False),
+        ])
 
 
 class PendingRecheckStateTests(unittest.TestCase):
