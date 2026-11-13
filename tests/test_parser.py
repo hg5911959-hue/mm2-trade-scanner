@@ -1425,6 +1425,63 @@ class CloudflareDetectionTests(unittest.TestCase):
                 scanner.http_get("https://bloxswaps.com/fr/trade-mm2")
 
 
+class ReceiveMarketQualityTests(unittest.TestCase):
+    @staticmethod
+    def _listing():
+        return {
+            "give_items": [{"name": "Knife A", "quantity": 1}],
+            "receive_items": [{"name": "Knife B", "quantity": 1}],
+        }
+
+    @staticmethod
+    def _values(receive_stability="Stable", receive_demand=5):
+        return {
+            "knife a": {"name": "Knife A", "variants": [{
+                "id": "1", "slug": "knife-a", "name": "Knife A",
+                "category": "godly", "type": "knife", "value": 10,
+                "value_min": 10, "value_max": 10,
+            }]},
+            "knife b": {"name": "Knife B", "variants": [{
+                "id": "2", "slug": "knife-b", "name": "Knife B",
+                "category": "godly", "type": "knife", "value": 20,
+                "value_min": 20, "value_max": 20,
+                "stability": receive_stability, "demand": receive_demand,
+                "rarity": 4,
+            }]},
+        }
+
+    def test_stable_high_demand_receive_item_passes_and_is_explained(self):
+        result, missing = scanner.evaluate_listing(
+            self._listing(), self._values("Stable", 5)
+        )
+        self.assertEqual(missing, [])
+        self.assertIsNotNone(result)
+        self.assertEqual(result["receive_demand_score"], 5)
+        self.assertEqual(result["receive_stability_score"], 3)
+        self.assertIn("Demand: 5/10", result["receive_lines"][0])
+        self.assertIn("Rarity: 4/10", result["receive_lines"][0])
+
+    def test_low_demand_receive_item_is_excluded(self):
+        result, missing = scanner.evaluate_listing(
+            self._listing(), self._values("Stable", 2)
+        )
+        self.assertIsNone(result)
+        self.assertTrue(any("Demand is low" in item for item in missing))
+
+    def test_underpaid_for_receive_item_is_excluded_from_best_alerts(self):
+        result, missing = scanner.evaluate_listing(
+            self._listing(), self._values("Underpaid For", 8)
+        )
+        self.assertIsNone(result)
+        self.assertTrue(any("Stability is weak" in item for item in missing))
+
+    def test_unverified_receive_demand_is_fail_closed(self):
+        values = self._values("Stable", None)
+        result, missing = scanner.evaluate_listing(self._listing(), values)
+        self.assertIsNone(result)
+        self.assertTrue(any("Demand unverified" in item for item in missing))
+
+
 class RblxValueMetaPollingTests(unittest.TestCase):
     def test_meta_is_cached_for_one_hour_and_refreshed_when_due(self):
         with tempfile.TemporaryDirectory() as directory:
