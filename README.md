@@ -41,7 +41,7 @@ Telegram alerts show owner/listing links and every valued item line (Supreme uni
 - A new unmatched name is reported through a cooldown-controlled maintenance alert and is rechecked. `python tools/suggest_aliases.py` compares BloxSwaps catalogue names with Supreme names and produces review-only candidates; it never writes suggestions automatically. Apply only a manually reviewed JSON mapping with `--approve reviewed-aliases.json`.
 - If several Supreme source rows normalize to the same name, all numeric variants are retained. The scanner uses the **higher** value when you give an item and the **lower** value when you receive it, avoiding optimistic duplicate-name valuation.
 
-Items without a numeric Supreme value are not partially valued. Brew and Drool remain explicitly ignored in totals; an offer is excluded if either side has no remaining valued items.
+Items without a numeric Supreme value are never assigned zero or partially valued. Brew and Drool are not included in totals, but their presence blocks a profitable alert until a numeric Supreme value is available; this prevents unknown-value items from manufacturing a false WIN.
 
 ## Data sources and pagination
 
