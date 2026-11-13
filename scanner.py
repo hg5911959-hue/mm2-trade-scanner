@@ -1927,7 +1927,16 @@ def _fetch_rblxvalue_meta(force=False):
         checked_at = float(state.get("checked_at_epoch", 0))
     except (TypeError, ValueError):
         checked_at = 0
-    if not force and checked_at > 0 and 0 <= now - checked_at < RBLXVALUE_META_POLL_INTERVAL_SECONDS:
+    cached_meta_valid = (
+        isinstance(state.get("last_updated"), str)
+        and bool(state.get("last_updated").strip())
+        and isinstance(state.get("items_total"), int)
+        and state.get("items_total", 0) >= 100
+    )
+    if (
+        not force and cached_meta_valid and checked_at > 0
+        and 0 <= now - checked_at < RBLXVALUE_META_POLL_INTERVAL_SECONDS
+    ):
         return state
     payload = api_get_json("/meta")
     if not isinstance(payload, dict) or not isinstance(payload.get("last_updated"), str):
@@ -2272,6 +2281,16 @@ def verify_rblxvalue_key_if_due():
     return True
 
 
+def _source_snapshot_matches_meta(cached_document, source_meta):
+    """Require both source timestamp and complete catalogue size to match."""
+    return bool(
+        isinstance(cached_document, dict)
+        and isinstance(source_meta, dict)
+        and cached_document.get("source_last_updated") == source_meta.get("last_updated")
+        and cached_document.get("source_items_total") == source_meta.get("items_total")
+    )
+
+
 def load_supreme_values():
     # Never spend API budget or perform health checks for a credential already blocked.
     if RBLXVALUE_API_KEY and rblxvalue_guard.is_key_blocked(key=RBLXVALUE_API_KEY):
@@ -2294,24 +2313,22 @@ def load_supreme_values():
             except Exception as exc:
                 print(f"[rblxvalue-meta] Poll failed safely: {type(exc).__name__}; cached snapshot policy remains in force")
         cached_source_updated = (cached_document or {}).get("source_last_updated")
-        if source_meta and cached_source_updated and source_meta.get("last_updated") == cached_source_updated:
+        if source_meta and _source_snapshot_matches_meta(cached_document, source_meta):
             print(
-                "[supreme] Source metadata unchanged "
-                f"(source updated {cached_source_updated}); reusing complete cached catalogue"
+                "[supreme] Source metadata and catalogue size unchanged "
+                f"(updated {source_meta.get('last_updated')}; items {source_meta.get('items_total')}); "
+                "reusing complete cached catalogue"
             )
             _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
             return cached_values
-        if source_meta and cached_source_updated and source_meta.get("last_updated") != cached_source_updated:
+        if source_meta and cached_document:
+            previous_updated = cached_document.get("source_last_updated") or "unknown"
+            previous_total = cached_document.get("source_items_total") or "unknown"
             print(
-                "[supreme] Upstream source update detected "
-                f"({cached_source_updated} -> {source_meta.get('last_updated')}); refreshing catalogue now"
+                "[supreme] Source snapshot mismatch "
+                f"(timestamp {previous_updated} -> {source_meta.get('last_updated')}; "
+                f"items {previous_total} -> {source_meta.get('items_total')}); refreshing catalogue now"
             )
-            cached_age = VALUES_TTL_SECONDS + 1
-        elif source_meta and not cached_source_updated:
-            print("[supreme] Cached catalogue has no source-version marker; refreshing once to establish verified provenance")
-            cached_age = VALUES_TTL_SECONDS + 1
-        elif source_meta and cached_document and source_meta.get("items_total") != cached_document.get("source_items_total"):
-            print("[supreme] Upstream catalogue size changed; refreshing the full item catalogue")
             cached_age = VALUES_TTL_SECONDS + 1
     if cached_values is not None and cached_age is not None and cached_age <= VALUES_TTL_SECONDS:
         print(f"[supreme] Using fresh source_b snapshot (age {cached_age}s; TTL {VALUES_TTL_SECONDS}s)")
