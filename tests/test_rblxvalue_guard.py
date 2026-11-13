@@ -48,7 +48,7 @@ class RblxValueGuardTests(unittest.TestCase):
         for status, body in ((401, "unauthorized"), (403, "forbidden"),
                              (400, "API key suspended")):
             with self.subTest(status=status, body=body):
-                guard.raise_for_key_error(status, body)
+                guard.raise_for_key_error(status, body, key="rbx_test_key")
                 self.assertTrue(guard.is_key_blocked(now=1_800_000_001,
                                                     key="rbx_test_key", block_path=self.block))
                 with self.assertRaises(guard.RblxValueKeyBlocked):
