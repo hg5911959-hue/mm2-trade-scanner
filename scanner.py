@@ -52,7 +52,7 @@ ALIASES_FILE = Path("aliases.json")
 UNMATCHED_FILE = Path("data/unmatched_names.json")
 MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
 BLOXSWAPS_PAGE_SIZE = 20
-MAX_FEED_PAGES = max(1, min(100, int(os.environ.get("MAX_FEED_PAGES", "100"))))
+MAX_FEED_PAGES = max(1, min(1000, int(os.environ.get("MAX_FEED_PAGES", "1000"))))
 VALUES_TTL_SECONDS = max(60, int(os.environ.get("VALUES_TTL_SECONDS", "300")))
 BLOXSWAPS_ITEMS_TTL_SECONDS = max(300, int(os.environ.get("BLOXSWAPS_ITEMS_TTL_SECONDS", "3600")))
 PENDING_TTL_SECONDS = max(86400, int(os.environ.get("PENDING_TTL_SECONDS", str(7 * 86400))))
@@ -2654,6 +2654,11 @@ def format_unvalued_message(listing, missing):
 
 
 def evaluate_listing(listing, values, aliases=None):
+    # Items deliberately omitted from numeric Supreme valuation must still block
+    # a WIN: treating an unpriced item as zero can manufacture a false profit.
+    ignored_unvalued = ignored_item_names(listing)
+    if ignored_unvalued:
+        return None, [f"{name} has no numeric Supreme value" for name in ignored_unvalued]
     give_min, give_max, give_lines, give_missing, give_uncertain = calculate_side_bounds(
         listing["give_items"], values, aliases, side="give"
     )
