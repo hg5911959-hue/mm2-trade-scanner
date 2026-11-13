@@ -44,6 +44,17 @@ class PendingRecheckScheduleTests(unittest.TestCase):
         )
         self.assertFalse(scanner.should_run_backlog_recheck(0, every=4))
 
+    def test_value_snapshot_refresh_can_force_a_bounded_pending_recheck(self):
+        pending = {"older": 100.0, "newer": 200.0}
+        schedule = {
+            "older": {"attempts": 3, "next_check_at": 5000.0},
+            "newer": {"attempts": 2, "next_check_at": 6000.0},
+        }
+        selected = scanner.due_pending_ids_for_scan(
+            pending, schedule, now=1000, limit=1, force=True
+        )
+        self.assertEqual(list(selected), ["newer"])
+
     def test_zero_limit_means_all_due_items(self):
         pending = {f"ad-{i}": float(i) for i in range(5)}
         selected = scanner.due_pending_ids_for_scan(pending, {}, now=1000, limit=0)
