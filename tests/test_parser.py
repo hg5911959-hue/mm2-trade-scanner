@@ -2063,8 +2063,9 @@ class CursorPaginationTests(unittest.TestCase):
 
     def test_pending_listing_is_found_after_an_already_seen_boundary(self):
         pending_post = self._post("pending-post")
+        seen_posts = [self._post(f"seen-boundary-{i}") for i in range(25)]
         responses = [{
-            "items": [pending_post, self._post("seen-boundary")],
+            "items": [pending_post] + seen_posts,
             "meta": {"cursor": None},
         }]
         with (
@@ -2073,15 +2074,16 @@ class CursorPaginationTests(unittest.TestCase):
                 "a-id": {"id": "a-id", "displayName": "Knife A"},
                 "b-id": {"id": "b-id", "displayName": "Knife B"},
             }),
+            patch("scanner._last_successful_scan_timestamp", return_value=2_000_000_000),
             patch("scanner.bloxswaps_api_get_json", side_effect=responses),
         ):
             listings, stats, _ = scanner.fetch_bloxswaps_all(
-                {"first-post", "seen-boundary"}, {"pending-post"}
+                {"first-post"} | {post["id"] for post in seen_posts}, {"pending-post"}
             )
         self.assertEqual([item["source_ad_id"] for item in listings], ["pending-post"])
         self.assertEqual(stats["pending_found_ids"], ["pending-post"])
         self.assertEqual(stats["pending_remaining_ids"], [])
-        self.assertFalse(stats["seen_boundary_reached"])
+        self.assertTrue(stats["seen_boundary_reached"])
         self.assertTrue(stats["pagination_complete"])
         self.assertEqual(stats["pagination_pages"], 2)
 
@@ -3007,12 +3009,14 @@ class WatchWindowPaginationTests(unittest.TestCase):
             patch("scanner.fetch_bloxswaps_items_map", return_value={
                 "a-id": {"displayName": "Knife A"}, "b-id": {"displayName": "Knife B"}
             }),
+            patch("scanner._last_successful_scan_timestamp", return_value=2_000_000_000),
             patch("scanner.bloxswaps_api_get_json", return_value=response),
         ):
             listings, stats, _ = scanner.fetch_bloxswaps_all(seen_ids, watch_ad_ids={"watch-later"})
         self.assertIn("watch-later", [item["source_ad_id"] for item in listings])
         self.assertEqual(stats["watch_remaining_ids"], [])
-        self.assertFalse(stats["seen_boundary_reached"])
+        self.assertTrue(stats["seen_boundary_reached"])
+        self.assertTrue(stats["watch_search_complete"])
 
 
 class ColdStartPaginationTests(unittest.TestCase):
