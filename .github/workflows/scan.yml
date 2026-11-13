@@ -114,7 +114,9 @@ jobs:
           FAILURE_ALERT_THRESHOLD: "3"
           MAX_ALERTS_PER_RUN: "0"
           MAX_ALERTS_PER_SCAN: "15"
-          MAX_PENDING_RECHECK_PER_SCAN: "500"
+          MAX_PENDING_RECHECK_PER_SCAN: "50"
+          MAX_BACKLOG_RECHECK_PAGES: "25"
+          BACKLOG_RECHECK_EVERY_CYCLES: "4"
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
           MAX_ALERTS_PER_SESSION: "0"
           MM2_SCAN_DURATION_SECONDS: "780"
