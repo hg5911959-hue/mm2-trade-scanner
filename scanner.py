@@ -2646,7 +2646,11 @@ def _clean_owner_link(url):
 def format_trade_message(listing, give_total, give_lines, receive_total, receive_lines, difference):
     """Short trade-first Telegram alert; parser diagnostics remain in Actions logs."""
     result = "WIN" if difference > 0 else ("FAIR" if difference == 0 else "LOSS")
-    owner_link = _clean_owner_link(listing.get("owner_url") or listing.get("url"))
+    owner_link = (
+        str(listing.get("owner_url") or listing.get("url") or "Discord message link unavailable")
+        if listing.get("source") == "discord"
+        else _clean_owner_link(listing.get("owner_url") or listing.get("url"))
+    )
     lines = [
         "💎 MM2 TRADE",
         "",
