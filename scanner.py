@@ -3202,7 +3202,7 @@ def scan_once():
     )
     print(f"[summary] {summary}")
     write_step_summary(summary)
-    record_success()
+    record_success_if_complete(stats)
 
 
 def compare_secondary_values(items, values):
