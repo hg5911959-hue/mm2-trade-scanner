@@ -76,11 +76,19 @@ IGNORED_VALUE_ITEMS = {"brew", "drool"}
 def redact(text):
     """Remove configured credentials and known credential formats from text."""
     safe = str(text)
-    configured = {os.environ.get("TELEGRAM_BOT_TOKEN", "").strip(), os.environ.get("TELEGRAM_CHAT_ID", "").strip(), os.environ.get("RBLXVALUE_API_KEY", "").strip(), BOT_TOKEN, CHAT_ID, RBLXVALUE_API_KEY}
+    configured = {
+        os.environ.get(name, "").strip()
+        for name in (
+            "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "RBLXVALUE_API_KEY",
+            "DISCORD_BOT_TOKEN", "DISCORD_MANUAL_MESSAGES_JSON",
+            "DISCORD_MANUAL_MESSAGES_JSON_2",
+        )
+    } | {BOT_TOKEN, CHAT_ID, RBLXVALUE_API_KEY}
     for secret in sorted((v for v in configured if v and len(v) >= 6), key=len, reverse=True):
         safe = safe.replace(secret, "[REDACTED]")
     safe = re.sub(r"https://api\.telegram\.org/bot[^/\s]+", "https://api.telegram.org/bot[REDACTED]", safe)
     safe = re.sub(r"rbx_[A-Za-z0-9_-]+", "rbx_[REDACTED]", safe)
+    safe = re.sub(r"(?i)(?:mfa\.[A-Za-z0-9_-]{20,}|[A-Za-z0-9_-]{23,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{20,})", "[REDACTED_DISCORD_TOKEN]", safe)
     safe = re.sub(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s]+", r"\1[REDACTED]", safe)
     return safe
 
@@ -1847,6 +1855,7 @@ def api_get_json(path, params=None):
         if isinstance(payload, dict):
             error_fields = {key: payload.get(key) for key in ("message", "error", "detail", "status", "code")}
             rblxvalue_guard.raise_for_key_error(200, json.dumps(error_fields), key=RBLXVALUE_API_KEY)
+        rblxvalue_guard.mark_key_success(key=RBLXVALUE_API_KEY)
         return payload
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RuntimeError("[rblxvalue] Invalid JSON response") from exc
@@ -1879,6 +1888,7 @@ def api_get_json_conditional(path, params=None, etag=None):
     if isinstance(payload, dict):
         error_fields = {key: payload.get(key) for key in ("message", "error", "detail", "status", "code")}
         rblxvalue_guard.raise_for_key_error(200, json.dumps(error_fields), key=RBLXVALUE_API_KEY)
+    rblxvalue_guard.mark_key_success(key=RBLXVALUE_API_KEY)
     return payload, response_etag, False
 
 
@@ -2757,6 +2767,9 @@ def _load_json_state(path, default, label):
 
 
 def send_maintenance_alert(key, message, cooldown_seconds=3600):
+    if os.environ.get("DRY_RUN", "").strip().casefold() == "true":
+        print(f"[dry-run] would send maintenance alert: {key}")
+        return False
     state = _load_json_state(MAINTENANCE_FILE, {}, "maintenance alert state")
     if not isinstance(state, dict):
         raise RuntimeError("[state] Maintenance alert state has an invalid structure.")
@@ -3340,6 +3353,9 @@ def scan_once():
         if (trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids:
             print(f"[dedupe] Skipping unchanged or uncertain listing {trade_id} before Telegram send.")
             return
+        if os.environ.get("DRY_RUN", "").strip().casefold() == "true":
+            print(f"[dry-run] would send: {trade_id} profit={op['difference']:g}")
+            return
         listing["alert_attempted_at_utc"] = datetime.now(timezone.utc).isoformat()
         message = format_trade_message(
             listing, op["give_total"], op["give_lines"],
@@ -3499,9 +3515,24 @@ def scan_once():
                 history_store.record_opportunity(result)
             except Exception as history_error:
                 print(f"[market-history] Opportunity storage skipped safely: {type(history_error).__name__}")
-        deliver_opportunity(result)
+        # Delivery is deferred until all candidates are ranked.
 
-    deferred = 0
+    max_per_scan = max(0, int(os.environ.get("MAX_ALERTS_PER_SCAN", "15")))
+    opportunities.sort(key=lambda item: (
+        float(item.get("profit_worst", item.get("difference", 0))),
+        float(item.get("margin", 0)),
+    ), reverse=True)
+    selected = opportunities if max_per_scan == 0 else opportunities[:max_per_scan]
+    deferred = max(0, len(opportunities) - len(selected))
+    for opportunity in selected:
+        deliver_opportunity(opportunity)
+    if deferred and os.environ.get("DRY_RUN", "").strip().casefold() != "true":
+        try:
+            send_telegram(f"{deferred} more qualifying offers deferred to the next scan")
+        except Exception as exc:
+            print(f"[telegram] Deferred notice failed: {type(exc).__name__}")
+    elif deferred:
+        print(f"[dry-run] {deferred} qualifying offers deferred")
 
     summary = (
         f"Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | "
@@ -3594,6 +3625,9 @@ def record_failure(error):
     print(f"[failure] Consecutive failures: {count}")
     error_text = str(error)
     safe_reason = redact(error_text)[:240]
+    if os.environ.get("DRY_RUN", "").strip().casefold() == "true":
+        print("[dry-run] failure alert suppressed")
+        return
     if "[rblxvalue-key-blocked]" in error_text:
         if rblxvalue_guard.claim_block_alert(key=RBLXVALUE_API_KEY):
             try:
