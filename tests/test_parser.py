@@ -665,6 +665,29 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(result["profit_worst"], 10)
         self.assertTrue(scanner.qualifies(result, 0, 0))
 
+    def test_evaluate_listing_rejects_known_ignored_items_instead_of_assuming_zero(self):
+        listing = {
+            "give_items": [{"name": "Knife A", "quantity": 1}, {"name": "Brew", "quantity": 1}],
+            "receive_items": [{"name": "Knife B", "quantity": 1}],
+        }
+        values = {
+            "knife a": {"name": "Knife A", "value": 10},
+            "knife b": {"name": "Knife B", "value": 20},
+        }
+        result, missing = scanner.evaluate_listing(listing, values)
+        self.assertIsNone(result)
+        self.assertTrue(any("Brew" in item and "no numeric Supreme value" in item for item in missing))
+
+    def test_trade_message_keeps_every_weapon_value_line(self):
+        lines = [f"• Weapon {index} [Godly / Knife] x1 — {index} each = {index}" for index in range(1, 13)]
+        message = scanner.format_trade_message(
+            {"owner_url": "https://bloxswaps.com/fr/users/123", "url": ""},
+            78, lines[:6], 78, lines[6:], 1,
+        )
+        for index in range(1, 13):
+            self.assertIn(f"Weapon {index}", message)
+        self.assertNotIn("and 4 more items", message)
+
     def test_evaluate_listing_rejects_unknown_values_and_unvalued_only_side(self):
         listing = {
             "give_items": [{"name": "Knife A", "quantity": 1}],
