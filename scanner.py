@@ -1993,6 +1993,10 @@ def load_supreme_values():
         print(f"[supreme] Using fresh source_b snapshot (age {cached_age}s; TTL {VALUES_TTL_SECONDS}s)")
         _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
         return cached_values
+    if rblxvalue_guard.is_key_blocked(key=RBLXVALUE_API_KEY):
+        raise rblxvalue_guard.RblxValueKeyBlocked(
+            "[rblxvalue-key-blocked] API key circuit breaker active; no request sent"
+        )
     if not RBLXVALUE_API_KEY:
         raise RuntimeError("[supreme] API key missing and no fresh cached source_b snapshot; refusing stale values.")
     if cached_values is not None:
