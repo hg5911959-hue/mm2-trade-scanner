@@ -1897,7 +1897,7 @@ RBLXVALUE_STABILITY_LABELS = frozenset({
     "untradeable", "unstable", "volatile",
 })
 BLOCKED_RECEIVE_STABILITY = frozenset({
-    "decreasing", "unsafe", "untradeable", "unstable", "volatile",
+    "decreasing", "unsafe", "untradeable", "unstable", "volatile", "fluctuating",
 })
 
 
