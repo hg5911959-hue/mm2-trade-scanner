@@ -1544,6 +1544,17 @@ class ReceiveMarketQualityTests(unittest.TestCase):
         self.assertTrue(any("Demand unverified" in item for item in missing))
 
 
+class SourceMetaSnapshotTests(unittest.TestCase):
+    def test_cache_requires_both_source_timestamp_and_item_count_to_match(self):
+        document = {"source_last_updated": "2026-11-14 00:00:00", "source_items_total": 1091}
+        matching = {"last_updated": "2026-11-14 00:00:00", "items_total": 1091}
+        changed_time = {"last_updated": "2026-11-14 12:00:00", "items_total": 1091}
+        changed_count = {"last_updated": "2026-11-14 00:00:00", "items_total": 1092}
+        self.assertTrue(scanner._source_snapshot_matches_meta(document, matching))
+        self.assertFalse(scanner._source_snapshot_matches_meta(document, changed_time))
+        self.assertFalse(scanner._source_snapshot_matches_meta(document, changed_count))
+        self.assertFalse(scanner._source_snapshot_matches_meta({}, matching))
+
 class RblxValueMetaPollingTests(unittest.TestCase):
     def test_meta_is_cached_for_one_hour_and_refreshed_when_due(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1568,6 +1579,28 @@ class RblxValueMetaPollingTests(unittest.TestCase):
             self.assertEqual(third["items_total"], 1091)
             self.assertEqual(api.call_count, 2)
             self.assertEqual(api.call_args_list[0].args, ("/meta",))
+
+    def test_recent_but_incomplete_meta_state_is_refetched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rblxvalue_meta.json"
+            path.write_text(json.dumps({
+                "schema_version": 1, "checked_at_epoch": 990,
+                "items_total": 1091,
+            }), encoding="utf-8")
+            payload = {
+                "last_updated": "2026-11-14 00:00:00",
+                "totals": {"items": 1091, "sets": 40},
+            }
+            with (
+                patch("scanner.RBLXVALUE_META_FILE", path),
+                patch("scanner.RBLXVALUE_META_POLL_ENABLED", True),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.time.time", return_value=1000),
+                patch("scanner.api_get_json", return_value=payload) as api,
+            ):
+                result = scanner._fetch_rblxvalue_meta()
+            api.assert_called_once_with("/meta")
+            self.assertEqual(result["last_updated"], payload["last_updated"])
 
     def test_meta_rejects_implausible_catalogue_totals(self):
         with tempfile.TemporaryDirectory() as directory:
