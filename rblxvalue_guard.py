@@ -284,7 +284,7 @@ def is_key_error(status: int, detail: str) -> bool:
 def raise_for_key_error(status: int, detail: str, *, key: str | None = None, now: float | None = None) -> None:
     if is_key_error(status, detail):
         reason = f"HTTP {status}" if int(status) in (401, 403) else "invalid/inactive/suspended credential"
-        state = mark_key_blocked(reason, key=key, now=now)
+        mark_key_blocked(reason, key=key, now=now)
         raise RblxValueKeyBlocked(
             f"[rblxvalue-key-blocked] RBLXValue credential rejected ({reason}); circuit breaker set for 6 hours"
         )
