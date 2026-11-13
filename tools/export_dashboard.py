@@ -44,7 +44,7 @@ def build_dashboard_data(db_path: str | Path) -> dict[str, Any]:
         if not {"market_snapshots", "market_values", "listings", "opportunities"}.issubset(tables):
             return empty
 
-        since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        since = (datetime.now(UTC) - timedelta(days=7)).isoformat()
         summary = {
             "trackedListings": db.execute(
                 "SELECT COUNT(*) FROM listings WHERE lower(source) != 'discord'"
