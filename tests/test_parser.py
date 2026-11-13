@@ -1463,6 +1463,7 @@ class RblxValueKeyHealthCheckTests(unittest.TestCase):
                 "key_fingerprint": scanner.rblxvalue_guard.key_fingerprint("test-key"),
                 "last_attempt_at_epoch": 900,
                 "last_success_at_epoch": 900,
+                "attribution_required": False,
             }), encoding="utf-8")
             with (
                 patch("scanner.VALUES_FILE", cache),
