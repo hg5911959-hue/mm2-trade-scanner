@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """BloxSwaps MM2 scanner with verified Supreme Values calculations."""
 import csv
-import io
 import difflib
 import itertools
 import hashlib
@@ -43,7 +42,6 @@ _SESSION_ALERT_LIMIT = MAX_ALERTS_PER_RUN
 ALERT_DELAY_SECONDS = max(0.0, float(os.environ.get("ALERT_DELAY_SECONDS", "1.1")) )
 VALUES_FILE = Path("data/supreme_values.json")
 VALUES_AUDIT_FILE = Path("data/supreme_values_audit.json")
-WEAPONS_CATALOG_FILE = Path("data/weapons_catalog.csv")
 RBLXVALUE_KEY_HEALTH_FILE = Path("data/rblxvalue_key_health.json")
 RBLXVALUE_KEY_HEALTH_INTERVAL_SECONDS = 6 * 60 * 60
 RBLXVALUE_KEY_HEALTH_RETRY_SECONDS = 3 * 60 * 60
@@ -2155,39 +2153,6 @@ def _write_supreme_values_audit(values, fetched_at=None):
                 "tier": variant.get("tier"),
                 "last_updated": variant.get("last_updated"),
             })
-    weapon_rows = [
-        {
-            **row,
-            "type_status": (
-                "classified" if str(row.get("type") or "").strip().casefold() in {"knife", "gun"}
-                else "unclassified - verify against source"
-            ),
-        }
-        for row in rows
-        if (
-            str(row.get("type") or "").strip().casefold() in {"knife", "gun"}
-            or (
-                not str(row.get("type") or "").strip()
-                and str(row.get("category") or "").strip().casefold() not in {"", "pets", "misc"}
-            )
-        )
-    ]
-    weapon_rows.sort(key=lambda row: (
-        str(row.get("type") or ""), str(row.get("category") or ""),
-        str(row.get("name") or "").casefold(), str(row.get("id") or ""),
-    ))
-    catalog_buffer = io.StringIO(newline="")
-    catalog_fields = [
-        "id", "name", "slug", "type", "type_status", "category", "value", "value_min",
-        "value_max", "stability", "demand", "rarity", "acronym", "event_name",
-        "tier", "value_status", "last_updated", "description", "image_url", "fandom_url",
-    ]
-    writer = csv.DictWriter(catalog_buffer, fieldnames=catalog_fields, extrasaction="ignore")
-    writer.writeheader()
-    writer.writerows(weapon_rows)
-    WEAPONS_CATALOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(WEAPONS_CATALOG_FILE, catalog_buffer.getvalue())
-
     VALUES_AUDIT_FILE.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(VALUES_AUDIT_FILE, json.dumps({
         "schema_version": 1,
