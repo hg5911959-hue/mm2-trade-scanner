@@ -2789,6 +2789,21 @@ def update_watch_entry(watch_state, listing, values, aliases=None):
     save_watch_state(watch_state)
     return changed
 
+def record_success_if_complete(stats):
+    """Refresh the health checkpoint only after the feed boundary is verified."""
+    if not isinstance(stats, dict) or not stats.get("pagination_complete", False):
+        print(
+            "[health] Pagination was incomplete; preserving the previous "
+            "last-success checkpoint so the watchdog can detect degraded coverage."
+        )
+        write_step_summary(
+            "WARNING: Feed pagination incomplete; last-success checkpoint was not refreshed."
+        )
+        return False
+    record_success()
+    return True
+
+
 def scan_once():
     global _SESSION_ALERTS_SENT
     if not BOT_TOKEN or not CHAT_ID:
@@ -2838,7 +2853,7 @@ def scan_once():
             f"{len(stats.get('cold_start_recent_ids', []))} posts refreshed within 60 minutes will be evaluated."
         )
         if not listings:
-            record_success()
+            record_success_if_complete(stats)
             write_step_summary("Cold-start baseline saved; no verifiably recent post was eligible for evaluation.")
             return
     else:
@@ -2885,12 +2900,12 @@ def scan_once():
         )
         if stats.get("seen_boundary_reached") and not stats.get("malformed_count") and not html_issue_count:
             print("[bloxswaps] Feed is current: first visible offers were already processed.")
-            record_success()
+            record_success_if_complete(stats)
             write_step_summary("Feed current: no new trade posts before the seen cursor boundary.")
             return
         if stats["candidate_count"] > 0 and stats["addition_count"] == stats["candidate_count"]:
             print(f"[bloxswaps] No eligible listings: all {stats['addition_count']} candidate cards contained Ajouts.")
-            record_success()
+            record_success_if_complete(stats)
             write_step_summary("Successful scan: all current candidates excluded for Ajouts.")
             return
         if stats["candidate_count"] == 0 and stats.get("pagination_source") == "html-only":
@@ -3187,7 +3202,7 @@ def scan_once():
     )
     print(f"[summary] {summary}")
     write_step_summary(summary)
-    record_success()
+    record_success_if_complete(stats)
 
 
 def compare_secondary_values(items, values):
