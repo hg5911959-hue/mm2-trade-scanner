@@ -1,6 +1,6 @@
 # MM2 Trade Scanner
 
-Automated scanner for public **BloxSwaps MM2 P2P listings**, with concise Telegram alerts. GitHub Actions starts a job every 10 minutes; each job polls the feed every 45 seconds for 570 seconds (9.5 minutes), then exits cleanly before its 12-minute timeout.
+Automated scanner for public **BloxSwaps MM2 P2P listings**, with concise Telegram alerts. GitHub Actions starts a job every 10 minutes; each job polls the feed every 30 seconds for 570 seconds (9.5 minutes), then exits cleanly before its 12-minute timeout.
 
 ## Trade evaluation
 
@@ -70,7 +70,7 @@ Never commit or share these secrets. The scanner does not print API keys or Tele
 - **Polling inside each job:** one process runs `scan_once()` every 30 seconds (configurable within 30–60 seconds) for 570 seconds (9.5 minutes). It finishes with a 2.5-minute timeout margin and handles SIGTERM/SIGINT by completing the current scan cycle before exiting.
 - **Concurrency:** `cancel-in-progress: false`; a running scan is not cancelled while it is sending Telegram messages or writing state. GitHub keeps at most one pending run for the concurrency group.
 - **Alert budget:** no arbitrary per-run or per-session trade-alert cap. Every qualified opportunity discovered in the completed feed scan is eligible for Telegram delivery; conservative positive profit remains mandatory.
-- **Detection timing:** the scanner logs first-observed-to-alert latency for every sent trade. The 45-second poll interval is designed to keep detection under one minute when a post appears between cycles; GitHub scheduling and remote API delays are outside that guarantee.
+- **Detection timing:** the scanner logs first-observed-to-alert latency for every sent trade. The 30-second poll interval is designed to keep detection near 30 seconds when a post appears between cycles; GitHub scheduling and remote API delays are outside that guarantee.
 - **Cold start:** if durable seen state is missing, the scanner paginates the feed rather than baselining only the first page. It evaluates posts verifiably refreshed within the last 60 minutes and seeds older or undated posts as historical baseline. It stops after 25 consecutive timestamped posts older than the cutoff; pinned and undated posts do not advance that boundary. Reaching the 50-page cap leaves pagination incomplete and triggers maintenance.
 - **Watch window:** the latest 6 hours or 300 watched posts (whichever is smaller) are retained. Non-profitable posts remain eligible for re-evaluation, and pagination searches for watched IDs before stopping at the seen boundary. A changed item/quantity fingerprint or changed Supreme value fingerprint causes the same ad to be evaluated again; a newly profitable version can alert again without replaying an unchanged alert.
 - **State compatibility:** existing `alerted.json`, seen-ad, pending-recheck, and uncertain-Telegram state formats are retained and migrated in place. New watch-window and last-success checkpoints are additive. A corrupt or unreadable state file fails closed instead of silently resetting deduplication.
