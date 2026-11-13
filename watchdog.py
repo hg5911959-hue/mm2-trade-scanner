@@ -69,14 +69,23 @@ def latest_success_age_minutes(token):
 
 
 def latest_active_scan_age_minutes(token):
-    """Return the age of the newest currently running scan, if any."""
-    runs = _workflow_runs(token, "status=in_progress&per_page=1", "GitHub active scan run")
-    if not runs:
+    """Return the age of the oldest queued or running scan, if any."""
+    runs = []
+    for status in ("in_progress", "queued"):
+        runs.extend(_workflow_runs(
+            token, f"status={status}&per_page=20", f"GitHub {status} scan runs"
+        ))
+    active = [
+        run for run in runs
+        if isinstance(run, dict) and run.get("status") in {"in_progress", "queued"}
+    ]
+    if not active:
         return None, None
-    run = runs[0]
-    created_at = run.get("created_at") if isinstance(run, dict) else None
+    active.sort(key=lambda run: run.get("created_at") or "")
+    run = active[0]
+    created_at = run.get("created_at")
     if not created_at:
-        raise RuntimeError("Active scan is missing created_at.")
+        raise RuntimeError("Active or queued scan is missing created_at.")
     created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
     age = max(0.0, (datetime.now(timezone.utc) - created).total_seconds() / 60.0)
     return age, run
