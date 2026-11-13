@@ -278,7 +278,7 @@ def is_key_error(status: int, detail: str) -> bool:
     ))
     if int(status) == 403 and any(marker in text for marker in ("cloudflare", "captcha", "challenge-platform", "cf-chl-", "cf-mitigated")):
         return False
-    return int(status) == 401 or (int(status) == 403 and key_context and invalid_marker)
+    return int(status) == 401 or (key_context and invalid_marker)
 
 
 def raise_for_key_error(status: int, detail: str, *, key: str | None = None, now: float | None = None) -> None:
