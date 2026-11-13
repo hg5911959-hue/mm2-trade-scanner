@@ -2035,6 +2035,7 @@ def verify_rblxvalue_key_if_due():
         "key_fingerprint": fingerprint,
         "last_attempt_at_epoch": now,
         "last_success_at_epoch": last_success or None,
+        "attribution_required": state.get("attribution_required") if same_key else None,
     }
     atomic_write_text(
         RBLXVALUE_KEY_HEALTH_FILE,
@@ -2058,6 +2059,7 @@ def verify_rblxvalue_key_if_due():
         )
         return False
 
+    attribution_required = payload.get("credit") == RBLXVALUE_ATTRIBUTION
     atomic_write_text(
         RBLXVALUE_KEY_HEALTH_FILE,
         json.dumps({
@@ -2065,9 +2067,13 @@ def verify_rblxvalue_key_if_due():
             "key_fingerprint": fingerprint,
             "last_attempt_at_epoch": now,
             "last_success_at_epoch": now,
+            "attribution_required": attribution_required,
         }, ensure_ascii=False, indent=2) + "\n",
     )
-    print("[rblxvalue-key-check] PASS: configured API credential accepted (one item)")
+    if attribution_required:
+        print("[rblxvalue-key-check] PASS: credential accepted; free-plan attribution flag detected")
+    else:
+        print("[rblxvalue-key-check] PASS: credential accepted; API reports no required credit flag")
     return True
 
 
