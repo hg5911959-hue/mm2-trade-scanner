@@ -2706,9 +2706,14 @@ def _clean_owner_link(url):
 def format_trade_message(listing, give_total, give_lines, receive_total, receive_lines, difference):
     """Short trade-first Telegram alert; parser diagnostics remain in Actions logs."""
     result = "WIN" if difference > 0 else ("FAIR" if difference == 0 else "LOSS")
-    owner_link = _clean_owner_link(listing.get("owner_url") or listing.get("url"))
+    owner_link = (
+        str(listing.get("owner_url") or listing.get("url") or "Discord message link unavailable")
+        if listing.get("source") == "discord"
+        else _clean_owner_link(listing.get("owner_url") or listing.get("url"))
+    )
     lines = [
         "💎 MM2 TRADE",
+        f"SOURCE: {str(listing.get('source', 'bloxswaps')).upper()}",
         "",
         f"👤 {owner_link}",
     ]
@@ -2747,9 +2752,14 @@ def format_unvalued_message(listing, missing):
             lines.append(f"• {item['name']}{label}")
         return _compact_telegram_items(lines)
 
-    owner_link = _clean_owner_link(listing.get("owner_url") or listing.get("url"))
+    owner_link = (
+        str(listing.get("owner_url") or listing.get("url") or "Discord message link unavailable")
+        if listing.get("source") == "discord"
+        else _clean_owner_link(listing.get("owner_url") or listing.get("url"))
+    )
     lines = [
         "⚠️ MM2 MANUAL VALUE CHECK",
+        f"SOURCE: {str(listing.get('source', 'bloxswaps')).upper()}",
         "",
         f"👤 {owner_link}",
     ]
@@ -2956,7 +2966,23 @@ def scan_once():
         seen_ads = set()
     print(f"[state] Pending listings queued for recheck: {len(pending_ids)}")
     print("[stage] Fetching BloxSwaps listings and cursor pages")
-    listings, stats, discovered_ids = fetch_bloxswaps_all(seen_ads, pending_ids.keys(), watch_state.keys())
+    bloxswaps_watch_ids = [key for key in watch_state if not str(key).startswith("discord:")]
+    listings, stats, discovered_ids = fetch_bloxswaps_all(seen_ads, pending_ids.keys(), bloxswaps_watch_ids)
+    # The collector writes a bounded local JSON file; parse it into the same
+    # normalized schema, but keep its IDs namespaced away from BloxSwaps cursors.
+    from discord_parser import load_discord_listings
+
+    discord_listings, discord_rejected = load_discord_listings()
+    if discord_listings:
+        existing_ids = {str(row.get("id") or "") for row in listings}
+        fresh_discord = [row for row in discord_listings if str(row.get("id") or "") not in existing_ids]
+        listings.extend(fresh_discord)
+    else:
+        fresh_discord = []
+    print(
+        f"[discord-parser] parsed={len(discord_listings)} "
+        f"new_for_batch={len(fresh_discord)} rejected={discord_rejected}"
+    )
     first_seen_ads = load_first_seen_ads()
     first_seen_changed = False
     observed_at = datetime.now(timezone.utc).isoformat()
@@ -2965,11 +2991,14 @@ def scan_once():
         if key and key not in first_seen_ads:
             first_seen_ads[key] = observed_at
             first_seen_changed = True
-    if first_seen_changed:
-        save_first_seen_ads(first_seen_ads)
     for listing in listings:
         source_ad_id = str(listing.get("source_ad_id") or "")
+        if listing.get("source") == "discord" and source_ad_id and source_ad_id not in first_seen_ads:
+            first_seen_ads[source_ad_id] = listing.get("posted_at") or observed_at
+            first_seen_changed = True
         listing["first_seen_at_utc"] = first_seen_ads.get(source_ad_id, observed_at)
+    if first_seen_changed:
+        save_first_seen_ads(first_seen_ads)
     if stats.get("cold_start"):
         seed_ids = set(str(value) for value in stats.get("cold_start_seed_ids", discovered_ids))
         save_seen_ads(seed_ids)
@@ -3133,12 +3162,16 @@ def scan_once():
             save_alerted(alerted)
 
     def mark_pending(listing):
+        if listing.get("source") == "discord":
+            return  # Discord messages are reloaded from their own bounded source file.
         source_id = str(listing.get("source_ad_id") or "")
         if source_id:
             pending_ids.setdefault(source_id, time.time())
             save_pending_ids(pending_ids)
 
     def mark_seen_ad(listing):
+        if listing.get("source") == "discord":
+            return  # Never add Discord snowflakes to BloxSwaps seen/pending cursors.
         source_id = str(listing.get("source_ad_id") or "")
         if source_id and source_id not in seen_ads:
             seen_ads.add(source_id)
@@ -3237,7 +3270,8 @@ def scan_once():
         save_uncertain_ids(uncertain_ids)
         mark_seen_ad(listing)
         listing["alerted_at_utc"] = datetime.now(timezone.utc).isoformat()
-        append_history(listing, op)
+        if listing.get("source") != "discord":
+            append_history(listing, op)
         first_seen_ts = _parse_feed_timestamp(listing.get("first_seen_at_utc"))
         alerted_ts = _parse_feed_timestamp(listing["alerted_at_utc"])
         detection_latency = (
