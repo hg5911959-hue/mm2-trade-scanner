@@ -8,12 +8,22 @@ from urllib.request import Request
 import scanner
 
 
+# A scan may run for 20 minutes, followed by a 5-minute state-persistence job.
+# Keep a small buffer so the watchdog does not report a healthy long-running scan.
+ACTIVE_RUN_GRACE_MINUTES = 27
+
+
 def should_alert(age, threshold=20, interval=5, reminder=360):
     """Alert in the first interval after threshold, then once per reminder window."""
     return (
         threshold <= age < threshold + interval
         or (age >= reminder and age % reminder < interval)
     )
+
+
+def should_suppress_stale_success(active_age, active_run, grace=ACTIVE_RUN_GRACE_MINUTES):
+    """Suppress stale-success alerts while a scan workflow is within its runtime budget."""
+    return active_run is not None and active_age is not None and active_age < grace
 
 
 def latest_success_age_minutes(token):
@@ -71,7 +81,7 @@ def latest_active_scan_age_minutes(token):
 def main():
     token = os.environ.get("GITHUB_TOKEN", "").strip()
     active_age, active_run = latest_active_scan_age_minutes(token)
-    if active_run and active_age < 16:
+    if should_suppress_stale_success(active_age, active_run):
         print(
             f"[watchdog] Scan job is active ({active_age:.1f} minutes); "
             "suppressing stale-success alert."
