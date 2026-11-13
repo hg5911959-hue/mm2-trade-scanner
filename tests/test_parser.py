@@ -2474,6 +2474,8 @@ class WorkflowSecurityTests(unittest.TestCase):
         self.assertIn("git push --force origin state-new:state", state_job)
         self.assertIn("git archive origin/state data | tar -x", scan_job)
         self.assertIn("rm -f state-bundle/data/discord_messages.json", scan_job)
+        self.assertIn("DISCORD_MANUAL_MESSAGES_JSON", scan_job)
+        self.assertIn("[discord-manual] message contents are not logged or persisted to public state", scan_job)
         self.assertIn("[state-audit] supreme_cache_present=true", scan_job)
         self.assertIn("[state-persist-audit] present=", state_job)
         self.assertIn("data/market_history.sqlite3", state_job)
