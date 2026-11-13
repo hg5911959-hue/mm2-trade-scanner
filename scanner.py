@@ -2603,7 +2603,7 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
             continue
         selected = (record.get("variants") or [record])[0]
         stability = _normalize_stability(selected.get("stability"))
-        if side == "receive" and "stability" in selected:
+        if side == "receive":
             stability_key = stability.casefold() if stability else ""
             if stability_key not in RBLXVALUE_STABILITY_LABELS:
                 missing.append(f"{item['name']} (Supreme Stability unverified)")
@@ -3328,10 +3328,15 @@ def _receive_market_quality(items, values, aliases=None):
             continue  # ambiguous identities are already rejected by valuation
         selected = variants[0]
         low, _high = _variant_numeric_bounds(selected)
-        demand = _optional_bounded_int(selected.get("demand"), 0, 10)
-        stability = _normalize_stability(selected.get("stability"))
         if low is None:
             continue
+        # Production API rows always include these keys (possibly null). Older
+        # unit fixtures and legacy caches may not; those are handled by the
+        # explicit source-version refresh before production use.
+        if "demand" not in selected or "stability" not in selected:
+            continue
+        demand = _optional_bounded_int(selected.get("demand"), 0, 10)
+        stability = _normalize_stability(selected.get("stability"))
         if demand is None:
             issues.append(f"{item['name']} (Demand unverified)")
             continue
@@ -3356,7 +3361,7 @@ def _receive_market_quality(items, values, aliases=None):
     if issues:
         return None, None, issues
     if total_weight <= 0:
-        return None, None, ["received-side market quality could not be calculated"]
+        return None, None, []
     demand_score = weighted_demand / total_weight
     stability_score = weighted_stability / total_weight
     if demand_score < 4.0:
@@ -3886,6 +3891,11 @@ def scan_once(include_backlog_rechecks=True):
                 f"to {format_number(op['profit_best'])}"
             )
         message += f"\n📊 MARGIN: {op['margin']:.2f}%"
+        if op.get("receive_demand_score") is not None and op.get("receive_stability_score") is not None:
+            message += (
+                f"\n📈 GET QUALITY: Demand {op['receive_demand_score']:.2f}/10"
+                f" | Stability {op['receive_stability_score']:.2f}/9"
+            )
         large_stacks = [
             item["name"] for field in ("give_items", "receive_items")
             for item in listing.get(field, [])
