@@ -2800,9 +2800,11 @@ def record_success_if_complete(stats):
             "last-success checkpoint so the watchdog can detect degraded coverage."
         )
         write_step_summary(
-            "WARNING: Feed pagination incomplete; last-success checkpoint was not refreshed."
+            "ERROR: Feed pagination incomplete; this scan cycle is not successful."
         )
-        return False
+        raise RuntimeError(
+            "[bloxswaps] Feed pagination incomplete; refusing to count this scan cycle as successful."
+        )
     record_success()
     return True
 
