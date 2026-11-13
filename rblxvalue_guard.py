@@ -185,7 +185,7 @@ def is_key_error(status: int, detail: str) -> bool:
     text = str(detail or "").casefold()
     markers = ("invalid api key", "api key invalid", "key is invalid",
                "inactive", "suspended", "deactivated", "revoked")
-    return int(status) in (401, 403) or any(marker in text for marker in markers)
+    return int(status) == 401 or any(marker in text for marker in markers)
 
 
 def raise_for_key_error(status: int, detail: str, *, key: str | None = None, now: float | None = None) -> None:
