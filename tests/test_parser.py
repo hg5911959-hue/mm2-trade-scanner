@@ -751,7 +751,7 @@ class ReliabilityTests(unittest.TestCase):
         self.assertTrue(all(len(part) <= scanner.TELEGRAM_MAX_CHARS for part in captured))
         self.assertTrue(all(part.endswith(scanner.RBLXVALUE_ATTRIBUTION) for part in captured))
         pieces = [
-            part.split("\\n", 1)[1].removesuffix("\\n\\n" + scanner.RBLXVALUE_ATTRIBUTION)
+            part.split("\n", 1)[1].removesuffix("\n\n" + scanner.RBLXVALUE_ATTRIBUTION)
             for part in captured
         ]
         self.assertEqual("".join(pieces), original)
