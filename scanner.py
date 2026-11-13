@@ -2320,22 +2320,6 @@ def load_supreme_values():
         print(f"[supreme] Using fresh source_b snapshot (age {cached_age}s; TTL {VALUES_TTL_SECONDS}s)")
         _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
         return cached_values
-    if RBLXVALUE_META_POLL_ENABLED and RBLXVALUE_API_KEY and source_meta is None:
-        try:
-            source_meta = _fetch_rblxvalue_meta(force=True)
-        except Exception as exc:
-            raise RuntimeError(
-                f"[supreme] Could not verify source version before pagination ({type(exc).__name__}); "
-                "refusing an unverified catalogue refresh"
-            ) from exc
-    if RBLXVALUE_META_POLL_ENABLED and RBLXVALUE_API_KEY and source_meta is None:
-        try:
-            source_meta = _fetch_rblxvalue_meta(force=True)
-        except Exception as exc:
-            raise RuntimeError(
-                f"[supreme] Could not verify source version before pagination ({type(exc).__name__}); "
-                "refusing an unverified catalogue refresh"
-            ) from exc
     if rblxvalue_guard.is_key_blocked(key=RBLXVALUE_API_KEY):
         raise RuntimeError(
             "[supreme] API key circuit breaker active; refusing stale-cache calculations "
@@ -2343,6 +2327,14 @@ def load_supreme_values():
         )
     if not RBLXVALUE_API_KEY:
         raise RuntimeError("[supreme] API key missing and no fresh cached source_b snapshot; refusing stale values.")
+    if RBLXVALUE_META_POLL_ENABLED and source_meta is None:
+        try:
+            source_meta = _fetch_rblxvalue_meta(force=True)
+        except Exception as exc:
+            raise RuntimeError(
+                f"[supreme] Could not verify source version before pagination ({type(exc).__name__}); "
+                "refusing an unverified catalogue refresh"
+            ) from exc
     if cached_values is not None:
         print(f"[supreme] Cached snapshot expired (age {cached_age}s); conditionally refreshing API")
     cached_pages = cached_document.get("pages", {}) if isinstance(cached_document, dict) else {}
