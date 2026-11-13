@@ -749,8 +749,25 @@ class ReliabilityTests(unittest.TestCase):
             scanner.send_telegram(original)
         self.assertGreater(len(captured), 1)
         self.assertTrue(all(len(part) <= scanner.TELEGRAM_MAX_CHARS for part in captured))
-        pieces = [part.split("\n", 1)[1] for part in captured]
+        self.assertTrue(all(part.endswith(scanner.RBLXVALUE_ATTRIBUTION) for part in captured))
+        pieces = [
+            part.split("\\n", 1)[1].removesuffix("\\n\\n" + scanner.RBLXVALUE_ATTRIBUTION)
+            for part in captured
+        ]
         self.assertEqual("".join(pieces), original)
+
+    def test_short_telegram_message_includes_exact_rblxvalue_credit(self):
+        from io import BytesIO
+        captured = []
+        def fake_open(req, timeout):
+            captured.append(json.loads(req.data.decode())["text"])
+            return BytesIO(b'{"ok": true}')
+        with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
+            "scanner.urllib.request.urlopen", side_effect=fake_open
+        ):
+            scanner.send_telegram("A short scanner status.")
+        self.assertEqual(len(captured), 1)
+        self.assertTrue(captured[0].endswith("Data from rblxvalue.com"))
 
     def test_telegram_partial_multipart_delivery_is_quarantined(self):
         from io import BytesIO
