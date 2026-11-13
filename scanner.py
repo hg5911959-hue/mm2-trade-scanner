@@ -1144,7 +1144,7 @@ def fetch_bloxswaps_items_map(force_refresh=False):
             age = max(0, int(time.time() - float(cache.get("fetched_at", 0))))
             cached = cache.get("items")
             if isinstance(cached, dict) and cached and force_refresh and not force_allowed:
-                print(f"[bloxswaps] Catalogue force-refresh suppressed by 60-second cooldown; reusing {len(cached)} cached names")
+                print(f"[bloxswaps] Catalogue force-refresh suppressed by 10-minute cooldown; reusing {len(cached)} cached names")
                 return cached
             if not force_refresh and age <= BLOXSWAPS_ITEMS_TTL_SECONDS and isinstance(cached, dict) and cached:
                 print(f"[bloxswaps] Using fresh item catalogue ({len(cached)} names; age {age}s)")
@@ -2764,6 +2764,17 @@ def due_pending_ids_for_scan(pending, schedule, now=None, limit=MAX_PENDING_RECH
     return {row[3]: row[4] for row in candidates}
 
 
+
+def seed_pending_ids_as_seen(seen_ads, pending_ids):
+    """Keep unresolved IDs out of the hot feed while retaining their recheck queue."""
+    if seen_ads is None:
+        return None
+    for ad_id in pending_ids or ():
+        value = str(ad_id or "").strip()
+        if value:
+            seen_ads.add(value)
+    return seen_ads
+
 def record_pending_recheck_attempts(due_ids, pending, schedule, now=None):
     """Advance retry backoff for checked IDs and initialize newly pending IDs."""
     current = time.time() if now is None else float(now)
@@ -3298,6 +3309,15 @@ def scan_once(include_backlog_rechecks=True):
     seen_ads = load_seen_ads()
     pending_ids = load_pending_ids()
     pending_schedule = load_pending_recheck_schedule()
+    if seen_ads is not None:
+        new_pending_seen = set(pending_ids) - seen_ads
+        if new_pending_seen:
+            seed_pending_ids_as_seen(seen_ads, new_pending_seen)
+            save_seen_ads(seen_ads)
+            print(
+                f"[state] Seeded {len(new_pending_seen)} pending IDs into the seen set; "
+                "they remain queued for bounded rechecks."
+            )
     all_due_pending_ids = due_pending_ids_for_scan(
         pending_ids, pending_schedule, limit=0
     )
@@ -3374,6 +3394,8 @@ def scan_once(include_backlog_rechecks=True):
         seed_ids = set(str(value) for value in stats.get("cold_start_seed_ids", discovered_ids))
         save_seen_ads(seed_ids)
         seen_ads = seed_ids
+        seed_pending_ids_as_seen(seen_ads, pending_ids)
+        save_seen_ads(seen_ads)
         print(
             f"[state] Cold-start baseline saved for {len(seed_ids)} historical posts; "
             f"{len(stats.get('cold_start_recent_ids', []))} posts refreshed within 60 minutes will be evaluated."
