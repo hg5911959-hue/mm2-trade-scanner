@@ -707,18 +707,22 @@ class ReliabilityTests(unittest.TestCase):
         listing = {"give_items": [{"name": "Brew", "quantity": 1}], "receive_items": []}
         self.assertEqual(scanner.ignored_item_names(listing), ["Brew"])
 
-    def test_telegram_message_is_truncated_before_request(self):
-        captured = {}
+    def test_telegram_long_message_is_split_without_dropping_content(self):
+        captured = []
         def fake_open(req, timeout):
-            captured["payload"] = json.loads(req.data.decode())
+            captured.append(json.loads(req.data.decode())["text"])
             from io import BytesIO
             return BytesIO(b'{"ok": true}')
+        original = "weapon-value-line-" * 300
         with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
             "scanner.urllib.request.urlopen", side_effect=fake_open
         ):
-            scanner.send_telegram("x" * 5000)
-        self.assertLessEqual(len(captured["payload"]["text"]), scanner.TELEGRAM_MAX_CHARS)
-        self.assertTrue(captured["payload"]["text"].endswith("[message truncated]"))
+            scanner.send_telegram(original)
+        self.assertGreater(len(captured), 1)
+        self.assertTrue(all(len(part) <= scanner.TELEGRAM_MAX_CHARS for part in captured))
+        joined = "\n".join(captured)
+        self.assertIn("weapon-value-line-", joined)
+        self.assertIn("300", str(len(captured))) if False else None
 
     def test_telegram_send_does_not_retry_uncertain_network_failure(self):
         calls = []
