@@ -1764,11 +1764,12 @@ def _filter_variants_by_catalog(candidates, item):
             name = normalize_name(row[2].get("name") or "")
             slug = normalize_slug(row[2].get("slug") or "")
             return name.startswith("chroma ") or slug.startswith("chroma-")
+        has_chroma_metadata = any(is_chroma_variant(row) for row in candidates)
         chroma_matches = [row for row in candidates if is_chroma_variant(row) is chroma]
         # Apply chroma identity only when the Supreme catalogue exposes it in
-        # either the canonical name or slug. Otherwise keep the candidates
-        # ambiguous rather than treating rarity as a chroma marker.
-        if chroma_matches:
+        # either the canonical name or slug. A conflicting explicit flag must
+        # not silently select the opposite variant.
+        if has_chroma_metadata:
             candidates = chroma_matches
     if year is not None:
         year_pattern = re.compile(rf"(?<!\\d){year}(?!\\d)")
