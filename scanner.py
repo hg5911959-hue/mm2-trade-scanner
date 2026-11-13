@@ -1920,7 +1920,7 @@ def _write_supreme_values_audit(values, fetched_at=None):
 
 
 def load_supreme_values():
-    # Schema v3 preserves item identity; schema-v2 caches discarded category/type/slug.
+    # Schema v4 preserves item identity and Supreme stability; older caches lack stability.
     cached_document = _read_values_cache_document()
     cached_values, cached_age = _read_values_cache()
     if cached_values is not None and cached_age is not None and cached_age <= VALUES_TTL_SECONDS:
@@ -2859,7 +2859,7 @@ def scan_once():
 
     print("[stage] Checking RBLXValue API credential")
     if not RBLXVALUE_API_KEY:
-        print("[supreme] API key missing; only a fresh schema-v3 Supreme cache can be used")
+        print("[supreme] API key missing; only a fresh schema-v4 Supreme cache can be used")
     elif not RBLXVALUE_API_KEY.startswith("rbx_"):
         print("[supreme] API key format looks invalid; cached values will be used if available")
     else:
