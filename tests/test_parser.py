@@ -768,8 +768,23 @@ class ReliabilityTests(unittest.TestCase):
         }
         result, missing = scanner.evaluate_listing(listing, values)
         self.assertEqual(missing, [])
-        self.assertTrue(any("Stability: Rising" in line for line in result["receive_lines"]))
-        self.assertTrue(any("Stability: Stable" in line for line in result["give_lines"]))
+        self.assertTrue(any("Stability (RBLXValue): Rising" in line for line in result["receive_lines"]))
+        self.assertTrue(any("Stability (RBLXValue): Stable" in line for line in result["give_lines"]))
+
+    def test_untradeable_unstable_and_volatile_received_items_are_excluded(self):
+        listing = {
+            "give_items": [{"name": "Knife A", "quantity": 1}],
+            "receive_items": [{"name": "Knife B", "quantity": 1}],
+        }
+        for stability in ("Untradeable", "Unstable", "Volatile"):
+            with self.subTest(stability=stability):
+                values = {
+                    "knife a": {"name": "Knife A", "value": 10, "stability": "Stable"},
+                    "knife b": {"name": "Knife B", "value": 20, "stability": stability},
+                }
+                result, missing = scanner.evaluate_listing(listing, values)
+                self.assertIsNone(result)
+                self.assertTrue(any(stability in item for item in missing))
 
     def test_decreasing_item_on_give_side_is_not_filtered_as_received_item(self):
         listing = {
