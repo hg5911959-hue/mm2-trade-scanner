@@ -1522,6 +1522,13 @@ class ReceiveMarketQualityTests(unittest.TestCase):
         self.assertIsNone(result)
         self.assertTrue(any("Demand is low" in item for item in missing))
 
+    def test_fluctuating_receive_item_is_excluded_from_best_alerts(self):
+        result, missing = scanner.evaluate_listing(
+            self._listing(), self._values("Fluctuating", 8)
+        )
+        self.assertIsNone(result)
+        self.assertTrue(any("Fluctuating" in item for item in missing))
+
     def test_underpaid_for_receive_item_is_excluded_from_best_alerts(self):
         result, missing = scanner.evaluate_listing(
             self._listing(), self._values("Underpaid For", 8)
