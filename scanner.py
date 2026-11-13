@@ -35,6 +35,9 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 MIN_DIFF = float(os.environ.get("MIN_VALUE_DIFFERENCE", "0"))
 MIN_PROFIT_PERCENT = float(os.environ.get("MIN_PROFIT_PERCENT", "5"))
+MAX_FAST_LANE_ALERTS_PER_SCAN = max(0, int(os.environ.get("MAX_FAST_LANE_ALERTS_PER_SCAN", "2")))
+FAST_LANE_MIN_MARGIN_PERCENT = max(5.0, float(os.environ.get("FAST_LANE_MIN_MARGIN_PERCENT", "15")))
+FAST_LANE_MIN_DEMAND_SCORE = min(10.0, max(0.0, float(os.environ.get("FAST_LANE_MIN_DEMAND_SCORE", "6"))))
 FAILURE_THRESHOLD = int(os.environ.get("FAILURE_ALERT_THRESHOLD", "3"))
 MAX_ALERTS_PER_RUN = max(0, int(os.environ.get("MAX_ALERTS_PER_RUN", "0")))
 _SESSION_ALERTS_SENT = 0
@@ -3478,6 +3481,21 @@ def qualifies(result, min_diff=None, min_percent=None):
     return metric > 0 and metric >= min_diff and result["margin"] >= min_percent
 
 
+def qualifies_fast_lane(result):
+    """Strict exceptional-deal gate for immediate Telegram delivery before batch ranking."""
+    if not qualifies(result):
+        return False
+    if result.get("manual_review") or result.get("uncertain_items"):
+        return False
+    if result.get("margin", 0) < FAST_LANE_MIN_MARGIN_PERCENT:
+        return False
+    if result.get("receive_demand_score") is None or result["receive_demand_score"] < FAST_LANE_MIN_DEMAND_SCORE:
+        return False
+    if result.get("receive_stability_score") is None or result["receive_stability_score"] < 3.0:
+        return False
+    return True
+
+
 def should_alert_malformed_cards(issue_count):
     """Any malformed card is actionable; rate limits belong to the persisted cooldown."""
     try:
@@ -3909,8 +3927,14 @@ def scan_once(include_backlog_rechecks=True):
 
     skipped_unknown = 0
     sent = 0
+    fast_lane_sent = 0
     evaluated = 0
     opportunities = []
+    max_per_scan = max(0, int(os.environ.get("MAX_ALERTS_PER_SCAN", "15")))
+    fast_lane_limit = min(
+        MAX_FAST_LANE_ALERTS_PER_SCAN,
+        max_per_scan if max_per_scan > 0 else MAX_FAST_LANE_ALERTS_PER_SCAN,
+    )
     def deliver_opportunity(op):
         nonlocal sent
         global _SESSION_ALERTS_SENT
@@ -4097,16 +4121,31 @@ def scan_once(include_backlog_rechecks=True):
                 mark_seen_ad(listing)
             update_watch_entry(watch_state, listing, values, aliases)
             continue
-        opportunities.append(result)
         if history_store is not None:
             try:
                 history_store.record_opportunity(result)
             except Exception as history_error:
                 print(f"[market-history] Opportunity storage skipped safely: {type(history_error).__name__}")
-        # Delivery is deferred until all candidates are ranked.
+        if fast_lane_sent < fast_lane_limit and qualifies_fast_lane(result) and (
+            max_per_scan == 0 or sent < max_per_scan
+        ):
+            before_send = sent
+            print(
+                f"[fast-lane] Exceptional offer {trade_id} qualifies "
+                f"(margin={result['margin']:.2f}%, demand={result['receive_demand_score']:.2f}/10); "
+                "sending immediately"
+            )
+            deliver_opportunity(result)
+            if sent > before_send:
+                fast_lane_sent += 1
+                update_metrics(increments={"alerts_fast_lane": 1})
+            # Never enqueue an immediate-send attempt for the end-of-scan batch:
+            # uncertain or failed sends are already quarantined/pending for retry.
+            continue
+        opportunities.append(result)
 
-    max_per_scan = max(0, int(os.environ.get("MAX_ALERTS_PER_SCAN", "15")))
-    selected, deferred_items = rank_and_split(opportunities, max_per_scan)
+    remaining_slots = max(0, max_per_scan - sent) if max_per_scan > 0 else 0
+    selected, deferred_items = rank_and_split(opportunities, remaining_slots)
     deferred = len(deferred_items)
     if deferred:
         update_metrics(increments={"alerts_deferred": deferred})
@@ -4127,7 +4166,7 @@ def scan_once(include_backlog_rechecks=True):
         f"Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | "
         f"already_alerted={already_alerted_skipped} | watch_unchanged={watch_unchanged_skipped} | uncertain_quarantined={uncertain_skipped} | "
         f"pending_recheck={len(pending_ids)} | qualified={len(opportunities)} | "
-        f"alerts={sent} | deferred={deferred}"
+        f"alerts={sent} | fast_lane={fast_lane_sent} | deferred={deferred}"
     )
     print(f"[summary] {summary}")
     write_step_summary(summary)
