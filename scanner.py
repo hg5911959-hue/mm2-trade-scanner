@@ -2993,10 +2993,10 @@ def scan_once():
             first_seen_changed = True
     for listing in listings:
         source_ad_id = str(listing.get("source_ad_id") or "")
-        if listing.get("source") == "discord" and source_ad_id and source_ad_id not in first_seen_ads:
-            first_seen_ads[source_ad_id] = listing.get("posted_at") or observed_at
-            first_seen_changed = True
-        listing["first_seen_at_utc"] = first_seen_ads.get(source_ad_id, observed_at)
+        if listing.get("source") == "discord":
+            listing["first_seen_at_utc"] = listing.get("posted_at") or observed_at
+        else:
+            listing["first_seen_at_utc"] = first_seen_ads.get(source_ad_id, observed_at)
     if first_seen_changed:
         save_first_seen_ads(first_seen_ads)
     if stats.get("cold_start"):
