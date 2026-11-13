@@ -2,6 +2,13 @@ name: RBLXValue API Connection Test
 
 on:
   workflow_dispatch:
+  # Run one non-secret-leaking live credential check when this workflow is
+  # intentionally updated on main. This lets maintainers verify the stored
+  # Actions secret without exposing it or requiring a manual UI dispatch.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/rblxvalue-connection-test.yml"
 
 permissions:
   contents: read
