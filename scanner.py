@@ -3925,6 +3925,11 @@ def should_start_scan_cycle(remaining_seconds, duration_seconds):
     """Do not begin a full scan cycle when the polling window is nearly exhausted."""
     return float(remaining_seconds) >= minimum_cycle_start_window(duration_seconds)
 
+def should_run_backlog_recheck(cycle_number, every=None):
+    """Schedule expensive pending/watch work separately from the hot new-feed path."""
+    cadence = BACKLOG_RECHECK_EVERY_CYCLES if every is None else max(1, int(every))
+    return int(cycle_number) > 0 and int(cycle_number) % cadence == 0
+
 
 def run_scan_loop(duration_seconds=720, interval_seconds=45):
     """Poll repeatedly in one Actions job while preserving one alert budget per job."""
@@ -3958,7 +3963,7 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
             cycles += 1
             print(f"[loop] Starting scan cycle {cycles}; elapsed={cycle_started - started:.1f}s")
             try:
-                include_backlog = cycles % BACKLOG_RECHECK_EVERY_CYCLES == 0
+                include_backlog = should_run_backlog_recheck(cycles)
                 scan_once(include_backlog_rechecks=include_backlog)
                 successful_cycles += 1
             except Exception as exc:
