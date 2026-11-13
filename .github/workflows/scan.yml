@@ -1,8 +1,18 @@
 name: MM2 Trade Scanner
 
 on:
-  schedule:
-    - cron: "*/15 * * * *"
+  workflow_call:
+    inputs:
+      verify_rblxvalue_key:
+        description: "Send exactly one small /v2/items request to verify the configured API key"
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: "Evaluate and log opportunities without sending Telegram messages or recording alerts"
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       verify_rblxvalue_key:

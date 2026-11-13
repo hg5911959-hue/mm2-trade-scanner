@@ -12,17 +12,24 @@ class WatchdogRepositoryTests(unittest.TestCase):
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         running = {"workflow_runs": [{"id": 123, "status": "in_progress", "created_at": now}]}
         queued = {"workflow_runs": [{"id": 124, "status": "queued", "created_at": now}]}
-        responses = [json.dumps(running).encode("utf-8"), json.dumps(queued).encode("utf-8")]
+        responses = [
+            json.dumps(running).encode("utf-8"),
+            json.dumps(running).encode("utf-8"),
+            json.dumps(queued).encode("utf-8"),
+            json.dumps(queued).encode("utf-8"),
+        ]
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": "example/mm2-test"}), patch(
             "watchdog.scanner.request_with_retry", side_effect=responses,
         ) as request:
             age, run = watchdog.latest_active_scan_age_minutes("test-token")
         self.assertIsNotNone(age)
         self.assertIn(run["id"], {123, 124})
-        self.assertEqual(request.call_count, 2)
+        self.assertEqual(request.call_count, 4)
         urls = [call.args[0].full_url for call in request.call_args_list]
         self.assertTrue(any("status=in_progress" in url for url in urls))
         self.assertTrue(any("status=queued" in url for url in urls))
+        self.assertTrue(any("scan-scheduler.yml" in url for url in urls))
+        self.assertTrue(any("scan.yml" in url for url in urls))
         self.assertTrue(all("example/mm2-test" in url for url in urls))
 
     def test_oldest_active_scan_is_used_to_detect_a_stuck_queue(self):
@@ -30,7 +37,12 @@ class WatchdogRepositoryTests(unittest.TestCase):
         recent = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         running = {"workflow_runs": [{"id": 123, "status": "in_progress", "created_at": old}]}
         queued = {"workflow_runs": [{"id": 124, "status": "queued", "created_at": recent}]}
-        responses = [json.dumps(running).encode("utf-8"), json.dumps(queued).encode("utf-8")]
+        responses = [
+            json.dumps(running).encode("utf-8"),
+            json.dumps(running).encode("utf-8"),
+            json.dumps(queued).encode("utf-8"),
+            json.dumps(queued).encode("utf-8"),
+        ]
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": "example/mm2-test"}), patch(
             "watchdog.scanner.request_with_retry", side_effect=responses,
         ):
@@ -51,13 +63,20 @@ class WatchdogRepositoryTests(unittest.TestCase):
         ]}
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": "example/mm2-test"}), patch(
             "watchdog.scanner.request_with_retry",
-            return_value=json.dumps(payload).encode("utf-8"),
+            side_effect=[
+                json.dumps({"workflow_runs": []}).encode("utf-8"),
+                json.dumps(payload).encode("utf-8"),
+            ],
         ) as request:
             age, run = watchdog.latest_success_age_minutes("test-token")
         self.assertGreaterEqual(age, 0)
         self.assertEqual(run["id"], 2)
-        self.assertIn("status=completed", request.call_args.args[0].full_url)
-        self.assertNotIn("status=success", request.call_args.args[0].full_url)
+        self.assertEqual(request.call_count, 2)
+        urls = [call.args[0].full_url for call in request.call_args_list]
+        self.assertTrue(all("status=completed" in url for url in urls))
+        self.assertTrue(any("scan-scheduler.yml" in url for url in urls))
+        self.assertTrue(any("scan.yml" in url for url in urls))
+        self.assertTrue(all("status=success" not in url for url in urls))
 
     def test_success_lookup_uses_latest_completed_success(self):
         old = "2026-11-10T00:00:00Z"
@@ -68,7 +87,10 @@ class WatchdogRepositoryTests(unittest.TestCase):
         ]}
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": "example/mm2-test"}), patch(
             "watchdog.scanner.request_with_retry",
-            return_value=json.dumps(payload).encode("utf-8"),
+            side_effect=[
+                json.dumps(payload).encode("utf-8"),
+                json.dumps({"workflow_runs": []}).encode("utf-8"),
+            ],
         ):
             _, run = watchdog.latest_success_age_minutes("test-token")
         self.assertEqual(run["id"], 2)
@@ -77,7 +99,10 @@ class WatchdogRepositoryTests(unittest.TestCase):
         payload = {"workflow_runs": [{"id": 1, "conclusion": "cancelled", "completed_at": "2026-11-13T00:00:00Z"}]}
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": "example/mm2-test"}), patch(
             "watchdog.scanner.request_with_retry",
-            return_value=json.dumps(payload).encode("utf-8"),
+            side_effect=[
+                json.dumps(payload).encode("utf-8"),
+                json.dumps(payload).encode("utf-8"),
+            ],
         ):
             with self.assertRaisesRegex(RuntimeError, "no successful completed"):
                 watchdog.latest_success_age_minutes("test-token")

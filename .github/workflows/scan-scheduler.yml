@@ -1,0 +1,15 @@
+name: MM2 Scanner Scheduler
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  scan:
+    uses: ./.github/workflows/scan.yml
+    secrets: inherit

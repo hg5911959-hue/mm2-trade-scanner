@@ -2848,8 +2848,10 @@ class AliasSuggestionToolTests(unittest.TestCase):
 class WorkflowSecurityTests(unittest.TestCase):
     def test_scan_and_state_jobs_have_separate_permissions_and_no_legacy_cache(self):
         workflow = Path(".github/workflows/scan.yml").read_text(encoding="utf-8")
+        scheduler = Path(".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
         scan_job, state_job = workflow.split("  persist-state:", 1)
-        self.assertIn('cron: "*/15 * * * *"', workflow)
+        self.assertIn('cron: "*/15 * * * *"', scheduler)
+        self.assertIn("uses: ./.github/workflows/scan.yml", scheduler)
         self.assertIn("cancel-in-progress: false", workflow)
         self.assertIn('MM2_SCAN_DURATION_SECONDS: "780"', scan_job)
         self.assertIn("timeout-minutes: 20", scan_job)
@@ -2898,6 +2900,10 @@ class WorkflowSecurityTests(unittest.TestCase):
                 if "uses:" not in line:
                     continue
                 reference = line.split("uses:", 1)[1].split("#", 1)[0].strip()
+                if reference.startswith("./.github/workflows/"):
+                    local_workflow = Path(reference.removeprefix("./"))
+                    self.assertTrue(local_workflow.is_file(), msg=f"{path}: {reference}")
+                    continue
                 self.assertIn("@", reference, msg=f"{path}: {reference}")
                 self.assertRegex(reference.rsplit("@", 1)[1], r"^[0-9a-f]{40}$", msg=f"{path}: {reference}")
 

@@ -1,0 +1,15 @@
+name: MM2 Watchdog Scheduler
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  watchdog:
+    uses: ./.github/workflows/watchdog.yml
+    secrets: inherit
