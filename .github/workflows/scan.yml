@@ -122,6 +122,9 @@ jobs:
         run: |
           mkdir -p state-bundle/data
           if [ -d data ]; then cp -a data/. state-bundle/data/; fi
+          # Discord messages may come from private servers; process them in this
+          # job only and never publish raw message bodies to the public state branch.
+          rm -f state-bundle/data/discord_messages.json state-bundle/data/discord_messages.json.tmp
           printf '%s\n' "${GITHUB_SHA}" > state-bundle/source-commit.txt
 
       - name: Upload durable state
