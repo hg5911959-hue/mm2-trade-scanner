@@ -21,6 +21,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 
 import rblxvalue_guard
+from tools.metrics import update_metrics
 
 BLOXSWAPS_URL = os.environ.get(
     "BLOXSWAPS_URL",
@@ -3081,8 +3082,10 @@ def record_success_if_complete(stats):
 
 def scan_once():
     global _SESSION_ALERTS_SENT
-    if not BOT_TOKEN or not CHAT_ID:
+    dry_run = os.environ.get("DRY_RUN", "").strip().casefold() == "true"
+    if not dry_run and (not BOT_TOKEN or not CHAT_ID):
         raise RuntimeError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in GitHub Actions secrets.")
+    update_metrics(increments={"scans": 1})
 
     print("[stage] Checking RBLXValue API credential")
     if not RBLXVALUE_API_KEY:
@@ -3200,6 +3203,7 @@ def scan_once():
                 cooldown_seconds=3600,
             )
     if not listings:
+        update_metrics(increments={"parse_empty": 1})
         html_issue_count = max(
             int(stats.get("html_malformed_count", 0)),
             int(stats.get("html_parse_warning_count", 0)),
@@ -3440,6 +3444,7 @@ def scan_once():
             f"first_seen_to_alert={latency_label}"
         )
         sent += 1
+        update_metrics(increments={"alerts_sent": 1})
 
     for listing in listings:
         trade_id = listing["id"]
@@ -3524,6 +3529,8 @@ def scan_once():
     ), reverse=True)
     selected = opportunities if max_per_scan == 0 else opportunities[:max_per_scan]
     deferred = max(0, len(opportunities) - len(selected))
+    if deferred:
+        update_metrics(increments={"alerts_deferred": deferred})
     for opportunity in selected:
         deliver_opportunity(opportunity)
     if deferred and os.environ.get("DRY_RUN", "").strip().casefold() != "true":
@@ -3620,6 +3627,7 @@ def record_failure(error):
     except (OSError, ValueError):
         state = {"consecutive_failures": 0}
     count = int(state.get("consecutive_failures", 0)) + 1
+    update_metrics(increments={"scan_failures": 1})
     state["consecutive_failures"] = count
     atomic_write_text(FAILURE_FILE, json.dumps(state, indent=2) + "\n")
     print(f"[failure] Consecutive failures: {count}")
@@ -3632,14 +3640,17 @@ def record_failure(error):
         if rblxvalue_guard.claim_block_alert(key=RBLXVALUE_API_KEY):
             try:
                 fingerprint = rblxvalue_guard.key_fingerprint(RBLXVALUE_API_KEY)
-                send_telegram(
-                    "MM2 RBLXValue API CREDENTIAL REJECTED\n"
-                    "The upstream rejected the configured credential; no trade calculations will use stale values.\n"
-                    f"Safe diagnostic: {safe_reason}\n"
-                    "No further API calls will be made for 6 hours, or until the key changes.\n"
-                    f"Key fingerprint: {fingerprint}\n"
-                    "Trade calculations remain Fail-Closed; only a fresh valid Supreme cache may be used."
-                )
+                block_state = rblxvalue_guard._read_json(rblxvalue_guard.BLOCK_FILE)
+                if block_state.get("permanent"):
+                    send_telegram("RBLXValue key rejected 3 times - replace the key or contact RBLXValue on Discord")
+                else:
+                    send_telegram(
+                        "MM2 RBLXValue API CREDENTIAL REJECTED\n"
+                        "The upstream rejected the configured credential; calculations remain Fail-Closed.\n"
+                        f"Safe diagnostic: {safe_reason}\n"
+                        f"Blocked for {int(block_state.get('blocked_seconds', 0)) // 3600} hours or until key rotation.\n"
+                        f"Key fingerprint: {fingerprint}"
+                    )
                 rblxvalue_guard.mark_block_alert_sent(key=RBLXVALUE_API_KEY)
                 print("[telegram] RBLXValue key-block alert sent (24-hour cooldown)")
             except Exception as notify_error:
@@ -3740,6 +3751,7 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
                 pass
     elapsed = time.monotonic() - started
     rblxvalue_guard.log_request_count()
+    update_metrics(increments={"rblxvalue_requests": rblxvalue_guard.requests_this_run()})
     print(f"[loop] Finished: cycles={cycles}, successful={successful_cycles}, elapsed={elapsed:.1f}s")
     if successful_cycles == 0:
         if last_failure and (
@@ -3774,6 +3786,7 @@ def main():
     try:
         result = scan_once()
         rblxvalue_guard.log_request_count()
+        update_metrics(increments={"rblxvalue_requests": rblxvalue_guard.requests_this_run()})
         return result
     except Exception:
         rblxvalue_guard.log_request_count()
