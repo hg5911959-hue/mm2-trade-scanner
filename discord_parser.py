@@ -13,8 +13,8 @@ from typing import Any
 
 MAX_QUANTITY = 100
 _SPLIT_ITEMS = re.compile(r"\s*(?:,|;|\n|\r|\s+\+\s+)\s*")
-_QTY_PREFIX = re.compile(r"^(?:(\d{1,3})\s*[x×]\s+|[x×]\s*(\d{1,3})\s+)(.+)$", re.I)
-_QTY_SUFFIX = re.compile(r"^(.+?)\s+(?:[x×]\s*(\d{1,3})|(\d{1,3})\s*[x×])$", re.I)
+_QTY_PREFIX = re.compile(r"^(?:(\d{1,3})\s*[x×]\s+|[x×]\s*(\d{1,3})\s+)(.+)$", re.IGNORECASE)
+_QTY_SUFFIX = re.compile(r"^(.+?)\s+(?:[x×]\s*(\d{1,3})|(\d{1,3})\s*[x×])$", re.IGNORECASE)
 _LABELLED = re.compile(
     r"(?is)^\s*(?:trading|offering|offer|giving|i\s+have)\s*[:\-]\s*(.+?)"
     r"\s*(?:\||;|\n)\s*(?:looking\s+for|lf|want|wants|seeking|for)\s*[:\-]\s*(.+?)\s*$"
@@ -167,7 +167,7 @@ def load_discord_listings(path: str | Path = "data/discord_messages.json") -> tu
         raise RuntimeError(f"Discord message state is unreadable: {source}") from exc
     rows = payload.get("messages") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
-        raise RuntimeError("Discord message state has an invalid schema; expected messages array")
+        raise TypeError("Discord message state has an invalid schema; expected messages array")
     listings: dict[str, dict[str, Any]] = {}
     rejected = 0
     for row in rows:
