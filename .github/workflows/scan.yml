@@ -50,7 +50,7 @@ jobs:
         env:
           BLOXSWAPS_URL: "https://bloxswaps.com/fr/trade-mm2?trade-type=P2P"
           MIN_VALUE_DIFFERENCE: "0"
-          MIN_PROFIT_PERCENT: "0"
+          MIN_PROFIT_PERCENT: "5"
           FAILURE_ALERT_THRESHOLD: "3"
           MAX_ALERTS_PER_RUN: "0"
           MAX_ALERTS_PER_SESSION: "0"

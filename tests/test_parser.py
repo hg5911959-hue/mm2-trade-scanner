@@ -2645,3 +2645,16 @@ class PaginationHealthCheckpointTests(unittest.TestCase):
         with patch("scanner.record_success") as record_success:
             self.assertTrue(scanner.record_success_if_complete({"pagination_complete": True}))
         record_success.assert_called_once()
+
+
+class MinimumProfitMarginTests(unittest.TestCase):
+    def test_only_conservative_positive_trades_with_at_least_five_percent_margin_qualify(self):
+        base = {"manual_review": False, "profit_worst": 1, "difference": 1}
+        self.assertFalse(scanner.qualifies({**base, "margin": 4.99}, 0, 5))
+        self.assertTrue(scanner.qualifies({**base, "margin": 5.00}, 0, 5))
+        self.assertTrue(scanner.qualifies({**base, "margin": 12.5}, 0, 5))
+
+    def test_zero_or_negative_conservative_profit_never_qualifies_even_with_high_margin(self):
+        base = {"manual_review": False, "difference": 10, "margin": 50}
+        self.assertFalse(scanner.qualifies({**base, "profit_worst": 0}, 0, 5))
+        self.assertFalse(scanner.qualifies({**base, "profit_worst": -1}, 0, 5))
