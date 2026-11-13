@@ -2712,7 +2712,7 @@ class UpstreamForbiddenDiagnosticsTests(unittest.TestCase):
                 patch("rblxvalue_guard.BLOCK_FILE", root / "blocked.json"),
                 patch("scanner.urllib.request.urlopen", side_effect=error) as request,
             ):
-                with self.assertRaisesRegex(RuntimeError, r"\\[cloudflare\\].*HTTP 403"):
+                with self.assertRaisesRegex(RuntimeError, r"\[cloudflare\].*HTTP 403"):
                     scanner.request_with_retry("https://api.rblxvalue.com/v2/items", 10, "RBLXValue API", attempts=4)
                 self.assertEqual(request.call_count, 1)
                 self.assertFalse((root / "blocked.json").exists())
