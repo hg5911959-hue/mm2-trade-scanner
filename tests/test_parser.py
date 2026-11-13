@@ -1529,6 +1529,14 @@ class ReceiveMarketQualityTests(unittest.TestCase):
         self.assertIsNone(result)
         self.assertTrue(any("Stability is weak" in item for item in missing))
 
+    def test_untradeable_item_is_rejected_on_give_side_too(self):
+        listing = self._listing()
+        values = self._values("Stable", 5)
+        values["knife a"]["variants"][0]["stability"] = "Untradeable"
+        result, missing = scanner.evaluate_listing(listing, values)
+        self.assertIsNone(result)
+        self.assertTrue(any("Untradeable" in item for item in missing))
+
     def test_unverified_receive_demand_is_fail_closed(self):
         values = self._values("Stable", None)
         result, missing = scanner.evaluate_listing(self._listing(), values)

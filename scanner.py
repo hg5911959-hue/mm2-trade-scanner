@@ -2595,14 +2595,17 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
             continue
         selected = (record.get("variants") or [record])[0]
         stability = _normalize_stability(selected.get("stability"))
+        stability_key = stability.casefold() if stability else ""
+        if stability_key == "untradeable":
+            missing.append(f"{item['name']} (Untradeable; cannot be included on either trade side)")
+            continue
         if side == "receive" and "stability" in selected:
-            stability_key = stability.casefold() if stability else ""
             if stability_key not in RBLXVALUE_STABILITY_LABELS:
-                missing.append(f"{item['name']} (Supreme Stability unverified)")
+                missing.append(f"{item['name']} (RBLXValue Stability unverified)")
                 continue
             if stability_key in BLOCKED_RECEIVE_STABILITY:
                 missing.append(
-                    f"{item['name']} (Supreme Stability: {stability}; excluded)"
+                    f"{item['name']} (RBLXValue Stability: {stability}; excluded)"
                 )
                 continue
         unit_min, unit_max = _variant_numeric_bounds(selected)
