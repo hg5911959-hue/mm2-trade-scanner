@@ -1496,7 +1496,7 @@ class RblxValueMetaPollingTests(unittest.TestCase):
                 patch("scanner.RBLXVALUE_META_FILE", path),
                 patch("scanner.RBLXVALUE_META_POLL_ENABLED", True),
                 patch("scanner.RBLXVALUE_API_KEY", "test-key"),
-                patch("scanner.time.time", side_effect=[1000, 1500, 3701]),
+                patch("scanner.time.time", side_effect=[1000, 1500, 4601]),
                 patch("scanner.api_get_json", return_value=payload) as api,
             ):
                 first = scanner._fetch_rblxvalue_meta()
