@@ -48,10 +48,10 @@ jobs:
       - name: Collect authorized Discord trade channels
         env:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
-          DISCORD_GUILD_IDS: ${{ vars.DISCORD_GUILD_IDS }}
+          DISCORD_GUILD_IDS: "1125462206151143464,482699890741477376"
         run: |
-          if [ -z "$DISCORD_BOT_TOKEN" ] || [ -z "$DISCORD_GUILD_IDS" ]; then
-            echo "Discord collection skipped: configure DISCORD_BOT_TOKEN secret and DISCORD_GUILD_IDS variable."
+          if [ -z "$DISCORD_BOT_TOKEN" ]; then
+            echo "Discord collection skipped: configure the DISCORD_BOT_TOKEN secret."
             exit 0
           fi
           python -m pip install --disable-pip-version-check "discord.py==2.6.4"
