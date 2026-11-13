@@ -1392,6 +1392,110 @@ class SupremePaginationIntegrityTests(unittest.TestCase):
         ])
 
 
+
+class RblxValueKeyHealthCheckTests(unittest.TestCase):
+    @staticmethod
+    def _fresh_cache(path):
+        values = {
+            f"item {i}": {
+                "name": f"Item {i}",
+                "value": i + 1,
+                "variants": [{
+                    "id": str(i), "slug": f"item-{i}", "name": f"Item {i}",
+                    "category": "godly", "type": "knife", "value": i + 1,
+                    "value_min": i + 1, "value_max": i + 1,
+                }],
+            }
+            for i in range(100)
+        }
+        path.write_text(json.dumps({
+            "schema_version": 4, "fetched_at": 990, "values": values, "pages": {}
+        }), encoding="utf-8")
+        return values
+
+    def test_fresh_cache_performs_one_small_key_check_when_due(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = root / "supreme.json"
+            health = root / "key-health.json"
+            expected = self._fresh_cache(cache)
+            with (
+                patch("scanner.VALUES_FILE", cache),
+                patch("scanner.VALUES_AUDIT_FILE", root / "audit.json"),
+                patch("scanner.RBLXVALUE_KEY_HEALTH_FILE", health),
+                patch("scanner.RBLXVALUE_API_KEY", "rbx_test_secret"),
+                patch("scanner.time.time", return_value=1000),
+                patch("scanner.api_get_json_conditional", return_value=({"items": [{"id": 1}]}, None, False)) as api,
+            ):
+                loaded = scanner.load_supreme_values()
+            self.assertEqual(loaded, expected)
+            api.assert_called_once_with("/items", {"limit": 1, "offset": 0})
+            saved = json.loads(health.read_text(encoding="utf-8"))
+            self.assertEqual(saved["key_fingerprint"], scanner.rblxvalue_guard.key_fingerprint("rbx_test_secret"))
+            self.assertNotIn("rbx_test_secret", health.read_text(encoding="utf-8"))
+
+    def test_successful_key_check_is_throttled_for_six_hours(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = root / "supreme.json"
+            health = root / "key-health.json"
+            expected = self._fresh_cache(cache)
+            health.write_text(json.dumps({
+                "schema_version": 1,
+                "key_fingerprint": scanner.rblxvalue_guard.key_fingerprint("test-key"),
+                "last_attempt_at_epoch": 900,
+                "last_success_at_epoch": 900,
+            }), encoding="utf-8")
+            with (
+                patch("scanner.VALUES_FILE", cache),
+                patch("scanner.VALUES_AUDIT_FILE", root / "audit.json"),
+                patch("scanner.RBLXVALUE_KEY_HEALTH_FILE", health),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.time.time", return_value=1000),
+                patch("scanner.api_get_json_conditional") as api,
+            ):
+                self.assertEqual(scanner.load_supreme_values(), expected)
+            api.assert_not_called()
+
+    def test_transient_health_check_failure_does_not_discard_fresh_cache_or_repeat_each_cycle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = root / "supreme.json"
+            health = root / "key-health.json"
+            expected = self._fresh_cache(cache)
+            with (
+                patch("scanner.VALUES_FILE", cache),
+                patch("scanner.VALUES_AUDIT_FILE", root / "audit.json"),
+                patch("scanner.RBLXVALUE_KEY_HEALTH_FILE", health),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.time.time", return_value=1000),
+                patch("scanner.api_get_json_conditional", side_effect=RuntimeError("temporary network failure")) as api,
+            ):
+                self.assertEqual(scanner.load_supreme_values(), expected)
+                self.assertEqual(scanner.load_supreme_values(), expected)
+            api.assert_called_once()
+            saved = json.loads(health.read_text(encoding="utf-8"))
+            self.assertEqual(saved["last_attempt_at_epoch"], 1000)
+            self.assertIsNone(saved["last_success_at_epoch"])
+
+    def test_explicit_key_rejection_is_not_hidden_by_fresh_cache(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = root / "supreme.json"
+            health = root / "key-health.json"
+            self._fresh_cache(cache)
+            with (
+                patch("scanner.VALUES_FILE", cache),
+                patch("scanner.VALUES_AUDIT_FILE", root / "audit.json"),
+                patch("scanner.RBLXVALUE_KEY_HEALTH_FILE", health),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.time.time", return_value=1000),
+                patch("scanner.api_get_json_conditional", side_effect=scanner.rblxvalue_guard.RblxValueKeyBlocked("key rejected")),
+            ):
+                with self.assertRaisesRegex(scanner.rblxvalue_guard.RblxValueKeyBlocked, "key rejected"):
+                    scanner.load_supreme_values()
+
+
 class PendingRecheckStateTests(unittest.TestCase):
     def test_expired_pending_ids_are_reported_before_removal(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -45,6 +45,7 @@ class SupremeCacheMigrationTests(unittest.TestCase):
             root = Path(directory)
             cache = root / "supreme_values.json"
             audit = root / "audit.json"
+            health = root / "key-health.json"
             base = 1_800_000_000.0
             cache.write_text(json.dumps(self._schema3_cache(base)), encoding="utf-8")
             now = [base]
@@ -52,11 +53,14 @@ class SupremeCacheMigrationTests(unittest.TestCase):
 
             def unchanged(path, params=None, etag=None):
                 api.append((path, params, etag))
+                if params and params.get("limit") == 1:
+                    return {"items": [{"id": 1, "name": "Health Check"}]}, None, False
                 return None, etag, True
 
             with (
                 patch("scanner.VALUES_FILE", cache),
                 patch("scanner.VALUES_AUDIT_FILE", audit),
+                patch("scanner.RBLXVALUE_KEY_HEALTH_FILE", health),
                 patch("scanner.VALUES_TTL_SECONDS", 43200),
                 patch("scanner.time.time", side_effect=lambda: now[0]),
                 patch("scanner.RBLXVALUE_API_KEY", "rbx_test_cache_key"),
@@ -73,7 +77,7 @@ class SupremeCacheMigrationTests(unittest.TestCase):
             saved = json.loads(cache.read_text(encoding="utf-8"))
             self.assertEqual(saved["schema_version"], 4)
             self.assertEqual(loaded["item 7"]["variants"][0]["stability"], "Stable")
-            self.assertEqual(len(api), 1)
+            self.assertEqual(len(api), 5)
 
     def test_expired_cache_and_blocked_key_fail_closed_without_network(self):
         with tempfile.TemporaryDirectory() as directory:
