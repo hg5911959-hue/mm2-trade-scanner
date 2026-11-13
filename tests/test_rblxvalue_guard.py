@@ -174,6 +174,18 @@ class RblxValueGuardTests(unittest.TestCase):
             guard.reserve_request(now=now + 100000, key="rbx_test_key",
                                   budget_path=self.budget, block_path=self.block)
 
+    def test_rejection_error_message_matches_escalating_block_and_permanent_lock(self):
+        now = 1_800_000_000
+        with patch.object(guard, "BLOCK_FILE", self.block):
+            with self.assertRaisesRegex(guard.RblxValueKeyBlocked, "set for 6 hours"):
+                guard.raise_for_key_error(401, "unauthorized", key="rbx_test_key", now=now)
+            with self.assertRaisesRegex(guard.RblxValueKeyBlocked, "set for 12 hours"):
+                guard.raise_for_key_error(401, "unauthorized", key="rbx_test_key", now=now + 1)
+            with self.assertRaisesRegex(
+                guard.RblxValueKeyBlocked, "no API requests until the key fingerprint changes"
+            ):
+                guard.raise_for_key_error(401, "unauthorized", key="rbx_test_key", now=now + 2)
+
     def test_success_resets_consecutive_blocks(self):
         guard.mark_key_blocked("HTTP 401", now=1_800_000_000,
                                key="rbx_test_key", block_path=self.block)
