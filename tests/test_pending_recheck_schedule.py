@@ -37,6 +37,13 @@ class PendingRecheckScheduleTests(unittest.TestCase):
         selected = scanner.due_pending_ids_for_scan(pending, schedule, now=1000, limit=2)
         self.assertEqual(set(selected), {"never-checked-a", "never-checked-b"})
 
+    def test_backlog_recheck_runs_only_on_configured_cycle(self):
+        self.assertEqual(
+            [cycle for cycle in range(1, 9) if scanner.should_run_backlog_recheck(cycle, every=4)],
+            [4, 8],
+        )
+        self.assertFalse(scanner.should_run_backlog_recheck(0, every=4))
+
     def test_zero_limit_means_all_due_items(self):
         pending = {f"ad-{i}": float(i) for i in range(5)}
         selected = scanner.due_pending_ids_for_scan(pending, {}, now=1000, limit=0)
