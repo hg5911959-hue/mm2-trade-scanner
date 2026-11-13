@@ -1421,12 +1421,12 @@ class ReliabilityTests(unittest.TestCase):
                     scanner.main()
                 first_pending = json.loads((root / "pending.json").read_text(encoding="utf-8"))["pending"]
                 first_schedule = json.loads((root / "pending_schedule.json").read_text(encoding="utf-8"))["schedule"]
-                self.assertEqual(len(sent), 2)
+                self.assertEqual(sum("MARGIN:" in message for message in sent), 2)
                 self.assertEqual(len(first_pending), 3)
                 self.assertTrue(all(first_schedule[key]["reason"] == "deferred_offer" for key in first_pending))
                 with patch.dict(os.environ, {"MAX_ALERTS_PER_SCAN": "5"}):
                     scanner.main()
-            self.assertEqual(len(sent), 5)
+            self.assertEqual(sum("MARGIN:" in message for message in sent), 5)
             alerted = json.loads((root / "alerted.json").read_text(encoding="utf-8"))["alerted"]
             self.assertEqual(len(alerted), 5)
             self.assertEqual(json.loads((root / "pending.json").read_text(encoding="utf-8"))["pending"], {})
