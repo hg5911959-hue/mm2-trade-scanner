@@ -2468,7 +2468,7 @@ class WorkflowSecurityTests(unittest.TestCase):
         self.assertIn('cron: "*/10 * * * *"', workflow)
         self.assertIn("cancel-in-progress: false", workflow)
         self.assertIn('MM2_SCAN_DURATION_SECONDS: "570"', scan_job)
-        self.assertIn("timeout-minutes: 12", scan_job)
+        self.assertIn("timeout-minutes: 15", scan_job)
         self.assertNotIn("Test parser and value calculations", scan_job)
         self.assertIn("git checkout --orphan state-new", state_job)
         self.assertIn("git push --force origin state-new:state", state_job)

@@ -1,22 +1,32 @@
-# MM2 Market Intelligence — free-first foundation
+# MM2 Market Intelligence — free-first data and AI architecture
 
-This is an additive layer. It does not replace or modify the existing BloxSwaps scanner, Supreme valuation, state persistence, Telegram delivery, or fail-closed trade qualification.
+This extension is additive. The existing BloxSwaps scanner, Supreme valuation, Telegram delivery, state persistence, and fail-closed trade qualification remain authoritative.
 
-## Data sources without a Discord bot
+## Primary data sources
 
-The first alternative adapter reads public Reddit RSS feeds only. It does not join Discord servers, use Discord user tokens, scrape private Discord endpoints, or bypass server permissions. Configure feeds only when the community and feed are publicly accessible and automated access is permitted. Reddit may rate-limit or block RSS requests; a failed feed is reported as an error, never interpreted as an empty market.
+### BloxSwaps
+The existing production scanner continues to collect BloxSwaps listings and calculate trade values using the existing verified Supreme Values pipeline. No AI model is allowed to invent or replace these values.
 
-Example feed URL pattern:
-- https://www.reddit.com/r/MurderMystery2/new/.rss
+### Discord (authorized read-only bot)
+The repository now includes `discord_collector.py`, an official Discord bot client that discovers readable text channels and active threads only inside the two server IDs configured in the workflow. It does not send messages, moderate, join voice, access other servers, or use a personal account token/self-bot.
 
-To test a candidate feed locally, set MM2_PUBLIC_REDDIT_FEEDS to one or more semicolon-separated URLs and run python tools/collect_public_feeds.py. The command emits JSON and exits non-zero if any feed fails. A subreddit name is only an example until a live request confirms that the community exists and its feed is accessible. Other safe sources can be added later through official public APIs, RSS feeds, or user-submitted CSV/JSON exports. Arbitrary Discord message history is not generally available without an authorized Discord app/client. Do not use self-bots, user tokens, or private API scraping.
+Configure:
+- GitHub Actions Secret: `DISCORD_BOT_TOKEN` — the bot token from Discord Developer Portal.
+- The two approved server IDs are configured directly in `.github/workflows/scan.yml` (they are public identifiers, not secrets).
+
+In Discord Developer Portal, enable **Message Content Intent**. Invite the bot into each server with only **View Channels** and **Read Message History**, and ensure those permissions are granted on the trading channels the bot should read. Do not grant Administrator, Send Messages, Manage Messages, or other write permissions.
+
+The workflow discovers text channels and active threads visible to the bot only within the configured servers, fetches up to 100 recent messages per readable channel on each scheduled scan, and stores a bounded seven-day deduplicated history in `data/discord_messages.json`. Channels without read permissions are skipped; access errors are reported rather than treated as empty results. Forum archived threads and channels hidden from the bot are not collected.
+
+### Alternative public sources
+Public RSS sources may supplement the primary sources later, but they are not a substitute for authorized Discord channel access. The Reddit RSS adapter is optional and remains separate.
 
 ## AI providers and zero-budget operation
 
-- **Gemini:** optional automated review through the official Gemini Developer API free tier. Free models and quotas can change; requests may be rate-limited or unavailable. Add GEMINI_API_KEY as a GitHub Actions secret only after creating a key in Google AI Studio. The adapter defaults to gemini-3.6-flash; override GEMINI_MODEL if that model is not enabled for the project. Keep the project on the free tier and do not attach paid billing if zero cost is mandatory.
-- **DeepSeek:** use the free DeepSeek chat website for manual second-opinion reviews. The DeepSeek API is not assumed to have a permanent free tier, so this repository does not call it automatically. Use build_deepseek_manual_prompt(payload) to create a prompt for copy/paste. Do not paste secrets or private account data.
+- **Gemini:** optional automated commentary through the official Gemini Developer API free tier. Free models and quotas can change. Add `GEMINI_API_KEY` as a GitHub Actions secret only after creating a key in Google AI Studio. The adapter is advisory and can be skipped if no key or free quota is available.
+- **DeepSeek:** use the free DeepSeek chat website for manual second-opinion reviews. The API is not assumed to have a permanent free tier. The repository can export a prompt with `build_deepseek_manual_prompt(payload)`; no paid API call is made.
 
-If Gemini's free quota is exhausted, AI review is skipped or marked unavailable and the deterministic scanner continues unchanged. No trade may be accepted, rejected, or valued solely because an AI model says so.
+Only public listing text, message links, and normalized trade details should be sent to an AI model. Do not send bot tokens, account credentials, private DMs, or unrelated personal data.
 
 ## Deterministic safety rules
 
@@ -24,8 +34,9 @@ If Gemini's free quota is exhausted, AI review is skipped or marked unavailable 
 2. AI may comment on risk, evidence gaps, liquidity, and verification steps only.
 3. Model output is advisory and schema-checked; invalid output is discarded.
 4. Missing values, uncertain quantities, or incomplete source scans remain unresolved; AI cannot fill them in.
-5. API keys belong in GitHub Actions Secrets, never in code, commits, logs, or chat.
+5. API keys and bot tokens belong in GitHub Actions Secrets, never in code, commits, logs, or chat.
+6. Do not use Discord self-bots, personal user tokens, private endpoint scraping, or permission bypasses.
 
 ## Current implementation status
 
-This branch adds a public Reddit RSS adapter, a Gemini free-tier adapter, a DeepSeek manual-prompt exporter, and offline unit tests. It does not yet enable new feeds in the production workflow or send AI-generated Telegram alerts. Those steps require validating actual public feeds and reviewing test results first.
+The repository has a read-only Discord collector, a BloxSwaps scanner, optional Gemini free-tier commentary, a manual DeepSeek prompt exporter, and unit tests. Discord collection activates after the owner configures the `DISCORD_BOT_TOKEN` secret and the bot is present in both configured servers with the required permissions. Parsing Discord messages into standardized item/quantity offers and combining them with BloxSwaps market data is the next integration stage.
