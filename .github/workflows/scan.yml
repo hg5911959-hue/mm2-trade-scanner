@@ -78,8 +78,13 @@ jobs:
           DISCORD_MANUAL_MESSAGES_JSON: ${{ secrets.DISCORD_MANUAL_MESSAGES_JSON }}
         run: |
           if [ -n "$DISCORD_BOT_TOKEN" ]; then
-            python -m pip install --disable-pip-version-check "discord.py==2.6.4"
-            python -u discord_collector.py --output data/discord_messages.json --limit 100 --retention-days 7
+            if python -m pip install --disable-pip-version-check "discord.py==2.6.4"; then
+              if ! python -u discord_collector.py --output data/discord_messages.json --limit 100 --retention-days 7; then
+                echo "Discord collector failed; continuing with BloxSwaps and any manual import."
+              fi
+            else
+              echo "discord.py install failed; continuing with BloxSwaps and any manual import."
+            fi
           else
             echo "Discord bot collection skipped: DISCORD_BOT_TOKEN is not configured."
           fi
@@ -94,10 +99,12 @@ jobs:
           try:
               payload = json.loads(raw)
           except json.JSONDecodeError:
-              raise SystemExit("[discord-manual] invalid JSON secret; refusing to parse malformed import")
+              print("[discord-manual] invalid JSON secret; ignoring manual import")
+              raise SystemExit(0)
           incoming = payload.get("messages") if isinstance(payload, dict) else None
           if not isinstance(incoming, list) or len(incoming) > 2000:
-              raise SystemExit("[discord-manual] expected a messages array with at most 2000 rows")
+              print("[discord-manual] expected a messages array with at most 2000 rows; ignoring manual import")
+              raise SystemExit(0)
           path = Path("data/discord_messages.json")
           existing = []
           if path.exists():
