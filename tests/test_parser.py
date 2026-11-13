@@ -729,6 +729,61 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(result["difference"], 10)
         self.assertAlmostEqual(result["margin"], 10 / 530 * 100, places=2)
 
+    def test_receive_side_decreasing_stability_is_excluded(self):
+        listing = {
+            "give_items": [{"name": "Knife A", "quantity": 1}],
+            "receive_items": [{"name": "Knife B", "quantity": 1}],
+        }
+        values = {
+            "knife a": {"name": "Knife A", "value": 10, "stability": "Stable"},
+            "knife b": {"name": "Knife B", "value": 20, "stability": "Decreasing"},
+        }
+        result, missing = scanner.evaluate_listing(listing, values)
+        self.assertIsNone(result)
+        self.assertTrue(any("Knife B" in item and "Decreasing" in item for item in missing))
+
+    def test_receive_side_unsafe_and_unverified_stability_are_excluded(self):
+        listing = {
+            "give_items": [{"name": "Knife A", "quantity": 1}],
+            "receive_items": [{"name": "Knife B", "quantity": 1}],
+        }
+        for stability in ("Unsafe", None, "Unknown"):
+            with self.subTest(stability=stability):
+                values = {
+                    "knife a": {"name": "Knife A", "value": 10, "stability": "Stable"},
+                    "knife b": {"name": "Knife B", "value": 20, "stability": stability},
+                }
+                result, missing = scanner.evaluate_listing(listing, values)
+                self.assertIsNone(result)
+                self.assertTrue(any("Knife B" in item for item in missing))
+
+    def test_valid_receive_stability_is_shown_in_trade_breakdown(self):
+        listing = {
+            "give_items": [{"name": "Knife A", "quantity": 1}],
+            "receive_items": [{"name": "Knife B", "quantity": 1}],
+        }
+        values = {
+            "knife a": {"name": "Knife A", "value": 10, "stability": "Stable"},
+            "knife b": {"name": "Knife B", "value": 20, "stability": "Rising"},
+        }
+        result, missing = scanner.evaluate_listing(listing, values)
+        self.assertEqual(missing, [])
+        self.assertTrue(any("Stability: Rising" in line for line in result["receive_lines"]))
+        self.assertTrue(any("Stability: Stable" in line for line in result["give_lines"]))
+
+    def test_decreasing_item_on_give_side_is_not_filtered_as_received_item(self):
+        listing = {
+            "give_items": [{"name": "Knife A", "quantity": 1}],
+            "receive_items": [{"name": "Knife B", "quantity": 1}],
+        }
+        values = {
+            "knife a": {"name": "Knife A", "value": 10, "stability": "Decreasing"},
+            "knife b": {"name": "Knife B", "value": 20, "stability": "Stable"},
+        }
+        result, missing = scanner.evaluate_listing(listing, values)
+        self.assertEqual(missing, [])
+        self.assertIsNotNone(result)
+
     def test_evaluate_listing_accounts_for_quantities(self):
         listing = {
             "give_items": [{"name": "Knife A", "quantity": 2}],
