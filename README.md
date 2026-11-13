@@ -45,7 +45,7 @@ Items without a numeric Supreme value are never assigned zero or partially value
 
 ## Data sources and pagination
 
-The scanner uses RBLXValue API v2 and calculates all trade totals from `value_source_b` (Supreme Values). `value_source_a` is secondary information only and is never blended into Supreme totals.
+The scanner uses RBLXValue API v2 and calculates all trade totals from `value_source_b` (Supreme Values). The bot's Telegram messages and public dashboard display the required `Data from rblxvalue.com` attribution for free-plan API usage; the attribution is retained on every part of long multipart alerts. `value_source_a` is secondary information only and is never blended into Supreme totals.
 
 - A successful Supreme snapshot is reused for **12 hours** by the production workflow (`VALUES_TTL_SECONDS=43200`), matching the RBLXValue upstream refresh interval. Re-fetching every few minutes cannot make Supreme's source values newer, but it can create needless API dependency and stop scans during temporary credential/API issues. At expiry, the scanner conditionally revalidates each cached API page with its HTTP `ETag` (`If-None-Match`); unchanged pages are reused only after a matching `304 Not Modified`. Pages without a stored ETag are fetched normally. If refresh/revalidation fails, a 304 has no matching cached page, or the API key is missing, it fails closed rather than using stale values. While that snapshot is fresh, the scanner performs a one-item credential health check every 6 hours (and immediately after a key rotation). Successful checks store only a truncated SHA-256 key fingerprint and timestamps in the private `state` branch. Temporary network/CDN failures are marked inconclusive and do not discard a still-fresh snapshot; the next check is throttled for 3 hours. Explicit credential rejection opens the existing circuit breaker and triggers a Telegram alert. All attempts use the same persistent rolling 60-request budget.
 - The site item catalogue is loaded from `https://api.bloxswaps.com/items` and cached for **1 hour**.
@@ -63,6 +63,14 @@ Open **Settings → Secrets and variables → Actions → New repository secret*
 - `RBLXVALUE_API_KEY`: active API key from the RBLXValue developer dashboard (raw key only, no quotes).
 
 Never commit or share these secrets. The scanner does not print API keys or Telegram bot tokens in logs.
+
+### RBLXValue free-plan compliance and key safety
+
+- The scanner displays the exact `Data from rblxvalue.com` credit in every Telegram message and on the public dashboard. It is shown unconditionally, so the project remains compliant if the API response requires free-plan attribution.
+- RBLXValue documents one free API key per account. Do not create alternate accounts or spread requests across keys to bypass limits. If a key is compromised or needs replacement, rotate the existing key through the official developer dashboard and update the `RBLXVALUE_API_KEY` repository secret.
+- HTTP 429 is a rate-limit response, not a key suspension; the scanner respects retry guidance and its own persistent rolling request budget. HTTP 401 indicates a missing/wrong/rotated key; HTTP 403 may indicate a key that is not activated, expired, or suspended.
+- The scanner never stores the key itself in repository state. The private state branch stores only a truncated SHA-256 fingerprint and timestamps for health checks and circuit-breaker recovery.
+
 
 ## Runtime, deduplication, and persistence
 

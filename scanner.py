@@ -2405,23 +2405,29 @@ def _wait_for_telegram_rate_limit():
     _LAST_TELEGRAM_SEND_AT = time.monotonic()
 
 
+RBLXVALUE_ATTRIBUTION = "Data from rblxvalue.com"
+
+
 def send_telegram(message):
     message = str(message)
-    if len(message) > TELEGRAM_MAX_CHARS:
-        # Telegram has a hard per-message limit. Split at line boundaries instead
-        # of truncating the tail, because that tail may contain weapon values.
+    needs_attribution = not message.rstrip().endswith(RBLXVALUE_ATTRIBUTION)
+    footer = "\n\n" + RBLXVALUE_ATTRIBUTION if needs_attribution else ""
+    if len(message) + len(footer) > TELEGRAM_MAX_CHARS:
+        # Reserve room for the multipart header and the mandatory source credit
+        # in every Telegram message. Never truncate trade details.
+        chunk_limit = TELEGRAM_MAX_CHARS - 96
         chunks, current = [], ""
         for line in message.splitlines():
             candidate = (current + "\n" + line) if current else line
-            if len(candidate) <= TELEGRAM_MAX_CHARS - 32:
+            if len(candidate) <= chunk_limit:
                 current = candidate
                 continue
             if current:
                 chunks.append(current)
                 current = ""
-            while len(line) > TELEGRAM_MAX_CHARS - 32:
-                chunks.append(line[:TELEGRAM_MAX_CHARS - 32])
-                line = line[TELEGRAM_MAX_CHARS - 32:]
+            while len(line) > chunk_limit:
+                chunks.append(line[:chunk_limit])
+                line = line[chunk_limit:]
             current = line
         if current:
             chunks.append(current)
@@ -2441,6 +2447,7 @@ def send_telegram(message):
                 raise
             sent_chunks += 1
         return
+    message += footer
     url = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage"
     body = json.dumps({
         "chat_id": CHAT_ID,
