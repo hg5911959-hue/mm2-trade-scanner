@@ -10,6 +10,7 @@ import scanner
 
 # A scan may run for 20 minutes, followed by a 5-minute state-persistence job.
 ACTIVE_RUN_GRACE_MINUTES = 27
+SCAN_WORKFLOW_FILES = ("scan-scheduler.yml", "scan.yml")
 
 
 def should_alert(age, threshold=20, interval=5, reminder=30):
@@ -32,11 +33,11 @@ def _repository():
     return repository
 
 
-def _workflow_runs(token, query, label):
+def _workflow_runs(token, workflow_file, query, label):
     if not token:
         raise RuntimeError("Missing GitHub Actions token.")
     url = (
-        f"https://api.github.com/repos/{_repository()}/actions/workflows/scan.yml/runs"
+        f"https://api.github.com/repos/{_repository()}/actions/workflows/{workflow_file}/runs"
         f"?{query}"
     )
     request = Request(url, headers={
@@ -54,8 +55,13 @@ def _workflow_runs(token, query, label):
 
 
 def latest_success_age_minutes(token):
-    """Find the latest successful completed run (GitHub status is 'completed')."""
-    runs = _workflow_runs(token, "status=completed&per_page=100", "GitHub completed scan runs")
+    """Find the latest successful scheduled or manually dispatched scan run."""
+    runs = []
+    for workflow_file in SCAN_WORKFLOW_FILES:
+        runs.extend(_workflow_runs(
+            token, workflow_file, "status=completed&per_page=100",
+            f"GitHub completed {workflow_file} runs",
+        ))
     successful = [run for run in runs if isinstance(run, dict) and run.get("conclusion") == "success"]
     if not successful:
         raise RuntimeError("GitHub returned no successful completed scan workflow runs.")
@@ -72,9 +78,11 @@ def latest_active_scan_age_minutes(token):
     """Return the age of the oldest queued or running scan, if any."""
     runs = []
     for status in ("in_progress", "queued"):
-        runs.extend(_workflow_runs(
-            token, f"status={status}&per_page=20", f"GitHub {status} scan runs"
-        ))
+        for workflow_file in SCAN_WORKFLOW_FILES:
+            runs.extend(_workflow_runs(
+                token, workflow_file, f"status={status}&per_page=20",
+                f"GitHub {status} {workflow_file} runs",
+            ))
     active = [
         run for run in runs
         if isinstance(run, dict) and run.get("status") in {"in_progress", "queued"}
