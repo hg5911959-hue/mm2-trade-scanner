@@ -1442,13 +1442,14 @@ class RblxValueKeyHealthCheckTests(unittest.TestCase):
                 patch("scanner.RBLXVALUE_KEY_HEALTH_FILE", health),
                 patch("scanner.RBLXVALUE_API_KEY", "rbx_test_secret"),
                 patch("scanner.time.time", return_value=1000),
-                patch("scanner.api_get_json_conditional", return_value=({"items": [{"id": 1}]}, None, False)) as api,
+                patch("scanner.api_get_json_conditional", return_value=({"items": [{"id": 1}], "credit": "Data from rblxvalue.com"}, None, False)) as api,
             ):
                 loaded = scanner.load_supreme_values()
             self.assertEqual(loaded, expected)
             api.assert_called_once_with("/items", {"limit": 1, "offset": 0})
             saved = json.loads(health.read_text(encoding="utf-8"))
             self.assertEqual(saved["key_fingerprint"], scanner.rblxvalue_guard.key_fingerprint("rbx_test_secret"))
+            self.assertTrue(saved["attribution_required"])
             self.assertNotIn("rbx_test_secret", health.read_text(encoding="utf-8"))
 
     def test_successful_key_check_is_throttled_for_six_hours(self):
