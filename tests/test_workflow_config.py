@@ -22,6 +22,9 @@ class WorkflowReliabilityTests(unittest.TestCase):
         self.assertIn("uses: ./.github/workflows/scan.yml", scheduler)
         self.assertIn("secrets: inherit", scheduler)
         self.assertIn("contents: write", scheduler)
+        self.assertIn("actions: write", scheduler)
+        self.assertIn("Re-enable scheduled workflows if GitHub disabled them", scheduler)
+        self.assertIn("/actions/workflows/$workflow_id/enable", scheduler)
         self.assertIn('workflows: ["MM2 Scanner Tests"]', scheduler)
         self.assertIn("github.event.workflow_run.conclusion == 'success'", scheduler)
 
