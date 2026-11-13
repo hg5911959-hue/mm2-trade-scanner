@@ -4138,7 +4138,6 @@ def scan_once(include_backlog_rechecks=True):
             deliver_opportunity(result)
             if sent > before_send:
                 fast_lane_sent += 1
-                update_metrics(increments={"alerts_fast_lane": 1})
             # Never enqueue an immediate-send attempt for the end-of-scan batch:
             # uncertain or failed sends are already quarantined/pending for retry.
             continue
