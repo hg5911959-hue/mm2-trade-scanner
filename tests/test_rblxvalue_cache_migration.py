@@ -61,6 +61,7 @@ class SupremeCacheMigrationTests(unittest.TestCase):
                 patch("scanner.time.time", side_effect=lambda: now[0]),
                 patch("scanner.RBLXVALUE_API_KEY", ""),
                 patch("scanner.api_get_json_conditional", side_effect=unchanged),
+                patch("scanner.time.sleep"),
             ):
                 loaded = None
                 for run in range(144):
