@@ -212,7 +212,7 @@ jobs:
             exit 1
           fi
           git fetch origin refs/heads/state:refs/remotes/origin/state
-          for file in data/supreme_values.json data/rblxvalue_request_budget.json data/api_key_blocked.json; do
+          for file in data/supreme_values.json data/rblxvalue_request_budget.json data/api_key_blocked.json data/market_history.sqlite3; do
             if git cat-file -e "refs/remotes/origin/state:$file" 2>/dev/null; then
               bytes="$(git cat-file -s "refs/remotes/origin/state:$file")"
               echo "[state-persist-audit] present=$file bytes=$bytes"

@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="MM2 Market Intelligence — public BloxSwap trade opportunities and item value history.">
+  <title>MM2 Market Intelligence</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0a0d12;--panel:#111720;--panel2:#151e29;--line:#253242;--text:#edf3fa;--muted:#94a3b8;--accent:#75d6bd;--warn:#f2c879;--bad:#f18c8c}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(900px 420px at 12% -10%,#1b3440 0%,transparent 65%),var(--bg);color:var(--text);font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+    .wrap{max-width:1240px;margin:auto;padding:28px 20px 56px}.top{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:26px}
+    .eyebrow{color:var(--accent);font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:800}.title{font-size:clamp(28px,5vw,42px);line-height:1.08;letter-spacing:-.04em;margin:7px 0}.sub{color:var(--muted);max-width:680px}
+    .status{border:1px solid var(--line);border-radius:999px;padding:7px 11px;color:var(--muted);white-space:nowrap;font-size:12px}
+    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:20px 0 24px}.metric,.panel{background:linear-gradient(145deg,var(--panel),#0e141c);border:1px solid var(--line);border-radius:16px}
+    .metric{padding:16px}.metric .label{color:var(--muted);font-size:12px}.metric .value{font-size:28px;font-weight:750;letter-spacing:-.04em;margin-top:5px}.metric .hint{color:var(--muted);font-size:11px;margin-top:3px}
+    .section{display:grid;grid-template-columns:1fr;gap:14px;margin-top:14px}.panel{padding:17px;min-width:0}.panel-head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:13px}.panel h2{font-size:16px;margin:0;letter-spacing:-.02em}.count{color:var(--muted);font-size:11px}
+    .table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:680px}th{text-align:left;color:var(--muted);font-size:11px;font-weight:650;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}td{padding:11px 10px;border-bottom:1px solid #1d2935;vertical-align:top}tr:last-child td{border-bottom:0}
+    .item{font-weight:700}.small{color:var(--muted);font-size:11px;margin-top:3px}.num{font-variant-numeric:tabular-nums;white-space:nowrap}.profit{color:var(--accent);font-weight:750}.margin{color:var(--accent);font-weight:750}
+    a{color:#a9d9ff;text-decoration:none}a:hover{text-decoration:underline}.pill{display:inline-block;padding:3px 7px;border-radius:999px;border:1px solid var(--line);font-size:10px;color:var(--muted);white-space:nowrap}.pill.good{color:var(--accent);border-color:#2d6257}.pill.warn{color:var(--warn);border-color:#66502b}.pill.bad{color:var(--bad);border-color:#663737}
+    .columns{display:grid;grid-template-columns:1.1fr .9fr;gap:14px;margin-top:14px}.list{display:grid;gap:10px}.listing{padding:12px;border:1px solid var(--line);border-radius:12px;background:#0e151e}.listing-top{display:flex;justify-content:space-between;gap:10px}.items{color:var(--muted);font-size:12px;margin-top:6px;overflow-wrap:anywhere}
+    .spark{display:flex;align-items:flex-end;gap:3px;height:36px;margin-top:8px}.bar{flex:1;min-width:3px;background:linear-gradient(180deg,var(--accent),#2a6e64);border-radius:3px 3px 0 0;opacity:.85}
+    .empty{padding:28px 12px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:12px}.foot{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:11px;margin-top:22px}
+    @media(max-width:800px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.columns{grid-template-columns:1fr}.top{display:block}.status{display:inline-block;margin-top:10px}}
+    @media(max-width:420px){.wrap{padding:22px 12px 40px}.metric{padding:13px}.metric .value{font-size:24px}.panel{padding:13px}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header class="top">
+      <div>
+        <div class="eyebrow">Independent market signals · Murder Mystery 2</div>
+        <h1 class="title">MM2 Market Intelligence</h1>
+        <p class="sub">A data-led view of public BloxSwap listings, qualified trade margins, and item-value changes. Supreme remains the trading valuation source; secondary values are shown as a cross-check, never blended into profit calculations.</p>
+      </div>
+      <div class="status" id="status">Loading market data…</div>
+    </header>
+
+    <section class="grid" aria-label="Market summary">
+      <div class="metric"><div class="label">Tracked public listings</div><div class="value" id="listings">—</div><div class="hint">Recently observed</div></div>
+      <div class="metric"><div class="label">Qualified opportunities</div><div class="value" id="opportunities">—</div><div class="hint">Last 7 days</div></div>
+      <div class="metric"><div class="label">Items tracked</div><div class="value" id="items">—</div><div class="hint">Across value snapshots</div></div>
+      <div class="metric"><div class="label">Two-source cross-checks</div><div class="value" id="crosschecked">—</div><div class="hint">Latest snapshot, within 15%</div></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Highest-margin opportunities</h2><span class="count" id="opp-count">—</span></div>
+      <div id="opportunity-table" class="table-wrap"><div class="empty">Waiting for the first market-history snapshot.</div></div>
+    </section>
+
+    <div class="columns">
+      <section class="panel">
+        <div class="panel-head"><h2>Recent public listings</h2><span class="count" id="listing-count">—</span></div>
+        <div class="list" id="recent-listings"><div class="empty">No listings stored yet.</div></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2>Value source comparison</h2><span class="count" id="value-count">—</span></div>
+        <div id="value-table" class="table-wrap"><div class="empty">No value comparison available.</div></div>
+      </section>
+    </div>
+
+    <section class="panel" style="margin-top:14px">
+      <div class="panel-head"><h2>Supreme value history</h2><span class="count">Latest stored snapshots</span></div>
+      <div id="price-history" class="list"><div class="empty">Historical snapshots will appear here as values change.</div></div>
+    </section>
+
+    <footer class="foot">
+      <span>Public dashboard excludes private Discord message content and private-server listings.</span>
+      <span id="updated">Data timestamp unavailable</span>
+    </footer>
+  </main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const number = (value) => value == null ? "—" : Number(value).toLocaleString(undefined,{maximumFractionDigits:2});
+  const date = (value) => value ? new Date(value).toLocaleString() : "—";
+  const safeUrl = (value) => { try { const u=new URL(value); return ["https:","http:"].includes(u.protocol) ? u.href : ""; } catch { return ""; } };
+  const pill = (kind,label) => '<span class="pill '+kind+'">'+esc(label)+'</span>';
+
+  function renderOpportunities(rows) {
+    $("opp-count").textContent = rows.length + " shown";
+    if (!rows.length) { $("opportunity-table").innerHTML='<div class="empty">No qualified opportunities recorded yet.</div>'; return; }
+    $("opportunity-table").innerHTML='<table><thead><tr><th>Trade</th><th>Give</th><th>Receive</th><th>Profit</th><th>Margin</th><th>Source</th></tr></thead><tbody>'+
+      rows.map(row=>{
+        const url=safeUrl(row.url);
+        const title=url?'<a href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open listing ↗</a>':'<span class="small">Link unavailable</span>';
+        const give=(row.giveItems||[]).map(x=>(x.quantity||1)+'× '+x.name).join(', ');
+        const receive=(row.receiveItems||[]).map(x=>(x.quantity||1)+'× '+x.name).join(', ');
+        return '<tr><td><div class="item">'+esc(row.listingId).slice(0,12)+'</div><div class="small">'+title+'</div></td><td>'+esc(give)+'</td><td>'+esc(receive)+'</td><td class="num profit">'+number(row.profit)+'</td><td class="num margin">'+number(row.margin)+'%</td><td>'+pill('good',row.source)+'</td></tr>';
+      }).join('')+'</tbody></table>';
+  }
+
+  function renderListings(rows) {
+    $("listing-count").textContent=rows.length+" shown";
+    if(!rows.length){$("recent-listings").innerHTML='<div class="empty">No public listings recorded yet.</div>';return;}
+    $("recent-listings").innerHTML=rows.map(row=>{
+      const url=safeUrl(row.url), owner=safeUrl(row.ownerUrl);
+      const give=(row.giveItems||[]).map(x=>(x.quantity||1)+'× '+x.name).join(', ');
+      const receive=(row.receiveItems||[]).map(x=>(x.quantity||1)+'× '+x.name).join(', ');
+      return '<article class="listing"><div class="listing-top"><strong>'+esc(row.owner||row.source||"Public listing")+'</strong><span class="pill">'+esc(row.source)+'</span></div><div class="items">Gives: '+esc(give||"—")+'<br>Wants: '+esc(receive||"—")+'</div><div class="small">'+(url?'<a href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">View listing ↗</a>':'')+(owner?' · <a href="'+esc(owner)+'" target="_blank" rel="noopener noreferrer">Owner ↗</a>':'')+' · Seen '+esc(date(row.lastSeen))+'</div></article>';
+    }).join('');
+  }
+
+  function renderValues(rows) {
+    $("value-count").textContent=rows.length+" items";
+    if(!rows.length){$("value-table").innerHTML='<div class="empty">No value comparison available.</div>';return;}
+    $("value-table").innerHTML='<table style="min-width:440px"><thead><tr><th>Item</th><th>Supreme</th><th>Secondary</th><th>Check</th></tr></thead><tbody>'+
+      rows.slice(0,30).map(row=>{
+        const confidence=row.confidence==="cross_checked"?pill("good","Cross-checked"):row.confidence==="conflict"?pill("bad","Conflict"):pill("warn","Estimated");
+        return '<tr><td><div class="item">'+esc(row.name)+'</div><div class="small">'+esc(row.category)+' '+esc(row.type)+'</div></td><td class="num">'+number(row.supreme)+'</td><td class="num">'+number(row.secondary)+'</td><td>'+confidence+(row.differencePercent!=null?'<div class="small">'+number(row.differencePercent)+'% diff</div>':'')+'</td></tr>';
+      }).join('')+'</tbody></table>';
+  }
+
+  function renderHistory(rows) {
+    if(!rows.length){$("price-history").innerHTML='<div class="empty">Historical snapshots will appear here as values change.</div>';return;}
+    $("price-history").innerHTML=rows.map(row=>{
+      const vals=(row.points||[]).map(p=>Number(p.supreme)||0), max=Math.max(1,...vals);
+      const bars=vals.map(v=>'<span class="bar" title="'+esc(number(v))+'" style="height:'+Math.max(5,Math.round(v/max*100))+'%"></span>').join('');
+      const latest=vals.length?vals[vals.length-1]:null, prior=vals.length>1?vals[vals.length-2]:null;
+      const change=latest!=null&&prior!=null?latest-prior:null;
+      return '<article class="listing"><div class="listing-top"><strong>'+esc(row.name)+'</strong><span class="num">'+number(latest)+'</span></div><div class="spark">'+bars+'</div><div class="small">'+(change==null?'One snapshot':(change>=0?'+':'')+number(change)+' since previous snapshot')+'</div></article>';
+    }).join('');
+  }
+
+  fetch("./dashboard-data.json",{cache:"no-store"})
+    .then(response=>{if(!response.ok)throw new Error("Dashboard data is not published yet");return response.json();})
+    .then(data=>{
+      const s=data.summary||{};
+      $("listings").textContent=number(s.trackedListings);
+      $("opportunities").textContent=number(s.opportunities7d);
+      $("items").textContent=number(s.trackedItems);
+      $("crosschecked").textContent=number(s.crossChecked);
+      $("status").textContent="Market data loaded";
+      $("updated").textContent="Snapshot: "+date(s.latestSnapshot)+" · Exported: "+date(data.generatedAt);
+      renderOpportunities(data.opportunities||[]);
+      renderListings(data.recentListings||[]);
+      renderValues(data.valueChecks||[]);
+      renderHistory(data.priceHistory||[]);
+    })
+    .catch(error=>{$("status").textContent="Waiting for first deployment";$("updated").textContent=error.message;});
+</script>
+</body>
+</html>
