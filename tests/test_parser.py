@@ -1540,20 +1540,28 @@ class CacheTTLTests(unittest.TestCase):
                         {"name": "Unvalued", "id": "3", "slug": "unvalued", "category": "common", "type": "gun", "value": None, "raw_source_value": "x4", "value_status": "tier_item_count"},
                     ],
                 },
+                "untyped": {
+                    "name": "Untyped",
+                    "variants": [
+                        {"name": "Untyped", "id": "4", "slug": "untyped", "category": "uncommon", "value": 5, "value_status": "numeric"},
+                    ],
+                },
             }
             values["unvalued"]["variants"][0].update({"demand": 4, "rarity": 2, "acronym": "UV"})
             with patch("scanner.VALUES_AUDIT_FILE", audit_path):
                 scanner._write_supreme_values_audit(values, fetched_at=123)
             report = json.loads(audit_path.read_text(encoding="utf-8"))
-            self.assertEqual(report["counts"]["records"], 3)
-            self.assertEqual(report["counts"]["numeric"], 2)
+            self.assertEqual(report["counts"]["records"], 4)
+            self.assertEqual(report["counts"]["numeric"], 3)
             self.assertEqual(report["counts"]["non_numeric"], 1)
             self.assertEqual(report["counts"]["identity_collisions"], 1)
             self.assertEqual(report["counts"]["weapons"], 3)
             self.assertEqual(report["counts"]["knives"], 2)
             self.assertEqual(report["counts"]["guns"], 1)
             self.assertEqual(report["counts"]["weapons_missing_stability"], 2)
-            self.assertEqual({row["id"] for row in report["items"]}, {"1", "2", "3"})
+            self.assertEqual(report["counts"]["records_missing_type"], 1)
+            self.assertEqual(report["counts"]["weapon_candidates_unclassified"], 1)
+            self.assertEqual({row["id"] for row in report["items"]}, {"1", "2", "3", "4"})
             self.assertEqual(next(row for row in report["items"] if row["id"] == "1")["stability"], "Rising")
             self.assertEqual(next(row for row in report["items"] if row["id"] == "3")["demand"], 4)
             self.assertEqual(next(row for row in report["items"] if row["id"] == "3")["acronym"], "UV")
