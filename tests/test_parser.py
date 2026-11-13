@@ -537,6 +537,23 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(source, "slug")
         self.assertEqual(record["value"], 1200)
 
+
+    def test_conflicting_chroma_flag_keeps_variant_unresolved(self):
+        values = {
+            "chroma fire bear": {"name": "Chroma Fire Bear", "variants": [{
+                "id": "cfb", "slug": "chroma-fire-bear", "name": "Chroma Fire Bear",
+                "category": "godly", "type": "knife", "value": 1200,
+            }]},
+        }
+        item = {
+            "name": "Fire Bear", "catalog_slug": "chroma-fire-bear",
+            "catalog_rarity": "GODLY", "catalog_type": "Knife",
+            "catalog_chroma": False,
+        }
+        record, source, _ = scanner.resolve_value_record("Fire Bear", values, item=item)
+        self.assertIsNone(record)
+        self.assertEqual(source, "ambiguous")
+
     def test_chroma_flag_does_not_turn_rarity_into_a_fake_category(self):
         values = {
             "fire bear": {"name": "Fire Bear", "variants": [{
