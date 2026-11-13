@@ -40,11 +40,26 @@ def key_fingerprint(key: str | None = None) -> str:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
+    """Read guard state without silently resetting a corrupt safety ledger."""
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-        return value if isinstance(value, dict) else {}
-    except (OSError, ValueError, TypeError):
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
         return {}
+    except OSError as exc:
+        raise RblxValueGuardError(
+            f"[rblxvalue-state] cannot read safety state file {path.name}; refusing API request"
+        ) from exc
+    try:
+        value = json.loads(raw)
+    except (ValueError, TypeError) as exc:
+        raise RblxValueGuardError(
+            f"[rblxvalue-state] safety state file {path.name} is invalid JSON; refusing API request"
+        ) from exc
+    if not isinstance(value, dict):
+        raise RblxValueGuardError(
+            f"[rblxvalue-state] safety state file {path.name} has an invalid root; refusing API request"
+        )
+    return value
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
@@ -136,13 +151,26 @@ def reserve_request(*, now: float | None = None, key: str | None = None,
         )
     state = _read_json(path)
     cutoff = current - 86400
+    raw_timestamps = state.get("request_timestamps_epoch", [])
+    if not isinstance(raw_timestamps, list):
+        raise RblxValueGuardError(
+            "[rblxvalue-state] request budget timestamps are not a list; refusing API request"
+        )
     timestamps = []
-    for value in state.get("request_timestamps_epoch", []):
+    for value in raw_timestamps:
         try:
             stamp = float(value)
-        except (TypeError, ValueError):
-            continue
-        if cutoff < stamp <= current:
+        except (TypeError, ValueError) as exc:
+            raise RblxValueGuardError(
+                "[rblxvalue-state] request budget contains an invalid timestamp; refusing API request"
+            ) from exc
+        if not (stamp > 0 and stamp < float("inf")):
+            raise RblxValueGuardError(
+                "[rblxvalue-state] request budget contains a non-finite timestamp; refusing API request"
+            )
+        # Keep future timestamps too: a clock-skewed ledger must consume budget,
+        # not silently grant extra requests until wall-clock time catches up.
+        if stamp > cutoff:
             timestamps.append(stamp)
     cap = DAILY_REQUEST_LIMIT if limit is None else max(1, int(limit))
     if len(timestamps) >= cap:

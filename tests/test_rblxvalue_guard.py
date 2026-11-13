@@ -106,5 +106,41 @@ class RblxValueGuardTests(unittest.TestCase):
         self.assertEqual(guard.requests_this_run(), 1)
 
 
+
+
+    def test_corrupt_budget_json_fails_closed_without_overwriting_file(self):
+        self.budget.write_text("{broken", encoding="utf-8")
+        with self.assertRaisesRegex(guard.RblxValueGuardError, "invalid JSON"):
+            guard.reserve_request(now=1_800_000_000, key="rbx_test_key",
+                                  budget_path=self.budget, block_path=self.block)
+        self.assertEqual(self.budget.read_text(encoding="utf-8"), "{broken")
+
+    def test_non_object_budget_root_fails_closed(self):
+        self.budget.write_text("[]", encoding="utf-8")
+        with self.assertRaisesRegex(guard.RblxValueGuardError, "invalid root"):
+            guard.reserve_request(now=1_800_000_000, key="rbx_test_key",
+                                  budget_path=self.budget, block_path=self.block)
+
+    def test_invalid_budget_timestamp_fails_closed(self):
+        self.budget.write_text(json.dumps({
+            "request_timestamps_epoch": [1_800_000_000, "not-a-timestamp"]
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(guard.RblxValueGuardError, "invalid timestamp"):
+            guard.reserve_request(now=1_800_000_001, key="rbx_test_key",
+                                  budget_path=self.budget, block_path=self.block)
+
+    def test_future_budget_timestamp_is_counted_conservatively(self):
+        future = 1_800_000_100
+        self.budget.write_text(json.dumps({
+            "request_timestamps_epoch": [future]
+        }), encoding="utf-8")
+        count = guard.reserve_request(now=1_800_000_000, key="rbx_test_key",
+                                      budget_path=self.budget, block_path=self.block,
+                                      limit=2)
+        state = json.loads(self.budget.read_text(encoding="utf-8"))
+        self.assertEqual(count, 2)
+        self.assertEqual(len(state["request_timestamps_epoch"]), 2)
+
+
 if __name__ == "__main__":
     unittest.main()
