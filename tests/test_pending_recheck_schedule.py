@@ -45,6 +45,39 @@ class PendingRecheckScheduleTests(unittest.TestCase):
         self.assertEqual(set(pending), {"pending-1", "pending-2"})
         self.assertIsNone(scanner.seed_pending_ids_as_seen(None, pending))
 
+    def test_priority_pending_reasons_are_not_seeded_as_seen(self):
+        seen = {"already-seen"}
+        pending = {"ordinary": 1.0, "deferred": 2.0, "failed": 3.0}
+        schedule = {
+            "ordinary": {"attempts": 1, "next_check_at": 1000, "reason": "unmatched_value"},
+            "deferred": {"attempts": 0, "next_check_at": 1000, "reason": "deferred_offer"},
+            "failed": {"attempts": 0, "next_check_at": 1000, "reason": "telegram_failure"},
+        }
+        result = scanner.seed_pending_ids_as_seen(seen, pending, schedule)
+        self.assertEqual(result, {"already-seen", "ordinary"})
+        self.assertEqual(set(pending), {"ordinary", "deferred", "failed"})
+
+    def test_pending_reason_classification_is_fail_closed(self):
+        self.assertEqual(scanner.pending_reason_from_missing(["Knife (quantity unknown)"]), "quantity_uncertain")
+        self.assertEqual(scanner.pending_reason_from_missing(["Knife (Supreme Stability unverified)"]), "stability_unverified")
+        self.assertEqual(scanner.pending_reason_from_missing(["Knife (Supreme Stability: Decreasing; excluded)"]), "stability_blocked")
+        self.assertEqual(scanner.pending_reason_from_missing(["Knife"]), "unmatched_value")
+
+    def test_schedule_loader_preserves_valid_retry_reason(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "schedule.json"
+            path.write_text(json.dumps({
+                "version": 1,
+                "schedule": {
+                    "deferred": {"attempts": 1, "next_check_at": 1000, "reason": "deferred_offer"}
+                },
+            }), encoding="utf-8")
+            with patch.object(scanner, "PENDING_RECHECK_SCHEDULE_FILE", path):
+                self.assertEqual(
+                    scanner.load_pending_recheck_schedule()["deferred"]["reason"],
+                    "deferred_offer",
+                )
+
     def test_backlog_recheck_runs_only_on_configured_cycle(self):
         self.assertEqual(
             [cycle for cycle in range(1, 9) if scanner.should_run_backlog_recheck(cycle, every=4)],
@@ -74,11 +107,11 @@ class PendingRecheckScheduleTests(unittest.TestCase):
             path = Path(directory) / "pending_recheck_schedule.json"
             with patch.object(scanner, "PENDING_RECHECK_SCHEDULE_FILE", path):
                 schedule = scanner.record_pending_recheck_attempts({"ad": 100.0}, pending, {}, now=1000)
-                self.assertEqual(schedule["ad"], {"attempts": 1, "next_check_at": 1300})
+                self.assertEqual(schedule["ad"], {"attempts": 1, "next_check_at": 1300, "reason": "legacy_unclassified"})
                 schedule = scanner.record_pending_recheck_attempts({"ad": 100.0}, pending, schedule, now=1300)
-                self.assertEqual(schedule["ad"], {"attempts": 2, "next_check_at": 2200})
+                self.assertEqual(schedule["ad"], {"attempts": 2, "next_check_at": 2200, "reason": "legacy_unclassified"})
                 schedule = scanner.record_pending_recheck_attempts({"ad": 100.0}, pending, schedule, now=2200)
-                self.assertEqual(schedule["ad"], {"attempts": 3, "next_check_at": 4000})
+                self.assertEqual(schedule["ad"], {"attempts": 3, "next_check_at": 4000, "reason": "legacy_unclassified"})
                 for now in (4000, 7600, 11200):
                     schedule = scanner.record_pending_recheck_attempts({"ad": 100.0}, pending, schedule, now=now)
                 self.assertEqual(schedule["ad"]["attempts"], 6)
@@ -98,7 +131,7 @@ class PendingRecheckScheduleTests(unittest.TestCase):
                     {"resolved": 1.0}, pending, schedule, now=2000
                 )
         self.assertNotIn("resolved", updated)
-        self.assertEqual(updated["new-pending"], {"attempts": 0, "next_check_at": 2300})
+        self.assertEqual(updated["new-pending"], {"attempts": 0, "next_check_at": 2300, "reason": "legacy_unclassified"})
         self.assertEqual(updated["still-pending"], {"attempts": 2, "next_check_at": 1000})
 
     def test_schedule_loader_rejects_corrupt_state(self):
