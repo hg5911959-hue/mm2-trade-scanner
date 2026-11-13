@@ -46,9 +46,9 @@ class RblxValueGuardTests(unittest.TestCase):
                                       budget_path=self.budget, block_path=self.block)
         self.assertEqual(count, 1)
 
-    def test_401_403_and_inactive_key_open_breaker_without_retry(self):
-        for status, body in ((401, "unauthorized"), (403, "forbidden"),
-                             (400, "API key suspended")):
+    def test_401_and_explicit_inactive_key_open_breaker_without_retry(self):
+        for status, body in ((401, "unauthorized"), (403, "API key suspended"),
+                             (400, "API key inactive")):
             with self.subTest(status=status, body=body):
                 with (
                     patch.object(guard, "BLOCK_FILE", self.block),
@@ -61,6 +61,12 @@ class RblxValueGuardTests(unittest.TestCase):
                     guard.reserve_request(now=1_800_000_002, key="rbx_test_key",
                                           budget_path=self.budget, block_path=self.block)
                 self.block.unlink(missing_ok=True)
+
+    def test_generic_403_is_not_misclassified_as_invalid_key(self):
+        self.assertFalse(guard.is_key_error(403, "Forbidden"))
+        self.assertFalse(guard.is_key_error(403, "Cloudflare access denied"))
+        self.assertTrue(guard.is_key_error(403, "API key suspended"))
+        self.assertTrue(guard.is_key_error(401, "Unauthorized"))
 
     def test_breaker_expires_after_six_hours_or_key_rotation(self):
         guard.mark_key_blocked("HTTP 403", now=1_800_000_000,
