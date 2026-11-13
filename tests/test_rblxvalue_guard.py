@@ -18,10 +18,11 @@ class RblxValueGuardTests(unittest.TestCase):
     def test_144_runs_reuse_fresh_cache_without_api_requests(self):
         # 144 ten-minute workflow invocations over one day; cache is revalidated
         # once at 12 hours, not on every invocation.
-        fetched_at = 1_800_000_000.0
+        start = 1_800_000_000.0
+        fetched_at = start
         api_calls = 0
         for run in range(144):
-            now = fetched_at + run * 600
+            now = start + run * 600
             if now - fetched_at >= 12 * 3600:
                 api_calls += 1
                 fetched_at = now
@@ -48,7 +49,8 @@ class RblxValueGuardTests(unittest.TestCase):
         for status, body in ((401, "unauthorized"), (403, "forbidden"),
                              (400, "API key suspended")):
             with self.subTest(status=status, body=body):
-                guard.raise_for_key_error(status, body, key="rbx_test_key")
+                with self.assertRaises(guard.RblxValueKeyBlocked):
+                    guard.raise_for_key_error(status, body, key="rbx_test_key")
                 self.assertTrue(guard.is_key_blocked(now=1_800_000_001,
                                                     key="rbx_test_key", block_path=self.block))
                 with self.assertRaises(guard.RblxValueKeyBlocked):
