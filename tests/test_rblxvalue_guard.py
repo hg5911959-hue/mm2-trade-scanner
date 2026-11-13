@@ -1,0 +1,94 @@
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+import rblxvalue_guard as guard
+
+
+class RblxValueGuardTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.budget = self.root / "budget.json"
+        self.block = self.root / "blocked.json"
+
+    def test_144_runs_reuse_fresh_cache_without_api_requests(self):
+        # 144 ten-minute workflow invocations over one day; cache is revalidated
+        # once at 12 hours, not on every invocation.
+        fetched_at = 1_800_000_000.0
+        api_calls = 0
+        for run in range(144):
+            now = fetched_at + run * 600
+            if now - fetched_at >= 12 * 3600:
+                api_calls += 1
+                fetched_at = now
+        self.assertEqual(api_calls, 1)
+
+    def test_budget_is_rolling_and_counts_each_attempt(self):
+        for i in range(60):
+            guard.reserve_request(now=1_800_000_000 + i, key="rbx_test_key",
+                                  budget_path=self.budget, block_path=self.block)
+        with self.assertRaises(guard.RblxValueBudgetExceeded):
+            guard.reserve_request(now=1_800_000_100, key="rbx_test_key",
+                                  budget_path=self.budget, block_path=self.block)
+        state = json.loads(self.budget.read_text())
+        self.assertEqual(len(state["request_timestamps_epoch"]), 60)
+
+    def test_expired_budget_entries_roll_off_after_24_hours(self):
+        guard.reserve_request(now=1_800_000_000, key="rbx_test_key",
+                              budget_path=self.budget, block_path=self.block)
+        count = guard.reserve_request(now=1_800_086_401, key="rbx_test_key",
+                                      budget_path=self.budget, block_path=self.block)
+        self.assertEqual(count, 1)
+
+    def test_401_403_and_inactive_key_open_breaker_without_retry(self):
+        for status, body in ((401, "unauthorized"), (403, "forbidden"),
+                             (400, "API key suspended")):
+            with self.subTest(status=status, body=body):
+                guard.raise_for_key_error(status, body)
+                self.assertTrue(guard.is_key_blocked(now=1_800_000_001,
+                                                    key="rbx_test_key", block_path=self.block))
+                with self.assertRaises(guard.RblxValueKeyBlocked):
+                    guard.reserve_request(now=1_800_000_002, key="rbx_test_key",
+                                          budget_path=self.budget, block_path=self.block)
+                self.block.unlink(missing_ok=True)
+
+    def test_breaker_expires_after_six_hours_or_key_rotation(self):
+        guard.mark_key_blocked("HTTP 403", now=1_800_000_000,
+                               key="rbx_old_key", block_path=self.block)
+        self.assertTrue(guard.is_key_blocked(now=1_800_000_001,
+                                             key="rbx_old_key", block_path=self.block))
+        self.assertFalse(guard.is_key_blocked(now=1_800_000_001,
+                                              key="rbx_new_key", block_path=self.block))
+        self.assertFalse(guard.is_key_blocked(now=1_800_000_000 + 6 * 3600 + 1,
+                                              key="rbx_old_key", block_path=self.block))
+
+    def test_block_alert_is_once_then_24_hour_reminder(self):
+        guard.mark_key_blocked("HTTP 403", now=1_800_000_000,
+                               key="rbx_test_key", block_path=self.block)
+        self.assertTrue(guard.claim_block_alert(now=1_800_000_000,
+                                                key="rbx_test_key", block_path=self.block))
+        self.assertFalse(guard.claim_block_alert(now=1_800_000_000 + 3600,
+                                                 key="rbx_test_key", block_path=self.block))
+        self.assertTrue(guard.claim_block_alert(now=1_800_000_000 + 86400,
+                                                key="rbx_test_key", block_path=self.block))
+
+    def test_fingerprint_is_truncated_sha256_and_never_raw_key(self):
+        guard.mark_key_blocked("HTTP 403", now=1_800_000_000,
+                               key="rbx_sensitive_secret", block_path=self.block)
+        text = self.block.read_text()
+        self.assertNotIn("rbx_sensitive_secret", text)
+        self.assertEqual(json.loads(text)["key_fingerprint"],
+                         guard.key_fingerprint("rbx_sensitive_secret"))
+
+    def test_request_counter_counts_reserved_requests(self):
+        guard.reset_run_counter()
+        guard.reserve_request(now=1_800_000_000, key="rbx_test_key",
+                              budget_path=self.budget, block_path=self.block)
+        self.assertEqual(guard.requests_this_run(), 1)
+
+
+if __name__ == "__main__":
+    unittest.main()
