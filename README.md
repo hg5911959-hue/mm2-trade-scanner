@@ -34,6 +34,8 @@ If a quantity is uncertain, the scanner computes a conservative best/worst profi
 
 Telegram alerts show owner/listing links and every valued item line (Supreme-source unit value, quantity, line total, Stability, Demand and Rarity when supplied), both side totals, profit and result. Received-side items with missing/unrecognized Stability or Demand are rejected. The received basket must have value-weighted Demand of at least 4/10 and value-weighted Stability of at least 3/9; this admits genuinely Stable items, while preventing a large Underpaid For component from being hidden by the basket's total value. Decreasing, Unsafe, Untradeable, Unstable and Volatile received items are hard-rejected. The message shows the weighted received-side Demand and Stability scores. Uncertain quantities, large stacks, and suspiciously high profit retain short safety warnings. Parser provenance, raw excerpts, and HTML/API diagnostics stay in GitHub Actions logs.
 
+- **Fast lane:** up to 2 exceptional offers per scan are sent immediately before the full batch is ranked, but only when margin is at least 15%, received-side value-weighted Demand is at least 6/10, Stability is at least 3/9, and there is no manual-review/quantity uncertainty. They still count toward the normal 15-alert cap. All other qualifying offers are ranked and sent after the scan; this keeps the immediate path small and conservative.
+
 ### Item names and duplicate values
 
 - Exact normalized Supreme names are preferred.
