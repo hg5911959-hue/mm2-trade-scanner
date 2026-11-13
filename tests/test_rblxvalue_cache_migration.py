@@ -59,7 +59,9 @@ class SupremeCacheMigrationTests(unittest.TestCase):
                 patch("scanner.VALUES_AUDIT_FILE", audit),
                 patch("scanner.VALUES_TTL_SECONDS", 43200),
                 patch("scanner.time.time", side_effect=lambda: now[0]),
-                patch("scanner.RBLXVALUE_API_KEY", ""),
+                patch("scanner.RBLXVALUE_API_KEY", "rbx_test_cache_key"),
+                patch("rblxvalue_guard.BUDGET_FILE", root / "budget.json"),
+                patch("rblxvalue_guard.BLOCK_FILE", root / "blocked.json"),
                 patch("scanner.api_get_json_conditional", side_effect=unchanged),
                 patch("scanner.time.sleep"),
             ):
