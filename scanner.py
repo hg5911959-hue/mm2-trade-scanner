@@ -2280,6 +2280,12 @@ def load_supreme_values():
                 f"({cached_source_updated} -> {source_meta.get('last_updated')}); refreshing catalogue now"
             )
             cached_age = VALUES_TTL_SECONDS + 1
+        elif source_meta and not cached_source_updated:
+            print("[supreme] Cached catalogue has no source-version marker; refreshing once to establish verified provenance")
+            cached_age = VALUES_TTL_SECONDS + 1
+        elif source_meta and cached_document and source_meta.get("items_total") != cached_document.get("source_items_total"):
+            print("[supreme] Upstream catalogue size changed; refreshing the full item catalogue")
+            cached_age = VALUES_TTL_SECONDS + 1
     if cached_values is not None and cached_age is not None and cached_age <= VALUES_TTL_SECONDS:
         print(f"[supreme] Using fresh source_b snapshot (age {cached_age}s; TTL {VALUES_TTL_SECONDS}s)")
         _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
@@ -2445,6 +2451,7 @@ def load_supreme_values():
     atomic_write_text(VALUES_FILE, json.dumps({
         "schema_version": 4, "fetched_at": time.time(),
         "source_last_updated": source_meta.get("last_updated") if source_meta else None,
+        "source_items_total": source_meta.get("items_total") if source_meta else None,
         "source": "Supreme Values via RBLXValue API value_source_b",
         "pages": refreshed_pages, "values": all_values,
     }, ensure_ascii=False, indent=2) + "\n")
