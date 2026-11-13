@@ -2411,14 +2411,14 @@ RBLXVALUE_ATTRIBUTION = "Data from rblxvalue.com"
 def send_telegram(message):
     message = str(message)
     needs_attribution = not message.rstrip().endswith(RBLXVALUE_ATTRIBUTION)
-    footer = "\\n\\n" + RBLXVALUE_ATTRIBUTION if needs_attribution else ""
+    footer = "\n\n" + RBLXVALUE_ATTRIBUTION if needs_attribution else ""
     if len(message) + len(footer) > TELEGRAM_MAX_CHARS:
         # Reserve room for the multipart header and the mandatory source credit
         # in every Telegram message. Never truncate trade details.
         chunk_limit = TELEGRAM_MAX_CHARS - 96
         chunks, current = [], ""
         for line in message.splitlines():
-            candidate = (current + "\\n" + line) if current else line
+            candidate = (current + "\n" + line) if current else line
             if len(candidate) <= chunk_limit:
                 current = candidate
                 continue
@@ -2435,7 +2435,7 @@ def send_telegram(message):
         sent_chunks = 0
         for index, chunk in enumerate(chunks, start=1):
             try:
-                send_telegram(f"💎 MM2 TRADE DETAILS ({index}/{total_chunks})\\n{chunk}")
+                send_telegram(f"💎 MM2 TRADE DETAILS ({index}/{total_chunks})\n{chunk}")
             except TelegramDeliveryUncertain:
                 raise
             except Exception as exc:
