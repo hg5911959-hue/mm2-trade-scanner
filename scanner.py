@@ -3581,6 +3581,7 @@ def record_failure(error):
                     f"Key fingerprint: {fingerprint}\n"
                     "Trade calculations remain Fail-Closed; only a fresh valid Supreme cache may be used."
                 )
+                rblxvalue_guard.mark_block_alert_sent(key=RBLXVALUE_API_KEY)
                 print("[telegram] RBLXValue key-block alert sent (24-hour cooldown)")
             except Exception as notify_error:
                 print(f"[telegram] RBLXValue key-block alert failed: {type(notify_error).__name__}")
