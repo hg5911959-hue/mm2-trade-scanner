@@ -1099,11 +1099,14 @@ def fetch_bloxswaps_items_map(force_refresh=False):
     force_allowed = True
     if force_refresh:
         now = time.time()
-        force_allowed = now - _LAST_ITEMS_FORCE_REFRESH_AT >= 60
+        # A single catalogue refresh is enough to resolve newly introduced IDs.
+        # Re-fetching every 60 seconds caused several identical ~50s downloads per
+        # scan session. Keep the cooldown for ten minutes across scan cycles.
+        force_allowed = now - _LAST_ITEMS_FORCE_REFRESH_AT >= 600
         if force_allowed:
             _LAST_ITEMS_FORCE_REFRESH_AT = now
         else:
-            print("[bloxswaps] Unknown item ID refresh is cooling down; retaining safe unmatched status")
+            print("[bloxswaps] Unknown item ID refresh is cooling down (10 minutes); retaining safe unmatched status")
     if BLOXSWAPS_ITEMS_FILE.exists():
         try:
             cache = json.loads(BLOXSWAPS_ITEMS_FILE.read_text(encoding="utf-8"))
@@ -3630,8 +3633,15 @@ def record_failure(error):
 
 
 def minimum_cycle_start_window(duration_seconds):
-    """Reserve a final quarter of the polling window, capped at four minutes."""
-    return min(240.0, max(0.1, float(duration_seconds) * 0.25))
+    """Reserve enough time for a full scan cycle based on observed production runtime.
+
+    Production scans take roughly 4.5 minutes; the former 25%/240s reserve
+    allowed a new 267s cycle to start with only 243s remaining.
+    """
+    duration = max(0.1, float(duration_seconds))
+    if duration <= 300:
+        return max(0.1, duration * 0.25)
+    return min(360.0, max(300.0, duration * 0.4))
 
 
 def should_start_scan_cycle(remaining_seconds, duration_seconds):
