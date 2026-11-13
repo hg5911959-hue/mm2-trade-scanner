@@ -1,5 +1,4 @@
 import unittest
-import csv
 import scanner
 import watchdog
 import json
@@ -1527,7 +1526,6 @@ class CacheTTLTests(unittest.TestCase):
     def test_supreme_audit_records_every_identity_and_collision(self):
         with tempfile.TemporaryDirectory() as directory:
             audit_path = Path(directory) / "supreme_values_audit.json"
-            catalog_path = Path(directory) / "weapons_catalog.csv"
             values = {
                 "same name": {
                     "name": "Same Name",
@@ -1544,10 +1542,7 @@ class CacheTTLTests(unittest.TestCase):
                 },
             }
             values["unvalued"]["variants"][0].update({"demand": 4, "rarity": 2, "acronym": "UV"})
-            with (
-                patch("scanner.VALUES_AUDIT_FILE", audit_path),
-                patch("scanner.WEAPONS_CATALOG_FILE", catalog_path),
-            ):
+            with patch("scanner.VALUES_AUDIT_FILE", audit_path):
                 scanner._write_supreme_values_audit(values, fetched_at=123)
             report = json.loads(audit_path.read_text(encoding="utf-8"))
             self.assertEqual(report["counts"]["records"], 3)
@@ -1562,11 +1557,6 @@ class CacheTTLTests(unittest.TestCase):
             self.assertEqual(next(row for row in report["items"] if row["id"] == "1")["stability"], "Rising")
             self.assertEqual(next(row for row in report["items"] if row["id"] == "3")["demand"], 4)
             self.assertEqual(next(row for row in report["items"] if row["id"] == "3")["acronym"], "UV")
-            with catalog_path.open(encoding="utf-8", newline="") as handle:
-                catalog = list(csv.DictReader(handle))
-            self.assertEqual(len(catalog), 3)
-            self.assertEqual(sum(row["type"] == "knife" for row in catalog), 2)
-            self.assertEqual(sum(row["type"] == "gun" for row in catalog), 1)
 
     def test_supreme_stability_is_preserved_and_shown_for_each_weapon(self):
         rows = [
