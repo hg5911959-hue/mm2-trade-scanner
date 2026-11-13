@@ -2004,6 +2004,7 @@ def verify_rblxvalue_key_if_due():
     except FileNotFoundError:
         state = {}
     except (OSError, ValueError, TypeError):
+        state = {}
         print("[rblxvalue-key-check] Health state is unreadable; performing a fresh one-request check")
 
     same_key = state.get("key_fingerprint") == fingerprint
