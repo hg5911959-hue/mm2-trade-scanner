@@ -205,13 +205,11 @@ jobs:
       - name: Validate downloaded scanner state before publishing
         id: validate-state
         if: steps.download.outcome == 'success'
-        env:
-          REQUIRE_CACHE: ${{ needs.scan.result == 'success' }}
         run: |
           set -euo pipefail
-          args=()
-          if [ "$REQUIRE_CACHE" = "true" ]; then args+=(--require-cache); fi
-          python tools/validate_state.py --directory state-artifact/data "${args[@]}"
+          # Never replace the durable branch with a partial artifact, even if
+          # the scan failed. The previous cache/database must survive failures.
+          python tools/validate_state.py --directory state-artifact/data --require-cache
 
       - name: Persist state branch
         id: persist-state

@@ -13,6 +13,7 @@ class WorkflowReliabilityTests(unittest.TestCase):
         self.assertNotIn("repository_dispatch:", workflow)
         self.assertIn("group: mm2-trade-scanner", workflow)
         self.assertIn("cancel-in-progress: false", workflow)
+        self.assertIn("python tools/validate_state.py --directory state-artifact/data --require-cache", workflow)
 
     def test_dashboard_skips_deploy_when_pages_is_not_enabled(self):
         workflow = (ROOT / ".github/workflows/dashboard-pages.yml").read_text(encoding="utf-8")
