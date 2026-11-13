@@ -2285,11 +2285,20 @@ def verify_rblxvalue_key_if_due():
 
 
 def load_supreme_values():
+    # Never spend API budget or perform health checks for a credential already blocked.
+    if RBLXVALUE_API_KEY and rblxvalue_guard.is_key_blocked(key=RBLXVALUE_API_KEY):
+        raise RuntimeError(
+            "[supreme] API key circuit breaker active; refusing stale-cache calculations "
+            "[rblxvalue-key-blocked] no request sent"
+        )
     # Schema v4 preserves item identity and Supreme stability; older caches lack stability.
     cached_document = _read_values_cache_document()
     cached_values, cached_age = _read_values_cache()
     source_meta = None
-    if cached_values is not None and RBLXVALUE_API_KEY:
+    if (
+        cached_values is not None and RBLXVALUE_API_KEY
+        and cached_age is not None and cached_age <= VALUES_TTL_SECONDS
+    ):
         verify_rblxvalue_key_if_due()
         if RBLXVALUE_META_POLL_ENABLED:
             try:
@@ -2320,11 +2329,6 @@ def load_supreme_values():
         print(f"[supreme] Using fresh source_b snapshot (age {cached_age}s; TTL {VALUES_TTL_SECONDS}s)")
         _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
         return cached_values
-    if rblxvalue_guard.is_key_blocked(key=RBLXVALUE_API_KEY):
-        raise RuntimeError(
-            "[supreme] API key circuit breaker active; refusing stale-cache calculations "
-            "[rblxvalue-key-blocked] no request sent"
-        )
     if not RBLXVALUE_API_KEY:
         raise RuntimeError("[supreme] API key missing and no fresh cached source_b snapshot; refusing stale values.")
     if RBLXVALUE_META_POLL_ENABLED and source_meta is None:
