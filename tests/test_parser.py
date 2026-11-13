@@ -720,9 +720,8 @@ class ReliabilityTests(unittest.TestCase):
             scanner.send_telegram(original)
         self.assertGreater(len(captured), 1)
         self.assertTrue(all(len(part) <= scanner.TELEGRAM_MAX_CHARS for part in captured))
-        joined = "\n".join(captured)
-        self.assertIn("weapon-value-line-", joined)
-        self.assertIn("300", str(len(captured))) if False else None
+        pieces = [part.split("\n", 1)[1] for part in captured]
+        self.assertEqual("".join(pieces), original)
 
     def test_telegram_send_does_not_retry_uncertain_network_failure(self):
         calls = []
@@ -1124,6 +1123,33 @@ class CloudflareDetectionTests(unittest.TestCase):
 
 
 class CacheTTLTests(unittest.TestCase):
+    def test_supreme_audit_records_every_identity_and_collision(self):
+        with tempfile.TemporaryDirectory() as directory:
+            audit_path = Path(directory) / "supreme_values_audit.json"
+            values = {
+                "same name": {
+                    "name": "Same Name",
+                    "variants": [
+                        {"name": "Same Name", "id": "1", "slug": "same-a", "category": "godly", "type": "knife", "value": 10, "raw_source_value": 10, "value_status": "numeric"},
+                        {"name": "Same Name", "id": "2", "slug": "same-b", "category": "ancient", "type": "knife", "value": 20, "raw_source_value": 20, "value_status": "numeric"},
+                    ],
+                },
+                "unvalued": {
+                    "name": "Unvalued",
+                    "variants": [
+                        {"name": "Unvalued", "id": "3", "slug": "unvalued", "category": "common", "type": "gun", "value": None, "raw_source_value": "x4", "value_status": "tier_item_count"},
+                    ],
+                },
+            }
+            with patch("scanner.VALUES_AUDIT_FILE", audit_path):
+                scanner._write_supreme_values_audit(values, fetched_at=123)
+            report = json.loads(audit_path.read_text(encoding="utf-8"))
+            self.assertEqual(report["counts"]["records"], 3)
+            self.assertEqual(report["counts"]["numeric"], 2)
+            self.assertEqual(report["counts"]["non_numeric"], 1)
+            self.assertEqual(report["counts"]["identity_collisions"], 1)
+            self.assertEqual({row["id"] for row in report["items"]}, {"1", "2", "3"})
+
     def test_fresh_supreme_snapshot_is_reused_within_ttl(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "supreme.json"
