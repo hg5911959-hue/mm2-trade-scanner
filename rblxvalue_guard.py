@@ -241,6 +241,7 @@ def is_key_error(status: int, detail: str) -> bool:
     ))
     invalid_marker = any(marker in text for marker in (
         "invalid", "inactive", "suspended", "deactivated", "revoked", "expired",
+        "not activated", "not been activated", "has not activated", "not active", "unactivated", "activation required", "disabled",
     ))
     return int(status) == 401 or (key_context and invalid_marker)
 

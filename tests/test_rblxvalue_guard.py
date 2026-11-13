@@ -69,6 +69,10 @@ class RblxValueGuardTests(unittest.TestCase):
         self.assertFalse(guard.is_key_error(403, "Account inactive"))
         self.assertTrue(guard.is_key_error(403, "API key suspended"))
         self.assertTrue(guard.is_key_error(403, "Your access token has expired"))
+        self.assertTrue(guard.is_key_error(403, "API key not activated"))
+        self.assertTrue(guard.is_key_error(403, "Your API key has not been activated"))
+        self.assertFalse(guard.is_key_error(429, "Rate limit exceeded"))
+        self.assertTrue(guard.is_key_error(403, "API key disabled"))
         self.assertTrue(guard.is_key_error(401, "Unauthorized"))
 
     def test_breaker_expires_after_six_hours_or_key_rotation(self):
