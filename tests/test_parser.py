@@ -2066,7 +2066,7 @@ class SupremeETagCacheTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "supreme.json"
             rows = [
-                {"id": i, "slug": f"etag-item-{i}", "name": f"ETag Item {i}", "category": "godly", "type": "knife", "value_source_b": i + 1, "value_source_a": None}
+                {"id": i, "slug": f"etag-item-{i}", "name": f"ETag Item {i}", "category": "godly", "type": "knife", "value_source_b": i + 1, "value_source_a": None, "stability": "Stable"}
                 for i in range(100)
             ]
             cached_values = {
@@ -2077,14 +2077,14 @@ class SupremeETagCacheTests(unittest.TestCase):
                         "id": str(row["id"]), "slug": row["slug"], "name": row["name"],
                         "category": row["category"], "type": row["type"],
                         "value": row["value_source_b"], "value_min": row["value_source_b"],
-                        "value_max": row["value_source_b"], "secondary_value": None,
+                        "value_max": row["value_source_b"], "secondary_value": None, "stability": row["stability"],
                     }],
                 }
                 for row in rows
             }
             etag = '"supreme-page-v1"'
             path.write_text(json.dumps({
-                "schema_version": 3,
+                "schema_version": 4,
                 "fetched_at": 1,
                 "values": cached_values,
                 "pages": {"0": {"etag": etag, "total": 100, "items": rows}},
