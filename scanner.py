@@ -1728,14 +1728,16 @@ def _iter_value_variants(values):
 
 def _catalog_value_metadata(item):
     if not isinstance(item, dict):
-        return "", "", "", "", None
+        return "", "", "", "", None, None
     # Only structured catalogue fields are trusted. HTML parser fields such as
     # "type" or "slug" are presentation hints, not canonical item identity.
     slug = normalize_slug(item.get("catalog_slug") or "")
     rarity = str(item.get("catalog_rarity") or "").strip().casefold()
-    chroma = item.get("catalog_chroma")
-    if chroma is True or str(chroma).casefold() in {"true", "1", "yes"}:
-        rarity = "chroma"
+    raw_chroma = item.get("catalog_chroma")
+    if raw_chroma is None:
+        chroma = None
+    else:
+        chroma = raw_chroma is True or str(raw_chroma).casefold() in {"true", "1", "yes"}
     item_type = str(item.get("catalog_type") or "").strip().casefold()
     raw_year = item.get("catalog_year")
     try:
@@ -1744,11 +1746,11 @@ def _catalog_value_metadata(item):
             year = None
     except (TypeError, ValueError):
         year = None
-    return slug, rarity, item_type, normalize_name(item.get("name") or ""), year
+    return slug, rarity, item_type, normalize_name(item.get("name") or ""), year, chroma
 
 
 def _filter_variants_by_catalog(candidates, item):
-    slug, rarity, item_type, _, year = _catalog_value_metadata(item)
+    slug, rarity, item_type, _, year, chroma = _catalog_value_metadata(item)
     if slug:
         slug_matches = [row for row in candidates if normalize_slug(row[2].get("slug")) == slug]
         if slug_matches:
@@ -1757,6 +1759,17 @@ def _filter_variants_by_catalog(candidates, item):
         candidates = [row for row in candidates if str(row[2].get("category") or "").strip().casefold() == rarity]
     if item_type:
         candidates = [row for row in candidates if str(row[2].get("type") or "").strip().casefold() == item_type]
+    if chroma is not None:
+        def is_chroma_variant(row):
+            name = normalize_name(row[2].get("name") or "")
+            slug = normalize_slug(row[2].get("slug") or "")
+            return name.startswith("chroma ") or slug.startswith("chroma-")
+        chroma_matches = [row for row in candidates if is_chroma_variant(row) is chroma]
+        # Apply chroma identity only when the Supreme catalogue exposes it in
+        # either the canonical name or slug. Otherwise keep the candidates
+        # ambiguous rather than treating rarity as a chroma marker.
+        if chroma_matches:
+            candidates = chroma_matches
     if year is not None:
         year_pattern = re.compile(rf"(?<!\\d){year}(?!\\d)")
         year_matches = [
@@ -1785,7 +1798,7 @@ def resolve_value_record(name, values, aliases=None, item=None):
     all_variants = list(_iter_value_variants(values))
     metadata_item = dict(item) if isinstance(item, dict) else {}
     metadata_item["name"] = name
-    catalog_slug, catalog_rarity, catalog_type, _, _ = _catalog_value_metadata(metadata_item)
+    catalog_slug, catalog_rarity, catalog_type, _, _, _ = _catalog_value_metadata(metadata_item)
 
     if catalog_slug:
         slug_candidates = [row for row in all_variants if normalize_slug(row[2].get("slug")) == catalog_slug]
