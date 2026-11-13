@@ -2012,6 +2012,19 @@ def verify_rblxvalue_key_if_due():
         last_success = float(state.get("last_success_at_epoch", 0)) if same_key else 0
     except (TypeError, ValueError):
         last_success = 0
+    try:
+        last_attempt = float(state.get("last_attempt_at_epoch", 0)) if same_key else 0
+    except (TypeError, ValueError):
+        last_attempt = 0
+
+    # Older health-state versions did not record the API's credit requirement.
+    # Refresh once after this schema change, but keep the normal retry cooldown
+    # if a previous metadata refresh was already attempted and failed.
+    has_credit_metadata = isinstance(state.get("attribution_required"), bool)
+    if same_key and not has_credit_metadata and last_attempt <= last_success:
+        last_success = 0
+        last_attempt = 0
+
     if last_success > 0 and 0 <= now - last_success < RBLXVALUE_KEY_HEALTH_INTERVAL_SECONDS:
         print(
             f"[rblxvalue-key-check] Last successful check is "
@@ -2019,11 +2032,6 @@ def verify_rblxvalue_key_if_due():
             f"{RBLXVALUE_KEY_HEALTH_INTERVAL_SECONDS}s"
         )
         return False
-
-    try:
-        last_attempt = float(state.get("last_attempt_at_epoch", 0)) if same_key else 0
-    except (TypeError, ValueError):
-        last_attempt = 0
     if last_attempt > 0 and 0 <= now - last_attempt < RBLXVALUE_KEY_HEALTH_RETRY_SECONDS:
         print("[rblxvalue-key-check] Previous check was inconclusive; retry cooldown active")
         return False
