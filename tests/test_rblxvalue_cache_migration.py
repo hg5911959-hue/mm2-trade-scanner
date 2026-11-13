@@ -53,7 +53,9 @@ class SupremeCacheMigrationTests(unittest.TestCase):
 
             def unchanged(path, params=None, etag=None):
                 api.append((path, params, etag))
-                return {"items": [{"id": 1, "name": "Health Check"}]}, None, False
+                if params and params.get("limit") == 1:
+                    return {"items": [{"id": 1, "name": "Health Check"}]}, None, False
+                return None, etag, True
 
             with (
                 patch("scanner.VALUES_FILE", cache),
@@ -75,7 +77,7 @@ class SupremeCacheMigrationTests(unittest.TestCase):
             saved = json.loads(cache.read_text(encoding="utf-8"))
             self.assertEqual(saved["schema_version"], 4)
             self.assertEqual(loaded["item 7"]["variants"][0]["stability"], "Stable")
-            self.assertEqual(len(api), 4)
+            self.assertEqual(len(api), 5)
 
     def test_expired_cache_and_blocked_key_fail_closed_without_network(self):
         with tempfile.TemporaryDirectory() as directory:
