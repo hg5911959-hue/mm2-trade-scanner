@@ -14,6 +14,8 @@ class WorkflowReliabilityTests(unittest.TestCase):
         self.assertIn("group: mm2-trade-scanner", workflow)
         self.assertIn("cancel-in-progress: false", workflow)
         self.assertIn("python tools/validate_state.py --directory state-artifact/data --require-cache", workflow)
+        restore = workflow.split("      - name: Restore durable state branch", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("set -euo pipefail", restore)
 
     def test_dashboard_skips_deploy_when_pages_is_not_enabled(self):
         workflow = (ROOT / ".github/workflows/dashboard-pages.yml").read_text(encoding="utf-8")
