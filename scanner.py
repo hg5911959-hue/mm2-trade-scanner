@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """BloxSwaps MM2 scanner with verified Supreme Values calculations."""
 import csv
+import io
 import difflib
 import itertools
 import hashlib
@@ -42,6 +43,7 @@ _SESSION_ALERT_LIMIT = MAX_ALERTS_PER_RUN
 ALERT_DELAY_SECONDS = max(0.0, float(os.environ.get("ALERT_DELAY_SECONDS", "1.1")) )
 VALUES_FILE = Path("data/supreme_values.json")
 VALUES_AUDIT_FILE = Path("data/supreme_values_audit.json")
+WEAPONS_CATALOG_FILE = Path("data/weapons_catalog.csv")
 RBLXVALUE_KEY_HEALTH_FILE = Path("data/rblxvalue_key_health.json")
 RBLXVALUE_KEY_HEALTH_INTERVAL_SECONDS = 6 * 60 * 60
 RBLXVALUE_KEY_HEALTH_RETRY_SECONDS = 3 * 60 * 60
@@ -2102,6 +2104,8 @@ def _write_supreme_values_audit(values, fetched_at=None):
         "records": 0, "numeric": 0, "non_numeric": 0, "identity_collisions": 0,
         "weapons": 0, "knives": 0, "guns": 0,
         "weapons_missing_stability": 0, "weapons_untradeable": 0,
+        "weapons_missing_demand": 0, "weapons_missing_rarity": 0,
+        "records_missing_type": 0,
     }
     for key, record in sorted((values or {}).items()):
         variants = record.get("variants") if isinstance(record, dict) else None
@@ -2117,6 +2121,8 @@ def _write_supreme_values_audit(values, fetched_at=None):
             counts["numeric" if is_numeric else "non_numeric"] += 1
             item_type = str(variant.get("type") or "").strip().casefold()
             stability = _normalize_stability(variant.get("stability"))
+            if not item_type:
+                counts["records_missing_type"] += 1
             if item_type in {"knife", "gun"}:
                 counts["weapons"] += 1
                 counts["knives" if item_type == "knife" else "guns"] += 1
@@ -2124,6 +2130,10 @@ def _write_supreme_values_audit(values, fetched_at=None):
                     counts["weapons_missing_stability"] += 1
                 if stability and stability.casefold() == "untradeable":
                     counts["weapons_untradeable"] += 1
+                if variant.get("demand") is None:
+                    counts["weapons_missing_demand"] += 1
+                if variant.get("rarity") is None:
+                    counts["weapons_missing_rarity"] += 1
             rows.append({
                 "name": str(variant.get("name") or record.get("name") or key),
                 "id": str(variant.get("id") or ""),
@@ -2143,6 +2153,26 @@ def _write_supreme_values_audit(values, fetched_at=None):
                 "tier": variant.get("tier"),
                 "last_updated": variant.get("last_updated"),
             })
+    weapon_rows = [
+        row for row in rows
+        if str(row.get("type") or "").strip().casefold() in {"knife", "gun"}
+    ]
+    weapon_rows.sort(key=lambda row: (
+        str(row.get("type") or ""), str(row.get("category") or ""),
+        str(row.get("name") or "").casefold(), str(row.get("id") or ""),
+    ))
+    catalog_buffer = io.StringIO(newline="")
+    catalog_fields = [
+        "id", "name", "slug", "type", "category", "value", "value_min",
+        "value_max", "stability", "demand", "rarity", "acronym", "event_name",
+        "tier", "value_status", "last_updated",
+    ]
+    writer = csv.DictWriter(catalog_buffer, fieldnames=catalog_fields, extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows(weapon_rows)
+    WEAPONS_CATALOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(WEAPONS_CATALOG_FILE, catalog_buffer.getvalue())
+
     VALUES_AUDIT_FILE.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(VALUES_AUDIT_FILE, json.dumps({
         "schema_version": 1,
@@ -2438,9 +2468,20 @@ def load_supreme_values():
     if RBLXVALUE_META_POLL_ENABLED and RBLXVALUE_API_KEY:
         try:
             latest_meta = _fetch_rblxvalue_meta(force=True)
-            if source_meta and latest_meta and source_meta.get("last_updated") != latest_meta.get("last_updated"):
+            if source_meta and latest_meta and (
+                source_meta.get("last_updated") != latest_meta.get("last_updated")
+                or source_meta.get("items_total") != latest_meta.get("items_total")
+            ):
                 raise RuntimeError(
-                    "[supreme] Source changed during pagination; refusing a mixed-version catalogue snapshot"
+                    "[supreme] Source version or catalogue size changed during pagination; "
+                    "refusing a mixed-version catalogue snapshot"
+                )
+            if latest_meta and sum(
+                len(page.get("items", [])) for page in refreshed_pages.values()
+            ) != latest_meta.get("items_total"):
+                raise RuntimeError(
+                    "[supreme] Paginated row count does not match the source metadata total; "
+                    "refusing an incomplete catalogue"
                 )
             source_meta = latest_meta or source_meta
         except Exception as exc:
