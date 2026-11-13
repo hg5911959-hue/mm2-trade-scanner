@@ -137,7 +137,7 @@ class MarketHistory:
                 if supreme is not None and supreme > 0 and secondary is not None and secondary > 0:
                     difference = abs(supreme - secondary) / max(supreme, secondary) * 100
                     confidence = "cross_checked" if difference <= 15 else "conflict"
-                elif supreme is not None and supreme > 0:
+                elif (supreme is not None and supreme > 0) or (secondary is not None and secondary > 0):
                     difference = None
                     confidence = "estimated"
                 else:
