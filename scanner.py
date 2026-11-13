@@ -1003,15 +1003,18 @@ def request_with_retry(req, timeout, label, attempts=4, return_headers=False, al
                 print(f"[http] {label}: HTTP 304 (ETag unchanged)")
                 return None, exc.headers
             detail = exc.read(400).decode("utf-8", errors="replace")
+            # Detect edge/CDN challenges before interpreting HTTP 403 as an API-key
+            # suspension. Cloudflare can return 403 even when the configured key is valid.
+            challenge_markers = ("cloudflare", "captcha", "just a moment", "challenge-platform", "cf-chl-")
+            cf_mitigated = str(exc.headers.get("cf-mitigated", "")).casefold()
+            if exc.code in (403, 503) and (
+                any(marker in detail.casefold() for marker in challenge_markers)
+                or cf_mitigated == "challenge"
+            ):
+                raise RuntimeError(f"[cloudflare] {label} blocked by Cloudflare/CAPTCHA challenge (HTTP {exc.code}).") from exc
             if is_rblxvalue:
                 rblxvalue_guard.raise_for_key_error(exc.code, detail, key=RBLXVALUE_API_KEY)
-            challenge_markers = ("cloudflare", "captcha", "just a moment", "challenge-platform", "cf-chl-")
-            if exc.code in (403, 503) and any(marker in detail.casefold() for marker in challenge_markers):
-                raise RuntimeError(f"[cloudflare] {label} blocked by Cloudflare/CAPTCHA challenge (HTTP {exc.code}).") from exc
             if exc.code == 403:
-                cf_mitigated = str(exc.headers.get("cf-mitigated", "")).casefold()
-                if cf_mitigated == "challenge":
-                    raise RuntimeError(f"[cloudflare] {label} blocked by Cloudflare challenge (HTTP 403; cf-mitigated=challenge).") from exc
                 safe_detail = redact(detail).strip()
                 if safe_detail.startswith("<"):
                     safe_detail = "[HTML response omitted; inspect response headers in diagnostics]"
