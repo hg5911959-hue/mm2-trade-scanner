@@ -71,6 +71,25 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
     elif require_cache:
         errors.append("successful scan is missing supreme_values.json")
 
+    metrics = documents.get("metrics.json")
+    metrics_path = root / "metrics.json"
+    if metrics_path.exists() and isinstance(metrics, dict):
+        for day, row in metrics.items():
+            try:
+                from datetime import date
+                date.fromisoformat(day)
+            except (TypeError, ValueError):
+                errors.append("metrics contains an invalid UTC date key")
+                break
+            if not isinstance(row, dict):
+                errors.append("metrics daily row must be an object")
+                break
+            if any(not isinstance(row.get(field, 0), int) or row.get(field, 0) < 0
+                   for field in ("scans", "scan_failures", "alerts_sent", "alerts_deferred",
+                                 "rblxvalue_requests", "key_blocked_seconds", "parse_empty")):
+                errors.append("metrics contains an invalid counter")
+                break
+
     budget = documents.get("rblxvalue_request_budget.json")
     if (root / "rblxvalue_request_budget.json").exists() and isinstance(budget, dict):
         timestamps = budget.get("request_timestamps_epoch")
