@@ -2012,7 +2012,7 @@ def verify_rblxvalue_key_if_due():
         last_success = float(state.get("last_success_at_epoch", 0)) if same_key else 0
     except (TypeError, ValueError):
         last_success = 0
-    if 0 <= now - last_success < RBLXVALUE_KEY_HEALTH_INTERVAL_SECONDS:
+    if last_success > 0 and 0 <= now - last_success < RBLXVALUE_KEY_HEALTH_INTERVAL_SECONDS:
         print(
             f"[rblxvalue-key-check] Last successful check is "
             f"{int(now - last_success)}s old; next check due after "
@@ -2024,7 +2024,7 @@ def verify_rblxvalue_key_if_due():
         last_attempt = float(state.get("last_attempt_at_epoch", 0)) if same_key else 0
     except (TypeError, ValueError):
         last_attempt = 0
-    if 0 <= now - last_attempt < RBLXVALUE_KEY_HEALTH_RETRY_SECONDS:
+    if last_attempt > 0 and 0 <= now - last_attempt < RBLXVALUE_KEY_HEALTH_RETRY_SECONDS:
         print("[rblxvalue-key-check] Previous check was inconclusive; retry cooldown active")
         return False
 
