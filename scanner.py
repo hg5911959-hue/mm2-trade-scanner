@@ -1001,7 +1001,17 @@ def request_with_retry(req, timeout, label, attempts=4, return_headers=False, al
             if exc.code in (403, 503) and any(marker in detail.casefold() for marker in challenge_markers):
                 raise RuntimeError(f"[cloudflare] {label} blocked by Cloudflare/CAPTCHA challenge (HTTP {exc.code}).") from exc
             if exc.code == 403:
-                raise RuntimeError(f"[cloudflare] {label} returned HTTP 403; possible bot protection or access denial.") from exc
+                cf_mitigated = str(exc.headers.get("cf-mitigated", "")).casefold()
+                if cf_mitigated == "challenge":
+                    raise RuntimeError(f"[cloudflare] {label} blocked by Cloudflare challenge (HTTP 403; cf-mitigated=challenge).") from exc
+                safe_detail = redact(detail).strip()
+                if safe_detail.startswith("<"):
+                    safe_detail = "[HTML response omitted; inspect response headers in diagnostics]"
+                if not safe_detail:
+                    safe_detail = "empty response body"
+                raise RuntimeError(
+                    f"[http] {label}: HTTP 403 Forbidden; upstream response: {safe_detail[:240]}"
+                ) from exc
             retryable = exc.code == 429 or 500 <= exc.code <= 599
             if not retryable or attempt == attempts - 1:
                 raise RuntimeError(f"{label}: HTTP {exc.code}: {detail[:200]}") from exc
