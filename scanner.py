@@ -1860,6 +1860,14 @@ def _normalize_stability(value):
         return None
     return label
 
+# Labels documented by Supreme Values. Unknown/missing labels are never treated
+# as a healthy status when evaluating an item we would receive.
+SUPREME_STABILITY_LABELS = frozenset({
+    "rising", "overpaid for", "doing well", "improving", "fluctuating",
+    "receding", "stable", "underpaid for", "decreasing", "unsafe",
+})
+BLOCKED_RECEIVE_STABILITY = frozenset({"decreasing", "unsafe"})
+
 
 def _supreme_numeric_value(item):
     """Return scalar Supreme value; small Common/Uncommon/Rare xN counts are not scalar values."""
@@ -2405,6 +2413,17 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
             missing.append(f"{item['name']}{suffix}")
             continue
         selected = (record.get("variants") or [record])[0]
+        stability = _normalize_stability(selected.get("stability"))
+        if side == "receive" and "stability" in selected:
+            stability_key = stability.casefold() if stability else ""
+            if stability_key not in SUPREME_STABILITY_LABELS:
+                missing.append(f"{item['name']} (Supreme Stability unverified)")
+                continue
+            if stability_key in BLOCKED_RECEIVE_STABILITY:
+                missing.append(
+                    f"{item['name']} (Supreme Stability: {stability}; excluded)"
+                )
+                continue
         unit_min, unit_max = _variant_numeric_bounds(selected)
         if unit_min is None or unit_max is None:
             missing.append(item["name"])
@@ -2419,6 +2438,7 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
             "type": str(selected.get("type") or "").strip(),
             "source_slug": str(selected.get("slug") or ""),
             "source_id": str(selected.get("id") or ""),
+            "stability": stability or "N/A",
             "min_quantity": 0, "max_quantity": 0, "unbounded": False,
             "unit_value_min": unit_min, "unit_value_max": unit_max,
         })
@@ -2460,7 +2480,10 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
         value_label = f"{entry['unit_value_min']:g}" if entry["unit_value_min"] == entry["unit_value_max"] else f"{entry['unit_value_min']:g}..{entry['unit_value_max']:g}"
         identity = " / ".join(part for part in (entry.get("category"), entry.get("type")) if part)
         display_name = f"{entry['name']} [{identity}]" if identity else entry["name"]
-        breakdown.append(f"• {display_name} {quantity_label} — {value_label} each = {total_label}")
+        breakdown.append(
+            f"• {display_name} {quantity_label} — {value_label} each = {total_label}"
+            f" | Stability: {entry['stability']}"
+        )
     return total_min, total_max, breakdown, missing, uncertain
 
 
