@@ -1504,6 +1504,31 @@ class RblxValueKeyHealthCheckTests(unittest.TestCase):
             self.assertTrue(saved["attribution_required"])
 
 
+
+    def test_legacy_inconclusive_state_still_respects_retry_cooldown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = root / "supreme.json"
+            health = root / "key-health.json"
+            expected = self._fresh_cache(cache)
+            health.write_text(json.dumps({
+                "schema_version": 1,
+                "key_fingerprint": scanner.rblxvalue_guard.key_fingerprint("test-key"),
+                "last_attempt_at_epoch": 950,
+                "last_success_at_epoch": 900,
+            }), encoding="utf-8")
+            with (
+                patch("scanner.VALUES_FILE", cache),
+                patch("scanner.VALUES_AUDIT_FILE", root / "audit.json"),
+                patch("scanner.RBLXVALUE_KEY_HEALTH_FILE", health),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.time.time", return_value=1000),
+                patch("scanner.api_get_json_conditional") as api,
+            ):
+                self.assertEqual(scanner.load_supreme_values(), expected)
+            api.assert_not_called()
+
+
     def test_transient_health_check_failure_does_not_discard_fresh_cache_or_repeat_each_cycle(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
