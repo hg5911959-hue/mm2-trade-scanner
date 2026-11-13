@@ -3342,7 +3342,7 @@ def main():
         return run_scan_loop(duration, interval)
     global _SESSION_ALERTS_SENT, _SESSION_ALERT_LIMIT
     _SESSION_ALERTS_SENT = 0
-    _SESSION_ALERT_LIMIT = max(1, int(os.environ.get("MAX_ALERTS_PER_SESSION", str(MAX_ALERTS_PER_RUN))))
+    _SESSION_ALERT_LIMIT = max(0, int(os.environ.get("MAX_ALERTS_PER_SESSION", str(MAX_ALERTS_PER_RUN))))
     return scan_once()
 
 if __name__ == "__main__":
