@@ -168,6 +168,7 @@ class RblxValueGuardTests(unittest.TestCase):
                 self.assertEqual(state["blocked_seconds"], seconds)
                 self.assertFalse(state["permanent"])
             else:
+                self.assertEqual(state["blocked_seconds"], 24 * 3600)
                 self.assertTrue(state["permanent"])
         with self.assertRaises(guard.RblxValueKeyBlocked):
             guard.reserve_request(now=now + 100000, key="rbx_test_key",
