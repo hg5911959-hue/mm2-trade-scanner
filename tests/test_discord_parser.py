@@ -15,10 +15,15 @@ class DiscordParserTests(unittest.TestCase):
         )
         self.assertIsNotNone(listing)
         self.assertEqual([(x["name"], x["quantity"]) for x in listing["give_items"]],
-                         [("Icebreaker", 2), ("Luger", 1)])
-        self.assertEqual([(x["name"], x["quantity"]) for x in listing["receive_items"]],
                          [("Candy", 3), ("Heat", 1)])
-        self.assertEqual(listing["source_ad_id"], "discord:123456789012345")
+        self.assertEqual([(x["name"], x["quantity"]) for x in listing["receive_items"]],
+                         [("Icebreaker", 2), ("Luger", 1)])
+        self.assertEqual(listing["source_ad_id"], "")
+        self.assertEqual(listing["discord_message_id"], "123456789012345")
+
+    def test_duplicate_item_rows_are_aggregated(self):
+        listing = parse_trade_text("Trading: Icebreaker, 2x Icebreaker | LF: Candy", message_id="123456789012355")
+        self.assertEqual(listing["receive_items"][0]["quantity"], 3)
 
     def test_for_style_trade_parses(self):
         listing = parse_trade_text("Trading Icebreaker for Candy", message_id="123456789012346")
