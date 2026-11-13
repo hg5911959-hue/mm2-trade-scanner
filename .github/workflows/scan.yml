@@ -124,6 +124,7 @@ jobs:
           ALERT_DELAY_SECONDS: "1.1"
           MAX_FEED_PAGES: "1000"
           VALUES_TTL_SECONDS: "43200"
+          RBLXVALUE_META_POLL_ENABLED: "true"
           RBLXVALUE_DAILY_REQUEST_LIMIT: "60"
           RBLXVALUE_FORCE_KEY_CHECK: ${{ inputs.verify_rblxvalue_key && 'true' || 'false' }}
           BLOXSWAPS_ITEMS_TTL_SECONDS: "3600"
