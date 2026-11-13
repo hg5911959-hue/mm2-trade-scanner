@@ -2320,6 +2320,14 @@ def load_supreme_values():
         print(f"[supreme] Using fresh source_b snapshot (age {cached_age}s; TTL {VALUES_TTL_SECONDS}s)")
         _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
         return cached_values
+    if RBLXVALUE_META_POLL_ENABLED and RBLXVALUE_API_KEY and source_meta is None:
+        try:
+            source_meta = _fetch_rblxvalue_meta(force=True)
+        except Exception as exc:
+            raise RuntimeError(
+                f"[supreme] Could not verify source version before pagination ({type(exc).__name__}); "
+                "refusing an unverified catalogue refresh"
+            ) from exc
     if rblxvalue_guard.is_key_blocked(key=RBLXVALUE_API_KEY):
         raise RuntimeError(
             "[supreme] API key circuit breaker active; refusing stale-cache calculations "
@@ -2620,6 +2628,8 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
             "source_slug": str(selected.get("slug") or ""),
             "source_id": str(selected.get("id") or ""),
             "stability": stability or "N/A",
+            "demand": selected.get("demand"),
+            "rarity": selected.get("rarity"),
             "min_quantity": 0, "max_quantity": 0, "unbounded": False,
             "unit_value_min": unit_min, "unit_value_max": unit_max,
         })
@@ -2661,9 +2671,15 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
         value_label = f"{entry['unit_value_min']:g}" if entry["unit_value_min"] == entry["unit_value_max"] else f"{entry['unit_value_min']:g}..{entry['unit_value_max']:g}"
         identity = " / ".join(part for part in (entry.get("category"), entry.get("type")) if part)
         display_name = f"{entry['name']} [{identity}]" if identity else entry["name"]
+        quality_labels = []
+        if entry.get("demand") is not None:
+            quality_labels.append(f"Demand: {entry['demand']}/10")
+        if entry.get("rarity") is not None:
+            quality_labels.append(f"Rarity: {entry['rarity']}/10")
         breakdown.append(
             f"• {display_name} {quantity_label} — {value_label} each = {total_label}"
             f" | Stability (RBLXValue): {entry['stability']}"
+            + (f" | {' | '.join(quality_labels)}" if quality_labels else "")
         )
     return total_min, total_max, breakdown, missing, uncertain
 
@@ -3288,6 +3304,68 @@ def format_unvalued_message(listing, missing):
     return "\n".join(lines)
 
 
+def _receive_market_quality(items, values, aliases=None):
+    """Conservative value-weighted demand/stability quality for items we receive."""
+    stability_scores = {
+        "rising": 9, "overpaid for": 8, "overpaid for ": 8,
+        "doing well": 7, "improving": 6, "fluctuating": 5,
+        "receding": 4, "stable": 3, "underpaid for": 2,
+        "decreasing": 1, "unsafe": 0, "untradeable": 0,
+        "unstable": 0, "volatile": 0,
+    }
+    weighted_demand = 0.0
+    weighted_stability = 0.0
+    total_weight = 0.0
+    issues = []
+    for item in items:
+        record, _match_source, candidates = resolve_value_record(
+            item["name"], values, aliases, item=item
+        )
+        if not record:
+            continue  # calculate_side_bounds reports identity/value failures
+        variants = record.get("variants") or [record]
+        if len(variants) != 1:
+            continue  # ambiguous identities are already rejected by valuation
+        selected = variants[0]
+        low, _high = _variant_numeric_bounds(selected)
+        demand = _optional_bounded_int(selected.get("demand"), 0, 10)
+        stability = _normalize_stability(selected.get("stability"))
+        if low is None:
+            continue
+        if demand is None:
+            issues.append(f"{item['name']} (Demand unverified)")
+            continue
+        stability_key = stability.casefold() if stability else ""
+        stability_score = stability_scores.get(stability_key)
+        if stability_score is None:
+            issues.append(f"{item['name']} (Stability unverified)")
+            continue
+        quantity = item.get("quantity_min")
+        if quantity is None:
+            quantity = item.get("quantity")
+        try:
+            quantity = max(1, int(quantity or 1))
+        except (TypeError, ValueError):
+            quantity = 1
+        weight = low * quantity
+        if weight <= 0:
+            continue
+        total_weight += weight
+        weighted_demand += demand * weight
+        weighted_stability += stability_score * weight
+    if issues:
+        return None, None, issues
+    if total_weight <= 0:
+        return None, None, ["received-side market quality could not be calculated"]
+    demand_score = weighted_demand / total_weight
+    stability_score = weighted_stability / total_weight
+    if demand_score < 4.0:
+        issues.append(f"received-side value-weighted Demand is low ({demand_score:.2f}/10; minimum 4.00)")
+    if stability_score < 3.0:
+        issues.append(f"received-side value-weighted Stability is weak ({stability_score:.2f}/9; minimum 3.00)")
+    return demand_score, stability_score, issues
+
+
 def evaluate_listing(listing, values, aliases=None):
     # Items deliberately omitted from numeric Supreme valuation must still block
     # a WIN: treating an unpriced item as zero can manufacture a false profit.
@@ -3305,6 +3383,11 @@ def evaluate_listing(listing, values, aliases=None):
         return None, missing
     if not give_lines or not receive_lines:
         return None, ["one side has no valued items"]
+    receive_demand_score, receive_stability_score, quality_issues = _receive_market_quality(
+        listing["receive_items"], values, aliases
+    )
+    if quality_issues:
+        return None, quality_issues
     uncertain_items = (
         [{"side": "Recherche/give", **item} for item in give_uncertain]
         + [{"side": "Propose/receive", **item} for item in receive_uncertain]
@@ -3335,6 +3418,8 @@ def evaluate_listing(listing, values, aliases=None):
         "manual_review": manual_review, "uncertain_items": uncertain_items,
         "give_total_min": give_min, "give_total_max": give_max,
         "receive_total_min": receive_min, "receive_total_max": receive_max,
+        "receive_demand_score": receive_demand_score,
+        "receive_stability_score": receive_stability_score,
     }, []
 
 
