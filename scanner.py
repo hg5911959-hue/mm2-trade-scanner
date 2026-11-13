@@ -3607,6 +3607,16 @@ def record_failure(error):
             print(f"[telegram] Failure alert could not be sent: {type(notify_error).__name__}")
 
 
+def minimum_cycle_start_window(duration_seconds):
+    """Reserve a final quarter of the polling window, capped at four minutes."""
+    return min(240.0, max(0.1, float(duration_seconds) * 0.25))
+
+
+def should_start_scan_cycle(remaining_seconds, duration_seconds):
+    """Do not begin a full scan cycle when the polling window is nearly exhausted."""
+    return float(remaining_seconds) >= minimum_cycle_start_window(duration_seconds)
+
+
 def run_scan_loop(duration_seconds=720, interval_seconds=45):
     """Poll repeatedly in one Actions job while preserving one alert budget per job."""
     global _SESSION_ALERTS_SENT, _SESSION_ALERT_LIMIT
@@ -3634,7 +3644,7 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
     successful_cycles = 0
     last_failure = None
     try:
-        while not stop["requested"] and time.monotonic() < deadline:
+        while not stop["requested"] and should_start_scan_cycle(deadline - time.monotonic(), duration_seconds):
             cycle_started = time.monotonic()
             cycles += 1
             print(f"[loop] Starting scan cycle {cycles}; elapsed={cycle_started - started:.1f}s")
