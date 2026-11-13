@@ -2689,6 +2689,7 @@ class UpstreamForbiddenDiagnosticsTests(unittest.TestCase):
                     scanner.request_with_retry("https://api.rblxvalue.com/v2/items", 10, "RBLXValue API", attempts=4)
                 self.assertEqual(request.call_count, 1)
                 self.assertFalse((root / "blocked.json").exists())
+                self.assertTrue((root / "blocked.json").exists())
             saved = (root / "blocked.json").read_text()
             self.assertNotIn("rbx_test_secret", saved)
             self.assertIn("key_fingerprint", saved)
