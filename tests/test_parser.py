@@ -167,7 +167,7 @@ class ParserTests(unittest.TestCase):
         total, breakdown, missing = calculate_side(items, values)
         self.assertEqual(total, 250)
         self.assertEqual(missing, [])
-        self.assertEqual(breakdown, ["• Snowstorm — 250 each = 250"])
+        self.assertEqual(breakdown, ["• Snowstorm — 250 each = 250 | Stability: N/A"])
 
     def test_calculate_side_multiplies_quantities_and_groups_duplicates(self):
         items = [
@@ -1268,19 +1268,19 @@ class CacheTTLTests(unittest.TestCase):
                 patch("scanner.time.sleep"),
             ):
                 values = load_supreme_values()
-        total, lines, missing = scanner.calculate_side(
-            [{"name": "Harvester", "quantity": 1, "catalog_slug": "harvester"}],
-            values, side="give"
-        )
-        self.assertEqual(total, 265)
-        self.assertEqual(missing, [])
-        self.assertIn("Stability: Doing Well", lines[0])
-        self.assertEqual(values["spirit"]["variants"][0]["stability"], "Stable")
-        self.assertEqual(values["stability test 0"]["variants"][0]["stability"], None)
-        saved = json.loads(cache_path.read_text(encoding="utf-8"))
-        self.assertEqual(saved["schema_version"], 4)
-        audit = json.loads(audit_path.read_text(encoding="utf-8"))
-        self.assertEqual(next(row for row in audit["items"] if row["slug"] == "harvester")["stability"], "Doing Well")
+            total, lines, missing = scanner.calculate_side(
+                [{"name": "Harvester", "quantity": 1, "catalog_slug": "harvester"}],
+                values, side="give"
+            )
+            self.assertEqual(total, 265)
+            self.assertEqual(missing, [])
+            self.assertIn("Stability: Doing Well", lines[0])
+            self.assertEqual(values["spirit"]["variants"][0]["stability"], "Stable")
+            self.assertEqual(values["stability test 0"]["variants"][0]["stability"], None)
+            saved = json.loads(cache_path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["schema_version"], 4)
+            audit = json.loads(audit_path.read_text(encoding="utf-8"))
+            self.assertEqual(next(row for row in audit["items"] if row["slug"] == "harvester")["stability"], "Doing Well")
 
     def test_fresh_supreme_snapshot_is_reused_within_ttl(self):
         with tempfile.TemporaryDirectory() as directory:
