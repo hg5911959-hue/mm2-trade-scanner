@@ -9,7 +9,7 @@ The first alternative adapter reads public Reddit RSS feeds only. It does not jo
 Example feed URL pattern:
 - https://www.reddit.com/r/MurderMystery2/new/.rss
 
-A subreddit name is only an example until a live request confirms that the community exists and its feed is accessible. Other safe sources can be added later through official public APIs, RSS feeds, or user-submitted CSV/JSON exports. Arbitrary Discord message history is not generally available without an authorized Discord app/client. Do not use self-bots, user tokens, or private API scraping.
+To test a candidate feed locally, set MM2_PUBLIC_REDDIT_FEEDS to one or more semicolon-separated URLs and run python tools/collect_public_feeds.py. The command emits JSON and exits non-zero if any feed fails. A subreddit name is only an example until a live request confirms that the community exists and its feed is accessible. Other safe sources can be added later through official public APIs, RSS feeds, or user-submitted CSV/JSON exports. Arbitrary Discord message history is not generally available without an authorized Discord app/client. Do not use self-bots, user tokens, or private API scraping.
 
 ## AI providers and zero-budget operation
 
