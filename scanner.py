@@ -2791,8 +2791,13 @@ def seed_pending_ids_as_seen(seen_ads, pending_ids, schedule=None):
     schedule = schedule or {}
     for ad_id in pending_ids or ():
         value = str(ad_id or "").strip()
-        reason = (schedule.get(value) or {}).get("reason", "legacy_unclassified")
-        if value and reason not in PRIORITY_PENDING_REASONS:
+        entry = schedule.get(value) or {}
+        reason = entry.get("reason")
+        attempts = int(entry.get("attempts", 0))
+        # Preserve one fast retry for legacy pending entries whose old schedule
+        # cannot tell whether they were deferred or failed to deliver.
+        legacy_needs_fast_retry = reason is None and attempts <= 1
+        if value and reason not in PRIORITY_PENDING_REASONS and not legacy_needs_fast_retry:
             seen_ads.add(value)
     return seen_ads
 
