@@ -13,6 +13,7 @@ class RblxValueGuardTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.budget = self.root / "budget.json"
         self.block = self.root / "blocked.json"
+        guard.reset_run_counter()
 
     def test_144_runs_reuse_fresh_cache_without_api_requests(self):
         # 144 ten-minute workflow invocations over one day; cache is revalidated
