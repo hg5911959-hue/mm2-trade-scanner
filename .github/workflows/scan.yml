@@ -92,6 +92,7 @@ jobs:
           else
             echo "Discord bot collection skipped: DISCORD_BOT_TOKEN is not configured."
           fi
+          # message contents are not logged or persisted to public state
           python tools/merge_discord_imports.py
 
       - name: Run BloxSwaps scanner
