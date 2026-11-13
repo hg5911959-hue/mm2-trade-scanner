@@ -1427,7 +1427,8 @@ class ReliabilityTests(unittest.TestCase):
                 with patch.dict(os.environ, {"MAX_ALERTS_PER_SCAN": "5"}):
                     scanner.main()
             self.assertEqual(len(sent), 5)
-            self.assertEqual(len(scanner.load_alerted()), 5)
+            alerted = json.loads((root / "alerted.json").read_text(encoding="utf-8"))["alerted"]
+            self.assertEqual(len(alerted), 5)
             self.assertEqual(json.loads((root / "pending.json").read_text(encoding="utf-8"))["pending"], {})
 
     def test_main_alerts_visible_qualifying_offers_once(self):
