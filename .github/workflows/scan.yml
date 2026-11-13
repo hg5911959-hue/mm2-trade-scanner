@@ -202,8 +202,20 @@ jobs:
           name: mm2-scanner-state
           path: state-artifact
 
-      - name: Persist state branch
+      - name: Validate downloaded scanner state before publishing
+        id: validate-state
         if: steps.download.outcome == 'success'
+        env:
+          REQUIRE_CACHE: ${{ needs.scan.result == 'success' }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$REQUIRE_CACHE" = "true" ]; then args+=(--require-cache); fi
+          python tools/validate_state.py --directory state-artifact/data "${args[@]}"
+
+      - name: Persist state branch
+        id: persist-state
+        if: steps.download.outcome == 'success' && steps.validate-state.outcome == 'success'
         run: |
           set -euo pipefail
           if [ ! -d state-artifact/data ]; then
@@ -244,7 +256,7 @@ jobs:
           echo "Replaced durable scanner state with a single-commit history."
 
       - name: Verify durable RBLXValue state
-        if: always()
+        if: steps.persist-state.outcome == 'success'
         run: |
           set -euo pipefail
           if ! git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
