@@ -6,7 +6,7 @@ import json
 import os
 import random
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +31,7 @@ class RblxValueBudgetExceeded(RblxValueGuardError):
 
 
 def _now_iso(now: float) -> str:
-    return datetime.fromtimestamp(now, timezone.utc).isoformat()
+    return datetime.fromtimestamp(now, UTC).isoformat()
 
 
 def key_fingerprint(key: str | None = None) -> str:
