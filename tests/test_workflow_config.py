@@ -36,6 +36,8 @@ class WorkflowReliabilityTests(unittest.TestCase):
         self.assertIn("uses: ./.github/workflows/watchdog.yml", scheduler)
         self.assertIn("secrets: inherit", scheduler)
         self.assertIn("actions: read", scheduler)
+        self.assertIn('workflows: ["MM2 Scanner Scheduler"]', scheduler)
+        self.assertIn("types: [completed]", scheduler)
 
     def test_dashboard_skips_deploy_when_pages_is_not_enabled(self):
         workflow = (ROOT / ".github/workflows/dashboard-pages.yml").read_text(encoding="utf-8")
