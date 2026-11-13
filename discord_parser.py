@@ -83,15 +83,34 @@ def parse_trade_text(text: str, *, message_id: str, author: str = "",
     receive = _side(match.group(2))
     if not give or not receive:
         return None
-    if len({item["name"].casefold() for item in give}) != len(give):
-        return None
-    if len({item["name"].casefold() for item in receive}) != len(receive):
+    def combine(items: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+        grouped: dict[str, dict[str, Any]] = {}
+        for item in items:
+            key = item["name"].casefold()
+            if key not in grouped:
+                grouped[key] = dict(item)
+                continue
+            total = int(grouped[key]["quantity"]) + int(item["quantity"])
+            if total > MAX_QUANTITY:
+                return None
+            grouped[key]["quantity"] = total
+            grouped[key]["quantity_min"] = total
+            grouped[key]["quantity_max"] = total
+            if item["quantity_source"] == "explicit_text":
+                grouped[key]["quantity_source"] = "explicit_text"
+        return list(grouped.values())
+
+    give = combine(give)
+    receive = combine(receive)
+    if not give or not receive:
         return None
     stable_message_id = str(message_id or "").strip()
     if not stable_message_id:
         return None
     source_ad_id = "discord:" + stable_message_id
     url = str(message_url or "").strip()
+    if not url.startswith("https://discord.com/channels/"):
+        url = ""
     identity = {
         "source": "discord",
         "message_id": stable_message_id,
@@ -105,9 +124,11 @@ def parse_trade_text(text: str, *, message_id: str, author: str = "",
         "id": listing_id,
         "legacy_id": listing_id,
         "source": "discord",
-        "source_ad_id": source_ad_id,
-        "receive_items": receive,
-        "give_items": give,
+        # Keep Discord IDs out of BloxSwap-only pending/watch cursors.
+        "source_ad_id": "",
+        "discord_message_id": stable_message_id,
+        "receive_items": give,
+        "give_items": receive,
         "url": url,
         "owner_url": url,
         "source_text": body[:700],
