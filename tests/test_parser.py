@@ -1,4 +1,5 @@
 import unittest
+import csv
 import scanner
 import watchdog
 import json
