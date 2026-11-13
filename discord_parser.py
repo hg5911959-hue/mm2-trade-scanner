@@ -123,8 +123,8 @@ def parse_trade_text(text: str, *, message_id: str, author: str = "",
         "id": listing_id,
         "legacy_id": listing_id,
         "source": "discord",
-        # Keep Discord IDs out of BloxSwap-only pending/watch cursors.
-        "source_ad_id": "",
+        # Namespaced ID prevents collisions with BloxSwap while enabling Discord watch dedup.
+        "source_ad_id": "discord:" + stable_message_id,
         "discord_message_id": stable_message_id,
         "receive_items": give,
         "give_items": receive,
