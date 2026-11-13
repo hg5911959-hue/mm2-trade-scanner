@@ -22,6 +22,7 @@ from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 
 import rblxvalue_guard
 from tools.metrics import update_metrics
+from tools.alert_policy import rank_and_split
 
 BLOXSWAPS_URL = os.environ.get(
     "BLOXSWAPS_URL",
@@ -3523,12 +3524,8 @@ def scan_once():
         # Delivery is deferred until all candidates are ranked.
 
     max_per_scan = max(0, int(os.environ.get("MAX_ALERTS_PER_SCAN", "15")))
-    opportunities.sort(key=lambda item: (
-        float(item.get("profit_worst", item.get("difference", 0))),
-        float(item.get("margin", 0)),
-    ), reverse=True)
-    selected = opportunities if max_per_scan == 0 else opportunities[:max_per_scan]
-    deferred = max(0, len(opportunities) - len(selected))
+    selected, deferred_items = rank_and_split(opportunities, max_per_scan)
+    deferred = len(deferred_items)
     if deferred:
         update_metrics(increments={"alerts_deferred": deferred})
     for opportunity in selected:
@@ -3637,6 +3634,8 @@ def record_failure(error):
         print("[dry-run] failure alert suppressed")
         return
     if "[rblxvalue-key-blocked]" in error_text:
+        block_metrics = rblxvalue_guard._read_json(rblxvalue_guard.BLOCK_FILE)
+        update_metrics(increments={"key_blocked_seconds": int(block_metrics.get("blocked_seconds", 0))})
         if rblxvalue_guard.claim_block_alert(key=RBLXVALUE_API_KEY):
             try:
                 fingerprint = rblxvalue_guard.key_fingerprint(RBLXVALUE_API_KEY)
