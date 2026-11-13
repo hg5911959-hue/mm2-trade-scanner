@@ -62,6 +62,16 @@ class PendingRecheckScheduleTests(unittest.TestCase):
         self.assertEqual(result, {"already-seen", "ordinary"})
         self.assertEqual(set(pending), {"ordinary", "deferred", "failed", "quantity", "unparsed"})
 
+    def test_legacy_pending_items_get_one_fast_retry_before_being_seeded(self):
+        seen = set()
+        pending = {"legacy-new": 1.0, "legacy-old": 2.0}
+        schedule = {
+            "legacy-new": {"attempts": 1, "next_check_at": 1000.0},
+            "legacy-old": {"attempts": 2, "next_check_at": 1000.0},
+        }
+        scanner.seed_pending_ids_as_seen(seen, pending, schedule)
+        self.assertEqual(seen, {"legacy-old"})
+
     def test_pending_reason_classification_is_fail_closed(self):
         self.assertEqual(scanner.pending_reason_from_missing(["Knife (quantity unknown)"]), "quantity_uncertain")
         self.assertEqual(scanner.pending_reason_from_missing(["Knife (Supreme Stability unverified)"]), "stability_unverified")
