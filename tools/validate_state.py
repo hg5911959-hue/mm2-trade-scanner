@@ -114,7 +114,7 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
                 if (
                     not isinstance(attempts, int) or attempts < 0
                     or not _finite_positive(next_check)
-                    or (reason is not None and reason not in VALID_PENDING_REASONS)
+                    or (reason is not None and (not isinstance(reason, str) or reason not in VALID_PENDING_REASONS))
                 ):
                     errors.append("pending recheck schedule counter, timestamp, or reason is invalid")
                     break
