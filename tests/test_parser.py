@@ -746,6 +746,27 @@ class ReliabilityTests(unittest.TestCase):
         pieces = [part.split("\n", 1)[1] for part in captured]
         self.assertEqual("".join(pieces), original)
 
+    def test_telegram_partial_multipart_delivery_is_quarantined(self):
+        from io import BytesIO
+        from urllib.error import HTTPError
+
+        calls = []
+        def fake_open(req, timeout):
+            calls.append(req)
+            if len(calls) == 1:
+                return BytesIO(b'{"ok": true}')
+            raise HTTPError(
+                req.full_url, 400, "bad request", {},
+                BytesIO(b'{"ok": false, "description": "rejected"}')
+            )
+
+        with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
+            "scanner.urllib.request.urlopen", side_effect=fake_open
+        ):
+            with self.assertRaisesRegex(scanner.TelegramDeliveryUncertain, "partially delivered"):
+                scanner.send_telegram("X" * 5000)
+        self.assertEqual(len(calls), 2)
+
     def test_telegram_send_does_not_retry_uncertain_network_failure(self):
         calls = []
         def fail_open(req, timeout):
