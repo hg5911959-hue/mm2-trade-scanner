@@ -8,7 +8,6 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-
 REQUIRED_MARKET_TABLES = {
     "market_snapshots",
     "market_values",
