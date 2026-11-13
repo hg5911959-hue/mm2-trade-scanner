@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import scanner
 import rblxvalue_guard
+import scanner
 
 
 class SupremeCacheMigrationTests(unittest.TestCase):
