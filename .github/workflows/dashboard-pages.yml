@@ -1,0 +1,60 @@
+name: Publish MM2 Market Dashboard
+
+on:
+  workflow_run:
+    workflows: ["MM2 Trade Scanner"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out main
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+
+      - name: Restore market history from state branch
+        run: |
+          set -euo pipefail
+          mkdir -p data public
+          if git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
+            git fetch origin refs/heads/state:refs/remotes/origin/state
+            git archive origin/state data | tar -x
+          else
+            echo "State branch not found; publishing an empty dashboard until the first scan."
+          fi
+
+      - name: Export public dashboard data
+        run: |
+          python tools/export_dashboard.py --database data/market_history.sqlite3 --output public/dashboard-data.json
+          cp docs/index.html public/index.html
+          test -s public/dashboard-data.json
+          test -s public/index.html
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: public/
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+      actions: read
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
