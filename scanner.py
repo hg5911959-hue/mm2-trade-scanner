@@ -3004,6 +3004,107 @@ def scan_once():
     sent = 0
     evaluated = 0
     opportunities = []
+    def deliver_opportunity(op):
+        nonlocal sent
+        listing = op["listing"]
+        trade_id = listing["id"]
+        # Re-check immediately before every non-idempotent send. A previously
+        # alerted stable ad may be sent again only when its content or value
+        # fingerprint changed; uncertain Telegram deliveries remain quarantined.
+        watch_id = str(listing.get("source_ad_id") or "")
+        previous_watch = watch_state.get(watch_id, {})
+        current_content_hash, current_values_hash = listing_watch_fingerprints(listing, values, aliases)
+        variant_changed = bool(previous_watch) and (
+            previous_watch.get("content_hash") != current_content_hash
+            or previous_watch.get("values_hash") != current_values_hash
+        )
+        if (trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids:
+            print(f"[dedupe] Skipping unchanged or uncertain listing {trade_id} before Telegram send.")
+            return
+        listing["alert_attempted_at_utc"] = datetime.now(timezone.utc).isoformat()
+        message = format_trade_message(
+            listing, op["give_total"], op["give_lines"],
+            op["receive_total"], op["receive_lines"], op["difference"]
+        )
+        if op.get("manual_review"):
+            message = (
+                "⚠️ MANUAL CHECK — profit is not guaranteed; verify the stack before trading.\n\n"
+                + message
+            )
+            message += (
+                f"\n⚠️ POSSIBLE PROFIT RANGE: {format_number(op['profit_worst'])} "
+                f"to {format_number(op['profit_best'])}"
+            )
+        message += f"\n📊 MARGIN: {op['margin']:.2f}%"
+        large_stacks = [
+            item["name"] for field in ("give_items", "receive_items")
+            for item in listing.get(field, [])
+            if (
+                (item.get("quantity") is not None and int(item["quantity"]) >= 5)
+                or int(item.get("quantity_min") or 0) >= 5
+            )
+        ]
+        if large_stacks:
+            message += "\nWARNING: quantity 5+ — verify the stack in BloxSwaps."
+        ignored_names = ignored_item_names(listing)
+        if ignored_names:
+            message += "\nNOTE: not valued (no numeric Supreme value): " + ", ".join(ignored_names)
+        if op["margin"] >= SUSPICIOUS_PROFIT_PERCENT:
+            message += "\nWARNING: unusually high profit - verify item names and values before trading."
+        secondary_note = compare_secondary_values(listing["give_items"] + listing["receive_items"], values)
+        if secondary_note:
+            message += "\nSECOND-SOURCE CHECK (MM2Values): " + secondary_note
+        trade_id = listing["id"]
+        print(
+            f"[telegram] Sending ranked trade id={trade_id}; "
+            f"profit={op['difference']:g}"
+        )
+        # Persist a delivery guard before the non-idempotent Telegram request.
+        # It is cleared only after a definite success or definite API rejection.
+        uncertain_ids.add(trade_id)
+        save_uncertain_ids(uncertain_ids)
+        _SESSION_ALERTS_SENT += 1
+        try:
+            send_telegram(message)
+        except TelegramDeliveryUncertain:
+            print(
+                f"[telegram] Delivery uncertain for listing {trade_id}; "
+                "quarantined, skipping this message and continuing the batch."
+            )
+            # The pre-send guard remains in uncertain_ids; persist the feed ID too.
+            mark_seen_ad(listing)
+            return
+        except Exception as exc:
+            uncertain_ids.discard(trade_id)
+            save_uncertain_ids(uncertain_ids)
+            mark_pending(listing)
+            print(
+                f"[telegram] Definite send failure for listing {trade_id}: "
+                f"{type(exc).__name__}; queued for a later scan and continuing the batch."
+            )
+            return
+        mark_alerted(trade_id)
+        update_watch_entry(watch_state, listing, values, aliases)
+        uncertain_ids.discard(trade_id)
+        save_uncertain_ids(uncertain_ids)
+        mark_seen_ad(listing)
+        listing["alerted_at_utc"] = datetime.now(timezone.utc).isoformat()
+        append_history(listing, op)
+        first_seen_ts = _parse_feed_timestamp(listing.get("first_seen_at_utc"))
+        alerted_ts = _parse_feed_timestamp(listing["alerted_at_utc"])
+        detection_latency = (
+            max(0.0, alerted_ts - first_seen_ts)
+            if first_seen_ts is not None and alerted_ts is not None else None
+        )
+        latency_label = f"{detection_latency:.2f}s" if detection_latency is not None else "unknown"
+        print(
+            f"[timing] listing={listing.get('source_ad_id') or trade_id} "
+            f"first_seen={listing.get('first_seen_at_utc', 'unknown')} "
+            f"alerted={listing['alerted_at_utc']} "
+            f"first_seen_to_alert={latency_label}"
+        )
+        sent += 1
+
     for listing in listings:
         trade_id = listing["id"]
         legacy_state = legacy_alert_state(listing, alerted_set, uncertain_ids)
@@ -3073,112 +3174,9 @@ def scan_once():
             update_watch_entry(watch_state, listing, values, aliases)
             continue
         opportunities.append(result)
+        deliver_opportunity(result)
 
-    # Do not discard qualified trades because of an arbitrary per-run/session cap.
-    # Keep feed order to avoid starving older opportunities during busy periods.
-    selected_opportunities = opportunities
     deferred = 0
-    for op in selected_opportunities:
-        listing = op["listing"]
-        trade_id = listing["id"]
-        # Re-check immediately before every non-idempotent send. A previously
-        # alerted stable ad may be sent again only when its content or value
-        # fingerprint changed; uncertain Telegram deliveries remain quarantined.
-        watch_id = str(listing.get("source_ad_id") or "")
-        previous_watch = watch_state.get(watch_id, {})
-        current_content_hash, current_values_hash = listing_watch_fingerprints(listing, values, aliases)
-        variant_changed = bool(previous_watch) and (
-            previous_watch.get("content_hash") != current_content_hash
-            or previous_watch.get("values_hash") != current_values_hash
-        )
-        if (trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids:
-            print(f"[dedupe] Skipping unchanged or uncertain listing {trade_id} before Telegram send.")
-            continue
-        listing["alert_attempted_at_utc"] = datetime.now(timezone.utc).isoformat()
-        message = format_trade_message(
-            listing, op["give_total"], op["give_lines"],
-            op["receive_total"], op["receive_lines"], op["difference"]
-        )
-        if op.get("manual_review"):
-            message = (
-                "⚠️ MANUAL CHECK — profit is not guaranteed; verify the stack before trading.\n\n"
-                + message
-            )
-            message += (
-                f"\n⚠️ POSSIBLE PROFIT RANGE: {format_number(op['profit_worst'])} "
-                f"to {format_number(op['profit_best'])}"
-            )
-        message += f"\n📊 MARGIN: {op['margin']:.2f}%"
-        large_stacks = [
-            item["name"] for field in ("give_items", "receive_items")
-            for item in listing.get(field, [])
-            if (
-                (item.get("quantity") is not None and int(item["quantity"]) >= 5)
-                or int(item.get("quantity_min") or 0) >= 5
-            )
-        ]
-        if large_stacks:
-            message += "\nWARNING: quantity 5+ — verify the stack in BloxSwaps."
-        ignored_names = ignored_item_names(listing)
-        if ignored_names:
-            message += "\nNOTE: not valued (no numeric Supreme value): " + ", ".join(ignored_names)
-        if op["margin"] >= SUSPICIOUS_PROFIT_PERCENT:
-            message += "\nWARNING: unusually high profit - verify item names and values before trading."
-        secondary_note = compare_secondary_values(listing["give_items"] + listing["receive_items"], values)
-        if secondary_note:
-            message += "\nSECOND-SOURCE CHECK (MM2Values): " + secondary_note
-        trade_id = listing["id"]
-        print(
-            f"[telegram] Sending ranked trade id={trade_id}; "
-            f"profit={op['difference']:g}"
-        )
-        # Persist a delivery guard before the non-idempotent Telegram request.
-        # It is cleared only after a definite success or definite API rejection.
-        uncertain_ids.add(trade_id)
-        save_uncertain_ids(uncertain_ids)
-        _SESSION_ALERTS_SENT += 1
-        try:
-            send_telegram(message)
-        except TelegramDeliveryUncertain:
-            print(
-                f"[telegram] Delivery uncertain for listing {trade_id}; "
-                "quarantined, skipping this message and continuing the batch."
-            )
-            # The pre-send guard remains in uncertain_ids; persist the feed ID too.
-            mark_seen_ad(listing)
-            continue
-        except Exception as exc:
-            uncertain_ids.discard(trade_id)
-            save_uncertain_ids(uncertain_ids)
-            mark_pending(listing)
-            print(
-                f"[telegram] Definite send failure for listing {trade_id}: "
-                f"{type(exc).__name__}; queued for a later scan and continuing the batch."
-            )
-            continue
-        mark_alerted(trade_id)
-        update_watch_entry(watch_state, listing, values, aliases)
-        uncertain_ids.discard(trade_id)
-        save_uncertain_ids(uncertain_ids)
-        mark_seen_ad(listing)
-        listing["alerted_at_utc"] = datetime.now(timezone.utc).isoformat()
-        append_history(listing, op)
-        first_seen_ts = _parse_feed_timestamp(listing.get("first_seen_at_utc"))
-        alerted_ts = _parse_feed_timestamp(listing["alerted_at_utc"])
-        detection_latency = (
-            max(0.0, alerted_ts - first_seen_ts)
-            if first_seen_ts is not None and alerted_ts is not None else None
-        )
-        latency_label = f"{detection_latency:.2f}s" if detection_latency is not None else "unknown"
-        print(
-            f"[timing] listing={listing.get('source_ad_id') or trade_id} "
-            f"first_seen={listing.get('first_seen_at_utc', 'unknown')} "
-            f"alerted={listing['alerted_at_utc']} "
-            f"first_seen_to_alert={latency_label}"
-        )
-        sent += 1
-        if sent < len(selected_opportunities) and ALERT_DELAY_SECONDS > 0:
-            time.sleep(ALERT_DELAY_SECONDS)
 
     summary = (
         f"Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | "
