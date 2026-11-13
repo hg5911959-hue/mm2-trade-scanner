@@ -2936,6 +2936,14 @@ def scan_once():
         print("[stage] API key present; secret contents are intentionally never logged")
     print("[stage] Loading Supreme Values before evaluating trades")
     values = load_supreme_values()
+    history_store = None
+    try:
+        from market_history import MarketHistory
+        history_store = MarketHistory()
+        if history_store.record_values_snapshot(values):
+            print("[market-history] New Supreme/secondary value snapshot stored")
+    except Exception as history_error:
+        print(f"[market-history] Value snapshot storage skipped safely: {type(history_error).__name__}")
     aliases = load_aliases()
     print(f"[aliases] Loaded {len(aliases)} reviewed item aliases")
     print("[stage] Loading seen-offer and pending-recheck state")
@@ -3032,6 +3040,12 @@ def scan_once():
             raise RuntimeError("[bloxswaps] No feed entries parsed and pagination could not be verified.")
     parsed_count = len(listings)
     listings = deduplicate_listings(listings)
+    if history_store is not None:
+        try:
+            stored = history_store.record_listings(listings)
+            print(f"[market-history] Listings recorded or refreshed: {stored}")
+        except Exception as history_error:
+            print(f"[market-history] Listing storage skipped safely: {type(history_error).__name__}")
     duplicate_count = parsed_count - len(listings)
     if duplicate_count:
         print(f"[dedupe] Ignored {duplicate_count} duplicate listing row(s) in this scan batch.")
@@ -3308,6 +3322,11 @@ def scan_once():
             update_watch_entry(watch_state, listing, values, aliases)
             continue
         opportunities.append(result)
+        if history_store is not None:
+            try:
+                history_store.record_opportunity(result)
+            except Exception as history_error:
+                print(f"[market-history] Opportunity storage skipped safely: {type(history_error).__name__}")
         deliver_opportunity(result)
 
     deferred = 0
