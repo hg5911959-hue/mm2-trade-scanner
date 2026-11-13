@@ -1,6 +1,6 @@
 # MM2 Trade Scanner
 
-Automated scanner for public **BloxSwaps MM2 P2P listings**, with concise Telegram alerts. GitHub Actions starts a job every 10 minutes; each job polls the feed every 30 seconds for 570 seconds (9.5 minutes), then exits cleanly before its 12-minute timeout.
+Automated scanner for public **BloxSwaps MM2 P2P listings**, with concise Telegram alerts. GitHub Actions starts a job every 15 minutes; each job polls the feed every 30 seconds for 780 seconds (13 minutes), leaving time for state artifacts to be persisted.
 
 ## Trade evaluation
 
@@ -66,8 +66,8 @@ Never commit or share these secrets. The scanner does not print API keys or Tele
 
 ## Runtime, deduplication, and persistence
 
-- **Trigger cadence:** GitHub cron starts the scanner every 10 minutes. Manual `workflow_dispatch` and `repository_dispatch` event type `mm2-scan` remain available.
-- **Polling inside each job:** one process runs `scan_once()` every 30 seconds (configurable within 30–60 seconds) for 570 seconds (9.5 minutes). It finishes with a 2.5-minute timeout margin and handles SIGTERM/SIGINT by completing the current scan cycle before exiting.
+- **Trigger cadence:** GitHub cron starts the scanner every 15 minutes. Manual `workflow_dispatch` and `repository_dispatch` event type `mm2-scan` remain available.
+- **Polling inside each job:** one process runs `scan_once()` every 30 seconds (configurable within 30–60 seconds) for 780 seconds (13 minutes). It finishes with a 2-minute timeout margin and handles SIGTERM/SIGINT by completing the current scan cycle before exiting.
 - **Concurrency:** `cancel-in-progress: false`; a running scan is not cancelled while it is sending Telegram messages or writing state. GitHub keeps at most one pending run for the concurrency group.
 - **Alert budget:** no arbitrary per-run or per-session trade-alert cap. Every qualified opportunity is delivered to Telegram immediately after its individual valuation and qualification pass; conservative positive profit remains mandatory.
 - **Detection timing:** the scanner logs first-observed-to-alert latency for every sent trade. The 30-second poll interval is designed to keep detection near 30 seconds when a post appears between cycles; GitHub scheduling and remote API delays are outside that guarantee.
@@ -97,7 +97,7 @@ Never commit or share these secrets. The scanner does not print API keys or Tele
 - **Test isolation:** `tests.yml` runs `python -m unittest discover -s tests` on pushes to `main` and on pull requests. The production scan job no longer runs tests, so a test failure cannot prevent a scheduled scan. The old `source-diagnostics.yml` workflow has been removed.
 - **Global log redaction:** `scanner.py` redacts the exact configured Telegram bot token, Telegram chat ID, and RBLXValue API key (only when at least six characters), plus Telegram bot URLs, `rbx_` keys, and Bearer credentials. Both stdout and stderr are filtered before output reaches `scanner.log` or the public Actions artifact.
 - **Durable state replacement:** when scanner data changes, `persist-state` compares staged `data/` with `origin/state` and skips an unchanged tree. Otherwise it creates `state-new` as an orphan branch and force-pushes it to `state`, leaving a single-commit state history. Empty or missing state artifacts are ignored so they cannot erase durable data. The workflow-level concurrency group covers both scan and persistence jobs, preventing overlapping state writes.
-- **Faster coverage:** the scanner cron runs every 10 minutes; each job polls for 570 seconds at 30-second intervals and has a 12-minute timeout. The watchdog default stale threshold is 20 minutes.
+- **Faster coverage:** the scanner cron runs every 15 minutes; each job polls for 780 seconds at 30-second intervals and has a 15-minute timeout. The watchdog default stale threshold is 20 minutes.
 - **Optional cron-job.org trigger:** configure a scheduled HTTP POST to `https://api.github.com/repos/hg5911959-hue/mm2-trade-scanner/dispatches` with JSON body `{"event_type":"mm2-scan"}` and GitHub's JSON accept/content headers. Use a fine-grained personal access token limited to this repository with the minimum `Contents: read and write` permission required for repository dispatch. Store the token only in cron-job.org's secret configuration; never put it in the repository, workflow YAML, URL, or logs. GitHub Actions cron remains the primary schedule.
 
 ## Logs and manual operations

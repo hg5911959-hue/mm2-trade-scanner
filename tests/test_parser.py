@@ -2465,13 +2465,17 @@ class WorkflowSecurityTests(unittest.TestCase):
     def test_scan_and_state_jobs_have_separate_permissions_and_no_legacy_cache(self):
         workflow = Path(".github/workflows/scan.yml").read_text(encoding="utf-8")
         scan_job, state_job = workflow.split("  persist-state:", 1)
-        self.assertIn('cron: "*/10 * * * *"', workflow)
+        self.assertIn('cron: "*/15 * * * *"', workflow)
         self.assertIn("cancel-in-progress: false", workflow)
-        self.assertIn('MM2_SCAN_DURATION_SECONDS: "570"', scan_job)
+        self.assertIn('MM2_SCAN_DURATION_SECONDS: "780"', scan_job)
         self.assertIn("timeout-minutes: 15", scan_job)
         self.assertNotIn("Test parser and value calculations", scan_job)
         self.assertIn("git checkout --orphan state-new", state_job)
         self.assertIn("git push --force origin state-new:state", state_job)
+        self.assertIn("git archive origin/state data | tar -x", scan_job)
+        self.assertIn("[state-audit] supreme_cache_present=true", scan_job)
+        self.assertIn("[state-persist-audit] present=", state_job)
+        self.assertIn('RBLXVALUE_DAILY_REQUEST_LIMIT: "60"', scan_job)
         self.assertIn("No scanner data files found", state_job)
         self.assertIn('MM2_SCAN_INTERVAL_SECONDS: "30"', scan_job)
         self.assertIn('MAX_ALERTS_PER_RUN: "0"', scan_job)
@@ -2661,30 +2665,48 @@ class MinimumProfitMarginTests(unittest.TestCase):
 
 
 class UpstreamForbiddenDiagnosticsTests(unittest.TestCase):
-    def test_api_403_exposes_sanitized_origin_message_without_calling_it_cloudflare(self):
+    def test_api_403_opens_key_breaker_without_retrying_or_exposing_secret(self):
         from io import BytesIO
         from urllib.error import HTTPError
 
-        error = HTTPError(
-            "https://api.rblxvalue.com/v2/items", 403, "Forbidden", {},
-            BytesIO(b'{"error": true, "message": "API key suspended"}')
-        )
-        with patch("scanner.urllib.request.urlopen", side_effect=error):
-            with self.assertRaisesRegex(RuntimeError, r"HTTP 403 Forbidden.*API key suspended") as raised:
-                scanner.request_with_retry("https://api.rblxvalue.com/v2/items", 10, "RBLXValue API", attempts=1)
-        self.assertNotIn("[cloudflare]", str(raised.exception))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            error = HTTPError(
+                "https://api.rblxvalue.com/v2/items", 403, "Forbidden", {},
+                BytesIO(b'{"error": true, "message": "API key suspended"}')
+            )
+            with (
+                patch("scanner.RBLXVALUE_API_KEY", "rbx_test_secret"),
+                patch("rblxvalue_guard.BUDGET_FILE", root / "budget.json"),
+                patch("rblxvalue_guard.BLOCK_FILE", root / "blocked.json"),
+                patch("scanner.urllib.request.urlopen", side_effect=error) as request,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "rblxvalue-key-blocked"):
+                    scanner.request_with_retry("https://api.rblxvalue.com/v2/items", 10, "RBLXValue API", attempts=4)
+                self.assertEqual(request.call_count, 1)
+            saved = (root / "blocked.json").read_text()
+            self.assertNotIn("rbx_test_secret", saved)
+            self.assertIn("key_fingerprint", saved)
 
-    def test_cloudflare_mitigated_header_is_classified_as_challenge(self):
+    def test_cloudflare_403_also_stops_rblx_retries(self):
         from io import BytesIO
         from urllib.error import HTTPError
         from email.message import Message
 
-        headers = Message()
-        headers["cf-mitigated"] = "challenge"
-        error = HTTPError(
-            "https://api.rblxvalue.com/v2/items", 403, "Forbidden", headers,
-            BytesIO(b"Access denied")
-        )
-        with patch("scanner.urllib.request.urlopen", side_effect=error):
-            with self.assertRaisesRegex(RuntimeError, "Cloudflare challenge"):
-                scanner.request_with_retry("https://api.rblxvalue.com/v2/items", 10, "RBLXValue API", attempts=1)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            headers = Message()
+            headers["cf-mitigated"] = "challenge"
+            error = HTTPError(
+                "https://api.rblxvalue.com/v2/items", 403, "Forbidden", headers,
+                BytesIO(b"Access denied")
+            )
+            with (
+                patch("scanner.RBLXVALUE_API_KEY", "rbx_test_key"),
+                patch("rblxvalue_guard.BUDGET_FILE", root / "budget.json"),
+                patch("rblxvalue_guard.BLOCK_FILE", root / "blocked.json"),
+                patch("scanner.urllib.request.urlopen", side_effect=error) as request,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "rblxvalue-key-blocked"):
+                    scanner.request_with_retry("https://api.rblxvalue.com/v2/items", 10, "RBLXValue API", attempts=4)
+                self.assertEqual(request.call_count, 1)

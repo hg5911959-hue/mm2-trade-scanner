@@ -20,6 +20,8 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 
+import rblxvalue_guard
+
 BLOXSWAPS_URL = os.environ.get(
     "BLOXSWAPS_URL",
     "https://bloxswaps.com/fr/trade-mm2?trade-type=P2P"
@@ -53,7 +55,8 @@ UNMATCHED_FILE = Path("data/unmatched_names.json")
 MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
 BLOXSWAPS_PAGE_SIZE = 20
 MAX_FEED_PAGES = max(1, min(1000, int(os.environ.get("MAX_FEED_PAGES", "1000"))))
-VALUES_TTL_SECONDS = max(60, int(os.environ.get("VALUES_TTL_SECONDS", "300")))
+VALUES_REVALIDATION_INTERVAL_SECONDS = 12 * 60 * 60
+VALUES_TTL_SECONDS = min(VALUES_REVALIDATION_INTERVAL_SECONDS, max(60, int(os.environ.get("VALUES_TTL_SECONDS", str(VALUES_REVALIDATION_INTERVAL_SECONDS)))))
 BLOXSWAPS_ITEMS_TTL_SECONDS = max(300, int(os.environ.get("BLOXSWAPS_ITEMS_TTL_SECONDS", "3600")))
 PENDING_TTL_SECONDS = max(86400, int(os.environ.get("PENDING_TTL_SECONDS", str(7 * 86400))))
 UNCERTAIN_TTL_SECONDS = max(3600, int(os.environ.get("UNCERTAIN_TTL_SECONDS", str(24 * 3600))))
@@ -986,7 +989,10 @@ def parse_listings(html):
 
 def request_with_retry(req, timeout, label, attempts=4, return_headers=False, allow_not_modified=False):
     """Retry transient failures with exponential backoff and respect Retry-After."""
+    is_rblxvalue = label == "RBLXValue API"
     for attempt in range(attempts):
+        if is_rblxvalue:
+            rblxvalue_guard.reserve_request(key=RBLXVALUE_API_KEY)
         try:
             with urllib.request.urlopen(req, timeout=timeout) as response:
                 body = response.read()
@@ -997,6 +1003,8 @@ def request_with_retry(req, timeout, label, attempts=4, return_headers=False, al
                 print(f"[http] {label}: HTTP 304 (ETag unchanged)")
                 return None, exc.headers
             detail = exc.read(400).decode("utf-8", errors="replace")
+            if is_rblxvalue:
+                rblxvalue_guard.raise_for_key_error(exc.code, detail, key=RBLXVALUE_API_KEY)
             challenge_markers = ("cloudflare", "captcha", "just a moment", "challenge-platform", "cf-chl-")
             if exc.code in (403, 503) and any(marker in detail.casefold() for marker in challenge_markers):
                 raise RuntimeError(f"[cloudflare] {label} blocked by Cloudflare/CAPTCHA challenge (HTTP {exc.code}).") from exc
@@ -1019,20 +1027,21 @@ def request_with_retry(req, timeout, label, attempts=4, return_headers=False, al
             retry_after = exc.headers.get("Retry-After", "")
             if retry_after:
                 try:
-                    delay = min(60, max(1, int(retry_after)))
+                    delay = max(0, int(retry_after))
                 except ValueError:
                     try:
-                        delay = min(60, max(1, int((parsedate_to_datetime(retry_after) -
-                            datetime.now(timezone.utc)).total_seconds())))
+                        delay = max(0, (parsedate_to_datetime(retry_after) -
+                            datetime.now(timezone.utc)).total_seconds())
                     except Exception:
                         pass
-            print(f"[retry] {label}: HTTP {exc.code}; waiting {delay}s")
+            delay = rblxvalue_guard.jittered_delay(delay)
+            print(f"[retry] {label}: HTTP {exc.code}; waiting {delay:.2f}s")
             time.sleep(delay)
         except (URLError, TimeoutError) as exc:
             if attempt == attempts - 1:
                 raise RuntimeError(f"{label}: network failure after {attempts} attempts: {exc}") from exc
-            delay = min(30, 2 ** (attempt + 1))
-            print(f"[retry] {label}: network error; waiting {delay}s")
+            delay = rblxvalue_guard.jittered_delay(min(30, 2 ** (attempt + 1)))
+            print(f"[retry] {label}: network error; waiting {delay:.2f}s")
             time.sleep(delay)
 
 
@@ -1821,11 +1830,15 @@ def api_get_json(path, params=None):
     req = urllib.request.Request(url, headers={
         "X-Api-Key": RBLXVALUE_API_KEY,
         "Accept": "application/json",
-        "User-Agent": "MM2TradeScanner/2.1",
+        "User-Agent": "MM2TradeScanner/2.2 (+https://github.com/hg5911959-hue/mm2-trade-scanner)",
     })
     raw = request_with_retry(req, 30, "RBLXValue API")
     try:
-        return json.loads(raw.decode("utf-8"))
+        payload = json.loads(raw.decode("utf-8"))
+        if isinstance(payload, dict):
+            error_fields = {key: payload.get(key) for key in ("message", "error", "detail", "status", "code")}
+            rblxvalue_guard.raise_for_key_error(200, json.dumps(error_fields), key=RBLXVALUE_API_KEY)
+        return payload
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RuntimeError("[rblxvalue] Invalid JSON response") from exc
 
@@ -1854,23 +1867,65 @@ def api_get_json_conditional(path, params=None, etag=None):
         payload = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RuntimeError("[rblxvalue] Invalid JSON response") from exc
+    if isinstance(payload, dict):
+        error_fields = {key: payload.get(key) for key in ("message", "error", "detail", "status", "code")}
+        rblxvalue_guard.raise_for_key_error(200, json.dumps(error_fields), key=RBLXVALUE_API_KEY)
     return payload, response_etag, False
 
 
 def _read_values_cache_document():
+    """Read v4 snapshots and safely migrate v3 snapshots using their raw item pages."""
     try:
         cached = json.loads(VALUES_FILE.read_text(encoding="utf-8"))
-        if cached.get("schema_version") != 4:
+        version = cached.get("schema_version")
+        if version not in (3, 4):
             return None
         values = cached.get("values", {})
-        if (
+        if not (
             isinstance(values, dict) and len(values) >= 100
             and all(isinstance(record, dict) and isinstance(record.get("variants"), list) and record["variants"] for record in values.values())
         ):
-            return cached
+            return None
+        if version == 3:
+            by_identity = {}
+            for page in (cached.get("pages") or {}).values():
+                for item in (page.get("items") or []) if isinstance(page, dict) else []:
+                    if not isinstance(item, dict):
+                        continue
+                    identity = (
+                        str(item.get("id") or ""), str(item.get("slug") or ""),
+                        str(item.get("category") or "").casefold(),
+                        str(item.get("type") or "").casefold(),
+                    )
+                    by_identity[identity] = item
+            migrated = {}
+            for name, record in values.items():
+                updated = dict(record)
+                variants = []
+                for variant in record["variants"]:
+                    row = dict(variant)
+                    identity = (
+                        str(row.get("id") or ""), str(row.get("slug") or ""),
+                        str(row.get("category") or "").casefold(),
+                        str(row.get("type") or "").casefold(),
+                    )
+                    raw = by_identity.get(identity)
+                    row["stability"] = _normalize_stability(raw.get("stability")) if raw else None
+                    if raw and not row.get("last_updated"):
+                        row["last_updated"] = raw.get("last_updated")
+                    variants.append(row)
+                updated["variants"] = variants
+                if len(variants) == 1:
+                    updated["stability"] = variants[0].get("stability")
+                migrated[name] = updated
+            cached = dict(cached)
+            cached["schema_version"] = 4
+            cached["values"] = migrated
+            atomic_write_text(VALUES_FILE, json.dumps(cached, ensure_ascii=False, indent=2) + "\n")
+            print("[supreme-cache] Compatible schema-v3 cache migrated and persisted as schema v4; no API request required")
+        return cached
     except (ValueError, OSError, json.JSONDecodeError, AttributeError, TypeError):
-        pass
-    return None
+        return None
 
 
 def _read_values_cache():
@@ -1937,6 +1992,11 @@ def load_supreme_values():
         print(f"[supreme] Using fresh source_b snapshot (age {cached_age}s; TTL {VALUES_TTL_SECONDS}s)")
         _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
         return cached_values
+    if rblxvalue_guard.is_key_blocked(key=RBLXVALUE_API_KEY):
+        raise RuntimeError(
+            "[supreme] API key circuit breaker active; refusing stale-cache calculations "
+            "[rblxvalue-key-blocked] no request sent"
+        )
     if not RBLXVALUE_API_KEY:
         raise RuntimeError("[supreme] API key missing and no fresh cached source_b snapshot; refusing stale values.")
     if cached_values is not None:
@@ -3341,6 +3401,27 @@ def record_failure(error):
     state["consecutive_failures"] = count
     atomic_write_text(FAILURE_FILE, json.dumps(state, indent=2) + "\n")
     print(f"[failure] Consecutive failures: {count}")
+    error_text = str(error)
+    if "[rblxvalue-key-blocked]" in error_text:
+        if rblxvalue_guard.claim_block_alert(key=RBLXVALUE_API_KEY):
+            try:
+                fingerprint = rblxvalue_guard.key_fingerprint(RBLXVALUE_API_KEY)
+                send_telegram(
+                    "MM2 RBLXValue API KEY BLOCKED\n"
+                    "The API rejected the configured credential (401/403 or inactive/suspended key).\n"
+                    "No further API calls will be made for 6 hours, or until the key changes.\n"
+                    f"Key fingerprint: {fingerprint}\n"
+                    "Trade calculations remain Fail-Closed; only a fresh valid Supreme cache may be used."
+                )
+                print("[telegram] RBLXValue key-block alert sent (24-hour cooldown)")
+            except Exception as notify_error:
+                print(f"[telegram] RBLXValue key-block alert failed: {type(notify_error).__name__}")
+        else:
+            print("[telegram] RBLXValue key-block alert suppressed by 24-hour cooldown")
+        return
+    if "[rblxvalue-budget-exhausted]" in error_text:
+        print("[rblxvalue-budget] Daily request budget exhausted; repeated-failure alert suppressed")
+        return
     if count >= FAILURE_THRESHOLD and (
         count == FAILURE_THRESHOLD or
         (count > FAILURE_THRESHOLD and (count - FAILURE_THRESHOLD) % 5 == 0)
@@ -3382,6 +3463,7 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
 
     cycles = 0
     successful_cycles = 0
+    last_failure = None
     try:
         while not stop["requested"] and time.monotonic() < deadline:
             cycle_started = time.monotonic()
@@ -3391,6 +3473,7 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
                 scan_once()
                 successful_cycles += 1
             except Exception as exc:
+                last_failure = exc
                 print(f"[loop] Scan cycle {cycles} failed safely: {type(exc).__name__}; details are recorded with secret redaction.")
                 record_failure(exc)
             cycle_elapsed = time.monotonic() - cycle_started
@@ -3411,14 +3494,31 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
             except (ValueError, OSError):
                 pass
     elapsed = time.monotonic() - started
+    rblxvalue_guard.log_request_count()
     print(f"[loop] Finished: cycles={cycles}, successful={successful_cycles}, elapsed={elapsed:.1f}s")
     if successful_cycles == 0:
+        if last_failure and (
+            "[rblxvalue-key-blocked]" in str(last_failure)
+            or "[rblxvalue-budget-exhausted]" in str(last_failure)
+        ):
+            raise RuntimeError(str(last_failure))
         raise RuntimeError("No scan cycle completed successfully during the scheduled polling window.")
     return {"cycles": cycles, "successful_cycles": successful_cycles, "elapsed_seconds": elapsed}
 
 
 def main():
     install_redacting_streams()
+    rblxvalue_guard.reset_run_counter()
+    if os.environ.get("RBLXVALUE_FORCE_KEY_CHECK", "").strip().casefold() == "true":
+        print("[rblxvalue-key-check] Starting one-request credential verification")
+        try:
+            payload, _, not_modified = api_get_json_conditional("/items", {"limit": 1, "offset": 0})
+            if not_modified or not isinstance(payload, dict) or not isinstance(payload.get("items"), list) or not payload["items"]:
+                raise RuntimeError("[rblxvalue-key-check] API credential check returned no valid item payload")
+            print("[rblxvalue-key-check] PASS: credential accepted; one item returned")
+        except Exception:
+            rblxvalue_guard.log_request_count()
+            raise
     duration = int(os.environ.get("MM2_SCAN_DURATION_SECONDS", "0") or 0)
     if duration > 0:
         interval = int(os.environ.get("MM2_SCAN_INTERVAL_SECONDS", "45") or 45)
@@ -3426,7 +3526,13 @@ def main():
     global _SESSION_ALERTS_SENT, _SESSION_ALERT_LIMIT
     _SESSION_ALERTS_SENT = 0
     _SESSION_ALERT_LIMIT = max(0, int(os.environ.get("MAX_ALERTS_PER_SESSION", str(MAX_ALERTS_PER_RUN))))
-    return scan_once()
+    try:
+        result = scan_once()
+        rblxvalue_guard.log_request_count()
+        return result
+    except Exception:
+        rblxvalue_guard.log_request_count()
+        raise
 
 if __name__ == "__main__":
     try:

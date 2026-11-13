@@ -2,8 +2,14 @@ name: MM2 Trade Scanner
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "*/15 * * * *"
   workflow_dispatch:
+    inputs:
+      verify_rblxvalue_key:
+        description: "Send exactly one small /v2/items request to verify the configured API key"
+        required: false
+        type: boolean
+        default: false
   repository_dispatch:
     types: [mm2-scan]
 
@@ -44,6 +50,26 @@ jobs:
           else
             echo "State branch not found; cold-start safety window will evaluate recent posts."
           fi
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("data/supreme_values.json")
+          if not path.exists():
+              print("[state-audit] supreme_cache_present=false")
+          else:
+              raw = path.read_bytes()
+              try:
+                  cache = json.loads(raw)
+                  pages = cache.get("pages", {})
+                  etags = sum(1 for page in pages.values() if isinstance(page, dict) and page.get("etag"))
+                  print(
+                      f"[state-audit] supreme_cache_present=true bytes={len(raw)} "
+                      f"schema={cache.get('schema_version')} pages={len(pages)} etag_pages={etags} "
+                      f"fetched_at_epoch={cache.get('fetched_at')}"
+                  )
+              except Exception as exc:
+                  print(f"[state-audit] supreme_cache_present=true bytes={len(raw)} parse_error={type(exc).__name__}")
+          PY
 
       - name: Collect authorized Discord trade channels
         env:
@@ -66,11 +92,13 @@ jobs:
           FAILURE_ALERT_THRESHOLD: "3"
           MAX_ALERTS_PER_RUN: "0"
           MAX_ALERTS_PER_SESSION: "0"
-          MM2_SCAN_DURATION_SECONDS: "570"
+          MM2_SCAN_DURATION_SECONDS: "780"
           MM2_SCAN_INTERVAL_SECONDS: "30"
           ALERT_DELAY_SECONDS: "1.1"
           MAX_FEED_PAGES: "1000"
           VALUES_TTL_SECONDS: "43200"
+          RBLXVALUE_DAILY_REQUEST_LIMIT: "60"
+          RBLXVALUE_FORCE_KEY_CHECK: ${{ inputs.verify_rblxvalue_key && 'true' || 'false' }}
           BLOXSWAPS_ITEMS_TTL_SECONDS: "3600"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -174,3 +202,21 @@ jobs:
           git commit -m "chore(state): persist MM2 scanner state"
           git push --force origin state-new:state
           echo "Replaced durable scanner state with a single-commit history."
+
+      - name: Verify durable RBLXValue state
+        if: always()
+        run: |
+          set -euo pipefail
+          if ! git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
+            echo "State branch is not available for verification."
+            exit 1
+          fi
+          git fetch origin refs/heads/state:refs/remotes/origin/state
+          for file in data/supreme_values.json data/rblxvalue_request_budget.json data/api_key_blocked.json; do
+            if git cat-file -e "refs/remotes/origin/state:$file" 2>/dev/null; then
+              bytes="$(git cat-file -s "refs/remotes/origin/state:$file")"
+              echo "[state-persist-audit] present=$file bytes=$bytes"
+            else
+              echo "[state-persist-audit] absent=$file"
+            fi
+          done
