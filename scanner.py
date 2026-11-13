@@ -3511,10 +3511,14 @@ def main():
     rblxvalue_guard.reset_run_counter()
     if os.environ.get("RBLXVALUE_FORCE_KEY_CHECK", "").strip().casefold() == "true":
         print("[rblxvalue-key-check] Starting one-request credential verification")
-        payload, _, not_modified = api_get_json_conditional("/items", {"limit": 1, "offset": 0})
-        if not_modified or not isinstance(payload, dict) or not isinstance(payload.get("items"), list) or not payload["items"]:
-            raise RuntimeError("[rblxvalue-key-check] API credential check returned no valid item payload")
-        print("[rblxvalue-key-check] PASS: credential accepted; one item returned")
+        try:
+            payload, _, not_modified = api_get_json_conditional("/items", {"limit": 1, "offset": 0})
+            if not_modified or not isinstance(payload, dict) or not isinstance(payload.get("items"), list) or not payload["items"]:
+                raise RuntimeError("[rblxvalue-key-check] API credential check returned no valid item payload")
+            print("[rblxvalue-key-check] PASS: credential accepted; one item returned")
+        except Exception:
+            rblxvalue_guard.log_request_count()
+            raise
     duration = int(os.environ.get("MM2_SCAN_DURATION_SECONDS", "0") or 0)
     if duration > 0:
         interval = int(os.environ.get("MM2_SCAN_INTERVAL_SECONDS", "45") or 45)
