@@ -2475,6 +2475,7 @@ class WorkflowSecurityTests(unittest.TestCase):
         self.assertIn("git archive origin/state data | tar -x", scan_job)
         self.assertIn("[state-audit] supreme_cache_present=true", scan_job)
         self.assertIn("[state-persist-audit] present=", state_job)
+        self.assertIn("data/market_history.sqlite3", state_job)
         self.assertIn('RBLXVALUE_DAILY_REQUEST_LIMIT: "60"', scan_job)
         self.assertIn("No scanner data files found", state_job)
         self.assertIn('MM2_SCAN_INTERVAL_SECONDS: "30"', scan_job)
