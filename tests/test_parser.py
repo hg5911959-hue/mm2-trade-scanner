@@ -2031,6 +2031,36 @@ class CursorPaginationTests(unittest.TestCase):
         self.assertFalse(stats["seen_boundary_reached"])
         self.assertTrue(stats["pagination_complete"])
 
+    def test_backlog_rechecks_stop_after_bounded_lookahead_without_invalidating_new_feed(self):
+        seen_posts = [self._post(f"seen-backlog-{i}") for i in range(25)]
+        for post in seen_posts:
+            post["lastRefreshedAt"] = "2020-01-01T00:00:00Z"
+        initial_page = {"items": seen_posts, "meta": {"cursor": "cursor-1"}}
+        responses = [
+            {"items": [self._post("older-page-1")], "meta": {"cursor": "cursor-2"}},
+            {"items": [self._post("older-page-2")], "meta": {"cursor": "cursor-3"}},
+        ]
+        with (
+            patch("scanner.fetch_bloxswaps", return_value="<html></html>"),
+            patch("scanner.parse_structured_initial_page", return_value=initial_page),
+            patch("scanner.parse_page", return_value=([], {
+                "addition_ids": [], "malformed_count": 0, "malformed_samples": [],
+            })),
+            patch("scanner._last_successful_scan_timestamp", return_value=2_000_000_000),
+            patch("scanner.MAX_BACKLOG_RECHECK_PAGES", 2),
+            patch("scanner.bloxswaps_api_get_json", side_effect=responses) as api,
+        ):
+            listings, stats, _ = scanner.fetch_bloxswaps_all(
+                {post["id"] for post in seen_posts}, {"pending-old"}
+            )
+        self.assertEqual(listings, [])
+        self.assertEqual(api.call_count, 2)
+        self.assertTrue(stats["seen_boundary_reached"])
+        self.assertTrue(stats["pagination_complete"])
+        self.assertTrue(stats["backlog_page_limit_reached"])
+        self.assertEqual(stats["backlog_pages_scanned"], 2)
+        self.assertEqual(stats["pending_remaining_ids"], ["pending-old"])
+
     def test_pending_listing_is_found_after_an_already_seen_boundary(self):
         pending_post = self._post("pending-post")
         responses = [{
