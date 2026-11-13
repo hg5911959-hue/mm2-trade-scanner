@@ -2548,6 +2548,13 @@ class CatalogueRefreshRegressionTests(unittest.TestCase):
                     refreshed = scanner.fetch_bloxswaps_items_map(force_refresh=True)
                 self.assertIn("old", first)
                 self.assertIn("new", refreshed)
+                # Repeated unknown IDs during the same scan must not trigger
+                # another expensive catalogue download inside the cooldown.
+                api.reset_mock()
+                with patch("scanner.time.time", return_value=1050):
+                    cached = scanner.fetch_bloxswaps_items_map(force_refresh=True)
+                self.assertEqual(cached, refreshed)
+                api.assert_not_called()
 
 
 class ColdStartRecentOfferTests(unittest.TestCase):
@@ -2650,10 +2657,12 @@ class PollingLoopTests(unittest.TestCase):
         self.assertEqual(result["cycles"], 1)
         self.assertEqual(result["successful_cycles"], 1)
 
-    def test_does_not_start_a_cycle_with_only_a_few_seconds_remaining(self):
-        self.assertTrue(scanner.should_start_scan_cycle(262, 780))
+    def test_does_not_start_cycle_without_enough_runtime_headroom(self):
+        # A production cycle took ~267s; 262s or 243s is not enough.
+        self.assertTrue(scanner.should_start_scan_cycle(513, 780))
+        self.assertFalse(scanner.should_start_scan_cycle(262, 780))
+        self.assertFalse(scanner.should_start_scan_cycle(242.9, 780))
         self.assertFalse(scanner.should_start_scan_cycle(4.7, 780))
-        self.assertFalse(scanner.should_start_scan_cycle(194, 780))
         self.assertTrue(scanner.should_start_scan_cycle(0.5, 1))
 
 
