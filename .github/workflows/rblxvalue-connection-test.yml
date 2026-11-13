@@ -63,7 +63,7 @@ jobs:
               detail = exc.read(1200).decode("utf-8", errors="replace").strip()
               detail = detail.replace(key, "[REDACTED]")
               detail = re.sub(r"rbx_[A-Za-z0-9_-]+", "rbx_[REDACTED]", detail)
-              detail = re.sub(r"(?i)(authorization\\s*[:=]\\s*bearer\\s+)[^\\s]+", r"\\1[REDACTED]", detail)
+              detail = re.sub(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s]+", r"\1[REDACTED]", detail)
               if exc.code == 403 and str(exc.headers.get("cf-mitigated", "")).casefold() == "challenge":
                   reason = "Cloudflare challenge"
               elif exc.code == 403:
