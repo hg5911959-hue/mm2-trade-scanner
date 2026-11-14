@@ -1366,8 +1366,8 @@ class ReliabilityTests(IsolatedDataTestCase):
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"), \
                  patch("scanner.load_supreme_values", side_effect=[cash_ready_values(value) for value in value_sets]), \
                  patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)), \
-                 patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)),
-                patch("scanner.alert_cash_price_runway"), \
+                 patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)), \
+                 patch("scanner.alert_cash_price_runway"), \
                  patch("scanner.compare_secondary_values", return_value=""):
                 scanner.main()
                 scanner.main()
