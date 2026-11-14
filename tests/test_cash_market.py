@@ -70,8 +70,7 @@ class CashMarketTests(unittest.TestCase):
         self.assertEqual(result[0], 10.0)
 
     def test_15_day_old_verified_price_is_rejected_as_expired(self):
-        from datetime import datetime, timezone, timedelta
-        now = datetime(2026, 11, 14, tzinfo=timezone.utc)
+        now = datetime(2026, 11, 14, tzinfo=UTC)
         catalog = self._catalog([self._row(verified=(now - timedelta(days=15)).isoformat())])
         result = calculate_cash_side(
             [{"canonical_name": "Chroma Laser", "quantity_min": 1, "quantity_max": 1}],
