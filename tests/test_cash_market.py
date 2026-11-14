@@ -116,6 +116,42 @@ class CashMarketTests(unittest.TestCase):
     def test_cash_profit_uses_worst_case_not_supreme_value(self):
         self.assertEqual(cash_profit_bounds((5, 8), (12, 15)), (4, 10))
 
+    def test_fractional_quantity_is_rejected_instead_of_truncated(self):
+        catalog = self._catalog([self._row(price="10")])
+        result = calculate_cash_side(
+            [{"canonical_name": "Chroma Laser", "quantity_min": 1.5, "quantity_max": 2}],
+            catalog, "give", 0,
+        )
+        self.assertIn("quantity invalid", result[3][0])
+
+    def test_boolean_quantity_is_rejected(self):
+        catalog = self._catalog([self._row(price="10")])
+        result = calculate_cash_side(
+            [{"canonical_name": "Chroma Laser", "quantity_min": True, "quantity_max": 1}],
+            catalog, "give", 0,
+        )
+        self.assertIn("quantity invalid", result[3][0])
+
+    def test_integral_float_quantity_is_accepted_without_rounding(self):
+        catalog = self._catalog([self._row(price="10")])
+        result = calculate_cash_side(
+            [{"canonical_name": "Chroma Laser", "quantity_min": 2.0, "quantity_max": 2.0}],
+            catalog, "give", 0,
+        )
+        self.assertEqual((result[0], result[1]), (20.0, 20.0))
+        self.assertEqual(result[3], [])
+
+    def test_cash_profit_rejects_non_finite_or_negative_bounds(self):
+        for bounds in (((float("nan"), 1), (2, 3)),
+                       ((-1, 1), (2, 3)),
+                       ((0, float("inf")), (2, 3))):
+            with self.subTest(bounds=bounds), self.assertRaises(ValueError):
+                cash_profit_bounds(*bounds)
+
+    def test_cash_profit_rejects_inverted_bounds(self):
+        with self.assertRaises(ValueError):
+            cash_profit_bounds((8, 5), (12, 15))
+
     def test_duplicate_normalized_names_are_rejected(self):
         with self.assertRaises(RuntimeError):
             self._catalog([self._row("Chroma-Laser"), self._row("chroma laser")])
