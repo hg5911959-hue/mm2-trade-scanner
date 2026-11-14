@@ -39,6 +39,30 @@ class RblxValueGuardTests(unittest.TestCase):
         state = json.loads(self.budget.read_text())
         self.assertEqual(len(state["request_timestamps_epoch"]), 60)
 
+    def test_daily_budget_cannot_be_raised_above_hard_limit(self):
+        for i in range(guard.HARD_DAILY_REQUEST_LIMIT):
+            guard.reserve_request(
+                now=1_800_000_000 + i, key="rbx_test_key",
+                budget_path=self.budget, block_path=self.block, limit=10_000,
+            )
+        with self.assertRaises(guard.RblxValueBudgetExceeded):
+            guard.reserve_request(
+                now=1_800_000_100, key="rbx_test_key",
+                budget_path=self.budget, block_path=self.block, limit=10_000,
+            )
+        saved = json.loads(self.budget.read_text(encoding="utf-8"))
+        self.assertEqual(saved["limit"], guard.HARD_DAILY_REQUEST_LIMIT)
+
+    def test_boolean_or_fractional_budget_limit_fails_closed(self):
+        for invalid in (True, False, 1.5, "60"):
+            with self.subTest(limit=invalid):
+                with self.assertRaisesRegex(guard.RblxValueGuardError, "limit must be an integer"):
+                    guard.reserve_request(
+                        now=1_800_000_000, key="rbx_test_key",
+                        budget_path=self.budget, block_path=self.block, limit=invalid,
+                    )
+                self.budget.unlink(missing_ok=True)
+
     def test_expired_budget_entries_roll_off_after_24_hours(self):
         guard.reserve_request(now=1_800_000_000, key="rbx_test_key",
                               budget_path=self.budget, block_path=self.block)
