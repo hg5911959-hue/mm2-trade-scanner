@@ -210,7 +210,7 @@ class CashMarketTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         path = Path(tmp.name) / "cash.csv"
         path.write_text(
-            "name,name,cash_price_usd,tier,status,verified_at_utc,source,notes\\n",
+            "name,name,cash_price_usd,tier,status,verified_at_utc,source,notes\n",
             encoding="utf-8",
         )
         with self.assertRaisesRegex(RuntimeError, "duplicate columns"):
@@ -221,8 +221,8 @@ class CashMarketTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         path = Path(tmp.name) / "cash.csv"
         path.write_text(
-            "name,cash_price_usd,tier,status,verified_at_utc,source,notes\\n"
-            "Item,10,test,unverified,,manual\\n",
+            "name,cash_price_usd,tier,status,verified_at_utc,source,notes\n"
+            "Item,10,test,unverified,,manual\n",
             encoding="utf-8",
         )
         with self.assertRaisesRegex(RuntimeError, "Missing CSV field"):
@@ -233,8 +233,8 @@ class CashMarketTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         path = Path(tmp.name) / "cash.csv"
         path.write_text(
-            "name,cash_price_usd,tier,status,verified_at_utc,source,notes\\n"
-            "Item,10,test,unverified,,manual,note,unexpected\\n",
+            "name,cash_price_usd,tier,status,verified_at_utc,source,notes\n"
+            "Item,10,test,unverified,,manual,note,unexpected\n",
             encoding="utf-8",
         )
         with self.assertRaisesRegex(RuntimeError, "Extra CSV fields"):
