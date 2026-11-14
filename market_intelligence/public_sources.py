@@ -56,7 +56,12 @@ def _clean(value: str) -> str:
 
 
 def parse_rss(xml_text: str, source_url: str, limit: int = _MAX_ITEMS) -> list[dict[str, Any]]:
-    """Parse RSS 2.0 or Atom into normalized public listing candidates."""
+    """Parse bounded RSS/Atom without DTD/entity expansion or untrusted feed origins."""
+    if not isinstance(xml_text, str) or len(xml_text.encode("utf-8")) > _MAX_BYTES:
+        raise ValueError("Reddit RSS document exceeds the safety limit")
+    if re.search(r"<!\\s*(?:DOCTYPE|ENTITY)\\b", xml_text, re.IGNORECASE):
+        raise ValueError("DTD and entity declarations are not supported")
+    source_url = validate_reddit_feed_url(source_url)
     root = ET.fromstring(xml_text)
     entries = [node for node in root.iter() if _name(node.tag) in {"item", "entry"}]
     records = []
