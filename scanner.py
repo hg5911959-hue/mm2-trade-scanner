@@ -3817,8 +3817,10 @@ def qualifies_cash(result):
         or result.get("cash_price_basis") != "verified manual USD resale catalogue"
     ):
         return False
-    raw_profit = result.get("cash_profit_worst", result.get("profit_worst", 0))
-    raw_margin = result.get("margin", 0)
+    if "cash_profit_worst" not in result or "margin" not in result:
+        return False
+    raw_profit = result["cash_profit_worst"]
+    raw_margin = result["margin"]
     if isinstance(raw_profit, bool) or isinstance(raw_margin, bool):
         return False
     try:
