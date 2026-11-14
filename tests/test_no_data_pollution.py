@@ -31,12 +31,20 @@ class NoDataPollutionTests(IsolatedDataTestCase):
             def record_opportunity(self, result):
                 return None
 
+            def record_listings(self, listings):
+                return 0
+
+            def close(self):
+                return None
+
         empty_catalog = {
             "items": {}, "sha256": "fixture", "row_count": 0,
             "verified_count": 0, "expiring_within_3_days": 0,
         }
         stats = {
             "pagination_complete": True,
+            "candidate_count": 0,
+            "addition_count": 0,
             "watch_remaining_ids": [],
             "watch_search_complete": True,
             "pending_remaining_ids": [],
