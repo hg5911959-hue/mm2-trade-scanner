@@ -7,7 +7,11 @@ from market_intelligence.ai_advisor import (
     build_deepseek_manual_prompt,
     review_with_gemini,
 )
-from market_intelligence.public_sources import parse_rss, validate_reddit_feed_url
+from market_intelligence.public_sources import (
+    _RedditOnlyRedirectHandler,
+    parse_rss,
+    validate_reddit_feed_url,
+)
 
 
 class PublicSourceTests(unittest.TestCase):
@@ -24,6 +28,30 @@ class PublicSourceTests(unittest.TestCase):
     def test_accepts_reddit_rss(self):
         url = "https://www.reddit.com/r/MurderMystery2/new/.rss"
         self.assertEqual(validate_reddit_feed_url(url), url)
+
+    def test_redirect_handler_rejects_offsite_redirects_before_fetch(self):
+        handler = _RedditOnlyRedirectHandler()
+        request = __import__("urllib.request", fromlist=["Request"]).Request(
+            "https://www.reddit.com/r/test/new/.rss"
+        )
+        for target in (
+            "https://example.com/steal",
+            "http://www.reddit.com/r/test/new/.rss",
+            "https://attacker.reddit.com/r/test/new/.rss",
+        ):
+            with self.subTest(target=target), self.assertRaises(ValueError):
+                handler.redirect_request(request, None, 302, "Found", {}, target)
+
+    def test_redirect_handler_allows_reddit_rss_redirect(self):
+        from urllib.request import Request
+
+        handler = _RedditOnlyRedirectHandler()
+        request = Request("https://www.reddit.com/r/test/new/.rss")
+        redirected = handler.redirect_request(
+            request, None, 302, "Found", {},
+            "https://old.reddit.com/r/test/new/.rss",
+        )
+        self.assertEqual(redirected.full_url, "https://old.reddit.com/r/test/new/.rss")
 
     def test_parse_rss_and_filter_external_links(self):
         xml = """<?xml version='1.0'?><rss><channel>
