@@ -1639,7 +1639,7 @@ class CacheTTLTests(unittest.TestCase):
                 "unvalued": {
                     "name": "Unvalued",
                     "variants": [
-                        {"name": "Unvalued", "id": "3", "slug": "unvalued", "category": "common", "type": "gun", "value": None, "raw_source_value": "x4", "value_status": "tier_item_count"},
+                        {"name": "Unvalued", "id": "3", "slug": "unvalued", "category": "common", "type": "gun", "value": None, "raw_source_value": "x4", "value_status": "tier_item_count", "range": "N/A"},
                     ],
                 },
                 "untyped": {
@@ -1666,6 +1666,7 @@ class CacheTTLTests(unittest.TestCase):
             self.assertEqual({row["id"] for row in report["items"]}, {"1", "2", "3", "4"})
             self.assertEqual(next(row for row in report["items"] if row["id"] == "1")["stability"], "Rising")
             self.assertEqual(next(row for row in report["items"] if row["id"] == "3")["demand"], 4)
+            self.assertEqual(next(row for row in report["items"] if row["id"] == "3")["range"], "N/A")
             self.assertEqual(next(row for row in report["items"] if row["id"] == "3")["acronym"], "UV")
 
     def test_supreme_stability_is_preserved_and_shown_for_each_weapon(self):

@@ -2160,6 +2160,7 @@ def _write_supreme_values_audit(values, fetched_at=None):
                 "value": numeric if is_numeric else None,
                 "value_min": variant.get("value_min"),
                 "value_max": variant.get("value_max"),
+                "range": str(variant.get("range") or ""),
                 "raw_source_value": variant.get("raw_source_value"),
                 "value_status": str(variant.get("value_status") or ("numeric" if is_numeric else "not_numeric")),
                 "stability": stability,
@@ -2411,9 +2412,10 @@ def load_supreme_values():
                     "name": name, "value": value, "value_min": value_min, "value_max": value_max,
                     "raw_source_value": item.get("value_source_b"), "value_status": value_status,
                     "secondary_value": secondary, "category": category, "type": item_type,
-                    # RBLXValue's stability field is sourced from the Supreme Values item data.
-                    # Keep the source label verbatim; never infer a missing stability.
+                    # The API does not document stability as source-specific. Preserve the
+                    # provider label verbatim; do not claim it is a verified Supreme-only field.
                     "stability": _normalize_stability(item.get("stability")),
+                    "range": str(item.get("range") or ""),
                     "demand": _optional_bounded_int(item.get("demand"), 0, 10),
                     "rarity": _optional_bounded_int(item.get("rarity"), 0, 10),
                     "acronym": str(item.get("acronym") or ""),
