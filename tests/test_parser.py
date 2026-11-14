@@ -3674,7 +3674,7 @@ class CashFirstEvaluatorTests(unittest.TestCase):
     def setUp(self):
         self.values = {
             "chroma laser": {"name": "Chroma Laser", "value": 100, "stability": "Stable", "demand": 0},
-            "chroma gemstone": {"name": "Chroma Gemstone", "value": 1, "stability": "Stable", "demand": 0},
+            "chroma gemstone": {"name": "Chroma Gemstone", "value": None, "stability": "Stable", "demand": 0},
             "chroma heat": {"name": "Chroma Heat", "value": 2, "stability": "Decreasing", "demand": 10},
         }
         self.catalog = {
@@ -3711,6 +3711,24 @@ class CashFirstEvaluatorTests(unittest.TestCase):
         self.assertAlmostEqual(result["cash_profit_worst"], 7.0)
         self.assertTrue(scanner.qualifies_cash(result))
         self.assertEqual(result["receive_demand_score"], None)
+
+    def test_cash_price_fingerprint_changes_for_non_numeric_supreme_items(self):
+        listing = self.listing
+        catalog_a = {"items": dict(self.catalog["items"])}
+        catalog_b = {"items": dict(self.catalog["items"])}
+        catalog_a["items"][scanner.normalize_cash_name("Chroma Gemstone")] = {
+            "name": "Chroma Gemstone", "cash_price_usd": 20.0, "status": "verified"
+        }
+        catalog_b["items"][scanner.normalize_cash_name("Chroma Gemstone")] = {
+            "name": "Chroma Gemstone", "cash_price_usd": 25.0, "status": "verified"
+        }
+        _content_a, values_a = scanner.listing_watch_fingerprints(
+            listing, self.values, {}, catalog_a
+        )
+        _content_b, values_b = scanner.listing_watch_fingerprints(
+            listing, self.values, {}, catalog_b
+        )
+        self.assertNotEqual(values_a, values_b)
 
     def test_bad_receive_stability_remains_blocked_even_with_high_cash_price(self):
         listing = dict(self.listing)
