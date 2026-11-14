@@ -1937,8 +1937,8 @@ def _save_rblxvalue_detail_state(state):
     )
 
 
-def _enrich_untyped_catalog_items(values, cache_document, source_meta=None, persist_cache=True):
-    """Use the official single-item API endpoint to recover missing item types, budgeted daily."""
+def _enrich_catalog_metadata_gaps(values, cache_document, source_meta=None, persist_cache=True):
+    """Use the official single-item API endpoint to recover missing type/metadata, budgeted daily."""
     if not RBLXVALUE_API_KEY or not isinstance(values, dict):
         return 0
     source_version = (
@@ -1960,7 +1960,16 @@ def _enrich_untyped_catalog_items(values, cache_document, source_meta=None, pers
             continue
         variants = record.get("variants") or [record]
         for variant in variants:
-            if not isinstance(variant, dict) or str(variant.get("type") or "").strip():
+            if not isinstance(variant, dict):
+                continue
+            missing_type = not str(variant.get("type") or "").strip()
+            has_numeric_value = variant.get("value") is not None
+            missing_valuable_metadata = has_numeric_value and (
+                not variant.get("stability")
+                or variant.get("demand") is None
+                or variant.get("rarity") is None
+            )
+            if not missing_type and not missing_valuable_metadata:
                 continue
             slug = str(variant.get("slug") or "").strip()
             if not slug:
@@ -1980,13 +1989,14 @@ def _enrich_untyped_catalog_items(values, cache_document, source_meta=None, pers
                 value_priority = float(variant.get("value") or 0)
             except (TypeError, ValueError):
                 value_priority = 0.0
-            candidates.append((-value_priority, slug, variant))
-    candidates.sort(key=lambda row: (row[0], row[1]))
+            priority = 0 if missing_type else 1
+            candidates.append((priority, -value_priority, slug, variant))
+    candidates.sort(key=lambda row: (row[0], row[1], row[2]))
     remaining = max(
         0, RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY - int(state.get("daily_lookups", 0))
     )
     changed = 0
-    for _priority, slug, variant in candidates[:remaining]:
+    for _priority, _value_priority, slug, variant in candidates[:remaining]:
         state["daily_lookups"] += 1
         state["attempted"][slug] = {
             "source_version": source_version,
@@ -2475,7 +2485,7 @@ def load_supreme_values():
                 f"(updated {source_meta.get('last_updated')}; items {source_meta.get('items_total')}); "
                 "reusing complete cached catalogue"
             )
-            _enrich_untyped_catalog_items(cached_values, cached_document, source_meta)
+            _enrich_catalog_metadata_gaps(cached_values, cached_document, source_meta)
             _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
             return cached_values
         if source_meta and cached_document:
@@ -2671,7 +2681,7 @@ def load_supreme_values():
         "source": "Supreme Values via RBLXValue API value_source_b",
         "pages": refreshed_pages, "values": all_values,
     }
-    _enrich_untyped_catalog_items(all_values, cache_document, source_meta, persist_cache=False)
+    _enrich_catalog_metadata_gaps(all_values, cache_document, source_meta, persist_cache=False)
     VALUES_FILE.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(
         VALUES_FILE, json.dumps(cache_document, ensure_ascii=False, indent=2) + "\n"
