@@ -3873,12 +3873,19 @@ def listing_watch_fingerprints(listing, values, aliases=None, cash_catalog=None)
                 if _selected:
                     unit_min, unit_max = _variant_numeric_bounds(_selected)
             cash_row = None
+            cash_selected = _selected
+            if record and cash_selected is None:
+                cash_variants = record.get("variants") or [record]
+                if len(cash_variants) == 1:
+                    cash_selected = cash_variants[0]
+            cash_name = (
+                (cash_selected or {}).get("name")
+                or (record or {}).get("name")
+                or name
+            )
             if cash_catalog:
-                cash_row = cash_catalog.get("items", {}).get(normalize_cash_name(
-                    (_selected or {}).get("name") if record else name
-                ))
-            if cash_catalog:
-                stability = _normalize_stability((_selected or {}).get("stability")) if record else None
+                cash_row = cash_catalog.get("items", {}).get(normalize_cash_name(cash_name))
+                stability = _normalize_stability((cash_selected or {}).get("stability")) if record else None
                 valuation.append((
                     side, normalize_name(name), match_source,
                     cash_row.get("cash_price_usd") if cash_row else None,
