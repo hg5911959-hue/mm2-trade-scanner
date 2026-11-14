@@ -3868,6 +3868,7 @@ def listing_watch_fingerprints(listing, values, aliases=None, cash_catalog=None)
             record, match_source, _ = resolve_value_record(name, values, aliases, item=item)
             unit_value = None
             unit_min = unit_max = None
+            _selected = None
             if record:
                 unit_value, _selected = _select_conservative_variant(record, side)
                 if _selected:
