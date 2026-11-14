@@ -3,6 +3,7 @@ from __future__ import annotations
 import json, os, urllib.parse, urllib.request
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+import tempfile
 from tools.cash_market import cash_price_is_fresh, load_cash_price_catalog
 
 def build_report(metrics, discord_status=None, key_state=None, daily_limit=60, now=None, cash_summary=None):
@@ -42,7 +43,14 @@ def main():
     cash_summary = None
     try:
         max_age = int(os.environ.get("CASH_MAX_AGE_DAYS", "14"))
-        cash = load_cash_price_catalog(data / "cash_prices.csv", max_age_days=max_age)
+        private_csv = os.environ.get("CASH_PRICES_CSV", "")
+        if private_csv:
+            with tempfile.TemporaryDirectory() as tmp:
+                private_path = Path(tmp) / "cash_prices.csv"
+                private_path.write_text(private_csv, encoding="utf-8")
+                cash = load_cash_price_catalog(private_path, max_age_days=max_age)
+        else:
+            cash = load_cash_price_catalog(data / "cash_prices.csv", max_age_days=max_age)
         fresh = [row for row in cash["items"].values() if cash_price_is_fresh(row, max_age)]
         cash_summary = (
             f"verified={len(fresh)}, expiring<=3d={cash['expiring_within_3_days']}, "
