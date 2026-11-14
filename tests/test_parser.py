@@ -45,6 +45,21 @@ def normalize_fixture_id(name):
     return re.sub(r"[^a-z0-9]+", "-", str(name).casefold()).strip("-")
 
 
+def cash_ready_values(values):
+    ready = {}
+    for key, record in values.items():
+        copied = dict(record)
+        if isinstance(copied.get("variants"), list):
+            copied["variants"] = [
+                {**variant, "stability": variant.get("stability", "Stable")}
+                for variant in copied["variants"]
+            ]
+        else:
+            copied.setdefault("stability", "Stable")
+        ready[key] = copied
+    return ready
+
+
 class ParserTests(unittest.TestCase):
     def test_extracts_both_trade_sides_and_links(self):
         html = """
@@ -342,6 +357,33 @@ class ParserTests(unittest.TestCase):
 
 
 class ReliabilityTests(unittest.TestCase):
+    def setUp(self):
+        self.cash_state_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.cash_state_dir.cleanup)
+        names = {
+            "Knife A": 10, "Knife B": 20,
+            "Harvester": 10, "Spirit": 20,
+            "Heartblade": 10, "Xmas": 20,
+        }
+        items = {
+            scanner.normalize_cash_name(name): {
+                "name": name, "cash_price_usd": price, "status": "verified",
+                "verified_at_utc": "2026-11-14T00:00:00Z",
+            }
+            for name, price in names.items()
+        }
+        self.cash_catalog_patch = patch(
+            "scanner.load_cash_price_catalog",
+            return_value={"items": items, "sha256": "reliability-fixture", "row_count": len(items)},
+        )
+        self.cash_catalog_patch.start()
+        self.addCleanup(self.cash_catalog_patch.stop)
+        self.cash_snapshot_patch = patch(
+            "scanner.CASH_PRICE_SNAPSHOT_FILE",
+            Path(self.cash_state_dir.name) / "cash-price-snapshot.json",
+        )
+        self.cash_snapshot_patch.start()
+        self.addCleanup(self.cash_snapshot_patch.stop)
     def test_same_name_items_keep_identity_and_never_become_a_fake_range(self):
         items = [
             {"id": 380, "slug": "rainbow-gun", "name": "Rainbow Gun",
@@ -1178,7 +1220,7 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.PENDING_RECHECK_SCHEDULE_FILE", root / "pending_schedule.json"),
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
                  patch("scanner.WATCH_FILE", root / "watch.json"),
-                patch("scanner.load_supreme_values", return_value=values),
+                patch("scanner.load_supreme_values", return_value=cash_ready_values(values)),
                 patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)),
                 patch("scanner.send_telegram", side_effect=[RuntimeError("rejected"), None]) as send,
                 patch("scanner.compare_secondary_values", return_value=""),
@@ -1224,7 +1266,7 @@ class ReliabilityTests(unittest.TestCase):
                 patch("scanner.SEEN_FILE", root / "seen_ads.json"),
                 patch("scanner.PENDING_FILE", root / "pending.json"),
                 patch("scanner.WATCH_FILE", root / "watch.json"),
-                patch("scanner.load_supreme_values", return_value=values),
+                patch("scanner.load_supreme_values", return_value=cash_ready_values(values)),
                 patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)),
                 patch("scanner.send_telegram") as send,
                 patch("scanner.compare_secondary_values", return_value=""),
@@ -1278,7 +1320,7 @@ class ReliabilityTests(unittest.TestCase):
                 patch("scanner.SEEN_FILE", root / "seen_ads.json"),
                  patch("scanner.PENDING_FILE", root / "pending.json"),
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
-                patch("scanner.load_supreme_values", return_value=values),
+                patch("scanner.load_supreme_values", return_value=cash_ready_values(values)),
                 patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)),
                 patch("scanner.send_telegram", side_effect=scanner.TelegramDeliveryUncertain("unknown")),
                 patch("scanner.compare_secondary_values", return_value=""),
@@ -1318,7 +1360,7 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.PENDING_RECHECK_SCHEDULE_FILE", root / "pending_schedule.json"), \
                  patch("scanner.WATCH_FILE", root / "watch.json"), \
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"), \
-                 patch("scanner.load_supreme_values", side_effect=value_sets), \
+                 patch("scanner.load_supreme_values", side_effect=[cash_ready_values(value) for value in value_sets]), \
                  patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)), \
                  patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)), \
                  patch("scanner.compare_secondary_values", return_value=""):
@@ -1365,7 +1407,7 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.PENDING_FILE", root / "pending.json"),
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
                 patch("scanner.WATCH_FILE", root / "watch.json"),
-                patch("scanner.load_supreme_values", return_value=values),
+                patch("scanner.load_supreme_values", return_value=cash_ready_values(values)),
                 patch("scanner.fetch_bloxswaps", return_value=with_rsc(page)),
                 patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)),
                 patch("scanner.compare_secondary_values", return_value=""),
@@ -1411,7 +1453,7 @@ class ReliabilityTests(unittest.TestCase):
                 patch("scanner.PENDING_RECHECK_SCHEDULE_FILE", root / "pending_schedule.json"),
                 patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
                 patch("scanner.WATCH_FILE", root / "watch.json"),
-                patch("scanner.load_supreme_values", return_value=values),
+                patch("scanner.load_supreme_values", return_value=cash_ready_values(values)),
                 patch("scanner.fetch_bloxswaps", return_value=with_rsc(page)),
                 patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)),
                 patch("scanner.compare_secondary_values", return_value=""),
