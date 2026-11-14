@@ -1,12 +1,13 @@
 import io
 import os
 import unittest
+from test_support import IsolatedDataTestCase
 from unittest.mock import patch
 
 import scanner
 
 
-class SecretRedactionTests(unittest.TestCase):
+class SecretRedactionTests(IsolatedDataTestCase):
     def test_redact_replaces_configured_token_key_and_chat_id(self):
         secrets = {
             "TELEGRAM_BOT_TOKEN": "telegram-token-123456",

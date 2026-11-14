@@ -1,13 +1,14 @@
 import json
 import tempfile
 import unittest
+from test_support import IsolatedDataTestCase
 from pathlib import Path
 from unittest.mock import patch
 
 import scanner
 
 
-class PendingRecheckScheduleTests(unittest.TestCase):
+class PendingRecheckScheduleTests(IsolatedDataTestCase):
     def test_legacy_pending_ids_without_schedule_are_due_immediately(self):
         pending = {"old-ad": 100.0}
         self.assertEqual(scanner.due_pending_ids_for_scan(pending, {}, now=1000), pending)

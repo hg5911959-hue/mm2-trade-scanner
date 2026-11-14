@@ -1,13 +1,14 @@
 import json
 import tempfile
 import unittest
+from test_support import IsolatedDataTestCase
 from pathlib import Path
 from unittest.mock import patch
 
 import rblxvalue_guard as guard
 
 
-class RblxValueGuardTests(unittest.TestCase):
+class RblxValueGuardTests(IsolatedDataTestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

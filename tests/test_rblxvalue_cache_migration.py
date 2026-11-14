@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from test_support import IsolatedDataTestCase
 from pathlib import Path
 from unittest.mock import patch
 
@@ -8,7 +9,7 @@ import rblxvalue_guard
 import scanner
 
 
-class SupremeCacheMigrationTests(unittest.TestCase):
+class SupremeCacheMigrationTests(IsolatedDataTestCase):
     def _schema3_cache(self, fetched_at):
         rows = [
             {
