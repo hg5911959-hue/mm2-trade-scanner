@@ -23,7 +23,7 @@ from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 import rblxvalue_guard
 from tools.metrics import update_metrics
 from tools.alert_policy import rank_and_split
-from tools.cash_market import calculate_cash_side, cash_profit_bounds, load_cash_price_catalog, normalize_cash_name, cash_price_is_fresh
+from tools.cash_market import calculate_cash_side, cash_profit_bounds, load_cash_price_catalog, normalize_cash_name, cash_price_is_fresh, strict_quantity
 
 BLOXSWAPS_URL = os.environ.get(
     "BLOXSWAPS_URL",
@@ -3675,13 +3675,13 @@ def qualifies(result, min_diff=None, min_percent=None):
     min_percent = MIN_PROFIT_PERCENT if min_percent is None else min_percent
     # Only fully verified, conservative-positive trades are eligible for Telegram.
     # A best-case-only profit is uncertain and must never be advertised as a WIN.
-    if result.get("manual_review"):
+    if result.get("manual_review") or result.get("cash_estimate_only"):
         return False
     metric = result.get("profit_worst", result.get("difference", 0))
     return metric > 0 and metric >= min_diff and result["margin"] >= min_percent
 
 
-def evaluate_cash_listing(listing, values, aliases, cash_catalog):
+def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=False):
     """Evaluate cash resale profit only; Supreme is used for identity/stability gates."""
     if not listing.get("give_items") or not listing.get("receive_items"):
         return None, ["one side has no items"]
@@ -3725,13 +3725,13 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog):
             qmax = item.get("quantity_max")
             source = item.get("quantity_source", "implicit_single")
             try:
-                qmin = int(qmin if qmin is not None else (quantity if quantity is not None else 1))
+                qmin = strict_quantity(qmin if qmin is not None else (quantity if quantity is not None else 1))
                 if qmax is None and quantity is not None and source != "uncertain":
                     qmax = quantity
-                qmax = int(qmax) if qmax is not None else None
+                qmax = strict_quantity(qmax) if qmax is not None else None
             except (TypeError, ValueError):
                 qmin, qmax = 1, None
-            if qmin < 1 or qmin > 100 or qmax is None or qmax < qmin or qmax > 100:
+            if qmax is None or qmax < qmin:
                 missing.append(f"{canonical_name} (quantity uncertain/unbounded)")
                 continue
 
@@ -3750,10 +3750,12 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog):
         return None, ["one side has no Supreme-catalogued items"]
 
     give_min, give_max, give_lines, give_missing = calculate_cash_side(
-        prepared["give"], cash_catalog, "give", 0, max_age_days=CASH_MAX_AGE_DAYS
+        prepared["give"], cash_catalog, "give", 0, max_age_days=CASH_MAX_AGE_DAYS,
+        allow_unverified_estimates=estimate_mode,
     )
     receive_min, receive_max, receive_lines, receive_missing = calculate_cash_side(
-        prepared["receive"], cash_catalog, "receive", CASH_SELL_HAIRCUT_PCT, max_age_days=CASH_MAX_AGE_DAYS
+        prepared["receive"], cash_catalog, "receive", CASH_SELL_HAIRCUT_PCT,
+        max_age_days=CASH_MAX_AGE_DAYS, allow_unverified_estimates=estimate_mode,
     )
     missing = give_missing + receive_missing
     if missing:
@@ -3799,7 +3801,8 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog):
         "cash_sell_haircut_pct": CASH_SELL_HAIRCUT_PCT,
         "cash_profit_worst": profit_worst,
         "cash_profit_best": profit_best,
-        "cash_price_basis": "verified manual USD resale catalogue",
+        "cash_price_basis": "unverified legacy estimate only" if estimate_mode else "verified manual USD resale catalogue",
+        "cash_estimate_only": bool(estimate_mode),
         "receive_demand_score": None,
         "receive_stability_score": None,
     }, []
@@ -4368,7 +4371,8 @@ def scan_once(include_backlog_rechecks=True):
                 f"to {format_number(op['profit_best'])}"
             )
         if listing.get("valuation_mode") == "cash":
-            message += f"\n💵 CASH PROFIT RANGE: ${op['cash_profit_worst']:.2f} to ${op['cash_profit_best']:.2f}"
+            prefix = "ESTIMATED ONLY — NOT TRADE-ELIGIBLE" if op.get("cash_estimate_only") else "CASH PROFIT RANGE"
+            message += f"\n💵 {prefix}: ${op['cash_profit_worst']:.2f} to ${op['cash_profit_best']:.2f}"
             message += f"\n📊 CASH ROI: {op['margin']:.2f}%"
         else:
             message += f"\n📊 MARGIN: {op['margin']:.2f}%"
@@ -4488,7 +4492,9 @@ def scan_once(include_backlog_rechecks=True):
             uncertain_skipped += 1
             mark_seen_ad(listing)
             continue
-        result, missing = evaluate_cash_listing(listing, values, aliases, cash_catalog)
+        result, missing = evaluate_cash_listing(
+            listing, values, aliases, cash_catalog, estimate_mode=dry_run
+        )
         evaluated += 1
         if result is None:
             skipped_unknown += 1
