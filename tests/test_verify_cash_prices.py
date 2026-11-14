@@ -71,7 +71,7 @@ class VerifyCashPricesTests(unittest.TestCase):
     def test_dry_run_does_not_change_catalogue(self):
         self.input_path.write_text("spirit 8$", encoding="utf-8")
         before = self.csv_path.read_bytes()
-        result = verify(self.input_path, self.csv_path, dry_run=True)
+        result = verify(self.input_path, self.csv_path, max_change_pct=1000, dry_run=True)
         self.assertTrue(result["dry_run"])
         self.assertEqual(self.csv_path.read_bytes(), before)
 
