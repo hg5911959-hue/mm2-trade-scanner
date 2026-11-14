@@ -1625,6 +1625,27 @@ class UntypedCatalogEnrichmentTests(unittest.TestCase):
             self.assertEqual(changed, 6)
             self.assertEqual(sum(bool(v["variants"][0]["type"]) for v in values.values()), 6)
 
+    def test_unchanged_untyped_item_is_not_requeried_after_source_refresh(self):
+        with tempfile.TemporaryDirectory() as directory:
+            values = self._make_values()
+            variant = values["untyped-0"]["variants"][0]
+            variant["last_updated"] = "2026-11-13 00:00:00"
+            document = {"source_last_updated": "source-v1", "values": values}
+            detail = {"item": {
+                "id": "100", "slug": "untyped-0", "name": "Untyped 0",
+                "type": None, "last_updated": "2026-11-13 00:00:00",
+            }}
+            with (
+                patch("scanner.RBLXVALUE_DETAIL_FILE", Path(directory) / "detail.json"),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY", 6),
+                patch("scanner.api_get_json", return_value=detail) as api,
+            ):
+                scanner._enrich_untyped_catalog_items(values, document, {"last_updated": "source-v1"})
+                document["source_last_updated"] = "source-v2"
+                scanner._enrich_untyped_catalog_items(values, document, {"last_updated": "source-v2"})
+            api.assert_called_once_with("/items/untyped-0")
+
     def test_detail_identity_mismatch_does_not_change_item_type(self):
         with tempfile.TemporaryDirectory() as directory:
             values = self._make_values()
