@@ -201,6 +201,26 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+      - name: Prepare API safety ledger artifact
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p api-safety-bundle/data
+          for file in rblxvalue_request_budget.json api_key_blocked.json; do
+            if [ -f "data/$file" ]; then
+              cp "data/$file" "api-safety-bundle/data/$file"
+            fi
+          done
+
+      - name: Upload API safety ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mm2-api-safety-ledger
+          path: api-safety-bundle/
+          if-no-files-found: ignore
+          retention-days: 1
+
   persist-state:
     needs: scan
     if: always()
@@ -221,6 +241,21 @@ jobs:
           name: mm2-scanner-state
           path: state-artifact
 
+      - name: Download API safety ledger
+        id: safety-download
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mm2-api-safety-ledger
+          path: api-safety-artifact
+
+      - name: Validate API safety ledger independently
+        id: validate-api-safety
+        if: steps.safety-download.outcome == 'success'
+        run: |
+          set -euo pipefail
+          python tools/validate_state.py --directory api-safety-artifact/data --api-safety-only
+
       - name: Validate downloaded scanner state before publishing
         id: validate-state
         if: needs.scan.result == 'success' && steps.download.outcome == 'success'
@@ -229,6 +264,51 @@ jobs:
           # Never replace the durable branch with a partial artifact, even if
           # the scan failed. The previous cache/database must survive failures.
           python tools/validate_state.py --directory state-artifact/data --require-cache
+
+      - name: Persist API safety ledger after failed scan
+        id: persist-api-safety
+        if: needs.scan.result != 'success' && steps.safety-download.outcome == 'success' && steps.validate-api-safety.outcome == 'success'
+        run: |
+          set -euo pipefail
+          if [ ! -d api-safety-artifact/data ] || ! find api-safety-artifact/data -type f -print -quit | grep -q .; then
+            echo "No API safety ledger changes to persist."
+            exit 0
+          fi
+          if git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
+            git fetch origin refs/heads/state:refs/remotes/origin/state
+            git checkout --detach origin/state
+          else
+            git checkout --orphan state-safety
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+          mkdir -p data
+          for file in rblxvalue_request_budget.json api_key_blocked.json; do
+            if [ -f "api-safety-artifact/data/$file" ]; then
+              cp "api-safety-artifact/data/$file" "data/$file"
+              git add "data/$file"
+            fi
+          done
+          if git diff --cached --quiet; then
+            echo "API safety ledger unchanged; no state-branch update needed."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(state): persist API safety ledger after failed scan"
+          git push origin HEAD:state
+          echo "Persisted only validated API safety files; previous market cache remains untouched."
+
+      - name: Verify API safety ledger after failed scan
+        if: steps.persist-api-safety.outcome == 'success'
+        run: |
+          set -euo pipefail
+          git fetch origin refs/heads/state:refs/remotes/origin/state
+          for file in rblxvalue_request_budget.json api_key_blocked.json; do
+            if [ -f "api-safety-artifact/data/$file" ]; then
+              git cat-file -e "refs/remotes/origin/state:data/$file"
+              echo "[api-safety-persist-audit] verified=$file"
+            fi
+          done
 
       - name: Persist state branch
         id: persist-state
