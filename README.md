@@ -11,7 +11,7 @@ From the scanner user's perspective:
 - Any listing containing **Ajout / Ajouts** is excluded. The filter is applied to the individual card and also checks the structured `requestedWildcards` data for `ADD`.
 - **Primary ranking and alert filter = estimated real-money resale profit in USD**, not Supreme Value spread. For each offer, the cash cost of items given is compared with conservative net resale proceeds for items received.
 - Supreme Values is used to confirm that every item identity exists in the catalogue and to supply the received item's RBLXValue Stability label. Supreme numeric value and Demand do not determine cash profit or ranking.
-- Cash profit = (verified cash resale prices of received items after a configurable resale haircut) − (verified cash replacement prices of given items). Default resale haircut: **15%**; minimum conservative cash profit: **$1**; minimum cash ROI: **0%** (positive profit is the gate; ROI is used for ranking and display). The best offers are ranked by worst-case USD profit, then ROI.
+- Cash profit = (verified cash resale prices of received items after a configurable resale haircut) − (verified cash replacement prices of given items). Default resale haircut: **15%**; minimum conservative cash profit: **$0.50**; minimum cash ROI: **0%** (positive profit is the gate; ROI is used for ranking and display). The best offers are ranked by worst-case USD profit, then ROI.
 - Any received item with missing/unrecognized Stability or a blocked status (Decreasing, Receding, Unsafe, Untradeable, Unstable, Volatile, Fluctuating) is excluded. The Stability field is sourced from RBLXValue and is not represented as a direct Supreme website verification.
 - Cash prices must be fresh and explicitly verified before they can qualify. The current catalogue contains **190 rows**: 11 user-confirmed USD selling prices and 179 historical references that remain unverified. The 11 confirmed entries are user-attested inputs, not independent marketplace cross-checks; they expire after 14 days unless reconfirmed. Any listing containing an item with a missing, unverified, or expired price is held back.
 - **Estimate-only dry run:** when `DRY_RUN=true`, the scanner may use unverified legacy references for exploratory calculations, applying a ±30% uncertainty band and the resale haircut. Every dry-run cash result is labelled as estimate-only and is hard-blocked from the live alert eligibility gate. This uncertainty band is an engineering assumption, not a statistically measured confidence interval or proof of current market prices. Normal production runs continue to reject unverified rows.
@@ -54,7 +54,7 @@ Telegram cash alerts show owner/listing links, every item, verified USD referenc
 
 Edit data/cash_prices.csv in the repository. Keep each item name aligned with its canonical Supreme catalogue name. Update cash_price_usd to the cash price you have checked, set status to verified, enter an ISO-8601 UTC timestamp in verified_at_utc, and provide a non-empty source field (for example, 2026-11-14T12:00:00Z). Use status=unverified for estimates and status=disabled to suppress an item. Invalid prices, duplicate normalized names, or verified rows without a timestamp fail validation. On the next successful scan, a changed catalogue hash triggers rechecks of watched and pending offers so previously seen listings can become eligible after a price update. The initial 190 prices are preserved as historical user-provided references, not current market facts.
 
-The default resale haircut is controlled by CASH_SELL_HAIRCUT_PCT (15%), the minimum net cash profit by CASH_MIN_PROFIT_USD ($1), and the minimum cash ROI by CASH_MIN_MARGIN_PERCENT (0% by default). These are conservative starting thresholds and should be calibrated after verified completed-sale data is available.
+The default resale haircut is controlled by CASH_SELL_HAIRCUT_PCT (15%), the minimum net cash profit by CASH_MIN_PROFIT_USD ($0.50), and the minimum cash ROI by CASH_MIN_MARGIN_PERCENT (0% by default). These are conservative starting thresholds and should be calibrated after verified completed-sale data is available.
 
 ### Item names and duplicate values
 
@@ -254,3 +254,17 @@ The dashboard workflow checks GitHub Pages before deployment. If the Pages site 
 - The scanner scheduler checks whether its own cron workflow or the watchdog cron workflow was disabled by GitHub. With the narrowly scoped `actions: write` token, it attempts to re-enable only those two known workflows; failure is non-fatal to the scan and is logged as a warning.
 
 - Pending rechecks run only on every fourth scan cycle by default (`BACKLOG_RECHECK_EVERY_CYCLES=4`), with at most 50 IDs per backlog pass (`MAX_PENDING_RECHECK_PER_SCAN`) and a 25-page lookahead (`MAX_BACKLOG_RECHECK_PAGES`). The newest due IDs are prioritized because they are closest to the feed head. Low-priority missing-value/stability IDs are seeded into the seen set while remaining in the recheck queue, preventing repeated hot-loop parsing. Deferred offers, definite Telegram send failures, uncertain quantities, and unparsed feed cards retain priority retry reasons and stay visible to the hot path, so they are not hidden by the seen-set optimization. Fast cycles omit the historical backlog entirely, so old unresolved listings cannot delay discovery of new offers. A genuinely changed Supreme snapshot or manual cash-price catalogue also triggers a bounded recheck immediately, so new identities or prices can resolve queued offers without repeatedly reprocessing them on every fast cycle. Unresolved IDs remain queued for later attempts.
+
+
+## Cash blocker intelligence
+
+The scanner records each listing held for a missing, unverified, or expired cash price in the UTC day's `cash_blockers` map in `data/metrics.json`. Each normalized item is counted once per listing per scan. Co-occurrence groups are retained alongside item totals so the estimated unlock percentage is calculated from actual blocked-listing combinations rather than double-counting listings. Metrics retain the latest 14 UTC days and are written atomically; state validation rejects malformed blocker data.
+
+Run `python tools/next_to_verify.py` to see the 15 most frequent blockers, their current catalogue price and verification age, and the cumulative share of blocked listings that would become evaluable if the top N items were verified. The weekly Telegram report includes the top 10. It prints only the ranked subset, never the full catalogue.
+
+Weekly cash maintenance routine:
+1. Paste the current marketplace list into a text file.
+2. Run `python tools/verify_cash_prices.py --input marketplace-list.txt` and review skipped/ambiguous lines.
+3. Read the preflight message and `python tools/next_to_verify.py` output before relying on the cash-first alerts.
+
+Supreme numeric values are never converted into cash prices; the USD catalogue remains a separate, manually verified source.

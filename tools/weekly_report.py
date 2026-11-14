@@ -5,8 +5,9 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import tempfile
 from tools.cash_market import cash_price_is_fresh, load_cash_price_catalog
+from tools.next_to_verify import format_blockers
 
-def build_report(metrics, discord_status=None, key_state=None, daily_limit=60, now=None, cash_summary=None):
+def build_report(metrics, discord_status=None, key_state=None, daily_limit=60, now=None, cash_summary=None, blocker_summary=None):
     current = now or datetime.now(timezone.utc)
     days = [(current.date() - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
     rows = [metrics.get(day, {}) for day in days]
@@ -29,7 +30,7 @@ def build_report(metrics, discord_status=None, key_state=None, daily_limit=60, n
             f"Key state: {key_label}\n"
             f"Discord manual import: {'STALE / missing' if stale else 'fresh'}\n"
             f"Cash prices: {cash_summary or 'catalogue unavailable'}\n"
-            f"Last 7 days alerts: {trend}")
+            f"Last 7 days alerts: {trend}" + (f"\\n\\n{blocker_summary}" if blocker_summary else ""))
 
 def main():
     data = Path("data")
@@ -58,7 +59,14 @@ def main():
         )
     except Exception as exc:
         cash_summary = f"unavailable ({type(exc).__name__})"
-    report = build_report(metrics, discord, key, int(os.environ.get("RBLXVALUE_DAILY_REQUEST_LIMIT", "60")), cash_summary=cash_summary)
+    try:
+        blocker_summary = format_blockers(metrics, cash["items"] and cash or {"items": {}}, limit=10)
+    except Exception:
+        blocker_summary = "Cash-price blocker ranking unavailable."
+    report = build_report(
+        metrics, discord, key, int(os.environ.get("RBLXVALUE_DAILY_REQUEST_LIMIT", "60")),
+        cash_summary=cash_summary, blocker_summary=blocker_summary,
+    )
     print("[weekly-report] " + report.replace("\n", " | "))
     token, chat = os.environ.get("TELEGRAM_BOT_TOKEN", ""), os.environ.get("TELEGRAM_CHAT_ID", "")
     if token and chat:

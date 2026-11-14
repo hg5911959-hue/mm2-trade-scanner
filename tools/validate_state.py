@@ -147,6 +147,24 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
                                  "rblxvalue_requests", "key_blocked_seconds", "parse_empty")):
                 errors.append("metrics contains an invalid counter")
                 break
+            blockers = row.get("cash_blockers", {})
+            groups = row.get("cash_blocker_groups", {})
+            if not isinstance(blockers, dict) or any(
+                not isinstance(name, str) or not name.isalnum()
+                or type(count) is not int or count < 0
+                for name, count in blockers.items()
+            ):
+                errors.append("metrics contains invalid cash blocker counters")
+                break
+            if not isinstance(groups, dict) or any(
+                not isinstance(group, str)
+                or group.split("|") != sorted(set(group.split("|")))
+                or any(not part.isalnum() for part in group.split("|"))
+                or type(count) is not int or count < 0
+                for group, count in groups.items()
+            ):
+                errors.append("metrics contains invalid cash blocker groups")
+                break
 
     pending_schedule = documents.get("pending_recheck_schedule.json")
     pending_schedule_path = root / "pending_recheck_schedule.json"

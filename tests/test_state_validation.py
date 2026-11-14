@@ -269,6 +269,21 @@ class StateValidationTests(unittest.TestCase):
         }), encoding="utf-8")
         self.assertEqual(validate_state(self.root, require_cache=True), [])
 
+    def test_metrics_cash_blocker_maps_are_validated(self):
+        self._write_valid_state()
+        (self.root / "metrics.json").write_text(json.dumps({
+            "2026-11-14": {
+                "cash_blockers": {"spirit": 2},
+                "cash_blocker_groups": {"bat|spirit": 1},
+            }
+        }), encoding="utf-8")
+        self.assertEqual(validate_state(self.root, require_cache=True), [])
+        (self.root / "metrics.json").write_text(json.dumps({
+            "2026-11-14": {"cash_blockers": {"Bad Name": True}}
+        }), encoding="utf-8")
+        errors = validate_state(self.root, require_cache=True)
+        self.assertTrue(any("cash blocker counters" in error for error in errors))
+
     def test_unfinished_atomic_write_blocks_persistence(self):
         (self.root / "seen_ads.json.tmp").write_text("{}", encoding="utf-8")
         self.assertTrue(any("temporary file" in error for error in validate_state(self.root)))

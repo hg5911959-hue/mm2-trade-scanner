@@ -27,6 +27,10 @@ def update_metrics(path="data/metrics.json", *, increments=None, set_values=None
         raise RuntimeError("metrics daily row must be an object")
     for field in FIELDS:
         row.setdefault(field, 0)
+    row.setdefault("cash_blockers", {})
+    row.setdefault("cash_blocker_groups", {})
+    if not isinstance(row["cash_blockers"], dict) or not isinstance(row["cash_blocker_groups"], dict):
+        raise RuntimeError("metrics cash blocker counters must be objects")
     for field, amount in (increments or {}).items():
         if field not in FIELDS:
             raise ValueError("unknown metric")

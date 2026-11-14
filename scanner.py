@@ -4043,6 +4043,28 @@ def alert_expired_cash_prices(expired_rows, max_age_days=CASH_MAX_AGE_DAYS):
     )
 
 
+def accumulate_cash_blockers(missing, counts, groups):
+    """Count each missing/unverified/expired item once per skipped listing."""
+    blocked = set()
+    for value in missing or []:
+        text = str(value)
+        lowered = text.casefold()
+        if not any(reason in lowered for reason in (
+            "cash price missing", "cash price unverified", "cash price expired"
+        )):
+            continue
+        name = text.split(" (cash price", 1)[0]
+        key = normalize_cash_name(name)
+        if key:
+            blocked.add(key)
+    for key in blocked:
+        counts[key] = counts.get(key, 0) + 1
+    if blocked:
+        group = "|".join(sorted(blocked))
+        groups[group] = groups.get(group, 0) + 1
+    return blocked
+
+
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     dry_run = os.environ.get("DRY_RUN", "").strip().casefold() == "true"
@@ -4526,6 +4548,8 @@ def scan_once(include_backlog_rechecks=True):
         sent += 1
         update_metrics(increments={"alerts_sent": 1})
 
+    cash_blocker_counts = {}
+    cash_blocker_groups = {}
     for listing in listings:
         trade_id = listing["id"]
         legacy_state = legacy_alert_state(listing, alerted_set, uncertain_ids)
@@ -4573,6 +4597,7 @@ def scan_once(include_backlog_rechecks=True):
         if result is None:
             skipped_unknown += 1
             if missing and all("cash price" in str(value).casefold() for value in missing):
+                accumulate_cash_blockers(missing, cash_blocker_counts, cash_blocker_groups)
                 print("[cash] Listing held from alerts: one or more manual USD prices are missing/unverified.")
                 update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
                 mark_seen_ad(listing, clear_pending=False)
@@ -4625,6 +4650,12 @@ def scan_once(include_backlog_rechecks=True):
             except Exception as history_error:
                 print(f"[market-history] Opportunity storage skipped safely: {type(history_error).__name__}")
         # Delivery is deferred until all candidates are ranked.
+
+    if cash_blocker_counts:
+        update_metrics(
+            cash_blockers=cash_blocker_counts,
+            cash_blocker_groups=cash_blocker_groups,
+        )
 
     max_per_scan = max(0, int(os.environ.get("MAX_ALERTS_PER_SCAN", "15")))
     selected, deferred_items = rank_and_split(opportunities, max_per_scan)
