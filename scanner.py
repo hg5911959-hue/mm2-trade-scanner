@@ -4453,6 +4453,11 @@ def scan_once(include_backlog_rechecks=True):
         evaluated += 1
         if result is None:
             skipped_unknown += 1
+            if missing and all("cash price" in str(value).casefold() for value in missing):
+                print("[cash] Listing held from alerts: one or more manual USD prices are missing/unverified.")
+                update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
+                mark_seen_ad(listing, clear_pending=False)
+                continue
             print(
                 f"[skip-unknown] Listing retained for recheck; missing/unvalued items: "
                 f"{', '.join(missing)}"
