@@ -28,6 +28,14 @@ def validate_reddit_feed_url(url: str) -> str:
     return urllib.parse.urlunsplit(("https", parsed.netloc, parsed.path, parsed.query, ""))
 
 
+class _RedditOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Reject redirects away from the public Reddit RSS allowlist."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        safe_url = validate_reddit_feed_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, safe_url)
+
+
 def _name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1].lower()
 
@@ -82,7 +90,8 @@ def fetch_reddit_feed(url: str, timeout: int = 12) -> list[dict[str, Any]]:
                  "Accept": "application/atom+xml, application/rss+xml, application/xml;q=0.9"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=max(3, min(int(timeout), 20))) as response:
+        opener = urllib.request.build_opener(_RedditOnlyRedirectHandler())
+        with opener.open(request, timeout=max(3, min(int(timeout), 20))) as response:
             final_url = validate_reddit_feed_url(response.geturl())
             body = response.read(_MAX_BYTES + 1)
     except urllib.error.HTTPError as exc:
