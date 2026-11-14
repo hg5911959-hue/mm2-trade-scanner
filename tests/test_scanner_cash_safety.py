@@ -66,6 +66,30 @@ class ScannerCashSafetyTests(unittest.TestCase):
         }
         self.assertTrue(scanner.qualifies_cash(result))
 
+    def test_malformed_cash_profit_or_margin_fails_closed(self):
+        for field, value in (
+            ("cash_profit_worst", None),
+            ("cash_profit_worst", "not-a-number"),
+            ("cash_profit_worst", True),
+            ("margin", None),
+            ("margin", "not-a-number"),
+            ("margin", False),
+        ):
+            with self.subTest(field=field, value=value):
+                result = {
+                    "cash_estimate_only": False,
+                    "manual_review": False,
+                    "cash_profit_worst": 100.0,
+                    "margin": 20.0,
+                }
+                result[field] = value
+                self.assertFalse(scanner.qualifies_cash(result))
+
+    def test_non_dictionary_cash_result_fails_closed(self):
+        for result in (None, [], "profit", 10):
+            with self.subTest(result=result):
+                self.assertFalse(scanner.qualifies_cash(result))
+
 
 if __name__ == "__main__":
     unittest.main()
