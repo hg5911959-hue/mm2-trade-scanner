@@ -16,6 +16,47 @@ from pathlib import Path
 REQUIRED_COLUMNS = {
     "name", "cash_price_usd", "tier", "status", "verified_at_utc", "source", "notes"
 }
+DEFAULT_CASH_PRICE_FILE = Path("data/cash_prices.csv")
+
+
+def parse_haircut_tiers(raw):
+    """Parse contiguous USD bands; upper bounds are exclusive."""
+    if not isinstance(raw, str) or not raw.strip():
+        raise ValueError("CASH_SELL_HAIRCUT_TIERS must not be empty")
+    tokens = raw.split(",")
+    tiers = []
+    expected_lower = 0.0
+    for index, token in enumerate(tokens):
+        try:
+            band, raw_pct = token.strip().split(":", 1)
+            lower_text, upper_text = band.split("-", 1)
+            lower = float(lower_text)
+            upper = float(upper_text) if upper_text.strip() else None
+            pct = float(raw_pct)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("CASH_SELL_HAIRCUT_TIERS has an invalid range:percent entry") from exc
+        if (not math.isfinite(lower) or lower != expected_lower
+                or (upper is not None and (not math.isfinite(upper) or upper <= lower))
+                or not math.isfinite(pct) or not 0 <= pct <= 99):
+            raise ValueError("CASH_SELL_HAIRCUT_TIERS contains a gap, overlap, invalid bound, or haircut")
+        if upper is None and index != len(tokens) - 1:
+            raise ValueError("CASH_SELL_HAIRCUT_TIERS open-ended band must be last")
+        tiers.append((lower, upper, pct))
+        if upper is not None:
+            expected_lower = upper
+    if not tiers or tiers[0][0] != 0 or tiers[-1][1] is not None:
+        raise ValueError("CASH_SELL_HAIRCUT_TIERS must cover USD prices from 0 to infinity")
+    return tuple(tiers)
+
+
+def haircut_for_price(price, tiers):
+    value = float(price)
+    if not math.isfinite(value) or value < 0:
+        raise ValueError("cash price for haircut tier must be finite and non-negative")
+    for lower, upper, pct in tiers:
+        if value >= lower and (upper is None or value < upper):
+            return pct
+    raise ValueError("cash price does not fall into a configured haircut tier")
 
 
 def cash_price_is_fresh(entry, max_age_days=14, now=None):
@@ -41,8 +82,8 @@ def normalize_cash_name(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", text)
 
 
-def load_cash_price_catalog(path="data/cash_prices.csv", max_age_days=14):
-    path = Path(path)
+def load_cash_price_catalog(path=None, max_age_days=14, now=None):
+    path = Path(path) if path is not None else DEFAULT_CASH_PRICE_FILE
     try:
         raw = path.read_bytes()
         text = raw.decode("utf-8-sig")
@@ -78,6 +119,15 @@ def load_cash_price_catalog(path="data/cash_prices.csv", max_age_days=14):
                 raise RuntimeError(f"[cash] Invalid USD price on CSV line {line_number}: {name}")
             if not math.isfinite(price) or price <= 0:
                 raise RuntimeError(f"[cash] USD price must be finite and positive on line {line_number}: {name}")
+            try:
+                price_low = float(str(row.get("price_low_usd") or price).strip())
+                price_high = float(str(row.get("price_high_usd") or price).strip())
+            except (TypeError, ValueError):
+                raise RuntimeError(f"[cash] Invalid USD price range on CSV line {line_number}: {name}")
+            if (not math.isfinite(price_low) or not math.isfinite(price_high)
+                    or price_low <= 0 or price_high <= 0
+                    or price_low > price or price > price_high):
+                raise RuntimeError(f"[cash] USD price range must satisfy low <= price <= high on line {line_number}: {name}")
             status = str(row.get("status") or "").strip().casefold()
             if status not in {"verified", "unverified", "disabled"}:
                 raise RuntimeError(f"[cash] Invalid status on CSV line {line_number}: {name}")
@@ -96,6 +146,8 @@ def load_cash_price_catalog(path="data/cash_prices.csv", max_age_days=14):
             rows[key] = {
                 "name": name,
                 "cash_price_usd": price,
+                "price_low_usd": price_low,
+                "price_high_usd": price_high,
                 "tier": str(row.get("tier") or "").strip(),
                 "status": status,
                 "verified_at_utc": verified_at,
@@ -104,7 +156,7 @@ def load_cash_price_catalog(path="data/cash_prices.csv", max_age_days=14):
             }
     except csv.Error as exc:
         raise RuntimeError("[cash] Malformed cash-price CSV.") from exc
-    now_utc = datetime.now(UTC)
+    now_utc = now or datetime.now(UTC)
     fresh_rows = [row for row in rows.values() if cash_price_is_fresh(row, max_age_days=max_age_days, now=now_utc)]
     expiring_rows = []
     for row in fresh_rows:
@@ -124,6 +176,7 @@ def load_cash_price_catalog(path="data/cash_prices.csv", max_age_days=14):
 def calculate_cash_side(
     items, catalog, side, sell_haircut_pct=15.0, max_age_days=14, now=None,
     allow_unverified_estimates=False, estimate_uncertainty_pct=30.0,
+    sell_haircut_tiers=None,
 ):
     """Return cash bounds; unverified legacy prices are estimate-only and opt-in.
 
@@ -176,14 +229,20 @@ def calculate_cash_side(
             missing.append(f"{name} (quantity uncertain/unbounded)")
             continue
         unit = float(entry["cash_price_usd"])
+        price_low = float(entry.get("price_low_usd", unit))
+        price_high = float(entry.get("price_high_usd", unit))
         uncertainty_factor = uncertainty / 100.0 if estimate_only else 0.0
+        applied_haircut = (
+            haircut_for_price(price_low, sell_haircut_tiers)
+            if side == "receive" and sell_haircut_tiers is not None else haircut
+        )
         if side == "receive":
-            unit_low = unit * (1.0 - uncertainty_factor) * (1.0 - haircut / 100.0)
-            unit_high = unit * (1.0 + uncertainty_factor) * (1.0 - haircut / 100.0)
+            unit_low = price_low * (1.0 - uncertainty_factor) * (1.0 - applied_haircut / 100.0)
+            unit_high = price_high * (1.0 + uncertainty_factor) * (1.0 - applied_haircut / 100.0)
             basis = "estimated net resale" if estimate_only else "net resale"
         else:
-            unit_low = unit * (1.0 - uncertainty_factor)
-            unit_high = unit * (1.0 + uncertainty_factor)
+            unit_low = price_low * (1.0 - uncertainty_factor)
+            unit_high = price_high * (1.0 + uncertainty_factor)
             basis = "estimated replacement cost" if estimate_only else "replacement cost"
         line_low = unit_low * qmin
         line_high = unit_high * qmax
@@ -191,9 +250,10 @@ def calculate_cash_side(
         high_total += line_high
         quantity_label = f"x{qmin}" if qmin == qmax else f"x? ({qmin}..{qmax})"
         estimate_label = " [ESTIMATE — UNVERIFIED LEGACY PRICE]" if estimate_only else ""
+        haircut_label = f", haircut {applied_haircut:.0f}%" if side == "receive" else ""
         lines.append(
-            f"• {name} {quantity_label} — ${unit_low:.2f}..${unit_high:.2f} each "
-            f"({basis}) = ${line_low:.2f}..${line_high:.2f}{estimate_label}"
+            f"• {name} {quantity_label} — " + "$" + f"{unit_low:.2f}.." + "$" + f"{unit_high:.2f} each "
+            f"({basis}{haircut_label}) = " + "$" + f"{line_low:.2f}.." + "$" + f"{line_high:.2f}{estimate_label}"
         )
     return low_total, high_total, lines, missing
 
