@@ -96,7 +96,7 @@ def load_cash_price_catalog(path="data/cash_prices.csv", max_age_days=14):
             }
     except csv.Error as exc:
         raise RuntimeError("[cash] Malformed cash-price CSV.") from exc
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
     fresh_rows = [row for row in rows.values() if cash_price_is_fresh(row, max_age_days=max_age_days, now=now_utc)]
     expiring_rows = []
     for row in fresh_rows:
