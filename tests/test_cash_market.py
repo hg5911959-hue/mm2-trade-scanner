@@ -99,6 +99,13 @@ class CashMarketTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self._catalog([self._row(verified="") | {"verified_at_utc": ""}])
 
+    def test_verified_row_requires_utc_iso_timestamp(self):
+        for timestamp in ("not-a-date", "2026-11-14T12:00:00+01:00"):
+            with self.subTest(timestamp=timestamp):
+                with self.assertRaises(RuntimeError):
+                    self._catalog([self._row(verified=timestamp)])
+
+
 
 if __name__ == "__main__":
     unittest.main()
