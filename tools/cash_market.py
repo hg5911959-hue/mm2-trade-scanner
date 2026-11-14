@@ -159,8 +159,8 @@ def calculate_cash_side(
         try:
             qmin_raw = item.get("quantity_min", item.get("quantity", 1))
             qmax_raw = item.get("quantity_max", item.get("quantity", qmin_raw))
-            qmin = _strict_quantity(qmin_raw)
-            qmax = _strict_quantity(qmax_raw) if qmax_raw is not None else None
+            qmin = strict_quantity(qmin_raw)
+            qmax = strict_quantity(qmax_raw) if qmax_raw is not None else None
         except (TypeError, ValueError):
             missing.append(f"{name} (quantity invalid)")
             continue
@@ -190,7 +190,7 @@ def calculate_cash_side(
     return low_total, high_total, lines, missing
 
 
-def _strict_quantity(value):
+def strict_quantity(value):
     """Parse a positive whole-item quantity without silently truncating data."""
     if isinstance(value, bool):
         raise TypeError("quantity must be a whole number, not a boolean")
