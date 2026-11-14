@@ -1,6 +1,7 @@
 import unittest
+from test_support import IsolatedDataTestCase
 from tools.alert_policy import rank_and_split
-class AlertPolicyTests(unittest.TestCase):
+class AlertPolicyTests(IsolatedDataTestCase):
     def test_twenty_qualifying_offers_split_fifteen_and_five(self):
         offers=[{"id":str(i),"difference":i,"margin":i} for i in range(20)]
         selected,deferred=rank_and_split(offers,15)

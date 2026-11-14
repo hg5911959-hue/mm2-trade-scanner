@@ -1,11 +1,12 @@
 import unittest
+from test_support import IsolatedDataTestCase
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from discord_collector import merge_messages, normalize_message, parse_guild_ids
 
 
-class DiscordCollectorTests(unittest.TestCase):
+class DiscordCollectorTests(IsolatedDataTestCase):
     def test_parse_guild_ids_deduplicates(self):
         self.assertEqual(
             parse_guild_ids("1125462206151143464;482699890741477376,1125462206151143464"),

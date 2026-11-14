@@ -1,13 +1,14 @@
 import json
 import tempfile
 import unittest
+from test_support import IsolatedDataTestCase
 from pathlib import Path
 from unittest.mock import patch
 
 import scanner
 
 
-class CashExpiryAlertTests(unittest.TestCase):
+class CashExpiryAlertTests(IsolatedDataTestCase):
     def test_runway_notice_triggers_at_three_day_boundary_and_lists_counts_only(self):
         with patch.object(scanner, "send_maintenance_alert") as alert:
             scanner.alert_cash_price_runway({"expiring_within_3_days": 1}, 8)

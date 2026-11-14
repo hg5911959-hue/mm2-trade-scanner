@@ -1,13 +1,16 @@
 """Regression tests for scanner cash-alert safety gates."""
 
+import csv
 import unittest
+from pathlib import Path
+from test_support import IsolatedDataTestCase
 from datetime import UTC, datetime
 
 import scanner
 from tools.cash_market import load_cash_price_catalog
 
 
-class ScannerCashSafetyTests(unittest.TestCase):
+class ScannerCashSafetyTests(IsolatedDataTestCase):
     def test_legacy_estimate_is_never_alert_eligible(self):
         result = {
             "cash_estimate_only": True,
@@ -71,16 +74,25 @@ class ScannerCashSafetyTests(unittest.TestCase):
         self.assertTrue(scanner.qualifies_cash(result))
 
     def test_user_confirmed_cash_catalogue_items_resolve_through_scanner(self):
-        catalog = load_cash_price_catalog("data/cash_prices.csv")
-        # Keep this integration test deterministic when the production prices expire.
-        now = datetime.now(UTC).isoformat()
-        for row in catalog["items"].values():
-            if row["status"] == "verified":
-                row["verified_at_utc"] = now
         names = (
             "Spirit", "Harvester", "Bat", "Immortal", "Icebreaker", "Bloom",
             "Snowstorm", "Candy", "Watergun", "Evergun", "Celestial",
         )
+        now = datetime.now(UTC).isoformat()
+        path = self.test_data_root / "cash_prices.csv"
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=[
+                "name", "cash_price_usd", "tier", "status",
+                "verified_at_utc", "source", "notes",
+            ])
+            writer.writeheader()
+            for name in names:
+                writer.writerow({
+                    "name": name, "cash_price_usd": "5", "tier": "test",
+                    "status": "verified", "verified_at_utc": now,
+                    "source": "synthetic_test_fixture", "notes": "",
+                })
+        catalog = load_cash_price_catalog(path)
         values = {
             name.casefold(): {
                 "name": name,

@@ -1,12 +1,13 @@
 import json
 import tempfile
 import unittest
+from test_support import IsolatedDataTestCase
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from tools.merge_discord_imports import merge_imports
 from tools.check_discord_import import validate
 
-class DiscordImportToolTests(unittest.TestCase):
+class DiscordImportToolTests(IsolatedDataTestCase):
     def row(self, mid, age=0):
         stamp = datetime.now(timezone.utc) - timedelta(hours=age)
         return {"message_id": mid, "content": "secret text", "created_at_utc": stamp.isoformat()}
