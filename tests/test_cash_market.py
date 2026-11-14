@@ -4,7 +4,9 @@ import unittest
 from pathlib import Path
 
 from tools.cash_market import (
-    calculate_cash_side, cash_profit_bounds, load_cash_price_catalog,
+    calculate_cash_side,
+    cash_profit_bounds,
+    load_cash_price_catalog,
     normalize_cash_name,
 )
 
@@ -91,9 +93,8 @@ class CashMarketTests(unittest.TestCase):
 
     def test_invalid_or_nonpositive_price_is_rejected(self):
         for price in ("0", "-1", "nan", "inf"):
-            with self.subTest(price=price):
-                with self.assertRaises(RuntimeError):
-                    self._catalog([self._row(price=price)])
+            with self.subTest(price=price), self.assertRaises(RuntimeError):
+                self._catalog([self._row(price=price)])
 
     def test_verified_row_requires_timestamp(self):
         with self.assertRaises(RuntimeError):
@@ -101,9 +102,8 @@ class CashMarketTests(unittest.TestCase):
 
     def test_verified_row_requires_utc_iso_timestamp(self):
         for timestamp in ("not-a-date", "2026-11-14T12:00:00+01:00"):
-            with self.subTest(timestamp=timestamp):
-                with self.assertRaises(RuntimeError):
-                    self._catalog([self._row(verified=timestamp)])
+            with self.subTest(timestamp=timestamp), self.assertRaises(RuntimeError):
+                self._catalog([self._row(verified=timestamp)])
 
 
 
