@@ -27,7 +27,7 @@ To update prices safely:
 2. Preview with `python tools/verify_cash_prices.py --input prices.txt --dry-run`, then run without `--dry-run` after reviewing the skipped-name summary. Large price changes are refused by default; use `--force` only after manual review.
 3. Check the scanner's cash-price maintenance notice and the weekly report.
 
-The verifier matches exact normalized names first and only then tries removing a trailing `knife`, `gun`, or `sword`. Unknown and ambiguous names are skipped. It never creates or deletes catalogue entries, never divides a multi-quantity total into a guessed unit price, and writes atomically. Keep the CSV private if marketplace prices are commercially sensitive; the repository fallback is visible to repository readers.
+For a private catalogue in this public repository, add a GitHub Actions repository secret named `CASH_PRICES_CSV` containing the complete CSV text. The scan workflow validates its header and atomically uses it only for that run; the secret is redacted from logs and the CSV is excluded from state artifacts. When the secret is absent, the tracked `data/cash_prices.csv` remains the fallback. The bulk verifier changes the local/repository CSV only; after reviewing it, update the GitHub secret separately if you use the private option.\n\nThe verifier matches exact normalized names first and only then tries removing a trailing `knife`, `gun`, or `sword`. Unknown and ambiguous names are skipped. It never creates or deletes catalogue entries, never divides a multi-quantity total into a guessed unit price, and writes atomically. Keep the CSV private if marketplace prices are commercially sensitive; the repository fallback is visible to repository readers.
 
 ### Quantity handling
 
