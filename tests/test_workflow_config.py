@@ -37,14 +37,12 @@ class WorkflowReliabilityTests(unittest.TestCase):
         artifact = workflow.split("      - name: Prepare state artifact", 1)[1].split("      - name:", 1)[0]
         self.assertIn("rm -f state-bundle/data/cash_prices.csv", artifact)
         self.assertIn('cron: "*/10 * * * *"', scheduler)
+        self.assertIn("workflow_dispatch:", scheduler)
         self.assertIn("uses: ./.github/workflows/scan.yml", scheduler)
         self.assertIn("secrets: inherit", scheduler)
         self.assertIn("contents: write", scheduler)
-        self.assertIn("actions: write", scheduler)
-        self.assertIn("Re-enable scheduled workflows if GitHub disabled them", scheduler)
-        self.assertIn("/actions/workflows/$workflow_id/enable", scheduler)
-        self.assertIn('workflows: ["MM2 Scanner Tests"]', scheduler)
-        self.assertIn("github.event.workflow_run.conclusion == 'success'", scheduler)
+        self.assertNotIn("workflow_run:", scheduler)
+        self.assertNotIn("enable-schedules:", scheduler)
 
 
     def test_watchdog_restores_inactivity_disabled_scan_schedule_but_respects_manual_disable(self):
