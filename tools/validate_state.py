@@ -204,12 +204,95 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
     return errors
 
 
+def validate_api_safety_state(directory: str | Path) -> list[str]:
+    """Validate only the small API safety ledger used after failed scans."""
+    root = Path(directory)
+    if not root.exists():
+        return []
+    files = [path for path in root.rglob("*") if path.is_file()]
+    allowed = {"rblxvalue_request_budget.json", "api_key_blocked.json"}
+    errors: list[str] = []
+    unexpected = [path.name for path in files if path.name not in allowed]
+    if unexpected:
+        errors.append("API safety artifact contains unexpected files")
+    if any(path.name.endswith(".tmp") for path in files):
+        errors.append("API safety artifact contains an unfinished temporary file")
+
+    budget_path = root / "rblxvalue_request_budget.json"
+    if budget_path.exists():
+        try:
+            budget = json.loads(budget_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            budget = None
+            errors.append("RBLXValue request budget JSON is invalid")
+        if not isinstance(budget, dict):
+            errors.append("RBLXValue request budget root must be an object")
+        else:
+            version = budget.get("schema_version", 1)
+            if type(version) is not int or version != 1:
+                errors.append("RBLXValue request budget schema is unsupported")
+            if budget.get("window", "rolling_24_hours") != "rolling_24_hours":
+                errors.append("RBLXValue request budget window is invalid")
+            limit = budget.get("limit")
+            if type(limit) is not int or not 1 <= limit <= 60:
+                errors.append("RBLXValue request budget limit is invalid")
+            timestamps = budget.get("request_timestamps_epoch")
+            if (
+                not isinstance(timestamps, list)
+                or len(timestamps) > 60
+                or any(not _finite_positive(value) for value in timestamps)
+            ):
+                errors.append("RBLXValue request budget timestamps are invalid")
+
+    block_path = root / "api_key_blocked.json"
+    if block_path.exists():
+        try:
+            block = json.loads(block_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            block = None
+            errors.append("RBLXValue breaker JSON is invalid")
+        if not isinstance(block, dict):
+            errors.append("RBLXValue breaker root must be an object")
+        else:
+            fingerprint = block.get("key_fingerprint")
+            if (
+                not isinstance(fingerprint, str) or len(fingerprint) != 16
+                or any(char not in "0123456789abcdef" for char in fingerprint)
+            ):
+                errors.append("RBLXValue breaker fingerprint is invalid")
+            permanent = block.get("permanent")
+            consecutive = block.get("consecutive_blocks")
+            seconds = block.get("blocked_seconds")
+            until = block.get("blocked_until_epoch")
+            if (
+                type(block.get("schema_version")) is not int
+                or block.get("schema_version") != 2
+                or not isinstance(permanent, bool)
+                or type(consecutive) is not int or consecutive < 1
+                or not _finite_positive(seconds)
+                or seconds not in (21600, 43200, 86400, 172800)
+                or not _finite_positive(until)
+            ):
+                errors.append("RBLXValue breaker timing or schema is invalid")
+            else:
+                expected_permanent = consecutive >= 3
+                expected_seconds = (21600, 43200, 86400, 172800)[min(consecutive - 1, 3)]
+                if permanent != expected_permanent or seconds != expected_seconds:
+                    errors.append("RBLXValue breaker escalation is inconsistent")
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--directory", default="state-artifact/data")
     parser.add_argument("--require-cache", action="store_true")
+    parser.add_argument("--api-safety-only", action="store_true")
     args = parser.parse_args()
-    errors = validate_state(args.directory, require_cache=args.require_cache)
+    errors = (
+        validate_api_safety_state(args.directory)
+        if args.api_safety_only
+        else validate_state(args.directory, require_cache=args.require_cache)
+    )
     if errors:
         for error in errors:
             print(f"[state-validation] ERROR: {error}")
