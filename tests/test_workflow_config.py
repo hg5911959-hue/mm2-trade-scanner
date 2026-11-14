@@ -45,6 +45,16 @@ class WorkflowReliabilityTests(unittest.TestCase):
         self.assertNotIn("enable-schedules:", scheduler)
 
 
+    def test_api_safety_ledger_is_persisted_when_scan_fails_without_replacing_cache(self):
+        workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        self.assertIn("name: Upload API safety ledger", workflow)
+        self.assertIn("--api-safety-only", workflow)
+        self.assertIn("Persist API safety ledger after failed scan", workflow)
+        self.assertIn("needs.scan.result != 'success'", workflow)
+        self.assertIn("steps.persist-state.outcome == 'success'", workflow)
+        self.assertIn("Persisted only validated API safety files", workflow)
+        self.assertIn("hashFiles('api-safety-artifact/data/*.json') != ''", workflow)
+
     def test_watchdog_restores_inactivity_disabled_scan_schedule_but_respects_manual_disable(self):
         scheduler = (ROOT / ".github/workflows/watchdog-scheduler.yml").read_text(encoding="utf-8")
         self.assertIn("actions: write", scheduler)
