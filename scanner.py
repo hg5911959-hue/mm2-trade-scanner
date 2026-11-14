@@ -1982,8 +1982,12 @@ def _enrich_catalog_metadata_gaps(values, cache_document, source_meta=None, pers
                 ):
                     continue
                 if prior.get("source_version") == source_version:
+                    status = prior.get("status")
                     retry_after = float(prior.get("retry_after", 0) or 0)
-                    if prior.get("status") != "error" or retry_after > now:
+                    if status in {"pending", "error"}:
+                        if retry_after > now:
+                            continue
+                    else:
                         continue
             try:
                 value_priority = float(variant.get("value") or 0)
