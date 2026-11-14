@@ -1071,7 +1071,22 @@ def _open_rblxvalue_url(req, timeout):
 
 def request_with_retry(req, timeout, label, attempts=4, return_headers=False, allow_not_modified=False):
     """Retry transient failures with exponential backoff and respect Retry-After."""
-    is_rblxvalue = label == "RBLXValue API"
+    request_url = req.full_url if isinstance(req, urllib.request.Request) else str(req)
+    request_headers = {}
+    request_headers.update(getattr(req, "headers", {}) or {})
+    request_headers.update(getattr(req, "unredirected_hdrs", {}) or {})
+    carries_api_key = any(str(name).casefold() == "x-api-key" for name in request_headers)
+    is_rblxvalue = label == "RBLXValue API" or carries_api_key
+    if is_rblxvalue:
+        target = urlsplit(request_url)
+        if (
+            target.scheme != "https"
+            or target.hostname != "api.rblxvalue.com"
+            or target.port not in (None, 443)
+        ):
+            raise RuntimeError(
+                "[rblxvalue] Refusing credential-bearing request to a non-allowlisted HTTPS origin"
+            )
     for attempt in range(attempts):
         if is_rblxvalue:
             rblxvalue_guard.reserve_request(key=RBLXVALUE_API_KEY)
