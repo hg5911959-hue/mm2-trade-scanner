@@ -111,7 +111,7 @@ def redact(text):
         for name in (
             "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "RBLXVALUE_API_KEY",
             "DISCORD_BOT_TOKEN", "DISCORD_MANUAL_MESSAGES_JSON",
-            "DISCORD_MANUAL_MESSAGES_JSON_2",
+            "DISCORD_MANUAL_MESSAGES_JSON_2", "CASH_PRICES_CSV",
         )
     } | {BOT_TOKEN, CHAT_ID, RBLXVALUE_API_KEY}
     # Also redact individual text fields from manual-import JSON in case a
