@@ -136,8 +136,29 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RBLXVALUE_API_KEY: ${{ secrets.RBLXVALUE_API_KEY }}
+          CASH_PRICES_CSV: ${{ secrets.CASH_PRICES_CSV }}
+          CASH_MAX_AGE_DAYS: "14"
         run: |
           mkdir -p data
+          if [ -n "$CASH_PRICES_CSV" ]; then
+            python - <<'PY'
+          import csv, io, os, tempfile
+          from pathlib import Path
+          raw = os.environ["CASH_PRICES_CSV"]
+          reader = csv.DictReader(io.StringIO(raw))
+          required = {"name", "cash_price_usd", "tier", "status", "verified_at_utc", "source", "notes"}
+          if not reader.fieldnames or not required.issubset(reader.fieldnames):
+              raise SystemExit("CASH_PRICES_CSV has an invalid header; tracked fallback retained.")
+          path = Path("data/cash_prices.csv")
+          fd, temp = tempfile.mkstemp(prefix="cash_prices.", suffix=".tmp", dir="data")
+          with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+              handle.write(raw)
+              handle.flush()
+              os.fsync(handle.fileno())
+          os.replace(temp, path)
+          print("[cash] Loaded private price catalogue secret; contents suppressed.")
+          PY
+          fi
           set -o pipefail
           python -u scanner.py 2>&1 | tee scanner.log
 
