@@ -3977,15 +3977,16 @@ def scan_once(include_backlog_rechecks=True):
     if expired_cash_rows:
         oldest_names = ", ".join(row["name"] for row in expired_cash_rows[:5])
         send_maintenance_alert(
-            "cash-price-expired-" + datetime.now(timezone.utc).date().isoformat(),
+            "cash-price-expired",
             f"{len(expired_cash_rows)} verified cash prices have expired (>{CASH_MAX_AGE_DAYS} days). "
             f"Oldest entries: {oldest_names}. Re-verify them before they can qualify.",
             cooldown_seconds=86400,
         )
     previous_cash_hash = cash_catalog_snapshot_hash()
     cash_prices_changed = previous_cash_hash != cash_catalog["sha256"]
-    print("[cash] Loaded %s price rows; verified=%s; unverified=%s; sell_haircut=%s%%" % (
-        cash_catalog["row_count"], verified_cash_rows, unverified_cash_rows, CASH_SELL_HAIRCUT_PCT
+    print("[cash] Loaded %s price rows; verified=%s; expired=%s; unverified=%s; max_age=%sd; sell_haircut=%s%%" % (
+        cash_catalog["row_count"], verified_cash_rows, len(expired_cash_rows),
+        unverified_cash_rows, CASH_MAX_AGE_DAYS, CASH_SELL_HAIRCUT_PCT
     ))
     if unverified_cash_rows > 0:
         send_maintenance_alert(
