@@ -239,6 +239,26 @@ class RblxValueGuardTests(unittest.TestCase):
             guard.is_key_blocked(now=1_800_000_000, key="rbx_test_key",
                                  block_path=self.block)
 
+    def test_breaker_rejects_unsupported_schema_and_boolean_epoch(self):
+        base = {
+            "schema_version": 2, "key_fingerprint": guard.key_fingerprint("rbx_test_key"),
+            "blocked_until_epoch": 1_900_000_000, "blocked_seconds": 21600,
+            "permanent": False, "consecutive_blocks": 1,
+        }
+        for update, message in (
+            ({"schema_version": 1}, "unsupported schema"),
+            ({"blocked_until_epoch": True}, "invalid block timing"),
+            ({"blocked_seconds": True}, "invalid block timing"),
+            ({"consecutive_blocks": 3}, "inconsistent block escalation"),
+            ({"blocked_seconds": 43200}, "inconsistent block escalation"),
+        ):
+            with self.subTest(update=update):
+                self.block.write_text(json.dumps({**base, **update}), encoding="utf-8")
+                with self.assertRaisesRegex(guard.RblxValueGuardError, message):
+                    guard.is_key_blocked(now=1_800_000_000, key="rbx_test_key",
+                                         block_path=self.block)
+
+
 
 if __name__ == "__main__":
     unittest.main()
