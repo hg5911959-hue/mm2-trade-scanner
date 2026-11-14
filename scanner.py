@@ -3662,6 +3662,155 @@ def qualifies(result, min_diff=None, min_percent=None):
     return metric > 0 and metric >= min_diff and result["margin"] >= min_percent
 
 
+def evaluate_cash_listing(listing, values, aliases, cash_catalog):
+    """Evaluate cash resale profit only; Supreme is used for identity/stability gates."""
+    if not listing.get("give_items") or not listing.get("receive_items"):
+        return None, ["one side has no items"]
+
+    prepared = {"give": [], "receive": []}
+    missing = []
+    for side, field in (("give", "give_items"), ("receive", "receive_items")):
+        for item in listing.get(field, []):
+            record, match_source, candidates = resolve_value_record(
+                item.get("name", ""), values, aliases, item=item
+            )
+            if not record:
+                suffix = f" (ambiguous: {', '.join(candidates)})" if candidates else " (not in Supreme catalogue)"
+                missing.append(f"{item.get('name', 'Unknown')}{suffix}")
+                continue
+            variants = record.get("variants") or [record]
+            if len(variants) != 1:
+                missing.append(f"{item.get('name')} (ambiguous Supreme identity)")
+                continue
+            selected = variants[0]
+            canonical_name = str(selected.get("name") or record.get("name") or item.get("name") or "").strip()
+            if not canonical_name:
+                missing.append(f"{item.get('name')} (Supreme identity missing)")
+                continue
+
+            stability = _normalize_stability(selected.get("stability"))
+            stability_key = stability.casefold() if stability else ""
+            if stability_key == "untradeable":
+                missing.append(f"{canonical_name} (Untradeable)")
+                continue
+            if side == "receive":
+                if "stability" not in selected or stability_key not in RBLXVALUE_STABILITY_LABELS:
+                    missing.append(f"{canonical_name} (Stability unverified)")
+                    continue
+                if stability_key in BLOCKED_RECEIVE_STABILITY:
+                    missing.append(f"{canonical_name} (Stability: {stability}; excluded)")
+                    continue
+
+            quantity = item.get("quantity")
+            qmin = item.get("quantity_min")
+            qmax = item.get("quantity_max")
+            source = item.get("quantity_source", "implicit_single")
+            try:
+                qmin = int(qmin if qmin is not None else (quantity if quantity is not None else 1))
+                if qmax is None and quantity is not None and source != "uncertain":
+                    qmax = quantity
+                qmax = int(qmax) if qmax is not None else None
+            except (TypeError, ValueError):
+                qmin, qmax = 1, None
+            if qmin < 1 or qmin > 100 or qmax is None or qmax < qmin or qmax > 100:
+                missing.append(f"{canonical_name} (quantity uncertain/unbounded)")
+                continue
+
+            prepared[side].append({
+                "name": canonical_name,
+                "canonical_name": canonical_name,
+                "quantity_min": qmin,
+                "quantity_max": qmax,
+                "stability": stability or "N/A",
+                "match_source": match_source,
+            })
+
+    if missing:
+        return None, missing
+    if not prepared["give"] or not prepared["receive"]:
+        return None, ["one side has no Supreme-catalogued items"]
+
+    give_min, give_max, give_lines, give_missing = calculate_cash_side(
+        prepared["give"], cash_catalog, "give", 0
+    )
+    receive_min, receive_max, receive_lines, receive_missing = calculate_cash_side(
+        prepared["receive"], cash_catalog, "receive", CASH_SELL_HAIRCUT_PCT
+    )
+    missing = give_missing + receive_missing
+    if missing:
+        return None, missing
+
+    give_lines = [
+        line + f" | RBLXValue Stability: {item['stability']}"
+        for line, item in zip(give_lines, prepared["give"])
+    ]
+    receive_lines = [
+        line + f" | RBLXValue Stability: {item['stability']}"
+        for line, item in zip(receive_lines, prepared["receive"])
+    ]
+    profit_worst, profit_best = cash_profit_bounds(
+        (give_min, give_max), (receive_min, receive_max)
+    )
+    manual_review = profit_worst <= 0 < profit_best
+    margin = (profit_worst / give_max * 100.0) if give_max > 0 else 0.0
+    listing["valuation_mode"] = "cash"
+    return {
+        "listing": listing,
+        "give_total": give_max,
+        "give_total_min": give_min,
+        "give_total_max": give_max,
+        "give_lines": give_lines,
+        "receive_total": receive_min,
+        "receive_total_min": receive_min,
+        "receive_total_max": receive_max,
+        "receive_lines": receive_lines,
+        "difference": profit_worst,
+        "profit_worst": profit_worst,
+        "profit_best": profit_best,
+        "margin": margin,
+        "manual_review": manual_review,
+        "uncertain_items": [],
+        "cash_sell_haircut_pct": CASH_SELL_HAIRCUT_PCT,
+        "cash_profit_worst": profit_worst,
+        "cash_profit_best": profit_best,
+        "cash_price_basis": "verified manual USD resale catalogue",
+        "receive_demand_score": None,
+        "receive_stability_score": None,
+    }, []
+
+
+def qualifies_cash(result):
+    """Cash-only alert gate; Supreme numeric value and Demand never rank profit."""
+    if result.get("manual_review"):
+        return False
+    profit = float(result.get("cash_profit_worst", result.get("profit_worst", 0)))
+    margin = float(result.get("margin", 0))
+    return (
+        math.isfinite(profit) and math.isfinite(margin)
+        and profit >= CASH_MIN_PROFIT_USD
+        and margin >= CASH_MIN_MARGIN_PERCENT
+    )
+
+
+def cash_catalog_snapshot_hash():
+    if not CASH_PRICE_SNAPSHOT_FILE.exists():
+        return ""
+    try:
+        data = json.loads(CASH_PRICE_SNAPSHOT_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("[cash] Cash-price snapshot state is unreadable; refusing to skip catalogue rechecks.") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("sha256"), str):
+        raise RuntimeError("[cash] Cash-price snapshot state has an invalid structure.")
+    return data["sha256"]
+
+
+def save_cash_catalog_snapshot(digest):
+    atomic_write_text(
+        CASH_PRICE_SNAPSHOT_FILE,
+        json.dumps({"version": 1, "sha256": str(digest)}, indent=2) + "\n",
+    )
+
+
 def should_alert_malformed_cards(issue_count):
     """Any malformed card is actionable; rate limits belong to the persisted cooldown."""
     try:
