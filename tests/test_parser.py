@@ -45,6 +45,21 @@ def normalize_fixture_id(name):
     return re.sub(r"[^a-z0-9]+", "-", str(name).casefold()).strip("-")
 
 
+def cash_ready_values(values):
+    ready = {}
+    for key, record in values.items():
+        copied = dict(record)
+        if isinstance(copied.get("variants"), list):
+            copied["variants"] = [
+                {**variant, "stability": variant.get("stability", "Stable")}
+                for variant in copied["variants"]
+            ]
+        else:
+            copied.setdefault("stability", "Stable")
+        ready[key] = copied
+    return ready
+
+
 class ParserTests(unittest.TestCase):
     def test_extracts_both_trade_sides_and_links(self):
         html = """
@@ -342,6 +357,33 @@ class ParserTests(unittest.TestCase):
 
 
 class ReliabilityTests(unittest.TestCase):
+    def setUp(self):
+        self.cash_state_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.cash_state_dir.cleanup)
+        names = {
+            "Knife A": 10, "Knife B": 20,
+            "Harvester": 10, "Spirit": 20,
+            "Heartblade": 10, "Xmas": 20,
+        }
+        items = {
+            scanner.normalize_cash_name(name): {
+                "name": name, "cash_price_usd": price, "status": "verified",
+                "verified_at_utc": "2026-11-14T00:00:00Z",
+            }
+            for name, price in names.items()
+        }
+        self.cash_catalog_patch = patch(
+            "scanner.load_cash_price_catalog",
+            return_value={"items": items, "sha256": "reliability-fixture", "row_count": len(items)},
+        )
+        self.cash_catalog_patch.start()
+        self.addCleanup(self.cash_catalog_patch.stop)
+        self.cash_snapshot_patch = patch(
+            "scanner.CASH_PRICE_SNAPSHOT_FILE",
+            Path(self.cash_state_dir.name) / "cash-price-snapshot.json",
+        )
+        self.cash_snapshot_patch.start()
+        self.addCleanup(self.cash_snapshot_patch.stop)
     def test_same_name_items_keep_identity_and_never_become_a_fake_range(self):
         items = [
             {"id": 380, "slug": "rainbow-gun", "name": "Rainbow Gun",
@@ -1178,7 +1220,7 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.PENDING_RECHECK_SCHEDULE_FILE", root / "pending_schedule.json"),
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
                  patch("scanner.WATCH_FILE", root / "watch.json"),
-                patch("scanner.load_supreme_values", return_value=values),
+                patch("scanner.load_supreme_values", return_value=cash_ready_values(values)),
                 patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)),
                 patch("scanner.send_telegram", side_effect=[RuntimeError("rejected"), None]) as send,
                 patch("scanner.compare_secondary_values", return_value=""),
@@ -1224,7 +1266,7 @@ class ReliabilityTests(unittest.TestCase):
                 patch("scanner.SEEN_FILE", root / "seen_ads.json"),
                 patch("scanner.PENDING_FILE", root / "pending.json"),
                 patch("scanner.WATCH_FILE", root / "watch.json"),
-                patch("scanner.load_supreme_values", return_value=values),
+                patch("scanner.load_supreme_values", return_value=cash_ready_values(values)),
                 patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)),
                 patch("scanner.send_telegram") as send,
                 patch("scanner.compare_secondary_values", return_value=""),
@@ -1278,7 +1320,7 @@ class ReliabilityTests(unittest.TestCase):
                 patch("scanner.SEEN_FILE", root / "seen_ads.json"),
                  patch("scanner.PENDING_FILE", root / "pending.json"),
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
-                patch("scanner.load_supreme_values", return_value=values),
+                patch("scanner.load_supreme_values", return_value=cash_ready_values(values)),
                 patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)),
                 patch("scanner.send_telegram", side_effect=scanner.TelegramDeliveryUncertain("unknown")),
                 patch("scanner.compare_secondary_values", return_value=""),
@@ -1318,7 +1360,7 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.PENDING_RECHECK_SCHEDULE_FILE", root / "pending_schedule.json"), \
                  patch("scanner.WATCH_FILE", root / "watch.json"), \
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"), \
-                 patch("scanner.load_supreme_values", side_effect=value_sets), \
+                 patch("scanner.load_supreme_values", side_effect=[cash_ready_values(value) for value in value_sets]), \
                  patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)), \
                  patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)), \
                  patch("scanner.compare_secondary_values", return_value=""):
@@ -1365,7 +1407,7 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.PENDING_FILE", root / "pending.json"),
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
                 patch("scanner.WATCH_FILE", root / "watch.json"),
-                patch("scanner.load_supreme_values", return_value=values),
+                patch("scanner.load_supreme_values", return_value=cash_ready_values(values)),
                 patch("scanner.fetch_bloxswaps", return_value=with_rsc(page)),
                 patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)),
                 patch("scanner.compare_secondary_values", return_value=""),
@@ -1411,7 +1453,7 @@ class ReliabilityTests(unittest.TestCase):
                 patch("scanner.PENDING_RECHECK_SCHEDULE_FILE", root / "pending_schedule.json"),
                 patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"),
                 patch("scanner.WATCH_FILE", root / "watch.json"),
-                patch("scanner.load_supreme_values", return_value=values),
+                patch("scanner.load_supreme_values", return_value=cash_ready_values(values)),
                 patch("scanner.fetch_bloxswaps", return_value=with_rsc(page)),
                 patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)),
                 patch("scanner.compare_secondary_values", return_value=""),
@@ -1421,12 +1463,12 @@ class ReliabilityTests(unittest.TestCase):
                     scanner.main()
                 first_pending = json.loads((root / "pending.json").read_text(encoding="utf-8"))["pending"]
                 first_schedule = json.loads((root / "pending_schedule.json").read_text(encoding="utf-8"))["schedule"]
-                self.assertEqual(sum("MARGIN:" in message for message in sent), 2)
+                self.assertEqual(sum("CASH ROI:" in message for message in sent), 2)
                 self.assertEqual(len(first_pending), 3)
                 self.assertTrue(all(first_schedule[key]["reason"] == "deferred_offer" for key in first_pending))
                 with patch.dict(os.environ, {"MAX_ALERTS_PER_SCAN": "5"}):
                     scanner.main()
-            self.assertEqual(sum("MARGIN:" in message for message in sent), 5)
+            self.assertEqual(sum("CASH ROI:" in message for message in sent), 5)
             alerted = json.loads((root / "alerted.json").read_text(encoding="utf-8"))["alerted"]
             self.assertEqual(len(alerted), 5)
             self.assertEqual(json.loads((root / "pending.json").read_text(encoding="utf-8"))["pending"], {})
@@ -1456,8 +1498,8 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.PENDING_FILE", root / "pending.json"), \
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"), \
                  patch("scanner.load_supreme_values", return_value={
-                     "knife a": {"name": "Knife A", "value": 10},
-                     "knife b": {"name": "Knife B", "value": 20},
+                     "knife a": {"name": "Knife A", "value": 10, "stability": "Stable"},
+                     "knife b": {"name": "Knife B", "value": 20, "stability": "Stable"},
                  }), patch("scanner.fetch_bloxswaps", side_effect=[with_rsc(item) for item in sequence]), \
                  patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)), \
                  patch("scanner.compare_secondary_values", return_value=""):
@@ -3461,7 +3503,7 @@ class ColdStartPaginationTests(unittest.TestCase):
 
 
 class RealAlertReevaluationIntegrationTests(unittest.TestCase):
-    def test_previously_alerted_ad_realerts_when_supreme_values_make_it_profitable(self):
+    def test_previously_alerted_ad_realerts_when_cash_prices_make_it_profitable(self):
         listing = {
             "id": "stable-ad-id", "source_ad_id": "same-source-ad",
             "owner_url": "https://bloxswaps.com/fr/users/123",
@@ -3472,14 +3514,29 @@ class RealAlertReevaluationIntegrationTests(unittest.TestCase):
                                "quantity_min": 1, "quantity_max": 1}],
         }
         values_before = {
-            "knife a": {"name": "Knife A", "value": 20},
-            "knife b": {"name": "Knife B", "value": 10},
+            "knife a": {"name": "Knife A", "value": 20, "stability": "Stable"},
+            "knife b": {"name": "Knife B", "value": 10, "stability": "Stable"},
         }
         values_after = {
-            "knife a": {"name": "Knife A", "value": 20},
-            "knife b": {"name": "Knife B", "value": 30},
+            "knife a": {"name": "Knife A", "value": 20, "stability": "Stable"},
+            "knife b": {"name": "Knife B", "value": 30, "stability": "Stable"},
         }
-        old_content, old_values = scanner.listing_watch_fingerprints(listing, values_before)
+        def catalog(knife_b_price):
+            return {"items": {
+                scanner.normalize_cash_name("Knife A"): {
+                    "name": "Knife A", "cash_price_usd": 10.0, "status": "verified",
+                    "verified_at_utc": "2026-11-14T00:00:00Z",
+                },
+                scanner.normalize_cash_name("Knife B"): {
+                    "name": "Knife B", "cash_price_usd": knife_b_price, "status": "verified",
+                    "verified_at_utc": "2026-11-14T00:00:00Z",
+                },
+            }, "sha256": str(knife_b_price), "row_count": 2}
+        old_catalog = catalog(10)
+        new_catalog = catalog(30)
+        old_content, old_values = scanner.listing_watch_fingerprints(
+            listing, values_before, {}, old_catalog
+        )
         previous_watch = {
             "same-source-ad": {
                 "content_hash": old_content, "values_hash": old_values,
@@ -3509,6 +3566,8 @@ class RealAlertReevaluationIntegrationTests(unittest.TestCase):
                 stack.enter_context(patch("scanner.FIRST_SEEN_FILE", root / "first-seen.json"))
                 stack.enter_context(patch("scanner.FAILURE_FILE", root / "failure.json"))
                 stack.enter_context(patch("scanner.load_supreme_values", return_value=values_after))
+                stack.enter_context(patch("scanner.load_cash_price_catalog", return_value=new_catalog))
+                stack.enter_context(patch("scanner.CASH_PRICE_SNAPSHOT_FILE", root / "cash-price-snapshot.json"))
                 stack.enter_context(patch("scanner.load_aliases", return_value={}))
                 stack.enter_context(patch("scanner.load_seen_ads", return_value={"same-source-ad"}))
                 stack.enter_context(patch("scanner.load_pending_ids", return_value={}))
@@ -3527,7 +3586,7 @@ class RealAlertReevaluationIntegrationTests(unittest.TestCase):
                 scanner.main()
         trade_messages = [message for message in sent if "💎 MM2 TRADE" in message]
         self.assertEqual(len(trade_messages), 1)
-        self.assertIn("PROFIT: +10", trade_messages[0])
+        self.assertIn("CASH PROFIT (CONSERVATIVE): +$15.5", trade_messages[0])
 
 
 
@@ -3609,3 +3668,131 @@ class UpstreamForbiddenDiagnosticsTests(unittest.TestCase):
                     scanner.request_with_retry("https://api.rblxvalue.com/v2/items", 10, "RBLXValue API", attempts=4)
                 self.assertEqual(request.call_count, 1)
                 self.assertFalse((root / "blocked.json").exists())
+
+
+class CashFirstEvaluatorTests(unittest.TestCase):
+    def setUp(self):
+        self.values = {
+            "chroma laser": {"name": "Chroma Laser", "value": 100, "stability": "Stable", "demand": 0},
+            "chroma gemstone": {"name": "Chroma Gemstone", "value": None, "stability": "Stable", "demand": 0},
+            "chroma heat": {"name": "Chroma Heat", "value": 2, "stability": "Decreasing", "demand": 10},
+        }
+        self.catalog = {
+            "items": {
+                scanner.normalize_cash_name("Chroma Laser"): {
+                    "name": "Chroma Laser", "cash_price_usd": 10.0, "status": "verified"
+                },
+                scanner.normalize_cash_name("Chroma Gemstone"): {
+                    "name": "Chroma Gemstone", "cash_price_usd": 20.0, "status": "verified"
+                },
+                scanner.normalize_cash_name("Chroma Heat"): {
+                    "name": "Chroma Heat", "cash_price_usd": 100.0, "status": "verified"
+                },
+            }
+        }
+        self.listing = {
+            "id": "cash-test",
+            "give_items": [{
+                "name": "Chroma Laser", "quantity": 1, "quantity_min": 1,
+                "quantity_max": 1, "quantity_source": "implicit_single",
+            }],
+            "receive_items": [{
+                "name": "Chroma Gemstone", "quantity": 1, "quantity_min": 1,
+                "quantity_max": 1, "quantity_source": "implicit_single",
+            }],
+        }
+
+    def test_cash_profit_overrides_opposite_supreme_value_spread_and_low_demand(self):
+        result, missing = scanner.evaluate_cash_listing(
+            self.listing.copy(), self.values, {}, self.catalog
+        )
+        self.assertEqual(missing, [])
+        self.assertIsNotNone(result)
+        self.assertAlmostEqual(result["cash_profit_worst"], 7.0)
+        self.assertTrue(scanner.qualifies_cash(result))
+        self.assertEqual(result["receive_demand_score"], None)
+
+    def test_cash_price_fingerprint_changes_for_non_numeric_supreme_items(self):
+        listing = self.listing
+        catalog_a = {"items": dict(self.catalog["items"])}
+        catalog_b = {"items": dict(self.catalog["items"])}
+        catalog_a["items"][scanner.normalize_cash_name("Chroma Gemstone")] = {
+            "name": "Chroma Gemstone", "cash_price_usd": 20.0, "status": "verified"
+        }
+        catalog_b["items"][scanner.normalize_cash_name("Chroma Gemstone")] = {
+            "name": "Chroma Gemstone", "cash_price_usd": 25.0, "status": "verified"
+        }
+        _content_a, values_a = scanner.listing_watch_fingerprints(
+            listing, self.values, {}, catalog_a
+        )
+        _content_b, values_b = scanner.listing_watch_fingerprints(
+            listing, self.values, {}, catalog_b
+        )
+        self.assertNotEqual(values_a, values_b)
+
+    def test_bad_receive_stability_remains_blocked_even_with_high_cash_price(self):
+        listing = dict(self.listing)
+        listing["receive_items"] = [{
+            "name": "Chroma Heat", "quantity": 1, "quantity_min": 1,
+            "quantity_max": 1, "quantity_source": "implicit_single",
+        }]
+        result, missing = scanner.evaluate_cash_listing(
+            listing, self.values, {}, self.catalog
+        )
+        self.assertIsNone(result)
+        self.assertTrue(any("Decreasing" in value for value in missing))
+
+    def test_receding_receive_stability_is_also_blocked(self):
+        values = dict(self.values)
+        values["chroma heat"] = {
+            "name": "Chroma Heat", "value": 1000, "stability": "Receding"
+        }
+        listing = dict(self.listing)
+        listing["receive_items"] = [{
+            "name": "Chroma Heat", "quantity": 1, "quantity_min": 1,
+            "quantity_max": 1, "quantity_source": "implicit_single",
+        }]
+        result, missing = scanner.evaluate_cash_listing(
+            listing, values, {}, self.catalog
+        )
+        self.assertIsNone(result)
+        self.assertTrue(any("Receding" in value for value in missing))
+
+    def test_unverified_cash_price_is_never_used(self):
+        catalog = {"items": dict(self.catalog["items"])}
+        catalog["items"][scanner.normalize_cash_name("Chroma Gemstone")] = {
+            "name": "Chroma Gemstone", "cash_price_usd": 20.0, "status": "unverified"
+        }
+        result, missing = scanner.evaluate_cash_listing(
+            self.listing, self.values, {}, catalog
+        )
+        self.assertIsNone(result)
+        self.assertTrue(any("cash price unverified" in value for value in missing))
+
+    def test_item_outside_supreme_catalogue_is_rejected(self):
+        listing = dict(self.listing)
+        listing["receive_items"] = [{
+            "name": "Unknown Knife", "quantity": 1, "quantity_min": 1,
+            "quantity_max": 1, "quantity_source": "implicit_single",
+        }]
+        result, missing = scanner.evaluate_cash_listing(
+            listing, self.values, {}, self.catalog
+        )
+        self.assertIsNone(result)
+        self.assertTrue(any("not in Supreme catalogue" in value for value in missing))
+
+    def test_quantity_uncertainty_uses_worst_case_cash_profit(self):
+        listing = dict(self.listing)
+        listing["receive_items"] = [{
+            "name": "Chroma Gemstone", "quantity": None, "quantity_min": 1,
+            "quantity_max": 2, "quantity_source": "uncertain",
+        }]
+        result, missing = scanner.evaluate_cash_listing(
+            listing, self.values, {}, self.catalog
+        )
+        self.assertEqual(missing, [])
+        self.assertAlmostEqual(result["cash_profit_worst"], 7.0)
+        self.assertAlmostEqual(result["cash_profit_best"], 24.0)
+        self.assertTrue(scanner.qualifies_cash(result))
+
+

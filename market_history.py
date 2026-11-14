@@ -257,6 +257,10 @@ class MarketHistory:
             "give_lines": opportunity.get("give_lines") or [],
             "receive_lines": opportunity.get("receive_lines") or [],
             "manual_review": bool(opportunity.get("manual_review")),
+            "valuation_mode": str(listing.get("valuation_mode") or "supreme")[:24],
+            "cash_profit_worst": opportunity.get("cash_profit_worst"),
+            "cash_profit_best": opportunity.get("cash_profit_best"),
+            "cash_sell_haircut_pct": opportunity.get("cash_sell_haircut_pct"),
         }
         identity = {
             "listing_id": str(listing["id"]),

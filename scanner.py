@@ -23,6 +23,7 @@ from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 import rblxvalue_guard
 from tools.metrics import update_metrics
 from tools.alert_policy import rank_and_split
+from tools.cash_market import calculate_cash_side, cash_profit_bounds, load_cash_price_catalog, normalize_cash_name
 
 BLOXSWAPS_URL = os.environ.get(
     "BLOXSWAPS_URL",
@@ -88,6 +89,11 @@ PENDING_TTL_SECONDS = max(86400, int(os.environ.get("PENDING_TTL_SECONDS", str(7
 UNCERTAIN_TTL_SECONDS = max(3600, int(os.environ.get("UNCERTAIN_TTL_SECONDS", str(24 * 3600))))
 BLOXSWAPS_ITEMS_FILE = Path("data/bloxswaps_items.json")
 SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "100"))
+CASH_SELL_HAIRCUT_PCT = float(os.environ.get("CASH_SELL_HAIRCUT_PCT", "15"))
+CASH_MIN_PROFIT_USD = float(os.environ.get("CASH_MIN_PROFIT_USD", "1"))
+CASH_MIN_MARGIN_PERCENT = float(os.environ.get("CASH_MIN_MARGIN_PERCENT", "0"))
+CASH_PRICE_FILE = Path("data/cash_prices.csv")
+CASH_PRICE_SNAPSHOT_FILE = Path("data/cash_price_snapshot.json")
 TELEGRAM_MAX_CHARS = 4000
 _LAST_TELEGRAM_SEND_AT = 0.0
 _LAST_ITEMS_FORCE_REFRESH_AT = 0.0
@@ -1902,7 +1908,7 @@ RBLXVALUE_STABILITY_LABELS = frozenset({
     "untradeable", "unstable", "volatile",
 })
 BLOCKED_RECEIVE_STABILITY = frozenset({
-    "decreasing", "unsafe", "untradeable", "unstable", "volatile", "fluctuating",
+    "decreasing", "receding", "unsafe", "untradeable", "unstable", "volatile", "fluctuating",
 })
 
 
@@ -3461,19 +3467,37 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
     ]
     if listing.get("url") and listing.get("url") != owner_link:
         lines.extend(["", f"🔗 {listing['url']}"])
-    lines.extend([
-        "",
-        "📤 GIVE:",
-        *_compact_telegram_items(give_lines),
-        f"Total: {format_number(give_total)}",
-        "",
-        "📥 GET:",
-        *_compact_telegram_items(receive_lines),
-        f"Total: {format_number(receive_total)}",
-        "",
-        f"💰 PROFIT: {'+' if difference > 0 else ''}{format_number(difference)}",
-        f"RESULT: {result}",
-    ])
+    if listing.get("valuation_mode") == "cash":
+        roi = (difference / give_total * 100.0) if give_total else 0.0
+        lines.extend([
+            "",
+            "📤 GIVE (CASH REPLACEMENT COST):",
+            *_compact_telegram_items(give_lines),
+            f"Total cost: ${format_number(give_total)}",
+            "",
+            "📥 GET (NET CASH RESALE):",
+            *_compact_telegram_items(receive_lines),
+            f"Net resale: ${format_number(receive_total)}",
+            "",
+            f"💵 CASH PROFIT (CONSERVATIVE): {'+' if difference > 0 else ''}${format_number(difference)}",
+            f"CASH ROI: {roi:.2f}%",
+            f"Resale haircut: {CASH_SELL_HAIRCUT_PCT:.1f}%",
+            f"RESULT: {'CASH WIN' if difference > 0 else 'NO CASH PROFIT'}",
+        ])
+    else:
+        lines.extend([
+            "",
+            "📤 GIVE:",
+            *_compact_telegram_items(give_lines),
+            f"Total: {format_number(give_total)}",
+            "",
+            "📥 GET:",
+            *_compact_telegram_items(receive_lines),
+            f"Total: {format_number(receive_total)}",
+            "",
+            f"💰 PROFIT: {'+' if difference > 0 else ''}{format_number(difference)}",
+            f"RESULT: {result}",
+        ])
     return "\n".join(lines)
 
 
@@ -3656,6 +3680,162 @@ def qualifies(result, min_diff=None, min_percent=None):
     return metric > 0 and metric >= min_diff and result["margin"] >= min_percent
 
 
+def evaluate_cash_listing(listing, values, aliases, cash_catalog):
+    """Evaluate cash resale profit only; Supreme is used for identity/stability gates."""
+    if not listing.get("give_items") or not listing.get("receive_items"):
+        return None, ["one side has no items"]
+
+    prepared = {"give": [], "receive": []}
+    missing = []
+    for side, field in (("give", "give_items"), ("receive", "receive_items")):
+        for item in listing.get(field, []):
+            record, match_source, candidates = resolve_value_record(
+                item.get("name", ""), values, aliases, item=item
+            )
+            if not record:
+                suffix = f" (ambiguous: {', '.join(candidates)})" if candidates else " (not in Supreme catalogue)"
+                missing.append(f"{item.get('name', 'Unknown')}{suffix}")
+                continue
+            variants = record.get("variants") or [record]
+            if len(variants) != 1:
+                missing.append(f"{item.get('name')} (ambiguous Supreme identity)")
+                continue
+            selected = variants[0]
+            canonical_name = str(selected.get("name") or record.get("name") or item.get("name") or "").strip()
+            if not canonical_name:
+                missing.append(f"{item.get('name')} (Supreme identity missing)")
+                continue
+
+            stability = _normalize_stability(selected.get("stability"))
+            stability_key = stability.casefold() if stability else ""
+            if stability_key == "untradeable":
+                missing.append(f"{canonical_name} (Untradeable)")
+                continue
+            if side == "receive":
+                if "stability" not in selected or stability_key not in RBLXVALUE_STABILITY_LABELS:
+                    missing.append(f"{canonical_name} (Stability unverified)")
+                    continue
+                if stability_key in BLOCKED_RECEIVE_STABILITY:
+                    missing.append(f"{canonical_name} (Stability: {stability}; excluded)")
+                    continue
+
+            quantity = item.get("quantity")
+            qmin = item.get("quantity_min")
+            qmax = item.get("quantity_max")
+            source = item.get("quantity_source", "implicit_single")
+            try:
+                qmin = int(qmin if qmin is not None else (quantity if quantity is not None else 1))
+                if qmax is None and quantity is not None and source != "uncertain":
+                    qmax = quantity
+                qmax = int(qmax) if qmax is not None else None
+            except (TypeError, ValueError):
+                qmin, qmax = 1, None
+            if qmin < 1 or qmin > 100 or qmax is None or qmax < qmin or qmax > 100:
+                missing.append(f"{canonical_name} (quantity uncertain/unbounded)")
+                continue
+
+            prepared[side].append({
+                "name": canonical_name,
+                "canonical_name": canonical_name,
+                "quantity_min": qmin,
+                "quantity_max": qmax,
+                "stability": stability or "N/A",
+                "match_source": match_source,
+            })
+
+    if missing:
+        return None, missing
+    if not prepared["give"] or not prepared["receive"]:
+        return None, ["one side has no Supreme-catalogued items"]
+
+    give_min, give_max, give_lines, give_missing = calculate_cash_side(
+        prepared["give"], cash_catalog, "give", 0
+    )
+    receive_min, receive_max, receive_lines, receive_missing = calculate_cash_side(
+        prepared["receive"], cash_catalog, "receive", CASH_SELL_HAIRCUT_PCT
+    )
+    missing = give_missing + receive_missing
+    if missing:
+        return None, missing
+
+    give_lines = [
+        line + f" | RBLXValue Stability: {item['stability']}"
+        for line, item in zip(give_lines, prepared["give"])
+    ]
+    receive_lines = [
+        line + f" | RBLXValue Stability: {item['stability']}"
+        for line, item in zip(receive_lines, prepared["receive"])
+    ]
+    profit_worst, profit_best = cash_profit_bounds(
+        (give_min, give_max), (receive_min, receive_max)
+    )
+    uncertain_items = [
+        {"side": side, "name": item["canonical_name"], "quantity_min": item["quantity_min"],
+         "quantity_max": item["quantity_max"]}
+        for side in ("give", "receive")
+        for item in prepared[side]
+        if item["quantity_min"] != item["quantity_max"]
+    ]
+    manual_review = bool(uncertain_items and profit_worst <= 0 < profit_best)
+    margin = (profit_worst / give_max * 100.0) if give_max > 0 else 0.0
+    listing["valuation_mode"] = "cash"
+    return {
+        "listing": listing,
+        "give_total": give_max,
+        "give_total_min": give_min,
+        "give_total_max": give_max,
+        "give_lines": give_lines,
+        "receive_total": receive_min,
+        "receive_total_min": receive_min,
+        "receive_total_max": receive_max,
+        "receive_lines": receive_lines,
+        "difference": profit_worst,
+        "profit_worst": profit_worst,
+        "profit_best": profit_best,
+        "margin": margin,
+        "manual_review": manual_review,
+        "uncertain_items": uncertain_items,
+        "cash_sell_haircut_pct": CASH_SELL_HAIRCUT_PCT,
+        "cash_profit_worst": profit_worst,
+        "cash_profit_best": profit_best,
+        "cash_price_basis": "verified manual USD resale catalogue",
+        "receive_demand_score": None,
+        "receive_stability_score": None,
+    }, []
+
+
+def qualifies_cash(result):
+    """Cash-only alert gate; Supreme numeric value and Demand never rank profit."""
+    if result.get("manual_review"):
+        return False
+    profit = float(result.get("cash_profit_worst", result.get("profit_worst", 0)))
+    margin = float(result.get("margin", 0))
+    return (
+        math.isfinite(profit) and math.isfinite(margin)
+        and profit >= CASH_MIN_PROFIT_USD
+        and margin >= CASH_MIN_MARGIN_PERCENT
+    )
+
+
+def cash_catalog_snapshot_hash():
+    if not CASH_PRICE_SNAPSHOT_FILE.exists():
+        return ""
+    try:
+        data = json.loads(CASH_PRICE_SNAPSHOT_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("[cash] Cash-price snapshot state is unreadable; refusing to skip catalogue rechecks.") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("sha256"), str):
+        raise RuntimeError("[cash] Cash-price snapshot state has an invalid structure.")
+    return data["sha256"]
+
+
+def save_cash_catalog_snapshot(digest):
+    atomic_write_text(
+        CASH_PRICE_SNAPSHOT_FILE,
+        json.dumps({"version": 1, "sha256": str(digest)}, indent=2) + "\n",
+    )
+
+
 def should_alert_malformed_cards(issue_count):
     """Any malformed card is actionable; rate limits belong to the persisted cooldown."""
     try:
@@ -3674,7 +3854,7 @@ def write_step_summary(line):
             pass
 
 
-def listing_watch_fingerprints(listing, values, aliases=None):
+def listing_watch_fingerprints(listing, values, aliases=None, cash_catalog=None):
     content, valuation = [], []
     for side, field in (('give', 'give_items'), ('receive', 'receive_items')):
         for item in listing.get(field, []):
@@ -3688,11 +3868,34 @@ def listing_watch_fingerprints(listing, values, aliases=None):
             record, match_source, _ = resolve_value_record(name, values, aliases, item=item)
             unit_value = None
             unit_min = unit_max = None
+            _selected = None
             if record:
                 unit_value, _selected = _select_conservative_variant(record, side)
                 if _selected:
                     unit_min, unit_max = _variant_numeric_bounds(_selected)
-            valuation.append((side, normalize_name(name), unit_value, unit_min, unit_max, match_source))
+            cash_row = None
+            cash_selected = _selected
+            if record and cash_selected is None:
+                cash_variants = record.get("variants") or [record]
+                if len(cash_variants) == 1:
+                    cash_selected = cash_variants[0]
+            cash_name = (
+                (cash_selected or {}).get("name")
+                or (record or {}).get("name")
+                or name
+            )
+            if cash_catalog:
+                cash_row = cash_catalog.get("items", {}).get(normalize_cash_name(cash_name))
+                stability = _normalize_stability((cash_selected or {}).get("stability")) if record else None
+                valuation.append((
+                    side, normalize_name(name), match_source,
+                    cash_row.get("cash_price_usd") if cash_row else None,
+                    cash_row.get("status") if cash_row else "missing",
+                    cash_row.get("verified_at_utc") if cash_row else "",
+                    stability,
+                ))
+            else:
+                valuation.append((side, normalize_name(name), unit_value, unit_min, unit_max, match_source))
     content_hash = hashlib.sha256(json.dumps(sorted(content, key=lambda row: json.dumps(row, sort_keys=True, default=str)), sort_keys=True, default=str).encode()).hexdigest()
     values_hash = hashlib.sha256(json.dumps(sorted(valuation, key=lambda row: json.dumps(row, sort_keys=True, default=str)), sort_keys=True, default=str).encode()).hexdigest()
     return content_hash, values_hash
@@ -3719,10 +3922,10 @@ def save_watch_state(ads):
     if len(active) > 300: active = dict(sorted(active.items(), key=lambda pair: float(pair[1].get('updated_at', 0)))[-300:])
     atomic_write_text(WATCH_FILE, json.dumps({'version': 1, 'ads': active}, ensure_ascii=False, indent=2) + "\n")
 
-def update_watch_entry(watch_state, listing, values, aliases=None):
+def update_watch_entry(watch_state, listing, values, aliases=None, cash_catalog=None):
     ad_id = str(listing.get('source_ad_id') or '')
     if not ad_id: return False
-    content_hash, values_hash = listing_watch_fingerprints(listing, values, aliases)
+    content_hash, values_hash = listing_watch_fingerprints(listing, values, aliases, cash_catalog)
     now = time.time()
     previous = watch_state.get(ad_id, {})
     changed = bool(previous) and (previous.get('content_hash') != content_hash or previous.get('values_hash') != values_hash)
@@ -3764,6 +3967,16 @@ def scan_once(include_backlog_rechecks=True):
         print("[stage] API key present; secret contents are intentionally never logged")
     print("[stage] Loading Supreme Values before evaluating trades")
     values = load_supreme_values()
+    cash_catalog = load_cash_price_catalog(CASH_PRICE_FILE)
+    verified_cash_rows = sum(1 for row in cash_catalog["items"].values() if row["status"] == "verified")
+    unverified_cash_rows = sum(1 for row in cash_catalog["items"].values() if row["status"] == "unverified")
+    previous_cash_hash = cash_catalog_snapshot_hash()
+    cash_prices_changed = previous_cash_hash != cash_catalog["sha256"]
+    print("[cash] Loaded %s price rows; verified=%s; unverified=%s; sell_haircut=%s%%" % (
+        cash_catalog["row_count"], verified_cash_rows, unverified_cash_rows, CASH_SELL_HAIRCUT_PCT
+    ))
+    if verified_cash_rows == 0:
+        print("[cash] No verified cash prices yet; cash-profit alerts are safely disabled until prices are manually verified.")
     values_snapshot_changed = False
     history_store = None
     try:
@@ -3792,10 +4005,10 @@ def scan_once(include_backlog_rechecks=True):
     all_due_pending_ids = due_pending_ids_for_scan(
         pending_ids, pending_schedule, limit=0
     )
-    run_backlog_rechecks = include_backlog_rechecks or values_snapshot_changed
+    run_backlog_rechecks = include_backlog_rechecks or values_snapshot_changed or cash_prices_changed
     due_pending_ids = (
         due_pending_ids_for_scan(
-            pending_ids, pending_schedule, force=values_snapshot_changed
+            pending_ids, pending_schedule, force=values_snapshot_changed or cash_prices_changed
         )
         if run_backlog_rechecks else {}
     )
@@ -3816,6 +4029,7 @@ def scan_once(include_backlog_rechecks=True):
     )
     scan_mode = (
         "values-refresh-backlog" if values_snapshot_changed
+        else "cash-price-refresh-backlog" if cash_prices_changed
         else "backlog-recheck" if include_backlog_rechecks
         else "fast-new-feed"
     )
@@ -3873,6 +4087,7 @@ def scan_once(include_backlog_rechecks=True):
         )
         if not listings:
             record_success_if_complete(stats)
+            save_cash_catalog_snapshot(cash_catalog["sha256"])
             write_step_summary("Cold-start baseline saved; no verifiably recent post was eligible for evaluation.")
             return
     else:
@@ -3941,11 +4156,13 @@ def scan_once(include_backlog_rechecks=True):
         if stats.get("seen_boundary_reached") and not stats.get("malformed_count") and not html_issue_count:
             print("[bloxswaps] Feed is current: first visible offers were already processed.")
             record_success_if_complete(stats)
+            save_cash_catalog_snapshot(cash_catalog["sha256"])
             write_step_summary("Feed current: no new trade posts before the seen cursor boundary.")
             return
         if stats["candidate_count"] > 0 and stats["addition_count"] == stats["candidate_count"]:
             print(f"[bloxswaps] No eligible listings: all {stats['addition_count']} candidate cards contained Ajouts.")
             record_success_if_complete(stats)
+            save_cash_catalog_snapshot(cash_catalog["sha256"])
             write_step_summary("Successful scan: all current candidates excluded for Ajouts.")
             return
         if stats["candidate_count"] == 0 and stats.get("pagination_source") == "html-only":
@@ -4099,7 +4316,7 @@ def scan_once(include_backlog_rechecks=True):
         # fingerprint changed; uncertain Telegram deliveries remain quarantined.
         watch_id = str(listing.get("source_ad_id") or "")
         previous_watch = watch_state.get(watch_id, {})
-        current_content_hash, current_values_hash = listing_watch_fingerprints(listing, values, aliases)
+        current_content_hash, current_values_hash = listing_watch_fingerprints(listing, values, aliases, cash_catalog)
         variant_changed = bool(previous_watch) and (
             previous_watch.get("content_hash") != current_content_hash
             or previous_watch.get("values_hash") != current_values_hash
@@ -4124,7 +4341,11 @@ def scan_once(include_backlog_rechecks=True):
                 f"\n⚠️ POSSIBLE PROFIT RANGE: {format_number(op['profit_worst'])} "
                 f"to {format_number(op['profit_best'])}"
             )
-        message += f"\n📊 MARGIN: {op['margin']:.2f}%"
+        if listing.get("valuation_mode") == "cash":
+            message += f"\n💵 CASH PROFIT RANGE: ${op['cash_profit_worst']:.2f} to ${op['cash_profit_best']:.2f}"
+            message += f"\n📊 CASH ROI: {op['margin']:.2f}%"
+        else:
+            message += f"\n📊 MARGIN: {op['margin']:.2f}%"
         if op.get("receive_demand_score") is not None and op.get("receive_stability_score") is not None:
             message += (
                 f"\n📈 GET QUALITY: Demand {op['receive_demand_score']:.2f}/10"
@@ -4150,8 +4371,8 @@ def scan_once(include_backlog_rechecks=True):
             message += "\nSECOND-SOURCE CHECK (MM2Values): " + secondary_note
         trade_id = listing["id"]
         print(
-            f"[telegram] Sending ranked trade id={trade_id}; "
-            f"profit={op['difference']:g}"
+            f"[telegram] Sending ranked cash trade id={trade_id}; "
+            f"cash_profit_usd={op['cash_profit_worst']:g}"
         )
         # Persist a delivery guard before the non-idempotent Telegram request.
         # It is cleared only after a definite success or definite API rejection.
@@ -4178,7 +4399,7 @@ def scan_once(include_backlog_rechecks=True):
             )
             return
         mark_alerted(trade_id)
-        update_watch_entry(watch_state, listing, values, aliases)
+        update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
         uncertain_ids.discard(trade_id)
         save_uncertain_ids(uncertain_ids)
         mark_seen_ad(listing)
@@ -4222,14 +4443,14 @@ def scan_once(include_backlog_rechecks=True):
             continue
         watch_id = str(listing.get("source_ad_id") or "")
         previous_watch = watch_state.get(watch_id, {})
-        content_hash, values_hash = listing_watch_fingerprints(listing, values, aliases)
+        content_hash, values_hash = listing_watch_fingerprints(listing, values, aliases, cash_catalog)
         fingerprint_changed = bool(previous_watch) and (
             previous_watch.get("content_hash") != content_hash
             or previous_watch.get("values_hash") != values_hash
         )
         if trade_id in alerted_set and not fingerprint_changed:
             if not previous_watch:
-                update_watch_entry(watch_state, listing, values, aliases)
+                update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
             already_alerted_skipped += 1
             mark_seen_ad(listing)
             continue
@@ -4241,10 +4462,15 @@ def scan_once(include_backlog_rechecks=True):
             uncertain_skipped += 1
             mark_seen_ad(listing)
             continue
-        result, missing = evaluate_listing(listing, values, aliases)
+        result, missing = evaluate_cash_listing(listing, values, aliases, cash_catalog)
         evaluated += 1
         if result is None:
             skipped_unknown += 1
+            if missing and all("cash price" in str(value).casefold() for value in missing):
+                print("[cash] Listing held from alerts: one or more manual USD prices are missing/unverified.")
+                update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
+                mark_seen_ad(listing, clear_pending=False)
+                continue
             print(
                 f"[skip-unknown] Listing retained for recheck; missing/unvalued items: "
                 f"{', '.join(missing)}"
@@ -4262,18 +4488,18 @@ def scan_once(include_backlog_rechecks=True):
             ]
             if unknown_names:
                 record_unmatched_names(unknown_names)
-            update_watch_entry(watch_state, listing, values, aliases)
+            update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
             # Low-priority missing values/stability remain queued but leave the
             # hot path. Urgent quantity uncertainty stays visible for quick retry.
             if pending_reason not in PRIORITY_PENDING_REASONS:
                 mark_seen_ad(listing, clear_pending=False)
             continue
-        if not qualifies(result):
+        if not qualifies_cash(result):
             if result.get("uncertain_items"):
                 mark_pending(listing, reason="quantity_uncertain")
             else:
                 mark_seen_ad(listing)
-            update_watch_entry(watch_state, listing, values, aliases)
+            update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
             continue
         opportunities.append(result)
         if history_store is not None:
@@ -4310,6 +4536,7 @@ def scan_once(include_backlog_rechecks=True):
     print(f"[summary] {summary}")
     write_step_summary(summary)
     record_success_if_complete(stats)
+    save_cash_catalog_snapshot(cash_catalog["sha256"])
 
 
 def compare_secondary_values(items, values):
@@ -4331,7 +4558,7 @@ def append_history(listing, op):
     from io import StringIO
     fieldnames = [
         "detected_at_utc", "first_seen_at_utc", "alert_attempted_at_utc",
-        "alerted_at_utc", "listing_id", "profit_supreme",
+        "alerted_at_utc", "listing_id", "profit_supreme", "profit_cash_usd", "profit_basis",
         "profit_margin_percent", "you_give", "you_receive", "listing_url", "owner_url",
     ]
     buffer = StringIO(newline="")
@@ -4359,7 +4586,9 @@ def append_history(listing, op):
         "alert_attempted_at_utc": listing.get("alert_attempted_at_utc", alerted_at),
         "alerted_at_utc": alerted_at,
         "listing_id": listing["id"],
-        "profit_supreme": round(op["difference"], 2),
+        "profit_supreme": "" if listing.get("valuation_mode") == "cash" else round(op["difference"], 2),
+        "profit_cash_usd": round(op.get("cash_profit_worst", op["difference"]), 2) if listing.get("valuation_mode") == "cash" else "",
+        "profit_basis": "cash_usd" if listing.get("valuation_mode") == "cash" else "supreme_value",
         "profit_margin_percent": round(op["margin"], 2),
         "you_give": round(op["give_total"], 2),
         "you_receive": round(op["receive_total"], 2),

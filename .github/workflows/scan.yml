@@ -59,6 +59,9 @@ jobs:
             rm -rf data
             mkdir -p data
             git archive origin/state data | tar -x
+            # Cash prices are tracked configuration, not durable runtime state.
+            # Restore the current main-branch CSV after extracting old state.
+            git checkout -- data/cash_prices.csv
             echo "Restored scanner state from branch 'state'."
           else
             echo "State branch not found; cold-start safety window will evaluate recent posts."
@@ -154,6 +157,8 @@ jobs:
           # Discord messages may come from private servers; process them in this
           # job only and never publish raw message bodies to the public state branch.
           rm -f state-bundle/data/discord_messages.json state-bundle/data/discord_messages.json.tmp
+          # Never persist the manually maintained cash-price catalogue to state.
+          rm -f state-bundle/data/cash_prices.csv
           printf '%s\n' "${GITHUB_SHA}" > state-bundle/source-commit.txt
 
       - name: Upload durable state
