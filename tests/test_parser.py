@@ -1671,6 +1671,33 @@ class UntypedCatalogEnrichmentTests(unittest.TestCase):
                 scanner._enrich_catalog_metadata_gaps(values, document, {"last_updated": "source-v2"})
             api.assert_called_once_with("/items/untyped-0")
 
+    def test_interrupted_pending_detail_lookup_retries_after_backoff(self):
+        with tempfile.TemporaryDirectory() as directory:
+            values = self._make_values()
+            document = {"source_last_updated": "source-v1", "values": values}
+            detail_path = Path(directory) / "detail.json"
+            detail_path.write_text(json.dumps({
+                "version": 1, "day": "", "daily_lookups": 0,
+                "attempted": {
+                    "untyped-0": {
+                        "source_version": "source-v1", "item_last_updated": None,
+                        "attempted_at": 1, "retry_after": 1, "status": "pending",
+                    }
+                },
+            }), encoding="utf-8")
+            with (
+                patch("scanner.RBLXVALUE_DETAIL_FILE", detail_path),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY", 6),
+                patch("scanner.time.time", return_value=100000),
+                patch("scanner.api_get_json", return_value={"item": {
+                    "id": "100", "slug": "untyped-0", "type": "Knife",
+                }}) as api,
+            ):
+                changed = scanner._enrich_catalog_metadata_gaps(values, document)
+            self.assertEqual(changed, 1)
+            api.assert_called_once_with("/items/untyped-0")
+
     def test_detail_identity_mismatch_does_not_change_item_type(self):
         with tempfile.TemporaryDirectory() as directory:
             values = self._make_values()
