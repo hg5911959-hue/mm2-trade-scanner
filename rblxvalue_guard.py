@@ -76,6 +76,10 @@ def _validated_block_state(path: Path) -> dict[str, Any]:
     state = _read_json(path)
     if not state:
         return {}
+    if type(state.get("schema_version")) is not int or state["schema_version"] != 2:
+        raise RblxValueGuardError(
+            f"[rblxvalue-state] safety state file {path.name} has an unsupported schema; refusing API request"
+        )
     fingerprint = state.get("key_fingerprint")
     if not isinstance(fingerprint, str) or len(fingerprint) != 16 or any(
         char not in "0123456789abcdef" for char in fingerprint
@@ -89,9 +93,13 @@ def _validated_block_state(path: Path) -> dict[str, Any]:
             f"[rblxvalue-state] safety state file {path.name} has an invalid permanent flag; refusing API request"
         )
     try:
-        until = float(state["blocked_until_epoch"])
+        until_raw = state["blocked_until_epoch"]
+        seconds_raw = state["blocked_seconds"]
+        if isinstance(until_raw, bool) or isinstance(seconds_raw, bool):
+            raise TypeError("boolean timestamp/duration")
+        until = float(until_raw)
         consecutive = state["consecutive_blocks"]
-        seconds = float(state["blocked_seconds"])
+        seconds = float(seconds_raw)
     except (KeyError, TypeError, ValueError, OverflowError) as exc:
         raise RblxValueGuardError(
             f"[rblxvalue-state] safety state file {path.name} has invalid block timing; refusing API request"
@@ -102,13 +110,16 @@ def _validated_block_state(path: Path) -> dict[str, Any]:
         or not isinstance(consecutive, int)
         or consecutive < 1
         or not (seconds > 0 and seconds < float("inf"))
+        or seconds not in BLOCK_STEPS
     ):
         raise RblxValueGuardError(
             f"[rblxvalue-state] safety state file {path.name} has invalid block timing; refusing API request"
         )
-    if permanent and consecutive < PERMANENT_BLOCK_AFTER:
+    expected_permanent = consecutive >= PERMANENT_BLOCK_AFTER
+    expected_seconds = BLOCK_STEPS[min(consecutive - 1, len(BLOCK_STEPS) - 1)]
+    if permanent != expected_permanent or seconds != expected_seconds:
         raise RblxValueGuardError(
-            f"[rblxvalue-state] safety state file {path.name} has inconsistent permanent block; refusing API request"
+            f"[rblxvalue-state] safety state file {path.name} has inconsistent block escalation; refusing API request"
         )
     return state
 
