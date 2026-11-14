@@ -264,6 +264,10 @@ def reserve_request(*, now: float | None = None, key: str | None = None,
         )
     timestamps = []
     for value in raw_timestamps:
+        if isinstance(value, bool):
+            raise RblxValueGuardError(
+                "[rblxvalue-state] request budget contains a boolean timestamp; refusing API request"
+            )
         try:
             stamp = float(value)
         except (TypeError, ValueError) as exc:
