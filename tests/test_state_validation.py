@@ -212,6 +212,17 @@ class StateValidationTests(unittest.TestCase):
             for error in validate_state(self.root, require_cache=True)
         ))
 
+    def test_full_state_validator_rejects_budget_above_hard_ceiling(self):
+        self._write_valid_state()
+        (self.root / "rblxvalue_request_budget.json").write_text(json.dumps({
+            "schema_version": 1,
+            "window": "rolling_24_hours",
+            "limit": 61,
+            "request_timestamps_epoch": [1_800_000_000],
+        }), encoding="utf-8")
+        errors = validate_state(self.root, require_cache=True)
+        self.assertTrue(any("request budget limit is invalid" in error for error in errors))
+
     def test_boolean_budget_timestamp_is_rejected(self):
         self._write_valid_state()
         (self.root / "rblxvalue_request_budget.json").write_text(json.dumps({
