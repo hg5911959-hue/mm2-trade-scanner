@@ -1044,6 +1044,7 @@ def parse_listings(html):
 
 
 RBLXVALUE_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+MAX_RETRY_AFTER_SECONDS = 120
 
 
 class _RejectCredentialRedirects(urllib.request.HTTPRedirectHandler):
@@ -1117,7 +1118,10 @@ def request_with_retry(req, timeout, label, attempts=4, return_headers=False, al
                 ) from exc
             retryable = exc.code == 429 or 500 <= exc.code <= 599
             if not retryable or attempt == attempts - 1:
-                raise RuntimeError(f"{label}: HTTP {exc.code}: {detail[:200]}") from exc
+                safe_detail = redact(detail).strip()
+                if safe_detail.startswith("<"):
+                    safe_detail = "[HTML response omitted]"
+                raise RuntimeError(f"{label}: HTTP {exc.code}: {safe_detail[:200]}") from exc
             delay = min(30, 2 ** (attempt + 1))
             retry_after = exc.headers.get("Retry-After", "")
             if retry_after:
@@ -1129,6 +1133,11 @@ def request_with_retry(req, timeout, label, attempts=4, return_headers=False, al
                             datetime.now(timezone.utc)).total_seconds())
                     except Exception:
                         pass
+            if delay > MAX_RETRY_AFTER_SECONDS:
+                raise RuntimeError(
+                    f"{label}: Retry-After exceeds the safe per-attempt wait "
+                    f"({int(delay)}s > {MAX_RETRY_AFTER_SECONDS}s); aborting this scan without retry"
+                ) from exc
             delay = rblxvalue_guard.jittered_delay(delay)
             print(f"[retry] {label}: HTTP {exc.code}; waiting {delay:.2f}s")
             time.sleep(delay)
