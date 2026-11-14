@@ -3877,12 +3877,17 @@ def listing_watch_fingerprints(listing, values, aliases=None, cash_catalog=None)
                 cash_row = cash_catalog.get("items", {}).get(normalize_cash_name(
                     (_selected or {}).get("name") if record else name
                 ))
-            valuation.append((
-                side, normalize_name(name), unit_value, unit_min, unit_max, match_source,
-                cash_row.get("cash_price_usd") if cash_row else None,
-                cash_row.get("status") if cash_row else "missing",
-                cash_row.get("verified_at_utc") if cash_row else "",
-            ))
+            if cash_catalog:
+                stability = _normalize_stability((_selected or {}).get("stability")) if record else None
+                valuation.append((
+                    side, normalize_name(name), match_source,
+                    cash_row.get("cash_price_usd") if cash_row else None,
+                    cash_row.get("status") if cash_row else "missing",
+                    cash_row.get("verified_at_utc") if cash_row else "",
+                    stability,
+                ))
+            else:
+                valuation.append((side, normalize_name(name), unit_value, unit_min, unit_max, match_source))
     content_hash = hashlib.sha256(json.dumps(sorted(content, key=lambda row: json.dumps(row, sort_keys=True, default=str)), sort_keys=True, default=str).encode()).hexdigest()
     values_hash = hashlib.sha256(json.dumps(sorted(valuation, key=lambda row: json.dumps(row, sort_keys=True, default=str)), sort_keys=True, default=str).encode()).hexdigest()
     return content_hash, values_hash
