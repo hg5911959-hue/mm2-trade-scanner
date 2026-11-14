@@ -41,6 +41,7 @@ class WorkflowReliabilityTests(unittest.TestCase):
         self.assertIn("uses: ./.github/workflows/scan.yml", scheduler)
         self.assertIn("secrets: inherit", scheduler)
         self.assertIn("contents: write", scheduler)
+        self.assertIn("actions: read", scheduler)
         self.assertNotIn("workflow_run:", scheduler)
         self.assertNotIn("enable-schedules:", scheduler)
 
