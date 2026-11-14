@@ -207,6 +207,38 @@ class RblxValueGuardTests(unittest.TestCase):
     def test_cloudflare_challenge_does_not_count_as_key_rejection(self):
         self.assertFalse(guard.is_key_error(403, "Cloudflare challenge platform cf-chl"))
 
+    def test_corrupt_breaker_fingerprint_fails_closed_without_request(self):
+        self.block.write_text(json.dumps({
+            "schema_version": 2, "key_fingerprint": "not-a-valid-fingerprint",
+            "blocked_until_epoch": 1_900_000_000, "blocked_seconds": 21600,
+            "permanent": False, "consecutive_blocks": 1,
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(guard.RblxValueGuardError, "invalid key fingerprint"):
+            guard.reserve_request(now=1_800_000_000, key="rbx_test_key",
+                                  budget_path=self.budget, block_path=self.block)
+        self.assertFalse(self.budget.exists())
+
+    def test_corrupt_breaker_timestamp_fails_closed_without_request(self):
+        self.block.write_text(json.dumps({
+            "schema_version": 2, "key_fingerprint": guard.key_fingerprint("rbx_test_key"),
+            "blocked_until_epoch": "not-a-time", "blocked_seconds": 21600,
+            "permanent": False, "consecutive_blocks": 1,
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(guard.RblxValueGuardError, "invalid block timing"):
+            guard.reserve_request(now=1_800_000_000, key="rbx_test_key",
+                                  budget_path=self.budget, block_path=self.block)
+        self.assertFalse(self.budget.exists())
+
+    def test_corrupt_breaker_permanent_flag_fails_closed(self):
+        self.block.write_text(json.dumps({
+            "schema_version": 2, "key_fingerprint": guard.key_fingerprint("rbx_test_key"),
+            "blocked_until_epoch": 1_900_000_000, "blocked_seconds": 21600,
+            "permanent": "false", "consecutive_blocks": 1,
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(guard.RblxValueGuardError, "invalid permanent flag"):
+            guard.is_key_blocked(now=1_800_000_000, key="rbx_test_key",
+                                 block_path=self.block)
+
 
 if __name__ == "__main__":
     unittest.main()
