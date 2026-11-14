@@ -3650,16 +3650,18 @@ class UpstreamForbiddenDiagnosticsTests(unittest.TestCase):
             headers = Message()
 
         oversized = OversizedResponse(b"x" * (scanner.RBLXVALUE_MAX_RESPONSE_BYTES + 1))
-        with (
-            patch("scanner.RBLXVALUE_API_KEY", "rbx_test_key"),
-            patch("rblxvalue_guard.BUDGET_FILE", Path(tempfile.mkdtemp()) / "budget.json"),
-            patch("rblxvalue_guard.BLOCK_FILE", Path(tempfile.mkdtemp()) / "blocked.json"),
-            patch("scanner._open_rblxvalue_url", return_value=oversized),
-        ):
-            with self.assertRaisesRegex(RuntimeError, "8 MiB safety limit"):
-                scanner.request_with_retry(
-                    "https://api.rblxvalue.com/v2/items", 10, "RBLXValue API", attempts=1
-                )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with (
+                patch("scanner.RBLXVALUE_API_KEY", "rbx_test_key"),
+                patch("rblxvalue_guard.BUDGET_FILE", root / "budget.json"),
+                patch("rblxvalue_guard.BLOCK_FILE", root / "blocked.json"),
+                patch("scanner._open_rblxvalue_url", return_value=oversized),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "8 MiB safety limit"):
+                    scanner.request_with_retry(
+                        "https://api.rblxvalue.com/v2/items", 10, "RBLXValue API", attempts=1
+                    )
 
     def test_api_403_with_explicit_suspended_key_opens_breaker_without_exposing_secret(self):
         from io import BytesIO
@@ -3675,7 +3677,7 @@ class UpstreamForbiddenDiagnosticsTests(unittest.TestCase):
                 patch("scanner.RBLXVALUE_API_KEY", "rbx_test_secret"),
                 patch("rblxvalue_guard.BUDGET_FILE", root / "budget.json"),
                 patch("rblxvalue_guard.BLOCK_FILE", root / "blocked.json"),
-                patch("scanner.urllib.request.urlopen", side_effect=error) as request,
+                patch("scanner._open_rblxvalue_url", side_effect=error) as request,
             ):
                 with self.assertRaisesRegex(RuntimeError, "rblxvalue-key-blocked"):
                     scanner.request_with_retry("https://api.rblxvalue.com/v2/items", 10, "RBLXValue API", attempts=4)
@@ -3702,7 +3704,7 @@ class UpstreamForbiddenDiagnosticsTests(unittest.TestCase):
                 patch("scanner.RBLXVALUE_API_KEY", "rbx_test_key"),
                 patch("rblxvalue_guard.BUDGET_FILE", root / "budget.json"),
                 patch("rblxvalue_guard.BLOCK_FILE", root / "blocked.json"),
-                patch("scanner.urllib.request.urlopen", side_effect=error) as request,
+                patch("scanner._open_rblxvalue_url", side_effect=error) as request,
             ):
                 with self.assertRaisesRegex(RuntimeError, r"\[cloudflare\].*HTTP 403"):
                     scanner.request_with_retry("https://api.rblxvalue.com/v2/items", 10, "RBLXValue API", attempts=4)
