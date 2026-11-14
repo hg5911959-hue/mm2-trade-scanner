@@ -3975,10 +3975,10 @@ def scan_once(include_backlog_rechecks=True):
     all_due_pending_ids = due_pending_ids_for_scan(
         pending_ids, pending_schedule, limit=0
     )
-    run_backlog_rechecks = include_backlog_rechecks or values_snapshot_changed
+    run_backlog_rechecks = include_backlog_rechecks or values_snapshot_changed or cash_prices_changed
     due_pending_ids = (
         due_pending_ids_for_scan(
-            pending_ids, pending_schedule, force=values_snapshot_changed
+            pending_ids, pending_schedule, force=values_snapshot_changed or cash_prices_changed
         )
         if run_backlog_rechecks else {}
     )
@@ -3999,6 +3999,7 @@ def scan_once(include_backlog_rechecks=True):
     )
     scan_mode = (
         "values-refresh-backlog" if values_snapshot_changed
+        else "cash-price-refresh-backlog" if cash_prices_changed
         else "backlog-recheck" if include_backlog_rechecks
         else "fast-new-feed"
     )
@@ -4424,7 +4425,7 @@ def scan_once(include_backlog_rechecks=True):
             uncertain_skipped += 1
             mark_seen_ad(listing)
             continue
-        result, missing = evaluate_listing(listing, values, aliases)
+        result, missing = evaluate_cash_listing(listing, values, aliases, cash_catalog)
         evaluated += 1
         if result is None:
             skipped_unknown += 1
@@ -4451,7 +4452,7 @@ def scan_once(include_backlog_rechecks=True):
             if pending_reason not in PRIORITY_PENDING_REASONS:
                 mark_seen_ad(listing, clear_pending=False)
             continue
-        if not qualifies(result):
+        if not qualifies_cash(result):
             if result.get("uncertain_items"):
                 mark_pending(listing, reason="quantity_uncertain")
             else:
@@ -4493,6 +4494,7 @@ def scan_once(include_backlog_rechecks=True):
     print(f"[summary] {summary}")
     write_step_summary(summary)
     record_success_if_complete(stats)
+    save_cash_catalog_snapshot(cash_catalog["sha256"])
 
 
 def compare_secondary_values(items, values):
