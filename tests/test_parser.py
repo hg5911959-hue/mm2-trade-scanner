@@ -3609,3 +3609,97 @@ class UpstreamForbiddenDiagnosticsTests(unittest.TestCase):
                     scanner.request_with_retry("https://api.rblxvalue.com/v2/items", 10, "RBLXValue API", attempts=4)
                 self.assertEqual(request.call_count, 1)
                 self.assertFalse((root / "blocked.json").exists())
+
+
+class CashFirstEvaluatorTests(unittest.TestCase):
+    def setUp(self):
+        self.values = {
+            "chroma laser": {"name": "Chroma Laser", "value": 100, "stability": "Stable", "demand": 0},
+            "chroma gemstone": {"name": "Chroma Gemstone", "value": 1, "stability": "Stable", "demand": 0},
+            "chroma heat": {"name": "Chroma Heat", "value": 2, "stability": "Decreasing", "demand": 10},
+        }
+        self.catalog = {
+            "items": {
+                scanner.normalize_cash_name("Chroma Laser"): {
+                    "name": "Chroma Laser", "cash_price_usd": 10.0, "status": "verified"
+                },
+                scanner.normalize_cash_name("Chroma Gemstone"): {
+                    "name": "Chroma Gemstone", "cash_price_usd": 20.0, "status": "verified"
+                },
+                scanner.normalize_cash_name("Chroma Heat"): {
+                    "name": "Chroma Heat", "cash_price_usd": 100.0, "status": "verified"
+                },
+            }
+        }
+        self.listing = {
+            "id": "cash-test",
+            "give_items": [{
+                "name": "Chroma Laser", "quantity": 1, "quantity_min": 1,
+                "quantity_max": 1, "quantity_source": "implicit_single",
+            }],
+            "receive_items": [{
+                "name": "Chroma Gemstone", "quantity": 1, "quantity_min": 1,
+                "quantity_max": 1, "quantity_source": "implicit_single",
+            }],
+        }
+
+    def test_cash_profit_overrides_opposite_supreme_value_spread_and_low_demand(self):
+        result, missing = scanner.evaluate_cash_listing(
+            self.listing.copy(), self.values, {}, self.catalog
+        )
+        self.assertEqual(missing, [])
+        self.assertIsNotNone(result)
+        self.assertAlmostEqual(result["cash_profit_worst"], 7.0)
+        self.assertTrue(scanner.qualifies_cash(result))
+        self.assertEqual(result["receive_demand_score"], None)
+
+    def test_bad_receive_stability_remains_blocked_even_with_high_cash_price(self):
+        listing = dict(self.listing)
+        listing["receive_items"] = [{
+            "name": "Chroma Heat", "quantity": 1, "quantity_min": 1,
+            "quantity_max": 1, "quantity_source": "implicit_single",
+        }]
+        result, missing = scanner.evaluate_cash_listing(
+            listing, self.values, {}, self.catalog
+        )
+        self.assertIsNone(result)
+        self.assertTrue(any("Decreasing" in value for value in missing))
+
+    def test_unverified_cash_price_is_never_used(self):
+        catalog = {"items": dict(self.catalog["items"])}
+        catalog["items"][scanner.normalize_cash_name("Chroma Gemstone")] = {
+            "name": "Chroma Gemstone", "cash_price_usd": 20.0, "status": "unverified"
+        }
+        result, missing = scanner.evaluate_cash_listing(
+            self.listing, self.values, {}, catalog
+        )
+        self.assertIsNone(result)
+        self.assertTrue(any("cash price unverified" in value for value in missing))
+
+    def test_item_outside_supreme_catalogue_is_rejected(self):
+        listing = dict(self.listing)
+        listing["receive_items"] = [{
+            "name": "Unknown Knife", "quantity": 1, "quantity_min": 1,
+            "quantity_max": 1, "quantity_source": "implicit_single",
+        }]
+        result, missing = scanner.evaluate_cash_listing(
+            listing, self.values, {}, self.catalog
+        )
+        self.assertIsNone(result)
+        self.assertTrue(any("not in Supreme catalogue" in value for value in missing))
+
+    def test_quantity_uncertainty_uses_worst_case_cash_profit(self):
+        listing = dict(self.listing)
+        listing["receive_items"] = [{
+            "name": "Chroma Gemstone", "quantity": None, "quantity_min": 1,
+            "quantity_max": 2, "quantity_source": "uncertain",
+        }]
+        result, missing = scanner.evaluate_cash_listing(
+            listing, self.values, {}, self.catalog
+        )
+        self.assertEqual(missing, [])
+        self.assertAlmostEqual(result["cash_profit_worst"], 7.0)
+        self.assertAlmostEqual(result["cash_profit_best"], 24.0)
+        self.assertTrue(scanner.qualifies_cash(result))
+
+
