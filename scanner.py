@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """BloxSwaps MM2 scanner with verified Supreme Values calculations."""
 import csv
-import difflib
 import itertools
 import hashlib
 import json
