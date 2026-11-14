@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -128,11 +129,15 @@ class MarketHistory:
                 secondary = variant.get("secondary_value")
                 try:
                     supreme = float(supreme) if supreme is not None else None
-                except (TypeError, ValueError):
+                except (TypeError, ValueError, OverflowError):
                     supreme = None
                 try:
                     secondary = float(secondary) if secondary is not None else None
-                except (TypeError, ValueError):
+                except (TypeError, ValueError, OverflowError):
+                    secondary = None
+                if supreme is not None and (not math.isfinite(supreme) or supreme <= 0):
+                    supreme = None
+                if secondary is not None and (not math.isfinite(secondary) or secondary <= 0):
                     secondary = None
                 if supreme is not None and supreme > 0 and secondary is not None and secondary > 0:
                     difference = abs(supreme - secondary) / max(supreme, secondary) * 100
