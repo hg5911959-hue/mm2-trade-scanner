@@ -3847,7 +3847,7 @@ def write_step_summary(line):
             pass
 
 
-def listing_watch_fingerprints(listing, values, aliases=None):
+def listing_watch_fingerprints(listing, values, aliases=None, cash_catalog=None):
     content, valuation = [], []
     for side, field in (('give', 'give_items'), ('receive', 'receive_items')):
         for item in listing.get(field, []):
@@ -3865,7 +3865,17 @@ def listing_watch_fingerprints(listing, values, aliases=None):
                 unit_value, _selected = _select_conservative_variant(record, side)
                 if _selected:
                     unit_min, unit_max = _variant_numeric_bounds(_selected)
-            valuation.append((side, normalize_name(name), unit_value, unit_min, unit_max, match_source))
+            cash_row = None
+            if cash_catalog:
+                cash_row = cash_catalog.get("items", {}).get(normalize_cash_name(
+                    (_selected or {}).get("name") if record else name
+                ))
+            valuation.append((
+                side, normalize_name(name), unit_value, unit_min, unit_max, match_source,
+                cash_row.get("cash_price_usd") if cash_row else None,
+                cash_row.get("status") if cash_row else "missing",
+                cash_row.get("verified_at_utc") if cash_row else "",
+            ))
     content_hash = hashlib.sha256(json.dumps(sorted(content, key=lambda row: json.dumps(row, sort_keys=True, default=str)), sort_keys=True, default=str).encode()).hexdigest()
     values_hash = hashlib.sha256(json.dumps(sorted(valuation, key=lambda row: json.dumps(row, sort_keys=True, default=str)), sort_keys=True, default=str).encode()).hexdigest()
     return content_hash, values_hash
@@ -3892,10 +3902,10 @@ def save_watch_state(ads):
     if len(active) > 300: active = dict(sorted(active.items(), key=lambda pair: float(pair[1].get('updated_at', 0)))[-300:])
     atomic_write_text(WATCH_FILE, json.dumps({'version': 1, 'ads': active}, ensure_ascii=False, indent=2) + "\n")
 
-def update_watch_entry(watch_state, listing, values, aliases=None):
+def update_watch_entry(watch_state, listing, values, aliases=None, cash_catalog=None):
     ad_id = str(listing.get('source_ad_id') or '')
     if not ad_id: return False
-    content_hash, values_hash = listing_watch_fingerprints(listing, values, aliases)
+    content_hash, values_hash = listing_watch_fingerprints(listing, values, aliases, cash_catalog)
     now = time.time()
     previous = watch_state.get(ad_id, {})
     changed = bool(previous) and (previous.get('content_hash') != content_hash or previous.get('values_hash') != values_hash)
@@ -4057,6 +4067,7 @@ def scan_once(include_backlog_rechecks=True):
         )
         if not listings:
             record_success_if_complete(stats)
+    save_cash_catalog_snapshot(cash_catalog["sha256"])
             write_step_summary("Cold-start baseline saved; no verifiably recent post was eligible for evaluation.")
             return
     else:
@@ -4125,11 +4136,13 @@ def scan_once(include_backlog_rechecks=True):
         if stats.get("seen_boundary_reached") and not stats.get("malformed_count") and not html_issue_count:
             print("[bloxswaps] Feed is current: first visible offers were already processed.")
             record_success_if_complete(stats)
+    save_cash_catalog_snapshot(cash_catalog["sha256"])
             write_step_summary("Feed current: no new trade posts before the seen cursor boundary.")
             return
         if stats["candidate_count"] > 0 and stats["addition_count"] == stats["candidate_count"]:
             print(f"[bloxswaps] No eligible listings: all {stats['addition_count']} candidate cards contained Ajouts.")
             record_success_if_complete(stats)
+    save_cash_catalog_snapshot(cash_catalog["sha256"])
             write_step_summary("Successful scan: all current candidates excluded for Ajouts.")
             return
         if stats["candidate_count"] == 0 and stats.get("pagination_source") == "html-only":
@@ -4283,7 +4296,7 @@ def scan_once(include_backlog_rechecks=True):
         # fingerprint changed; uncertain Telegram deliveries remain quarantined.
         watch_id = str(listing.get("source_ad_id") or "")
         previous_watch = watch_state.get(watch_id, {})
-        current_content_hash, current_values_hash = listing_watch_fingerprints(listing, values, aliases)
+        current_content_hash, current_values_hash = listing_watch_fingerprints(listing, values, aliases, cash_catalog)
         variant_changed = bool(previous_watch) and (
             previous_watch.get("content_hash") != current_content_hash
             or previous_watch.get("values_hash") != current_values_hash
@@ -4362,7 +4375,7 @@ def scan_once(include_backlog_rechecks=True):
             )
             return
         mark_alerted(trade_id)
-        update_watch_entry(watch_state, listing, values, aliases)
+        update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
         uncertain_ids.discard(trade_id)
         save_uncertain_ids(uncertain_ids)
         mark_seen_ad(listing)
@@ -4406,7 +4419,7 @@ def scan_once(include_backlog_rechecks=True):
             continue
         watch_id = str(listing.get("source_ad_id") or "")
         previous_watch = watch_state.get(watch_id, {})
-        content_hash, values_hash = listing_watch_fingerprints(listing, values, aliases)
+        content_hash, values_hash = listing_watch_fingerprints(listing, values, aliases, cash_catalog)
         fingerprint_changed = bool(previous_watch) and (
             previous_watch.get("content_hash") != content_hash
             or previous_watch.get("values_hash") != values_hash
