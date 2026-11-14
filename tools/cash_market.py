@@ -10,6 +10,7 @@ import hashlib
 import math
 import re
 import unicodedata
+from datetime import datetime, timedelta
 from pathlib import Path
 
 REQUIRED_COLUMNS = {
@@ -56,8 +57,17 @@ def load_cash_price_catalog(path="data/cash_prices.csv"):
             if status not in {"verified", "unverified", "disabled"}:
                 raise RuntimeError(f"[cash] Invalid status on CSV line {line_number}: {name}")
             verified_at = str(row.get("verified_at_utc") or "").strip()
-            if status == "verified" and not verified_at:
-                raise RuntimeError(f"[cash] Verified row requires verified_at_utc: {name}")
+            if status == "verified":
+                if not verified_at:
+                    raise RuntimeError(f"[cash] Verified row requires verified_at_utc: {name}")
+                try:
+                    parsed_verified_at = datetime.fromisoformat(verified_at.replace("Z", "+00:00"))
+                except ValueError as exc:
+                    raise RuntimeError(f"[cash] verified_at_utc must be ISO-8601: {name}") from exc
+                if parsed_verified_at.tzinfo is None or parsed_verified_at.utcoffset() != timedelta(0):
+                    raise RuntimeError(f"[cash] verified_at_utc must be UTC: {name}")
+                if not str(row.get("source") or "").strip():
+                    raise RuntimeError(f"[cash] Verified row requires a source: {name}")
             rows[key] = {
                 "name": name,
                 "cash_price_usd": price,
