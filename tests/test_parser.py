@@ -3677,16 +3677,17 @@ class CashFirstEvaluatorTests(unittest.TestCase):
             "chroma gemstone": {"name": "Chroma Gemstone", "value": None, "stability": "Stable", "demand": 0},
             "chroma heat": {"name": "Chroma Heat", "value": 2, "stability": "Decreasing", "demand": 10},
         }
+        verified_at = datetime.now(timezone.utc).isoformat()
         self.catalog = {
             "items": {
                 scanner.normalize_cash_name("Chroma Laser"): {
-                    "name": "Chroma Laser", "cash_price_usd": 10.0, "status": "verified"
+                    "name": "Chroma Laser", "cash_price_usd": 10.0, "status": "verified", "verified_at_utc": verified_at, "source": "test"
                 },
                 scanner.normalize_cash_name("Chroma Gemstone"): {
-                    "name": "Chroma Gemstone", "cash_price_usd": 20.0, "status": "verified"
+                    "name": "Chroma Gemstone", "cash_price_usd": 20.0, "status": "verified", "verified_at_utc": verified_at, "source": "test"
                 },
                 scanner.normalize_cash_name("Chroma Heat"): {
-                    "name": "Chroma Heat", "cash_price_usd": 100.0, "status": "verified"
+                    "name": "Chroma Heat", "cash_price_usd": 100.0, "status": "verified", "verified_at_utc": verified_at, "source": "test"
                 },
             }
         }
