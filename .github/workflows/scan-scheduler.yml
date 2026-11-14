@@ -34,12 +34,15 @@ jobs:
             fi
             state="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id" --jq '.state' 2>/dev/null || echo unknown)"
             case "$state" in
-              disabled_manually|disabled_inactivity|disabled)
+              disabled_inactivity)
                 if gh api --method PUT "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id/enable" >/dev/null 2>&1; then
-                  echo "[schedule] re-enabled $workflow_file"
+                  echo "[schedule] re-enabled inactive $workflow_file"
                 else
                   echo "::warning::GitHub refused to re-enable $workflow_file; administrator permission may be required."
                 fi
+                ;;
+              disabled_manually)
+                echo "[schedule] respecting manual disable for $workflow_file"
                 ;;
               active)
                 echo "[schedule] $workflow_file is active"
