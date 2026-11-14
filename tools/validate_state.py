@@ -14,6 +14,23 @@ REQUIRED_MARKET_TABLES = {
     "listings",
     "opportunities",
 }
+REQUIRED_MARKET_COLUMNS = {
+    "market_snapshots": {
+        "id", "captured_at_utc", "snapshot_hash", "item_count", "source",
+    },
+    "market_values": {
+        "snapshot_id", "item_key", "item_name", "slug", "category", "item_type",
+        "supreme_value", "secondary_value", "difference_percent", "confidence", "stability",
+    },
+    "listings": {
+        "listing_id", "source", "source_id", "owner_name", "owner_url", "listing_url",
+        "first_seen_at_utc", "last_seen_at_utc", "give_items_json", "receive_items_json", "content_hash",
+    },
+    "opportunities": {
+        "opportunity_id", "listing_id", "source", "detected_at_utc", "give_total",
+        "receive_total", "profit", "margin_percent", "listing_url", "details_json",
+    },
+}
 
 VALID_PENDING_REASONS = {
     "legacy_unclassified", "unmatched_value", "stability_unverified",
@@ -25,7 +42,10 @@ VALID_PENDING_REASONS = {
 def _finite_positive(value: Any) -> bool:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return False
-    return math.isfinite(value) and value > 0
+    try:
+        return math.isfinite(value) and value > 0
+    except OverflowError:
+        return False
 
 
 def validate_state(directory: str | Path, *, require_cache: bool = False) -> list[str]:
@@ -169,6 +189,13 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
                 missing = REQUIRED_MARKET_TABLES - tables
                 if missing:
                     errors.append("market history database is missing required tables")
+                else:
+                    for table, required_columns in REQUIRED_MARKET_COLUMNS.items():
+                        actual_columns = {
+                            row[1] for row in db.execute(f"PRAGMA table_info({table})").fetchall()
+                        }
+                        if not required_columns.issubset(actual_columns):
+                            errors.append(f"market history table has an incomplete schema: {table}")
         except sqlite3.DatabaseError:
             errors.append("market history database is unreadable or corrupt")
     elif require_cache:
