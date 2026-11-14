@@ -3937,6 +3937,16 @@ def scan_once(include_backlog_rechecks=True):
         print("[stage] API key present; secret contents are intentionally never logged")
     print("[stage] Loading Supreme Values before evaluating trades")
     values = load_supreme_values()
+    cash_catalog = load_cash_price_catalog(CASH_PRICE_FILE)
+    verified_cash_rows = sum(1 for row in cash_catalog["items"].values() if row["status"] == "verified")
+    unverified_cash_rows = sum(1 for row in cash_catalog["items"].values() if row["status"] == "unverified")
+    previous_cash_hash = cash_catalog_snapshot_hash()
+    cash_prices_changed = previous_cash_hash != cash_catalog["sha256"]
+    print("[cash] Loaded %s price rows; verified=%s; unverified=%s; sell_haircut=%s%%" % (
+        cash_catalog["row_count"], verified_cash_rows, unverified_cash_rows, CASH_SELL_HAIRCUT_PCT
+    ))
+    if verified_cash_rows == 0:
+        print("[cash] No verified cash prices yet; cash-profit alerts are safely disabled until prices are manually verified.")
     values_snapshot_changed = False
     history_store = None
     try:
