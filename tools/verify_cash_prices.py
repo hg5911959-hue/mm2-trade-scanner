@@ -22,21 +22,41 @@ WEAPON_SUFFIXES = ("knife", "gun", "sword")
 
 
 def parse_line(line: str):
-    match = LINE_RE.match(line)
+    text = str(line or "").strip()
+    quantity_match = QUANTITY_RE.match(text)
+    quantity = int(quantity_match.group(1)[1:]) if quantity_match else 1
+    remainder = quantity_match.group(2) if quantity_match else text
+    remainder = re.sub(r"\\s+each\\s*$", "", remainder, flags=re.I).strip()
+    match = PRICE_RE.search(remainder)
     if not match:
         return None, "invalid format"
-    quantity_prefix, raw_name, raw_price, unit_marker = match.groups()
-    quantity = int(quantity_prefix[1:]) if quantity_prefix else 1
+    raw_name = remainder[:match.start()].strip()
+    raw_name = re.sub(r"\\s*[-—]\\s*$", "", raw_name).strip()
+    if not raw_name:
+        return None, "missing item name"
+    unit_marker = match.group("unit")
     if quantity < 1:
         return None, "invalid quantity"
     if quantity > 1 and not unit_marker:
         return None, "multi-quantity total has no explicit /N unit marker"
     if unit_marker and int(unit_marker) < 1:
         return None, "invalid /N marker"
-    price = float(raw_price)
-    if price <= 0:
-        return None, "price must be positive"
-    return {"name": raw_name.strip(), "price": price}, None
+    token = re.sub(r"(?i)usd", "", match.group("token")).replace("$", "").strip()
+    try:
+        values = [float(part.strip().replace(",", ".")) for part in token.split("-", 1)]
+    except ValueError:
+        return None, "invalid price"
+    if len(values) == 1:
+        low = high = price = values[0]
+    else:
+        low, high = values
+        price = (low + high) / 2.0
+    if not all(value > 0 for value in (low, high)) or low > high:
+        return None, "price range must be positive and ordered"
+    return {
+        "name": raw_name, "price": price,
+        "price_low": low, "price_high": high,
+    }, None
 
 
 def match_catalog_name(raw_name, names):
@@ -87,6 +107,17 @@ def verify(input_path, csv_path=DEFAULT_CSV, source="manual_market_list", max_ch
         rows = list(reader)
     by_name = {row["name"]: row for row in rows}
     now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    has_range = any(
+        parsed is not None and parsed["price_low"] != parsed["price_high"]
+        for parsed, error in (parse_line(line) for line in input_path.read_text(encoding="utf-8-sig").splitlines())
+    )
+    if has_range:
+        for column in ("price_low_usd", "price_high_usd"):
+            if column not in fields:
+                fields.append(column)
+        for row in rows:
+            row.setdefault("price_low_usd", row.get("cash_price_usd", ""))
+            row.setdefault("price_high_usd", row.get("cash_price_usd", ""))
     updated, skipped, large_changes = 0, [], []
     with input_path.open("r", encoding="utf-8-sig") as handle:
         for line_no, raw in enumerate(handle, 1):
@@ -110,6 +141,9 @@ def verify(input_path, csv_path=DEFAULT_CSV, source="manual_market_list", max_ch
                 large_changes.append((name, change))
                 continue
             row["cash_price_usd"] = f'{parsed["price"]:.2f}'
+            if "price_low_usd" in fields:
+                row["price_low_usd"] = f'{parsed["price_low"]:.2f}'
+                row["price_high_usd"] = f'{parsed["price_high"]:.2f}'
             row["status"] = "verified"
             row["verified_at_utc"] = now
             row["source"] = source or "manual_market_list"
