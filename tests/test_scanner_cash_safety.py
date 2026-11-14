@@ -62,6 +62,7 @@ class ScannerCashSafetyTests(unittest.TestCase):
         result = {
             "cash_estimate_only": False,
             "manual_review": False,
+            "cash_price_basis": "verified manual USD resale catalogue",
             "cash_profit_worst": 100.0,
             "margin": 20.0,
         }
@@ -110,6 +111,7 @@ class ScannerCashSafetyTests(unittest.TestCase):
                 result = {
                     "cash_estimate_only": False,
                     "manual_review": False,
+                    "cash_price_basis": "verified manual USD resale catalogue",
                     "cash_profit_worst": 100.0,
                     "margin": 20.0,
                 }
@@ -120,6 +122,23 @@ class ScannerCashSafetyTests(unittest.TestCase):
         for result in (None, [], "profit", 10):
             with self.subTest(result=result):
                 self.assertFalse(scanner.qualifies_cash(result))
+
+    def test_missing_or_untrusted_cash_provenance_fails_closed(self):
+        base = {
+            "manual_review": False,
+            "cash_estimate_only": False,
+            "cash_price_basis": "verified manual USD resale catalogue",
+            "cash_profit_worst": 100.0,
+            "margin": 20.0,
+        }
+        self.assertTrue(scanner.qualifies_cash(base))
+        for field in ("manual_review", "cash_estimate_only", "cash_price_basis"):
+            result = dict(base)
+            result.pop(field)
+            with self.subTest(field=field):
+                self.assertFalse(scanner.qualifies_cash(result))
+        wrong_basis = dict(base, cash_price_basis="unverified legacy estimate only")
+        self.assertFalse(scanner.qualifies_cash(wrong_basis))
 
 
 if __name__ == "__main__":
