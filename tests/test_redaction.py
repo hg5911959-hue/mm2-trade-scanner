@@ -32,6 +32,13 @@ class SecretRedactionTests(unittest.TestCase):
             stream.flush()
         self.assertEqual(target.getvalue(), "[REDACTED] [REDACTED] [REDACTED]\n")
 
+    def test_private_cash_price_catalogue_secret_is_redacted(self):
+        secret = "private-cash-price-catalogue-secret"
+        with patch.dict(os.environ, {"CASH_PRICES_CSV": secret}, clear=False):
+            output = scanner.redact("loaded=" + secret)
+        self.assertNotIn(secret, output)
+        self.assertEqual(output, "loaded=[REDACTED]")
+
     def test_normal_text_is_unchanged(self):
         value = "Scanner cycle completed: 3 listings evaluated."
         self.assertEqual(scanner.redact(value), value)
