@@ -132,13 +132,19 @@ class ScannerCashSafetyTests(unittest.TestCase):
             "margin": 20.0,
         }
         self.assertTrue(scanner.qualifies_cash(base))
-        for field in ("manual_review", "cash_estimate_only", "cash_price_basis"):
+        for field in (
+            "manual_review", "cash_estimate_only", "cash_price_basis",
+            "cash_profit_worst", "margin",
+        ):
             result = dict(base)
             result.pop(field)
             with self.subTest(field=field):
                 self.assertFalse(scanner.qualifies_cash(result))
         wrong_basis = dict(base, cash_price_basis="unverified legacy estimate only")
         self.assertFalse(scanner.qualifies_cash(wrong_basis))
+        generic_only = dict(base, profit_worst=100.0)
+        generic_only.pop("cash_profit_worst")
+        self.assertFalse(scanner.qualifies_cash(generic_only))
 
 
 if __name__ == "__main__":
