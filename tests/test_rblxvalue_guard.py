@@ -145,6 +145,16 @@ class RblxValueGuardTests(unittest.TestCase):
             guard.reserve_request(now=1_800_000_001, key="rbx_test_key",
                                   budget_path=self.budget, block_path=self.block)
 
+    def test_boolean_budget_timestamp_fails_closed_without_spending_request(self):
+        self.budget.write_text(json.dumps({
+            "request_timestamps_epoch": [True]
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(guard.RblxValueGuardError, "boolean timestamp"):
+            guard.reserve_request(now=1_800_000_100, key="rbx_test_key",
+                                  budget_path=self.budget, block_path=self.block)
+        saved = json.loads(self.budget.read_text(encoding="utf-8"))
+        self.assertEqual(saved["request_timestamps_epoch"], [True])
+
     def test_future_budget_timestamp_is_counted_conservatively(self):
         future = 1_800_000_100
         self.budget.write_text(json.dumps({
