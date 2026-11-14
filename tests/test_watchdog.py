@@ -78,6 +78,23 @@ class WatchdogRepositoryTests(unittest.TestCase):
         self.assertTrue(any("scan.yml" in url for url in urls))
         self.assertTrue(all("status=success" not in url for url in urls))
 
+    def test_success_lookup_falls_back_to_updated_at_when_completed_at_is_omitted(self):
+        old = "2026-11-13T22:00:00Z"
+        new = "2026-11-13T23:59:00Z"
+        payload = {"workflow_runs": [
+            {"id": 1, "conclusion": "success", "updated_at": old},
+            {"id": 2, "conclusion": "success", "updated_at": new, "html_url": "https://github.com/example/run/2"},
+        ]}
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "example/mm2-test"}), patch(
+            "watchdog.scanner.request_with_retry",
+            side_effect=[
+                json.dumps(payload).encode("utf-8"),
+                json.dumps({"workflow_runs": []}).encode("utf-8"),
+            ],
+        ):
+            _, run = watchdog.latest_success_age_minutes("test-token")
+        self.assertEqual(run["id"], 2)
+
     def test_success_lookup_uses_latest_completed_success(self):
         old = "2026-11-10T00:00:00Z"
         new = "2026-11-13T00:00:00Z"

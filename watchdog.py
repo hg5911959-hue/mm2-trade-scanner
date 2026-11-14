@@ -65,10 +65,15 @@ def latest_success_age_minutes(token):
     successful = [run for run in runs if isinstance(run, dict) and run.get("conclusion") == "success"]
     if not successful:
         raise RuntimeError("GitHub returned no successful completed scan workflow runs.")
-    successful.sort(key=lambda run: run.get("completed_at") or "", reverse=True)
-    completed_at = successful[0].get("completed_at")
+    # GitHub's workflow-runs REST response may omit completed_at even for
+    # completed runs; updated_at is set when the run reaches its terminal state.
+    def completion_timestamp(run):
+        return run.get("completed_at") or run.get("updated_at") or ""
+
+    successful.sort(key=completion_timestamp, reverse=True)
+    completed_at = completion_timestamp(successful[0])
     if not completed_at:
-        raise RuntimeError("Latest successful scan is missing completed_at.")
+        raise RuntimeError("Latest successful scan is missing completed_at/updated_at.")
     completed = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
     age = max(0.0, (datetime.now(timezone.utc) - completed).total_seconds() / 60.0)
     return age, successful[0]
