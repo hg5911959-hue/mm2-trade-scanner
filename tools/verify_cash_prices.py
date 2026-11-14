@@ -17,7 +17,12 @@ from pathlib import Path
 from tools.cash_market import normalize_cash_name
 
 DEFAULT_CSV = Path("data/cash_prices.csv")
-LINE_RE = re.compile(r"^\s*(?:(x\d+)\s+)?(.+?)\s+(\d+(?:\.\d+)?)\$(?:/(\d+))?\s*$", re.I)
+QUANTITY_RE = re.compile(r"^\s*(x\d+)\s+(.+?)\s*$", re.I)
+PRICE_RE = re.compile(
+    r"(?P<token>\$\s*\d+(?:[.,]\d+)?(?:\s*-\s*\$?\s*\d+(?:[.,]\d+)?)?"
+    r"|\d+(?:[.,]\d+)?(?:\s*-\s*\d+(?:[.,]\d+)?)?\s*(?:\$|usd))"
+    r"\s*(?:/\s*(?P<unit>\d+))?\s*$", re.I
+)
 WEAPON_SUFFIXES = ("knife", "gun", "sword")
 
 
@@ -26,12 +31,12 @@ def parse_line(line: str):
     quantity_match = QUANTITY_RE.match(text)
     quantity = int(quantity_match.group(1)[1:]) if quantity_match else 1
     remainder = quantity_match.group(2) if quantity_match else text
-    remainder = re.sub(r"\\s+each\\s*$", "", remainder, flags=re.I).strip()
+    remainder = re.sub(r"\s+each\s*$", "", remainder, flags=re.I).strip()
     match = PRICE_RE.search(remainder)
     if not match:
         return None, "invalid format"
     raw_name = remainder[:match.start()].strip()
-    raw_name = re.sub(r"\\s*[-—]\\s*$", "", raw_name).strip()
+    raw_name = re.sub(r"\s*[-—]\s*$", "", raw_name).strip()
     if not raw_name:
         return None, "missing item name"
     unit_marker = match.group("unit")

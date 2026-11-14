@@ -49,7 +49,7 @@ class PreflightTests(unittest.TestCase):
         (self.root / "supreme_values.json").write_text(json.dumps({"fetched_at": (self.now - timedelta(hours=25)).timestamp()}), encoding="utf-8")
         self.assertTrue(any("older than 24 hours" in x for x in self._checks()))
         (self.root / "supreme_values.json").write_text(json.dumps({"fetched_at": self.now.timestamp()}), encoding="utf-8")
-        self.assertTrue(any("Telegram credentials" in x for x in self._checks(env={}))
+        self.assertTrue(any("Telegram credentials" in x for x in self._checks(env={})))
         self.assertTrue(any("state branch is unreadable" in x for x in self._checks(state_checker=lambda: False)))
 
 
