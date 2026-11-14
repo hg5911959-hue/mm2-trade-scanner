@@ -1605,6 +1605,31 @@ class UntypedCatalogEnrichmentTests(unittest.TestCase):
             self.assertEqual(variant["value_max"], 25)
             self.assertTrue(cache_path.exists())
 
+    def test_numeric_weapon_with_missing_stability_is_enriched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            values = {
+                "seer": {"name": "Seer", "variants": [{
+                    "id": "1", "slug": "seer", "name": "Seer", "type": "knife",
+                    "category": "godly", "value": 3, "value_min": 3, "value_max": 3,
+                    "raw_source_value": 3, "value_status": "numeric",
+                    "stability": None, "demand": 5, "rarity": 4,
+                    "last_updated": "2026-11-13 00:00:00",
+                }]}
+            }
+            document = {"source_last_updated": "source-v1", "values": values}
+            with (
+                patch("scanner.RBLXVALUE_DETAIL_FILE", Path(directory) / "detail.json"),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY", 6),
+                patch("scanner.api_get_json", return_value={"item": {
+                    "id": 1, "slug": "seer", "type": "Knife", "stability": "Stable",
+                    "demand": 5, "rarity": 4, "last_updated": "2026-11-13 00:00:00",
+                }}),
+            ):
+                changed = scanner._enrich_catalog_metadata_gaps(values, document)
+            self.assertEqual(changed, 1)
+            self.assertEqual(values["seer"]["variants"][0]["stability"], "Stable")
+
     def test_detail_enrichment_never_exceeds_daily_lookup_budget(self):
         with tempfile.TemporaryDirectory() as directory:
             values = self._make_values(7)
