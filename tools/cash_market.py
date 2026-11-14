@@ -10,12 +10,29 @@ import hashlib
 import math
 import re
 import unicodedata
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REQUIRED_COLUMNS = {
     "name", "cash_price_usd", "tier", "status", "verified_at_utc", "source", "notes"
 }
+
+
+def cash_price_is_fresh(entry, max_age_days=14, now=None):
+    """Only recent, verified UTC rows can contribute to a live cash calculation."""
+    if entry.get("status") != "verified":
+        return False
+    try:
+        current = now or datetime.now(timezone.utc)
+        if current.tzinfo is None or current.utcoffset() != timedelta(0):
+            return False
+        verified = datetime.fromisoformat(str(entry.get("verified_at_utc", "")).replace("Z", "+00:00"))
+        if verified.tzinfo is None or verified.utcoffset() != timedelta(0):
+            return False
+        age_seconds = (current - verified).total_seconds()
+        return 0 <= age_seconds <= float(max_age_days) * 86400
+    except (TypeError, ValueError):
+        return False
 
 
 def normalize_cash_name(value: str) -> str:
@@ -82,7 +99,7 @@ def load_cash_price_catalog(path="data/cash_prices.csv"):
     return {"items": rows, "sha256": digest, "row_count": len(rows)}
 
 
-def calculate_cash_side(items, catalog, side, sell_haircut_pct=15.0):
+def calculate_cash_side(items, catalog, side, sell_haircut_pct=15.0, max_age_days=14, now=None):
     """Return conservative cash bounds; receive-side proceeds include haircut."""
     if side not in {"give", "receive"}:
         raise ValueError("side must be give or receive")
@@ -105,6 +122,9 @@ def calculate_cash_side(items, catalog, side, sell_haircut_pct=15.0):
             continue
         if entry.get("status") != "verified":
             missing.append(f"{name} (cash price unverified)")
+            continue
+        if not cash_price_is_fresh(entry, max_age_days=max_age_days, now=now):
+            missing.append(f"{name} (cash price expired)")
             continue
         try:
             qmin = int(item.get("quantity_min", item.get("quantity", 1)))
