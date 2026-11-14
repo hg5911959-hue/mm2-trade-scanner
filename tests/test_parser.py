@@ -3503,7 +3503,7 @@ class ColdStartPaginationTests(unittest.TestCase):
 
 
 class RealAlertReevaluationIntegrationTests(unittest.TestCase):
-    def test_previously_alerted_ad_realerts_when_supreme_values_make_it_profitable(self):
+    def test_previously_alerted_ad_realerts_when_cash_prices_make_it_profitable(self):
         listing = {
             "id": "stable-ad-id", "source_ad_id": "same-source-ad",
             "owner_url": "https://bloxswaps.com/fr/users/123",
@@ -3514,14 +3514,29 @@ class RealAlertReevaluationIntegrationTests(unittest.TestCase):
                                "quantity_min": 1, "quantity_max": 1}],
         }
         values_before = {
-            "knife a": {"name": "Knife A", "value": 20},
-            "knife b": {"name": "Knife B", "value": 10},
+            "knife a": {"name": "Knife A", "value": 20, "stability": "Stable"},
+            "knife b": {"name": "Knife B", "value": 10, "stability": "Stable"},
         }
         values_after = {
-            "knife a": {"name": "Knife A", "value": 20},
-            "knife b": {"name": "Knife B", "value": 30},
+            "knife a": {"name": "Knife A", "value": 20, "stability": "Stable"},
+            "knife b": {"name": "Knife B", "value": 30, "stability": "Stable"},
         }
-        old_content, old_values = scanner.listing_watch_fingerprints(listing, values_before)
+        def catalog(knife_b_price):
+            return {"items": {
+                scanner.normalize_cash_name("Knife A"): {
+                    "name": "Knife A", "cash_price_usd": 10.0, "status": "verified",
+                    "verified_at_utc": "2026-11-14T00:00:00Z",
+                },
+                scanner.normalize_cash_name("Knife B"): {
+                    "name": "Knife B", "cash_price_usd": knife_b_price, "status": "verified",
+                    "verified_at_utc": "2026-11-14T00:00:00Z",
+                },
+            }, "sha256": str(knife_b_price), "row_count": 2}
+        old_catalog = catalog(10)
+        new_catalog = catalog(30)
+        old_content, old_values = scanner.listing_watch_fingerprints(
+            listing, values_before, {}, old_catalog
+        )
         previous_watch = {
             "same-source-ad": {
                 "content_hash": old_content, "values_hash": old_values,
@@ -3551,6 +3566,8 @@ class RealAlertReevaluationIntegrationTests(unittest.TestCase):
                 stack.enter_context(patch("scanner.FIRST_SEEN_FILE", root / "first-seen.json"))
                 stack.enter_context(patch("scanner.FAILURE_FILE", root / "failure.json"))
                 stack.enter_context(patch("scanner.load_supreme_values", return_value=values_after))
+                stack.enter_context(patch("scanner.load_cash_price_catalog", return_value=new_catalog))
+                stack.enter_context(patch("scanner.CASH_PRICE_SNAPSHOT_FILE", root / "cash-price-snapshot.json"))
                 stack.enter_context(patch("scanner.load_aliases", return_value={}))
                 stack.enter_context(patch("scanner.load_seen_ads", return_value={"same-source-ad"}))
                 stack.enter_context(patch("scanner.load_pending_ids", return_value={}))
@@ -3569,7 +3586,7 @@ class RealAlertReevaluationIntegrationTests(unittest.TestCase):
                 scanner.main()
         trade_messages = [message for message in sent if "💎 MM2 TRADE" in message]
         self.assertEqual(len(trade_messages), 1)
-        self.assertIn("PROFIT: +10", trade_messages[0])
+        self.assertIn("CASH PROFIT (CONSERVATIVE): +$15.50", trade_messages[0])
 
 
 
