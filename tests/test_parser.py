@@ -1589,10 +1589,10 @@ class UntypedCatalogEnrichmentTests(unittest.TestCase):
                 patch("scanner.RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY", 6),
                 patch("scanner.api_get_json", return_value={"item": detail}) as api,
             ):
-                changed = scanner._enrich_untyped_catalog_items(
+                changed = scanner._enrich_catalog_metadata_gaps(
                     values, document, {"last_updated": "2026-11-14 00:02:35"}
                 )
-                second = scanner._enrich_untyped_catalog_items(
+                second = scanner._enrich_catalog_metadata_gaps(
                     values, document, {"last_updated": "2026-11-14 00:02:35"}
                 )
             self.assertEqual(changed, 1)
@@ -1620,7 +1620,7 @@ class UntypedCatalogEnrichmentTests(unittest.TestCase):
                 patch("scanner.RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY", 6),
                 patch("scanner.api_get_json", side_effect=detail_for) as api,
             ):
-                changed = scanner._enrich_untyped_catalog_items(values, document)
+                changed = scanner._enrich_catalog_metadata_gaps(values, document)
             self.assertEqual(api.call_count, 6)
             self.assertEqual(changed, 6)
             self.assertEqual(sum(bool(v["variants"][0]["type"]) for v in values.values()), 6)
@@ -1641,9 +1641,9 @@ class UntypedCatalogEnrichmentTests(unittest.TestCase):
                 patch("scanner.RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY", 6),
                 patch("scanner.api_get_json", return_value=detail) as api,
             ):
-                scanner._enrich_untyped_catalog_items(values, document, {"last_updated": "source-v1"})
+                scanner._enrich_catalog_metadata_gaps(values, document, {"last_updated": "source-v1"})
                 document["source_last_updated"] = "source-v2"
-                scanner._enrich_untyped_catalog_items(values, document, {"last_updated": "source-v2"})
+                scanner._enrich_catalog_metadata_gaps(values, document, {"last_updated": "source-v2"})
             api.assert_called_once_with("/items/untyped-0")
 
     def test_detail_identity_mismatch_does_not_change_item_type(self):
@@ -1658,7 +1658,7 @@ class UntypedCatalogEnrichmentTests(unittest.TestCase):
                     "id": "999", "slug": "untyped-0", "type": "Knife"
                 }}),
             ):
-                changed = scanner._enrich_untyped_catalog_items(values, document)
+                changed = scanner._enrich_catalog_metadata_gaps(values, document)
             self.assertEqual(changed, 0)
             self.assertEqual(values["untyped-0"]["variants"][0]["type"], "")
 
