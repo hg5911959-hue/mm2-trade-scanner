@@ -4526,6 +4526,17 @@ def scan_once(include_backlog_rechecks=True):
             if pending_reason not in PRIORITY_PENDING_REASONS:
                 mark_seen_ad(listing, clear_pending=False)
             continue
+        if result.get("cash_estimate_only"):
+            print(
+                f"[dry-run-estimate] listing={trade_id} "
+                f"estimated_cash_profit_range=${result['cash_profit_worst']:.2f}.."
+                f"${result['cash_profit_best']:.2f}; NOT TRADE-ELIGIBLE"
+            )
+            for line in result.get("give_lines", []):
+                print(f"[dry-run-estimate] GIVE {line}")
+            for line in result.get("receive_lines", []):
+                print(f"[dry-run-estimate] RECEIVE {line}")
+            continue
         if not qualifies_cash(result):
             if result.get("uncertain_items"):
                 mark_pending(listing, reason="quantity_uncertain")
