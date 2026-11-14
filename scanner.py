@@ -3808,11 +3808,20 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
 
 
 def qualifies_cash(result):
-    """Cash-only alert gate; estimates and manual-review cases are never alertable."""
+    """Cash-only alert gate; malformed, estimated and review cases fail closed."""
+    if not isinstance(result, dict):
+        return False
     if result.get("manual_review") or result.get("cash_estimate_only"):
         return False
-    profit = float(result.get("cash_profit_worst", result.get("profit_worst", 0)))
-    margin = float(result.get("margin", 0))
+    raw_profit = result.get("cash_profit_worst", result.get("profit_worst", 0))
+    raw_margin = result.get("margin", 0)
+    if isinstance(raw_profit, bool) or isinstance(raw_margin, bool):
+        return False
+    try:
+        profit = float(raw_profit)
+        margin = float(raw_margin)
+    except (TypeError, ValueError, OverflowError):
+        return False
     return (
         math.isfinite(profit) and math.isfinite(margin)
         and profit >= CASH_MIN_PROFIT_USD
