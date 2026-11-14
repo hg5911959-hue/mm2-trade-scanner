@@ -199,7 +199,7 @@ class CashMarketTests(unittest.TestCase):
                 }])
 
     def test_tiered_haircut_boundaries(self):
-        from tools.cash_market import parse_haircut_tiers, haircut_for_price
+        from tools.cash_market import haircut_for_price, parse_haircut_tiers
         tiers = parse_haircut_tiers("0-2:30,2-10:20,10-50:15,50-:10")
         self.assertEqual(haircut_for_price(2.00, tiers), 20)
         self.assertEqual(haircut_for_price(10.00, tiers), 15)
