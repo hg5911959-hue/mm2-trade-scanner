@@ -23,6 +23,7 @@ from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 import rblxvalue_guard
 from tools.metrics import update_metrics
 from tools.alert_policy import rank_and_split
+from tools.cash_market import calculate_cash_side, cash_profit_bounds, load_cash_price_catalog, normalize_cash_name
 
 BLOXSWAPS_URL = os.environ.get(
     "BLOXSWAPS_URL",
@@ -88,6 +89,11 @@ PENDING_TTL_SECONDS = max(86400, int(os.environ.get("PENDING_TTL_SECONDS", str(7
 UNCERTAIN_TTL_SECONDS = max(3600, int(os.environ.get("UNCERTAIN_TTL_SECONDS", str(24 * 3600))))
 BLOXSWAPS_ITEMS_FILE = Path("data/bloxswaps_items.json")
 SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "100"))
+CASH_SELL_HAIRCUT_PCT = float(os.environ.get("CASH_SELL_HAIRCUT_PCT", "15"))
+CASH_MIN_PROFIT_USD = float(os.environ.get("CASH_MIN_PROFIT_USD", "1"))
+CASH_MIN_MARGIN_PERCENT = float(os.environ.get("CASH_MIN_MARGIN_PERCENT", "10"))
+CASH_PRICE_FILE = Path("data/cash_prices.csv")
+CASH_PRICE_SNAPSHOT_FILE = Path("data/cash_price_snapshot.json")
 TELEGRAM_MAX_CHARS = 4000
 _LAST_TELEGRAM_SEND_AT = 0.0
 _LAST_ITEMS_FORCE_REFRESH_AT = 0.0
