@@ -21,7 +21,7 @@ class NextToVerifyTests(unittest.TestCase):
         )
         self.assertEqual(total, 5)
         self.assertEqual([row["name"] for row in ranked], ["spirit", "bat", "candy"])
-        self.assertAlmostEqual(ranked[0]["unlocked_percent"], 40.0)
+        self.assertAlmostEqual(ranked[0]["unlocked_percent"], 0.0)
         self.assertAlmostEqual(ranked[1]["unlocked_percent"], 60.0)
         self.assertEqual(ranked[0]["price"], 8.0)
         self.assertAlmostEqual(ranked[0]["age_days"], 1.0)

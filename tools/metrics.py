@@ -8,8 +8,12 @@ from pathlib import Path
 FIELDS = ("scans", "scan_failures", "alerts_sent", "alerts_deferred",
           "rblxvalue_requests", "key_blocked_seconds", "parse_empty")
 
-def update_metrics(path="data/metrics.json", *, increments=None, set_values=None, now=None):
-    target = Path(path)
+DEFAULT_METRICS_FILE = Path("data/metrics.json")
+
+
+def update_metrics(path=None, *, increments=None, set_values=None,
+                   cash_blockers=None, cash_blocker_groups=None, now=None):
+    target = Path(path) if path is not None else DEFAULT_METRICS_FILE
     current = now or datetime.now(timezone.utc)
     day = current.astimezone(timezone.utc).date()
     try:
@@ -39,9 +43,31 @@ def update_metrics(path="data/metrics.json", *, increments=None, set_values=None
         if field not in FIELDS:
             raise ValueError("unknown metric")
         row[field] = max(0, int(value))
+    for item, amount in (cash_blockers or {}).items():
+        if not isinstance(item, str) or not item or not item.isalnum():
+            raise ValueError("cash blocker item key is invalid")
+        if type(amount) is not int or amount < 0:
+            raise ValueError("cash blocker increment is invalid")
+        existing = row["cash_blockers"].get(item, 0)
+        if type(existing) is not int or existing < 0:
+            raise RuntimeError("metrics contains an invalid existing cash blocker counter")
+        row["cash_blockers"][item] = existing + amount
+    for group, amount in (cash_blocker_groups or {}).items():
+        parts = group.split("|") if isinstance(group, str) else []
+        if not parts or any(not part or not part.isalnum() for part in parts) or parts != sorted(set(parts)):
+            raise ValueError("cash blocker group is invalid")
+        if type(amount) is not int or amount < 0:
+            raise ValueError("cash blocker group increment is invalid")
+        existing = row["cash_blocker_groups"].get(group, 0)
+        if type(existing) is not int or existing < 0:
+            raise RuntimeError("metrics contains an invalid existing cash blocker group")
+        row["cash_blocker_groups"][group] = existing + amount
     target.parent.mkdir(parents=True, exist_ok=True)
     temp = target.with_name(target.name + ".tmp")
-    temp.write_text(json.dumps(data, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    with temp.open("w", encoding="utf-8") as handle:
+        handle.write(json.dumps(data, sort_keys=True, indent=2) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
     os.replace(temp, target)
     return row
 
