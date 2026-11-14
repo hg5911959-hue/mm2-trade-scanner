@@ -4329,7 +4329,7 @@ def scan_once(include_backlog_rechecks=True):
                 f"to {format_number(op['profit_best'])}"
             )
         if listing.get("valuation_mode") == "cash":
-            message += f"\n💵 CASH PROFIT RANGE: \${op['cash_profit_worst']:.2f} to \${op['cash_profit_best']:.2f}"
+            message += f"\n💵 CASH PROFIT RANGE: ${op['cash_profit_worst']:.2f} to ${op['cash_profit_best']:.2f}"
             message += f"\n📊 CASH ROI: {op['margin']:.2f}%"
         else:
             message += f"\n📊 MARGIN: {op['margin']:.2f}%"
