@@ -57,6 +57,57 @@ class StateValidationTests(unittest.TestCase):
                 );
             """)
 
+    def test_api_safety_ledger_validates_independently_of_scan_cache(self):
+        (self.root / "rblxvalue_request_budget.json").write_text(json.dumps({
+            "schema_version": 1,
+            "window": "rolling_24_hours",
+            "limit": 60,
+            "request_timestamps_epoch": [1_800_000_000],
+        }), encoding="utf-8")
+        (self.root / "api_key_blocked.json").write_text(json.dumps({
+            "schema_version": 2,
+            "key_fingerprint": "a" * 16,
+            "permanent": False,
+            "consecutive_blocks": 1,
+            "blocked_seconds": 21600,
+            "blocked_until_epoch": 1_800_021_600,
+        }), encoding="utf-8")
+        from tools.validate_state import validate_api_safety_state
+        self.assertEqual(validate_api_safety_state(self.root), [])
+
+    def test_api_safety_ledger_rejects_boolean_timestamp_and_bad_breaker(self):
+        from tools.validate_state import validate_api_safety_state
+        (self.root / "rblxvalue_request_budget.json").write_text(json.dumps({
+            "schema_version": 1,
+            "window": "rolling_24_hours",
+            "limit": 60,
+            "request_timestamps_epoch": [True],
+        }), encoding="utf-8")
+        (self.root / "api_key_blocked.json").write_text(json.dumps({
+            "schema_version": 2,
+            "key_fingerprint": "a" * 16,
+            "permanent": False,
+            "consecutive_blocks": True,
+            "blocked_seconds": 21600,
+            "blocked_until_epoch": 1_800_021_600,
+        }), encoding="utf-8")
+        errors = validate_api_safety_state(self.root)
+        self.assertTrue(any("budget timestamps" in error for error in errors))
+        self.assertTrue(any("breaker timing" in error for error in errors))
+
+    def test_api_safety_ledger_rejects_unexpected_files_and_oversized_budget(self):
+        from tools.validate_state import validate_api_safety_state
+        (self.root / "rblxvalue_request_budget.json").write_text(json.dumps({
+            "schema_version": 1,
+            "window": "rolling_24_hours",
+            "limit": 60,
+            "request_timestamps_epoch": [1_800_000_000] * 61,
+        }), encoding="utf-8")
+        (self.root / "private.json").write_text("{}", encoding="utf-8")
+        errors = validate_api_safety_state(self.root)
+        self.assertTrue(any("unexpected files" in error for error in errors))
+        self.assertTrue(any("budget timestamps" in error for error in errors))
+
     def test_valid_state_passes_strict_success_validation(self):
         self._write_valid_state()
         self.assertEqual(validate_state(self.root, require_cache=True), [])
