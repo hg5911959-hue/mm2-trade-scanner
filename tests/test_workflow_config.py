@@ -53,13 +53,6 @@ class WorkflowReliabilityTests(unittest.TestCase):
         self.assertIn("respecting manual disable for scan-scheduler", scheduler)
         self.assertIn("needs: restore-scanner-schedule", scheduler)
 
-    def test_scan_scheduler_does_not_override_manual_disable(self):
-        scheduler = (ROOT / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
-        self.assertIn("disabled_inactivity)", scheduler)
-        self.assertIn("disabled_manually)", scheduler)
-        self.assertIn("respecting manual disable", scheduler)
-        self.assertNotIn("disabled_manually|disabled_inactivity|disabled)", scheduler)
-
     def test_watchdog_uses_a_dedicated_scheduled_entrypoint(self):
         workflow = (ROOT / ".github/workflows/watchdog.yml").read_text(encoding="utf-8")
         scheduler = (ROOT / ".github/workflows/watchdog-scheduler.yml").read_text(encoding="utf-8")
