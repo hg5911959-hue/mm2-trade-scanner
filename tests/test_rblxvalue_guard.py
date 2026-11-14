@@ -39,6 +39,30 @@ class RblxValueGuardTests(unittest.TestCase):
         state = json.loads(self.budget.read_text())
         self.assertEqual(len(state["request_timestamps_epoch"]), 60)
 
+    def test_daily_budget_cannot_be_raised_above_hard_limit(self):
+        for i in range(guard.HARD_DAILY_REQUEST_LIMIT):
+            guard.reserve_request(
+                now=1_800_000_000 + i, key="rbx_test_key",
+                budget_path=self.budget, block_path=self.block, limit=10_000,
+            )
+        with self.assertRaises(guard.RblxValueBudgetExceeded):
+            guard.reserve_request(
+                now=1_800_000_100, key="rbx_test_key",
+                budget_path=self.budget, block_path=self.block, limit=10_000,
+            )
+        saved = json.loads(self.budget.read_text(encoding="utf-8"))
+        self.assertEqual(saved["limit"], guard.HARD_DAILY_REQUEST_LIMIT)
+
+    def test_boolean_or_fractional_budget_limit_fails_closed(self):
+        for invalid in (True, False, 1.5, "60"):
+            with self.subTest(limit=invalid):
+                with self.assertRaisesRegex(guard.RblxValueGuardError, "limit must be an integer"):
+                    guard.reserve_request(
+                        now=1_800_000_000, key="rbx_test_key",
+                        budget_path=self.budget, block_path=self.block, limit=invalid,
+                    )
+                self.budget.unlink(missing_ok=True)
+
     def test_expired_budget_entries_roll_off_after_24_hours(self):
         guard.reserve_request(now=1_800_000_000, key="rbx_test_key",
                               budget_path=self.budget, block_path=self.block)
@@ -145,6 +169,16 @@ class RblxValueGuardTests(unittest.TestCase):
             guard.reserve_request(now=1_800_000_001, key="rbx_test_key",
                                   budget_path=self.budget, block_path=self.block)
 
+    def test_boolean_budget_timestamp_fails_closed_without_spending_request(self):
+        self.budget.write_text(json.dumps({
+            "request_timestamps_epoch": [True]
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(guard.RblxValueGuardError, "boolean timestamp"):
+            guard.reserve_request(now=1_800_000_100, key="rbx_test_key",
+                                  budget_path=self.budget, block_path=self.block)
+        saved = json.loads(self.budget.read_text(encoding="utf-8"))
+        self.assertEqual(saved["request_timestamps_epoch"], [True])
+
     def test_future_budget_timestamp_is_counted_conservatively(self):
         future = 1_800_000_100
         self.budget.write_text(json.dumps({
@@ -206,6 +240,58 @@ class RblxValueGuardTests(unittest.TestCase):
 
     def test_cloudflare_challenge_does_not_count_as_key_rejection(self):
         self.assertFalse(guard.is_key_error(403, "Cloudflare challenge platform cf-chl"))
+
+    def test_corrupt_breaker_fingerprint_fails_closed_without_request(self):
+        self.block.write_text(json.dumps({
+            "schema_version": 2, "key_fingerprint": "not-a-valid-fingerprint",
+            "blocked_until_epoch": 1_900_000_000, "blocked_seconds": 21600,
+            "permanent": False, "consecutive_blocks": 1,
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(guard.RblxValueGuardError, "invalid key fingerprint"):
+            guard.reserve_request(now=1_800_000_000, key="rbx_test_key",
+                                  budget_path=self.budget, block_path=self.block)
+        self.assertFalse(self.budget.exists())
+
+    def test_corrupt_breaker_timestamp_fails_closed_without_request(self):
+        self.block.write_text(json.dumps({
+            "schema_version": 2, "key_fingerprint": guard.key_fingerprint("rbx_test_key"),
+            "blocked_until_epoch": "not-a-time", "blocked_seconds": 21600,
+            "permanent": False, "consecutive_blocks": 1,
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(guard.RblxValueGuardError, "invalid block timing"):
+            guard.reserve_request(now=1_800_000_000, key="rbx_test_key",
+                                  budget_path=self.budget, block_path=self.block)
+        self.assertFalse(self.budget.exists())
+
+    def test_corrupt_breaker_permanent_flag_fails_closed(self):
+        self.block.write_text(json.dumps({
+            "schema_version": 2, "key_fingerprint": guard.key_fingerprint("rbx_test_key"),
+            "blocked_until_epoch": 1_900_000_000, "blocked_seconds": 21600,
+            "permanent": "false", "consecutive_blocks": 1,
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(guard.RblxValueGuardError, "invalid permanent flag"):
+            guard.is_key_blocked(now=1_800_000_000, key="rbx_test_key",
+                                 block_path=self.block)
+
+    def test_breaker_rejects_unsupported_schema_and_boolean_epoch(self):
+        base = {
+            "schema_version": 2, "key_fingerprint": guard.key_fingerprint("rbx_test_key"),
+            "blocked_until_epoch": 1_900_000_000, "blocked_seconds": 21600,
+            "permanent": False, "consecutive_blocks": 1,
+        }
+        for update, message in (
+            ({"schema_version": 1}, "unsupported schema"),
+            ({"blocked_until_epoch": True}, "invalid block timing"),
+            ({"blocked_seconds": True}, "invalid block timing"),
+            ({"consecutive_blocks": 3}, "inconsistent block escalation"),
+            ({"blocked_seconds": 43200}, "inconsistent block escalation"),
+        ):
+            with self.subTest(update=update):
+                self.block.write_text(json.dumps({**base, **update}), encoding="utf-8")
+                with self.assertRaisesRegex(guard.RblxValueGuardError, message):
+                    guard.is_key_blocked(now=1_800_000_000, key="rbx_test_key",
+                                         block_path=self.block)
+
 
 
 if __name__ == "__main__":

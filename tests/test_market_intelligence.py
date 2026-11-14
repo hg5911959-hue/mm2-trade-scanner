@@ -1,13 +1,18 @@
 import json
 import unittest
 from unittest.mock import MagicMock, patch
+from urllib.request import Request
 
 from market_intelligence.ai_advisor import (
     build_analysis_payload,
     build_deepseek_manual_prompt,
     review_with_gemini,
 )
-from market_intelligence.public_sources import parse_rss, validate_reddit_feed_url
+from market_intelligence.public_sources import (
+    _RedditOnlyRedirectHandler,
+    parse_rss,
+    validate_reddit_feed_url,
+)
 
 
 class PublicSourceTests(unittest.TestCase):
@@ -25,6 +30,26 @@ class PublicSourceTests(unittest.TestCase):
         url = "https://www.reddit.com/r/MurderMystery2/new/.rss"
         self.assertEqual(validate_reddit_feed_url(url), url)
 
+    def test_redirect_handler_rejects_offsite_redirects_before_fetch(self):
+        handler = _RedditOnlyRedirectHandler()
+        request = Request("https://www.reddit.com/r/test/new/.rss")
+        for target in (
+            "https://example.com/steal",
+            "http://www.reddit.com/r/test/new/.rss",
+            "https://attacker.reddit.com/r/test/new/.rss",
+        ):
+            with self.subTest(target=target), self.assertRaises(ValueError):
+                handler.redirect_request(request, None, 302, "Found", {}, target)
+
+    def test_redirect_handler_allows_reddit_rss_redirect(self):
+        handler = _RedditOnlyRedirectHandler()
+        request = Request("https://www.reddit.com/r/test/new/.rss")
+        redirected = handler.redirect_request(
+            request, None, 302, "Found", {},
+            "https://old.reddit.com/r/test/new/.rss",
+        )
+        self.assertEqual(redirected.full_url, "https://old.reddit.com/r/test/new/.rss")
+
     def test_parse_rss_and_filter_external_links(self):
         xml = """<?xml version='1.0'?><rss><channel>
         <item><title>Trading: 2 weapons</title><link>https://www.reddit.com/r/test/comments/123/post/</link><description>Looking for offers</description><pubDate>Thu, 13 Nov 2026 10:00:00 GMT</pubDate></item>
@@ -41,6 +66,16 @@ class PublicSourceTests(unittest.TestCase):
         <summary>Offer</summary></entry></feed>"""
         rows = parse_rss(xml, "https://www.reddit.com/r/test/new/.rss")
         self.assertEqual(rows[0]["url"], "https://www.reddit.com/r/test/comments/1/a/")
+
+    def test_parse_rss_rejects_dtd_and_entity_declarations(self):
+        xml = """<!DOCTYPE rss [<!ENTITY x "expanded">]>
+        <rss><channel><item><title>&x;</title></item></channel></rss>"""
+        with self.assertRaisesRegex(ValueError, "DTD and entity"):
+            parse_rss(xml, "https://www.reddit.com/r/test/new/.rss")
+
+    def test_parse_rss_rejects_untrusted_source_url(self):
+        with self.assertRaises(ValueError):
+            parse_rss("<rss/>", "https://example.com/feed.rss")
 
 
 class AIAdvisorTests(unittest.TestCase):

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """BloxSwaps MM2 scanner with verified Supreme Values calculations."""
 import csv
-import difflib
 import itertools
 import hashlib
 import json
@@ -23,7 +22,7 @@ from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 import rblxvalue_guard
 from tools.metrics import update_metrics
 from tools.alert_policy import rank_and_split
-from tools.cash_market import calculate_cash_side, cash_profit_bounds, load_cash_price_catalog, normalize_cash_name, cash_price_is_fresh
+from tools.cash_market import calculate_cash_side, cash_profit_bounds, load_cash_price_catalog, normalize_cash_name, cash_price_is_fresh, strict_quantity
 
 BLOXSWAPS_URL = os.environ.get(
     "BLOXSWAPS_URL",
@@ -1044,15 +1043,67 @@ def parse_listings(html):
     return parse_page(html)[0]
 
 
+RBLXVALUE_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+MAX_RETRY_AFTER_SECONDS = 120
+
+
+class _RejectCredentialRedirects(urllib.request.HTTPRedirectHandler):
+    """Never forward the RBLXValue API key to a redirect target."""
+
+    handler_order = 100
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise HTTPError(
+            req.full_url,
+            code,
+            "Redirect refused for credential-bearing RBLXValue request",
+            headers,
+            fp,
+        )
+
+
+def _open_rblxvalue_url(req, timeout):
+    # urllib's default redirect handler can copy custom headers to a new host.
+    # RBLXValue requests carry X-Api-Key, so reject redirects before following.
+    opener = urllib.request.build_opener(_RejectCredentialRedirects())
+    return opener.open(req, timeout=timeout)
+
+
 def request_with_retry(req, timeout, label, attempts=4, return_headers=False, allow_not_modified=False):
     """Retry transient failures with exponential backoff and respect Retry-After."""
-    is_rblxvalue = label == "RBLXValue API"
+    request_url = req.full_url if isinstance(req, urllib.request.Request) else str(req)
+    request_headers = {}
+    request_headers.update(getattr(req, "headers", {}) or {})
+    request_headers.update(getattr(req, "unredirected_hdrs", {}) or {})
+    carries_api_key = any(str(name).casefold() == "x-api-key" for name in request_headers)
+    is_rblxvalue = label == "RBLXValue API" or carries_api_key
+    if is_rblxvalue:
+        target = urlsplit(request_url)
+        if (
+            target.scheme != "https"
+            or target.hostname != "api.rblxvalue.com"
+            or target.port not in (None, 443)
+        ):
+            raise RuntimeError(
+                "[rblxvalue] Refusing credential-bearing request to a non-allowlisted HTTPS origin"
+            )
     for attempt in range(attempts):
         if is_rblxvalue:
             rblxvalue_guard.reserve_request(key=RBLXVALUE_API_KEY)
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as response:
-                body = response.read()
+            response_context = (
+                _open_rblxvalue_url(req, timeout)
+                if is_rblxvalue else urllib.request.urlopen(req, timeout=timeout)
+            )
+            with response_context as response:
+                if is_rblxvalue:
+                    body = response.read(RBLXVALUE_MAX_RESPONSE_BYTES + 1)
+                    if len(body) > RBLXVALUE_MAX_RESPONSE_BYTES:
+                        raise RuntimeError(
+                            "[rblxvalue] Response exceeded the 8 MiB safety limit; refusing payload"
+                        )
+                else:
+                    body = response.read()
                 print(f"[http] {label}: HTTP {response.status} ({len(body)} bytes)")
                 return (body, response.headers) if return_headers else body
         except HTTPError as exc:
@@ -1082,7 +1133,10 @@ def request_with_retry(req, timeout, label, attempts=4, return_headers=False, al
                 ) from exc
             retryable = exc.code == 429 or 500 <= exc.code <= 599
             if not retryable or attempt == attempts - 1:
-                raise RuntimeError(f"{label}: HTTP {exc.code}: {detail[:200]}") from exc
+                safe_detail = redact(detail).strip()
+                if safe_detail.startswith("<"):
+                    safe_detail = "[HTML response omitted]"
+                raise RuntimeError(f"{label}: HTTP {exc.code}: {safe_detail[:200]}") from exc
             delay = min(30, 2 ** (attempt + 1))
             retry_after = exc.headers.get("Retry-After", "")
             if retry_after:
@@ -1094,6 +1148,11 @@ def request_with_retry(req, timeout, label, attempts=4, return_headers=False, al
                             datetime.now(timezone.utc)).total_seconds())
                     except Exception:
                         pass
+            if delay > MAX_RETRY_AFTER_SECONDS:
+                raise RuntimeError(
+                    f"{label}: Retry-After exceeds the safe per-attempt wait "
+                    f"({int(delay)}s > {MAX_RETRY_AFTER_SECONDS}s); aborting this scan without retry"
+                ) from exc
             delay = rblxvalue_guard.jittered_delay(delay)
             print(f"[retry] {label}: HTTP {exc.code}; waiting {delay:.2f}s")
             time.sleep(delay)
@@ -3675,13 +3734,13 @@ def qualifies(result, min_diff=None, min_percent=None):
     min_percent = MIN_PROFIT_PERCENT if min_percent is None else min_percent
     # Only fully verified, conservative-positive trades are eligible for Telegram.
     # A best-case-only profit is uncertain and must never be advertised as a WIN.
-    if result.get("manual_review"):
+    if result.get("manual_review") or result.get("cash_estimate_only"):
         return False
     metric = result.get("profit_worst", result.get("difference", 0))
     return metric > 0 and metric >= min_diff and result["margin"] >= min_percent
 
 
-def evaluate_cash_listing(listing, values, aliases, cash_catalog):
+def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=False):
     """Evaluate cash resale profit only; Supreme is used for identity/stability gates."""
     if not listing.get("give_items") or not listing.get("receive_items"):
         return None, ["one side has no items"]
@@ -3725,13 +3784,13 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog):
             qmax = item.get("quantity_max")
             source = item.get("quantity_source", "implicit_single")
             try:
-                qmin = int(qmin if qmin is not None else (quantity if quantity is not None else 1))
+                qmin = strict_quantity(qmin if qmin is not None else (quantity if quantity is not None else 1))
                 if qmax is None and quantity is not None and source != "uncertain":
                     qmax = quantity
-                qmax = int(qmax) if qmax is not None else None
+                qmax = strict_quantity(qmax) if qmax is not None else None
             except (TypeError, ValueError):
                 qmin, qmax = 1, None
-            if qmin < 1 or qmin > 100 or qmax is None or qmax < qmin or qmax > 100:
+            if qmax is None or qmax < qmin:
                 missing.append(f"{canonical_name} (quantity uncertain/unbounded)")
                 continue
 
@@ -3750,10 +3809,12 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog):
         return None, ["one side has no Supreme-catalogued items"]
 
     give_min, give_max, give_lines, give_missing = calculate_cash_side(
-        prepared["give"], cash_catalog, "give", 0, max_age_days=CASH_MAX_AGE_DAYS
+        prepared["give"], cash_catalog, "give", 0, max_age_days=CASH_MAX_AGE_DAYS,
+        allow_unverified_estimates=estimate_mode,
     )
     receive_min, receive_max, receive_lines, receive_missing = calculate_cash_side(
-        prepared["receive"], cash_catalog, "receive", CASH_SELL_HAIRCUT_PCT, max_age_days=CASH_MAX_AGE_DAYS
+        prepared["receive"], cash_catalog, "receive", CASH_SELL_HAIRCUT_PCT,
+        max_age_days=CASH_MAX_AGE_DAYS, allow_unverified_estimates=estimate_mode,
     )
     missing = give_missing + receive_missing
     if missing:
@@ -3799,18 +3860,34 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog):
         "cash_sell_haircut_pct": CASH_SELL_HAIRCUT_PCT,
         "cash_profit_worst": profit_worst,
         "cash_profit_best": profit_best,
-        "cash_price_basis": "verified manual USD resale catalogue",
+        "cash_price_basis": "unverified legacy estimate only" if estimate_mode else "verified manual USD resale catalogue",
+        "cash_estimate_only": bool(estimate_mode),
         "receive_demand_score": None,
         "receive_stability_score": None,
     }, []
 
 
 def qualifies_cash(result):
-    """Cash-only alert gate; Supreme numeric value and Demand never rank profit."""
-    if result.get("manual_review"):
+    """Cash-only alert gate; missing provenance and uncertain results fail closed."""
+    if not isinstance(result, dict):
         return False
-    profit = float(result.get("cash_profit_worst", result.get("profit_worst", 0)))
-    margin = float(result.get("margin", 0))
+    if (
+        result.get("manual_review") is not False
+        or result.get("cash_estimate_only") is not False
+        or result.get("cash_price_basis") != "verified manual USD resale catalogue"
+    ):
+        return False
+    if "cash_profit_worst" not in result or "margin" not in result:
+        return False
+    raw_profit = result["cash_profit_worst"]
+    raw_margin = result["margin"]
+    if isinstance(raw_profit, bool) or isinstance(raw_margin, bool):
+        return False
+    try:
+        profit = float(raw_profit)
+        margin = float(raw_margin)
+    except (TypeError, ValueError, OverflowError):
+        return False
     return (
         math.isfinite(profit) and math.isfinite(margin)
         and profit >= CASH_MIN_PROFIT_USD
@@ -4368,7 +4445,8 @@ def scan_once(include_backlog_rechecks=True):
                 f"to {format_number(op['profit_best'])}"
             )
         if listing.get("valuation_mode") == "cash":
-            message += f"\n💵 CASH PROFIT RANGE: ${op['cash_profit_worst']:.2f} to ${op['cash_profit_best']:.2f}"
+            prefix = "ESTIMATED ONLY — NOT TRADE-ELIGIBLE" if op.get("cash_estimate_only") else "CASH PROFIT RANGE"
+            message += f"\n💵 {prefix}: ${op['cash_profit_worst']:.2f} to ${op['cash_profit_best']:.2f}"
             message += f"\n📊 CASH ROI: {op['margin']:.2f}%"
         else:
             message += f"\n📊 MARGIN: {op['margin']:.2f}%"
@@ -4488,7 +4566,9 @@ def scan_once(include_backlog_rechecks=True):
             uncertain_skipped += 1
             mark_seen_ad(listing)
             continue
-        result, missing = evaluate_cash_listing(listing, values, aliases, cash_catalog)
+        result, missing = evaluate_cash_listing(
+            listing, values, aliases, cash_catalog, estimate_mode=dry_run
+        )
         evaluated += 1
         if result is None:
             skipped_unknown += 1
@@ -4519,6 +4599,17 @@ def scan_once(include_backlog_rechecks=True):
             # hot path. Urgent quantity uncertainty stays visible for quick retry.
             if pending_reason not in PRIORITY_PENDING_REASONS:
                 mark_seen_ad(listing, clear_pending=False)
+            continue
+        if result.get("cash_estimate_only"):
+            print(
+                f"[dry-run-estimate] listing={trade_id} "
+                f"estimated_cash_profit_range=${result['cash_profit_worst']:.2f}.."
+                f"${result['cash_profit_best']:.2f}; NOT TRADE-ELIGIBLE"
+            )
+            for line in result.get("give_lines", []):
+                print(f"[dry-run-estimate] GIVE {line}")
+            for line in result.get("receive_lines", []):
+                print(f"[dry-run-estimate] RECEIVE {line}")
             continue
         if not qualifies_cash(result):
             if result.get("uncertain_items"):

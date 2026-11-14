@@ -23,7 +23,7 @@ Public RSS sources may supplement the primary sources later, but they are not a 
 
 ## AI providers and zero-budget operation
 
-- **Gemini:** optional automated commentary through the official Gemini Developer API free tier. Free models and quotas can change. Add `GEMINI_API_KEY` as a GitHub Actions secret only after creating a key in Google AI Studio. The adapter is advisory and can be skipped if no key or free quota is available.
+- **Gemini:** a tested API adapter exists for the official Gemini Developer API, but it is **not currently called by the production scanner or scheduled workflow**. No automatic AI commentary is running. Free models and quotas can change. Wiring it into production would require a separate reviewed change, a bounded payload, and a strict advisory-only result path.
 - **DeepSeek:** use the free DeepSeek chat website for manual second-opinion reviews. The API is not assumed to have a permanent free tier. The repository can export a prompt with `build_deepseek_manual_prompt(payload)`; no paid API call is made.
 
 Only public listing text, message links, and normalized trade details should be sent to an AI model. Do not send bot tokens, account credentials, private DMs, or unrelated personal data.
@@ -39,4 +39,4 @@ Only public listing text, message links, and normalized trade details should be 
 
 ## Current implementation status
 
-The repository has a read-only Discord collector, a BloxSwaps scanner, optional Gemini free-tier commentary, a manual DeepSeek prompt exporter, and unit tests. Discord collection activates after the owner configures the `DISCORD_BOT_TOKEN` secret and the bot is present in both configured servers with the required permissions. Parsing Discord messages into standardized item/quantity offers and combining them with BloxSwaps market data is the next integration stage.
+The repository has a read-only Discord collector, a BloxSwaps scanner, a tested but not production-wired Gemini adapter, a manual DeepSeek prompt exporter, and unit tests. Discord collection activates after the owner configures the `DISCORD_BOT_TOKEN` secret and the bot is present in both configured servers with the required permissions. The scanner can parse authorized collector output and manual imports into normalized item/quantity offers; private Discord records remain excluded from public history and the dashboard. Reddit RSS ingestion is a separate adapter and is not currently part of the scheduled scanner path.

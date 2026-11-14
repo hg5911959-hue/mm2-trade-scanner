@@ -12,7 +12,11 @@ from typing import Any
 
 BUDGET_FILE = Path("data/rblxvalue_request_budget.json")
 BLOCK_FILE = Path("data/api_key_blocked.json")
-DAILY_REQUEST_LIMIT = max(1, int(os.environ.get("RBLXVALUE_DAILY_REQUEST_LIMIT", "60")))
+HARD_DAILY_REQUEST_LIMIT = 60
+DAILY_REQUEST_LIMIT = min(
+    HARD_DAILY_REQUEST_LIMIT,
+    max(1, int(os.environ.get("RBLXVALUE_DAILY_REQUEST_LIMIT", "60"))),
+)
 BLOCK_STEPS = (21600, 43200, 86400, 172800)
 PERMANENT_BLOCK_AFTER = 3
 ALERT_INTERVAL_SECONDS = 24 * 60 * 60
@@ -71,8 +75,61 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
     os.replace(temp, path)
 
 
+def _validated_block_state(path: Path) -> dict[str, Any]:
+    """Validate persisted breaker state; malformed safety state must fail closed."""
+    state = _read_json(path)
+    if not state:
+        return {}
+    if type(state.get("schema_version")) is not int or state["schema_version"] != 2:
+        raise RblxValueGuardError(
+            f"[rblxvalue-state] safety state file {path.name} has an unsupported schema; refusing API request"
+        )
+    fingerprint = state.get("key_fingerprint")
+    if not isinstance(fingerprint, str) or len(fingerprint) != 16 or any(
+        char not in "0123456789abcdef" for char in fingerprint
+    ):
+        raise RblxValueGuardError(
+            f"[rblxvalue-state] safety state file {path.name} has an invalid key fingerprint; refusing API request"
+        )
+    permanent = state.get("permanent")
+    if not isinstance(permanent, bool):
+        raise RblxValueGuardError(
+            f"[rblxvalue-state] safety state file {path.name} has an invalid permanent flag; refusing API request"
+        )
+    try:
+        until_raw = state["blocked_until_epoch"]
+        seconds_raw = state["blocked_seconds"]
+        if isinstance(until_raw, bool) or isinstance(seconds_raw, bool):
+            raise TypeError("boolean timestamp/duration")
+        until = float(until_raw)
+        consecutive = state["consecutive_blocks"]
+        seconds = float(seconds_raw)
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise RblxValueGuardError(
+            f"[rblxvalue-state] safety state file {path.name} has invalid block timing; refusing API request"
+        ) from exc
+    if (
+        not (until > 0 and until < float("inf"))
+        or isinstance(consecutive, bool)
+        or not isinstance(consecutive, int)
+        or consecutive < 1
+        or not (seconds > 0 and seconds < float("inf"))
+        or seconds not in BLOCK_STEPS
+    ):
+        raise RblxValueGuardError(
+            f"[rblxvalue-state] safety state file {path.name} has invalid block timing; refusing API request"
+        )
+    expected_permanent = consecutive >= PERMANENT_BLOCK_AFTER
+    expected_seconds = BLOCK_STEPS[min(consecutive - 1, len(BLOCK_STEPS) - 1)]
+    if permanent != expected_permanent or seconds != expected_seconds:
+        raise RblxValueGuardError(
+            f"[rblxvalue-state] safety state file {path.name} has inconsistent block escalation; refusing API request"
+        )
+    return state
+
+
 def _active_block(now: float, key: str, block_path: Path) -> dict[str, Any] | None:
-    state = _read_json(block_path)
+    state = _validated_block_state(block_path)
     if not state:
         return None
     fingerprint = key_fingerprint(key)
@@ -83,10 +140,7 @@ def _active_block(now: float, key: str, block_path: Path) -> dict[str, Any] | No
         except FileNotFoundError:
             pass
         return None
-    try:
-        until = float(state.get("blocked_until_epoch", 0))
-    except (TypeError, ValueError):
-        until = 0
+    until = float(state["blocked_until_epoch"])
     return state if until > now else None
 
 
@@ -214,6 +268,10 @@ def reserve_request(*, now: float | None = None, key: str | None = None,
         )
     timestamps = []
     for value in raw_timestamps:
+        if isinstance(value, bool):
+            raise RblxValueGuardError(
+                "[rblxvalue-state] request budget contains a boolean timestamp; refusing API request"
+            )
         try:
             stamp = float(value)
         except (TypeError, ValueError) as exc:
@@ -228,7 +286,14 @@ def reserve_request(*, now: float | None = None, key: str | None = None,
         # not silently grant extra requests until wall-clock time catches up.
         if stamp > cutoff:
             timestamps.append(stamp)
-    cap = DAILY_REQUEST_LIMIT if limit is None else max(1, int(limit))
+    if limit is None:
+        cap = DAILY_REQUEST_LIMIT
+    else:
+        if isinstance(limit, bool) or not isinstance(limit, int):
+            raise RblxValueGuardError(
+                "[rblxvalue-state] request budget limit must be an integer; refusing API request"
+            )
+        cap = min(HARD_DAILY_REQUEST_LIMIT, max(1, limit))
     if len(timestamps) >= cap:
         _atomic_json(path, {
             "schema_version": 1,

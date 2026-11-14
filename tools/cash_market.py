@@ -55,9 +55,17 @@ def load_cash_price_catalog(path="data/cash_prices.csv", max_age_days=14):
     rows = {}
     try:
         reader = csv.DictReader(text.splitlines())
-        if not reader.fieldnames or not REQUIRED_COLUMNS.issubset(set(reader.fieldnames)):
-            raise RuntimeError("[cash] Cash-price CSV header is incomplete.")
+        if (
+            not reader.fieldnames
+            or len(reader.fieldnames) != len(set(reader.fieldnames))
+            or not REQUIRED_COLUMNS.issubset(set(reader.fieldnames))
+        ):
+            raise RuntimeError("[cash] Cash-price CSV header is incomplete or contains duplicate columns.")
         for line_number, row in enumerate(reader, start=2):
+            if None in row:
+                raise RuntimeError(f"[cash] Extra CSV fields on line {line_number}.")
+            if any(row.get(column) is None for column in REQUIRED_COLUMNS):
+                raise RuntimeError(f"[cash] Missing CSV field on line {line_number}.")
             name = str(row.get("name") or "").strip()
             key = normalize_cash_name(name)
             if not name or not key:
@@ -113,8 +121,15 @@ def load_cash_price_catalog(path="data/cash_prices.csv", max_age_days=14):
     }
 
 
-def calculate_cash_side(items, catalog, side, sell_haircut_pct=15.0, max_age_days=14, now=None):
-    """Return conservative cash bounds; receive-side proceeds include haircut."""
+def calculate_cash_side(
+    items, catalog, side, sell_haircut_pct=15.0, max_age_days=14, now=None,
+    allow_unverified_estimates=False, estimate_uncertainty_pct=30.0,
+):
+    """Return cash bounds; unverified legacy prices are estimate-only and opt-in.
+
+    Estimate mode is for offline research only. It must never be used to qualify
+    live trade alerts; all such outputs are explicitly labelled ESTIMATE.
+    """
     if side not in {"give", "receive"}:
         raise ValueError("side must be give or receive")
     try:
@@ -123,6 +138,12 @@ def calculate_cash_side(items, catalog, side, sell_haircut_pct=15.0, max_age_day
         raise ValueError("sell_haircut_pct must be numeric")
     if not math.isfinite(haircut) or not 0 <= haircut < 100:
         raise ValueError("sell_haircut_pct must be between 0 and 100")
+    try:
+        uncertainty = float(estimate_uncertainty_pct)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("estimate_uncertainty_pct must be numeric") from exc
+    if not math.isfinite(uncertainty) or not 0 <= uncertainty < 100:
+        raise ValueError("estimate_uncertainty_pct must be between 0 and 100")
 
     low_total = high_total = 0.0
     lines, missing = [], []
@@ -134,44 +155,78 @@ def calculate_cash_side(items, catalog, side, sell_haircut_pct=15.0, max_age_day
         if not entry:
             missing.append(f"{name} (cash price missing)")
             continue
-        if entry.get("status") != "verified":
+        estimate_only = False
+        if entry.get("status") == "unverified" and allow_unverified_estimates:
+            estimate_only = True
+        elif entry.get("status") != "verified":
             missing.append(f"{name} (cash price unverified)")
             continue
-        if not cash_price_is_fresh(entry, max_age_days=max_age_days, now=now):
+        elif not cash_price_is_fresh(entry, max_age_days=max_age_days, now=now):
             missing.append(f"{name} (cash price expired)")
             continue
         try:
-            qmin = int(item.get("quantity_min", item.get("quantity", 1)))
-            qmax_raw = item.get("quantity_max", item.get("quantity", qmin))
-            qmax = int(qmax_raw) if qmax_raw is not None else None
+            qmin_raw = item.get("quantity_min", item.get("quantity", 1))
+            qmax_raw = item.get("quantity_max", item.get("quantity", qmin_raw))
+            qmin = strict_quantity(qmin_raw)
+            qmax = strict_quantity(qmax_raw) if qmax_raw is not None else None
         except (TypeError, ValueError):
             missing.append(f"{name} (quantity invalid)")
             continue
-        if qmin < 1 or qmin > 100 or qmax is None or qmax < qmin or qmax > 100:
+        if qmax is None or qmax < qmin:
             missing.append(f"{name} (quantity uncertain/unbounded)")
             continue
         unit = float(entry["cash_price_usd"])
+        uncertainty_factor = uncertainty / 100.0 if estimate_only else 0.0
         if side == "receive":
-            unit_low = unit * (1.0 - haircut / 100.0)
-            unit_high = unit_low
-            basis = "net resale"
+            unit_low = unit * (1.0 - uncertainty_factor) * (1.0 - haircut / 100.0)
+            unit_high = unit * (1.0 + uncertainty_factor) * (1.0 - haircut / 100.0)
+            basis = "estimated net resale" if estimate_only else "net resale"
         else:
-            unit_low = unit_high = unit
-            basis = "replacement cost"
+            unit_low = unit * (1.0 - uncertainty_factor)
+            unit_high = unit * (1.0 + uncertainty_factor)
+            basis = "estimated replacement cost" if estimate_only else "replacement cost"
         line_low = unit_low * qmin
         line_high = unit_high * qmax
         low_total += line_low
         high_total += line_high
         quantity_label = f"x{qmin}" if qmin == qmax else f"x? ({qmin}..{qmax})"
+        estimate_label = " [ESTIMATE — UNVERIFIED LEGACY PRICE]" if estimate_only else ""
         lines.append(
-            f"• {name} {quantity_label} — ${unit_low:.2f} each "
-            f"({basis}) = ${line_low:.2f}"
-            + (f".. ${line_high:.2f}" if line_high != line_low else "")
+            f"• {name} {quantity_label} — ${unit_low:.2f}..${unit_high:.2f} each "
+            f"({basis}) = ${line_low:.2f}..${line_high:.2f}{estimate_label}"
         )
     return low_total, high_total, lines, missing
 
 
+def strict_quantity(value):
+    """Parse a positive whole-item quantity without silently truncating data."""
+    if isinstance(value, bool):
+        raise TypeError("quantity must be a whole number, not a boolean")
+    if isinstance(value, int):
+        quantity = value
+    elif isinstance(value, float):
+        if not math.isfinite(value) or not value.is_integer():
+            raise ValueError("quantity must be a finite whole number")
+        quantity = int(value)
+    elif isinstance(value, str) and re.fullmatch(r"\d+", value.strip()):
+        quantity = int(value.strip())
+    else:
+        raise ValueError("quantity must be a whole number")
+    if not 1 <= quantity <= 100:
+        raise ValueError("quantity must be between 1 and 100")
+    return quantity
+
+
 def cash_profit_bounds(give_bounds, receive_bounds):
-    give_min, give_max = give_bounds
-    receive_min, receive_max = receive_bounds
+    """Return conservative profit bounds after validating both monetary ranges."""
+    try:
+        give_min, give_max = (float(value) for value in give_bounds)
+        receive_min, receive_max = (float(value) for value in receive_bounds)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("cash bounds must contain two numeric values") from exc
+    values = (give_min, give_max, receive_min, receive_max)
+    if not all(math.isfinite(value) and value >= 0 for value in values):
+        raise ValueError("cash bounds must be finite and non-negative")
+    if give_min > give_max or receive_min > receive_max:
+        raise ValueError("cash lower bounds cannot exceed upper bounds")
     return receive_min - give_max, receive_max - give_min

@@ -1,7 +1,7 @@
 import json, tempfile, unittest
 from pathlib import Path
 from datetime import datetime, timezone
-from tools.metrics import update_metrics, FIELDS
+from tools.metrics import update_metrics
 from tools.weekly_report import build_report
 
 class MetricsReportTests(unittest.TestCase):

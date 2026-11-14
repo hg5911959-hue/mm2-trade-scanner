@@ -1,6 +1,6 @@
 # MM2 Trade Scanner
 
-Automated scanner for public **BloxSwaps MM2 P2P listings**, with concise Telegram alerts. GitHub Actions starts a job every 15 minutes; each job polls the feed every 30 seconds for 780 seconds (13 minutes), leaving time for state artifacts to be persisted.
+Automated scanner for public **BloxSwaps MM2 P2P listings**, with concise Telegram alerts. GitHub Actions schedules a scan every 10 minutes; each scan polls the feed every 30 seconds for up to 540 seconds (9 minutes), leaving a short persistence window. GitHub cron can be delayed, so this is a target cadence, not a real-time guarantee.
 
 ## Trade evaluation
 
@@ -13,7 +13,8 @@ From the scanner user's perspective:
 - Supreme Values is used to confirm that every item identity exists in the catalogue and to supply the received item's RBLXValue Stability label. Supreme numeric value and Demand do not determine cash profit or ranking.
 - Cash profit = (verified cash resale prices of received items after a configurable resale haircut) − (verified cash replacement prices of given items). Default resale haircut: **15%**; minimum conservative cash profit: **$1**; minimum cash ROI: **0%** (positive profit is the gate; ROI is used for ranking and display). The best offers are ranked by worst-case USD profit, then ROI.
 - Any received item with missing/unrecognized Stability or a blocked status (Decreasing, Receding, Unsafe, Untradeable, Unstable, Volatile, Fluctuating) is excluded. The Stability field is sourced from RBLXValue and is not represented as a direct Supreme website verification.
-- Cash prices must be manually verified before they can qualify. The initial data/cash_prices.csv contains **190 historical reference rows supplied by the user**, all marked unverified; therefore no live cash-profit alerts are sent until the relevant prices are checked and marked verified.
+- Cash prices must be fresh and explicitly verified before they can qualify. The current catalogue contains **190 rows**: 11 user-confirmed USD selling prices and 179 historical references that remain unverified. The 11 confirmed entries are user-attested inputs, not independent marketplace cross-checks; they expire after 14 days unless reconfirmed. Any listing containing an item with a missing, unverified, or expired price is held back.
+- **Estimate-only dry run:** when `DRY_RUN=true`, the scanner may use unverified legacy references for exploratory calculations, applying a ±30% uncertainty band and the resale haircut. Every dry-run cash result is labelled as estimate-only and is hard-blocked from the live alert eligibility gate. This uncertainty band is an engineering assumption, not a statistically measured confidence interval or proof of current market prices. Normal production runs continue to reject unverified rows.
 - The scanner never uses BloxSwaps' own Win/Loss label, never uses the visible listing price as an item value, and never invents a missing item value or quantity.
 - A listing is excluded if any item on the received (`Propose`) side has a risky RBLXValue stability label: `Decreasing`, `Receding`, `Unsafe`, `Untradeable`, `Unstable`, or `Volatile`. If the RBLXValue source provides a missing or unrecognized stability label for a received item, the listing is held back rather than assumed safe. Telegram labels the field `Stability (RBLXValue)` to avoid implying direct verification against the Supreme website; exact Supreme-specific `Decreasing` verification requires an authorized data source.
 

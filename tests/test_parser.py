@@ -1,4 +1,5 @@
 import unittest
+import csv
 import scanner
 import watchdog
 import json
@@ -1125,7 +1126,8 @@ class ReliabilityTests(unittest.TestCase):
             result = {"difference": 5, "margin": 50, "give_total": 10, "receive_total": 15}
             with patch("scanner.HISTORY_FILE", path):
                 scanner.append_history(listing, result)
-            rows = list(__import__("csv").DictReader(path.open(encoding="utf-8")))
+            with path.open(encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle))
             self.assertEqual([row["listing_id"] for row in rows], ["old-id", "new-id"])
             self.assertEqual(rows[0]["alerted_at_utc"], "2026-11-11T10:00:00+00:00")
             self.assertEqual(rows[1]["first_seen_at_utc"], listing["first_seen_at_utc"])
@@ -3621,6 +3623,118 @@ class MinimumProfitMarginTests(unittest.TestCase):
 
 
 class UpstreamForbiddenDiagnosticsTests(unittest.TestCase):
+    def test_api_key_header_cannot_be_sent_to_non_allowlisted_origin(self):
+        from urllib.request import Request
+
+        request = Request(
+            "https://attacker.example/collect",
+            headers={"X-Api-Key": "rbx_test_secret"},
+        )
+        with (
+            patch("scanner._open_rblxvalue_url") as open_url,
+            patch("rblxvalue_guard.reserve_request") as reserve,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "non-allowlisted HTTPS origin"):
+                scanner.request_with_retry(request, 10, "some other label", attempts=1)
+        open_url.assert_not_called()
+        reserve.assert_not_called()
+
+    def test_rblxvalue_label_rejects_non_https_or_noncanonical_origin(self):
+        for url in (
+            "http://api.rblxvalue.com/v2/items",
+            "https://api.rblxvalue.com.attacker.example/v2/items",
+            "https://api.rblxvalue.com:444/v2/items",
+        ):
+            with self.subTest(url=url):
+                with self.assertRaisesRegex(RuntimeError, "non-allowlisted HTTPS origin"):
+                    scanner.request_with_retry(url, 10, "RBLXValue API", attempts=1)
+
+    def test_rblxvalue_redirects_are_rejected_before_forwarding_api_key(self):
+        from urllib.error import HTTPError
+        from urllib.request import Request
+
+        request = Request(
+            "https://api.rblxvalue.com/v2/items",
+            headers={"X-Api-Key": "rbx_test_secret"},
+        )
+        handler = scanner._RejectCredentialRedirects()
+        with self.assertRaises(HTTPError) as raised:
+            handler.redirect_request(
+                request, None, 302, "Found", {"Location": "https://attacker.example/collect"},
+                "https://attacker.example/collect",
+            )
+        self.assertEqual(raised.exception.code, 302)
+        self.assertIn("Redirect refused", str(raised.exception))
+        self.assertEqual(request.get_header("X-api-key"), "rbx_test_secret")
+
+    def test_rblxvalue_retry_after_above_scan_budget_aborts_without_sleep(self):
+        from io import BytesIO
+        from urllib.error import HTTPError
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            error = HTTPError(
+                "https://api.rblxvalue.com/v2/items", 429, "Too Many Requests",
+                {"Retry-After": "900"}, BytesIO(b'{"message":"rate limited"}')
+            )
+            with (
+                patch("scanner.RBLXVALUE_API_KEY", "rbx_test_key"),
+                patch("rblxvalue_guard.BUDGET_FILE", root / "budget.json"),
+                patch("rblxvalue_guard.BLOCK_FILE", root / "blocked.json"),
+                patch("scanner._open_rblxvalue_url", side_effect=error) as request,
+                patch("scanner.time.sleep") as sleep,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "Retry-After exceeds the safe per-attempt wait"):
+                    scanner.request_with_retry(
+                        "https://api.rblxvalue.com/v2/items", 10, "RBLXValue API", attempts=4
+                    )
+            self.assertEqual(request.call_count, 1)
+            sleep.assert_not_called()
+
+    def test_rblxvalue_error_body_is_redacted_before_exception_logging(self):
+        from io import BytesIO
+        from urllib.error import HTTPError
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            error = HTTPError(
+                "https://api.rblxvalue.com/v2/items", 400, "Bad Request", {},
+                BytesIO(b'{"detail":"rbx_test_secret"}')
+            )
+            with (
+                patch("scanner.RBLXVALUE_API_KEY", "rbx_test_secret"),
+                patch("rblxvalue_guard.BUDGET_FILE", root / "budget.json"),
+                patch("rblxvalue_guard.BLOCK_FILE", root / "blocked.json"),
+                patch("scanner._open_rblxvalue_url", side_effect=error),
+            ):
+                with self.assertRaises(RuntimeError) as raised:
+                    scanner.request_with_retry(
+                        "https://api.rblxvalue.com/v2/items", 10, "RBLXValue API", attempts=1
+                    )
+            self.assertNotIn("rbx_test_secret", str(raised.exception))
+
+    def test_rblxvalue_response_body_is_bounded(self):
+        from io import BytesIO
+        from email.message import Message
+
+        class OversizedResponse(BytesIO):
+            status = 200
+            headers = Message()
+
+        oversized = OversizedResponse(b"x" * (scanner.RBLXVALUE_MAX_RESPONSE_BYTES + 1))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with (
+                patch("scanner.RBLXVALUE_API_KEY", "rbx_test_key"),
+                patch("rblxvalue_guard.BUDGET_FILE", root / "budget.json"),
+                patch("rblxvalue_guard.BLOCK_FILE", root / "blocked.json"),
+                patch("scanner._open_rblxvalue_url", return_value=oversized),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "8 MiB safety limit"):
+                    scanner.request_with_retry(
+                        "https://api.rblxvalue.com/v2/items", 10, "RBLXValue API", attempts=1
+                    )
+
     def test_api_403_with_explicit_suspended_key_opens_breaker_without_exposing_secret(self):
         from io import BytesIO
         from urllib.error import HTTPError
@@ -3635,7 +3749,7 @@ class UpstreamForbiddenDiagnosticsTests(unittest.TestCase):
                 patch("scanner.RBLXVALUE_API_KEY", "rbx_test_secret"),
                 patch("rblxvalue_guard.BUDGET_FILE", root / "budget.json"),
                 patch("rblxvalue_guard.BLOCK_FILE", root / "blocked.json"),
-                patch("scanner.urllib.request.urlopen", side_effect=error) as request,
+                patch("scanner._open_rblxvalue_url", side_effect=error) as request,
             ):
                 with self.assertRaisesRegex(RuntimeError, "rblxvalue-key-blocked"):
                     scanner.request_with_retry("https://api.rblxvalue.com/v2/items", 10, "RBLXValue API", attempts=4)
@@ -3662,7 +3776,7 @@ class UpstreamForbiddenDiagnosticsTests(unittest.TestCase):
                 patch("scanner.RBLXVALUE_API_KEY", "rbx_test_key"),
                 patch("rblxvalue_guard.BUDGET_FILE", root / "budget.json"),
                 patch("rblxvalue_guard.BLOCK_FILE", root / "blocked.json"),
-                patch("scanner.urllib.request.urlopen", side_effect=error) as request,
+                patch("scanner._open_rblxvalue_url", side_effect=error) as request,
             ):
                 with self.assertRaisesRegex(RuntimeError, r"\[cloudflare\].*HTTP 403"):
                     scanner.request_with_retry("https://api.rblxvalue.com/v2/items", 10, "RBLXValue API", attempts=4)
