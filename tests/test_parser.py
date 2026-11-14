@@ -3623,6 +3623,44 @@ class MinimumProfitMarginTests(unittest.TestCase):
 
 
 class UpstreamForbiddenDiagnosticsTests(unittest.TestCase):
+    def test_rblxvalue_redirects_are_rejected_before_forwarding_api_key(self):
+        from urllib.error import HTTPError
+        from urllib.request import Request
+
+        request = Request(
+            "https://api.rblxvalue.com/v2/items",
+            headers={"X-Api-Key": "rbx_test_secret"},
+        )
+        handler = scanner._RejectCredentialRedirects()
+        with self.assertRaises(HTTPError) as raised:
+            handler.redirect_request(
+                request, None, 302, "Found", {"Location": "https://attacker.example/collect"},
+                "https://attacker.example/collect",
+            )
+        self.assertEqual(raised.exception.code, 302)
+        self.assertIn("Redirect refused", str(raised.exception))
+        self.assertEqual(request.get_header("X-api-key"), "rbx_test_secret")
+
+    def test_rblxvalue_response_body_is_bounded(self):
+        from io import BytesIO
+        from email.message import Message
+
+        class OversizedResponse(BytesIO):
+            status = 200
+            headers = Message()
+
+        oversized = OversizedResponse(b"x" * (scanner.RBLXVALUE_MAX_RESPONSE_BYTES + 1))
+        with (
+            patch("scanner.RBLXVALUE_API_KEY", "rbx_test_key"),
+            patch("rblxvalue_guard.BUDGET_FILE", Path(tempfile.mkdtemp()) / "budget.json"),
+            patch("rblxvalue_guard.BLOCK_FILE", Path(tempfile.mkdtemp()) / "blocked.json"),
+            patch("scanner._open_rblxvalue_url", return_value=oversized),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "8 MiB safety limit"):
+                scanner.request_with_retry(
+                    "https://api.rblxvalue.com/v2/items", 10, "RBLXValue API", attempts=1
+                )
+
     def test_api_403_with_explicit_suspended_key_opens_breaker_without_exposing_secret(self):
         from io import BytesIO
         from urllib.error import HTTPError
