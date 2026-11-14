@@ -9,6 +9,10 @@ class WorkflowReliabilityTests(unittest.TestCase):
     def test_ci_linter_version_is_pinned(self):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
         self.assertIn("ruff==0.17.5", workflow)
+
+    def test_ci_runs_repository_wide_correctness_lint(self):
+        workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
+        self.assertIn("ruff check --select F .", workflow)
     def test_scanner_is_reusable_and_scheduler_owns_the_cron(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         scheduler = (ROOT / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
