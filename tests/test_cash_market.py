@@ -33,6 +33,18 @@ class CashMarketTests(unittest.TestCase):
     def test_name_normalization_handles_apostrophes_and_case(self):
         self.assertEqual(normalize_cash_name("Traveler’s Axe"), normalize_cash_name("TRAVELER'S AXE"))
 
+    def test_user_seed_catalogue_contains_all_190_supplied_rows_as_unverified(self):
+        catalog = load_cash_price_catalog("data/cash_prices.csv")
+        self.assertEqual(catalog["row_count"], 190)
+        self.assertEqual(
+            sum(row["status"] == "unverified" for row in catalog["items"].values()),
+            190,
+        )
+        self.assertEqual(
+            sum(row["status"] == "verified" for row in catalog["items"].values()),
+            0,
+        )
+
     def test_verified_catalogue_prices_can_be_used(self):
         catalog = self._catalog([self._row()])
         low, high, lines, missing = calculate_cash_side(
