@@ -3809,8 +3809,8 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
 
 
 def qualifies_cash(result):
-    """Cash-only alert gate; Supreme numeric value and Demand never rank profit."""
-    if result.get("manual_review"):
+    """Cash-only alert gate; estimates and manual-review cases are never alertable."""
+    if result.get("manual_review") or result.get("cash_estimate_only"):
         return False
     profit = float(result.get("cash_profit_worst", result.get("profit_worst", 0)))
     margin = float(result.get("margin", 0))
