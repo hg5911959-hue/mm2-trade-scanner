@@ -10,12 +10,29 @@ import hashlib
 import math
 import re
 import unicodedata
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 REQUIRED_COLUMNS = {
     "name", "cash_price_usd", "tier", "status", "verified_at_utc", "source", "notes"
 }
+
+
+def cash_price_is_fresh(entry, max_age_days=14, now=None):
+    """Only recent, verified UTC rows can contribute to a live cash calculation."""
+    if entry.get("status") != "verified":
+        return False
+    try:
+        current = now or datetime.now(UTC)
+        if current.tzinfo is None or current.utcoffset() != timedelta(0):
+            return False
+        verified = datetime.fromisoformat(str(entry.get("verified_at_utc", "")))
+        if verified.tzinfo is None or verified.utcoffset() != timedelta(0):
+            return False
+        age_seconds = (current - verified).total_seconds()
+        return 0 <= age_seconds <= float(max_age_days) * 86400
+    except (TypeError, ValueError):
+        return False
 
 
 def normalize_cash_name(value: str) -> str:
@@ -24,7 +41,7 @@ def normalize_cash_name(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", text)
 
 
-def load_cash_price_catalog(path="data/cash_prices.csv"):
+def load_cash_price_catalog(path="data/cash_prices.csv", max_age_days=14):
     path = Path(path)
     try:
         raw = path.read_bytes()
@@ -79,10 +96,24 @@ def load_cash_price_catalog(path="data/cash_prices.csv"):
             }
     except csv.Error as exc:
         raise RuntimeError("[cash] Malformed cash-price CSV.") from exc
-    return {"items": rows, "sha256": digest, "row_count": len(rows)}
+    now_utc = datetime.now(UTC)
+    fresh_rows = [row for row in rows.values() if cash_price_is_fresh(row, max_age_days=max_age_days, now=now_utc)]
+    expiring_rows = []
+    for row in fresh_rows:
+        verified = datetime.fromisoformat(row["verified_at_utc"])
+        age_days = (now_utc - verified).total_seconds() / 86400
+        if max(0, float(max_age_days) - 3) <= age_days <= float(max_age_days):
+            expiring_rows.append(row)
+    oldest_verified_at = min((row["verified_at_utc"] for row in fresh_rows), default=None)
+    return {
+        "items": rows, "sha256": digest, "row_count": len(rows),
+        "verified_count": len(fresh_rows),
+        "expiring_within_3_days": len(expiring_rows),
+        "oldest_verified_at": oldest_verified_at,
+    }
 
 
-def calculate_cash_side(items, catalog, side, sell_haircut_pct=15.0):
+def calculate_cash_side(items, catalog, side, sell_haircut_pct=15.0, max_age_days=14, now=None):
     """Return conservative cash bounds; receive-side proceeds include haircut."""
     if side not in {"give", "receive"}:
         raise ValueError("side must be give or receive")
@@ -105,6 +136,9 @@ def calculate_cash_side(items, catalog, side, sell_haircut_pct=15.0):
             continue
         if entry.get("status") != "verified":
             missing.append(f"{name} (cash price unverified)")
+            continue
+        if not cash_price_is_fresh(entry, max_age_days=max_age_days, now=now):
+            missing.append(f"{name} (cash price expired)")
             continue
         try:
             qmin = int(item.get("quantity_min", item.get("quantity", 1)))

@@ -23,7 +23,7 @@ from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 import rblxvalue_guard
 from tools.metrics import update_metrics
 from tools.alert_policy import rank_and_split
-from tools.cash_market import calculate_cash_side, cash_profit_bounds, load_cash_price_catalog, normalize_cash_name
+from tools.cash_market import calculate_cash_side, cash_profit_bounds, load_cash_price_catalog, normalize_cash_name, cash_price_is_fresh
 
 BLOXSWAPS_URL = os.environ.get(
     "BLOXSWAPS_URL",
@@ -92,6 +92,7 @@ SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "1
 CASH_SELL_HAIRCUT_PCT = float(os.environ.get("CASH_SELL_HAIRCUT_PCT", "15"))
 CASH_MIN_PROFIT_USD = float(os.environ.get("CASH_MIN_PROFIT_USD", "1"))
 CASH_MIN_MARGIN_PERCENT = float(os.environ.get("CASH_MIN_MARGIN_PERCENT", "0"))
+CASH_MAX_AGE_DAYS = max(1, int(os.environ.get("CASH_MAX_AGE_DAYS", "14")))
 CASH_PRICE_FILE = Path("data/cash_prices.csv")
 CASH_PRICE_SNAPSHOT_FILE = Path("data/cash_price_snapshot.json")
 TELEGRAM_MAX_CHARS = 4000
@@ -110,7 +111,7 @@ def redact(text):
         for name in (
             "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "RBLXVALUE_API_KEY",
             "DISCORD_BOT_TOKEN", "DISCORD_MANUAL_MESSAGES_JSON",
-            "DISCORD_MANUAL_MESSAGES_JSON_2",
+            "DISCORD_MANUAL_MESSAGES_JSON_2", "CASH_PRICES_CSV",
         )
     } | {BOT_TOKEN, CHAT_ID, RBLXVALUE_API_KEY}
     # Also redact individual text fields from manual-import JSON in case a
@@ -3749,10 +3750,10 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog):
         return None, ["one side has no Supreme-catalogued items"]
 
     give_min, give_max, give_lines, give_missing = calculate_cash_side(
-        prepared["give"], cash_catalog, "give", 0
+        prepared["give"], cash_catalog, "give", 0, max_age_days=CASH_MAX_AGE_DAYS
     )
     receive_min, receive_max, receive_lines, receive_missing = calculate_cash_side(
-        prepared["receive"], cash_catalog, "receive", CASH_SELL_HAIRCUT_PCT
+        prepared["receive"], cash_catalog, "receive", CASH_SELL_HAIRCUT_PCT, max_age_days=CASH_MAX_AGE_DAYS
     )
     missing = give_missing + receive_missing
     if missing:
@@ -3951,6 +3952,20 @@ def record_success_if_complete(stats):
     return True
 
 
+def alert_expired_cash_prices(expired_rows, max_age_days=CASH_MAX_AGE_DAYS):
+    """Send a bounded daily notice; expired rows never become eligible by alerting."""
+    if not expired_rows:
+        return False
+    oldest = sorted(expired_rows, key=lambda row: row.get("verified_at_utc") or "")[:5]
+    names = ", ".join(str(row.get("name") or "Unknown item") for row in oldest)
+    return send_maintenance_alert(
+        "cash-price-expired",
+        f"{len(expired_rows)} verified cash prices have expired (>{max_age_days} days). "
+        f"Oldest entries: {names}. Re-verify them before they can qualify.",
+        cooldown_seconds=86400,
+    )
+
+
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     dry_run = os.environ.get("DRY_RUN", "").strip().casefold() == "true"
@@ -3968,12 +3983,17 @@ def scan_once(include_backlog_rechecks=True):
     print("[stage] Loading Supreme Values before evaluating trades")
     values = load_supreme_values()
     cash_catalog = load_cash_price_catalog(CASH_PRICE_FILE)
-    verified_cash_rows = sum(1 for row in cash_catalog["items"].values() if row["status"] == "verified")
+    verified_cash_rows = sum(1 for row in cash_catalog["items"].values() if row["status"] == "verified" and cash_price_is_fresh(row, CASH_MAX_AGE_DAYS))
+    expired_cash_rows = [row for row in cash_catalog["items"].values()
+                         if row["status"] == "verified" and not cash_price_is_fresh(row, CASH_MAX_AGE_DAYS)]
+    expired_cash_rows.sort(key=lambda row: row.get("verified_at_utc") or "")
     unverified_cash_rows = sum(1 for row in cash_catalog["items"].values() if row["status"] == "unverified")
+    alert_expired_cash_prices(expired_cash_rows, CASH_MAX_AGE_DAYS)
     previous_cash_hash = cash_catalog_snapshot_hash()
     cash_prices_changed = previous_cash_hash != cash_catalog["sha256"]
-    print("[cash] Loaded %s price rows; verified=%s; unverified=%s; sell_haircut=%s%%" % (
-        cash_catalog["row_count"], verified_cash_rows, unverified_cash_rows, CASH_SELL_HAIRCUT_PCT
+    print("[cash] Loaded %s price rows; verified=%s; expired=%s; unverified=%s; max_age=%sd; sell_haircut=%s%%" % (
+        cash_catalog["row_count"], verified_cash_rows, len(expired_cash_rows),
+        unverified_cash_rows, CASH_MAX_AGE_DAYS, CASH_SELL_HAIRCUT_PCT
     ))
     if unverified_cash_rows > 0:
         send_maintenance_alert(

@@ -1,6 +1,7 @@
 import csv
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from tools.cash_market import (
@@ -57,6 +58,34 @@ class CashMarketTests(unittest.TestCase):
         self.assertEqual(low, high)
         self.assertEqual(missing, [])
         self.assertIn("$8.50", lines[0])
+
+    def test_13_day_old_verified_price_is_accepted(self):
+        now = datetime(2026, 11, 14, tzinfo=UTC)
+        catalog = self._catalog([self._row(verified=(now - timedelta(days=13)).isoformat())])
+        result = calculate_cash_side(
+            [{"canonical_name": "Chroma Laser", "quantity_min": 1, "quantity_max": 1}],
+            catalog, "give", 0, now=now,
+        )
+        self.assertEqual(result[3], [])
+        self.assertEqual(result[0], 10.0)
+
+    def test_15_day_old_verified_price_is_rejected_as_expired(self):
+        now = datetime(2026, 11, 14, tzinfo=UTC)
+        catalog = self._catalog([self._row(verified=(now - timedelta(days=15)).isoformat())])
+        result = calculate_cash_side(
+            [{"canonical_name": "Chroma Laser", "quantity_min": 1, "quantity_max": 1}],
+            catalog, "give", 0, now=now,
+        )
+        self.assertIn("cash price expired", result[3][0])
+
+    def test_future_verified_timestamp_is_rejected(self):
+        now = datetime(2026, 11, 14, tzinfo=UTC)
+        catalog = self._catalog([self._row(verified=(now + timedelta(minutes=1)).isoformat())])
+        result = calculate_cash_side(
+            [{"canonical_name": "Chroma Laser", "quantity_min": 1, "quantity_max": 1}],
+            catalog, "give", 0, now=now,
+        )
+        self.assertIn("cash price expired", result[3][0])
 
     def test_unverified_prices_never_enter_cash_profit(self):
         catalog = self._catalog([self._row(status="unverified")])
