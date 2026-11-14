@@ -1,0 +1,2062 @@
+{
+  "xeno": {
+    "name": "Xeno",
+    "first_seen_at": "2026-11-12T19:36:04.392100+00:00",
+    "last_seen_at": "2026-11-13T23:37:24.492339+00:00"
+  },
+  "unknown item id cmazobvft0044nu70bs6aukrr": {
+    "name": "Unknown item ID cmazobvft0044nu70bs6aukrr",
+    "first_seen_at": "2026-11-12T19:39:03.806923+00:00",
+    "last_seen_at": "2026-11-13T23:37:21.315000+00:00"
+  },
+  "nik s scythe": {
+    "name": "Nik's Scythe",
+    "first_seen_at": "2026-11-12T19:40:34.031260+00:00",
+    "last_seen_at": "2026-11-12T22:14:10.975542+00:00"
+  },
+  "traveler s gun": {
+    "name": "Traveler's Gun",
+    "first_seen_at": "2026-11-12T19:41:24.357116+00:00",
+    "last_seen_at": "2026-11-12T22:14:11.550330+00:00"
+  },
+  "latte": {
+    "name": "Latte",
+    "first_seen_at": "2026-11-12T19:41:24.843248+00:00",
+    "last_seen_at": "2026-11-12T22:14:07.669272+00:00"
+  },
+  "serpent": {
+    "name": "Serpent",
+    "first_seen_at": "2026-11-12T19:41:25.308471+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.172915+00:00"
+  },
+  "adurite": {
+    "name": "Adurite",
+    "first_seen_at": "2026-11-12T19:41:25.771793+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.237910+00:00"
+  },
+  "candy corn": {
+    "name": "Candy Corn",
+    "first_seen_at": "2026-11-12T19:41:25.771793+00:00",
+    "last_seen_at": "2026-11-14T00:29:00.466098+00:00"
+  },
+  "candycorn": {
+    "name": "CandyCorn",
+    "first_seen_at": "2026-11-12T19:41:25.771793+00:00",
+    "last_seen_at": "2026-11-14T00:16:03.276479+00:00"
+  },
+  "catseye": {
+    "name": "Catseye",
+    "first_seen_at": "2026-11-12T19:41:26.211483+00:00",
+    "last_seen_at": "2026-11-14T00:16:07.075441+00:00"
+  },
+  "haunted house": {
+    "name": "Haunted House",
+    "first_seen_at": "2026-11-12T19:41:26.211483+00:00",
+    "last_seen_at": "2026-11-13T23:37:14.750081+00:00"
+  },
+  "bombs": {
+    "name": "Bombs",
+    "first_seen_at": "2026-11-12T19:41:26.211483+00:00",
+    "last_seen_at": "2026-11-14T00:16:03.276479+00:00"
+  },
+  "tree": {
+    "name": "Tree",
+    "first_seen_at": "2026-11-12T19:41:26.566240+00:00",
+    "last_seen_at": "2026-11-13T23:36:11.655540+00:00"
+  },
+  "bullets": {
+    "name": "Bullets",
+    "first_seen_at": "2026-11-12T19:41:26.986797+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.074425+00:00"
+  },
+  "gingercookie": {
+    "name": "Gingercookie",
+    "first_seen_at": "2026-11-12T19:41:26.986797+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.603404+00:00"
+  },
+  "clown": {
+    "name": "Clown",
+    "first_seen_at": "2026-11-12T19:41:27.484577+00:00",
+    "last_seen_at": "2026-11-13T23:37:37.313897+00:00"
+  },
+  "pumpkin": {
+    "name": "Pumpkin",
+    "first_seen_at": "2026-11-12T19:41:27.822282+00:00",
+    "last_seen_at": "2026-11-14T00:37:04.346154+00:00"
+  },
+  "neon": {
+    "name": "Neon",
+    "first_seen_at": "2026-11-12T19:41:28.163420+00:00",
+    "last_seen_at": "2026-11-13T23:37:24.344080+00:00"
+  },
+  "3": {
+    "name": "<3",
+    "first_seen_at": "2026-11-12T19:41:28.631862+00:00",
+    "last_seen_at": "2026-11-13T23:36:52.156270+00:00"
+  },
+  "gingerbread": {
+    "name": "Gingerbread",
+    "first_seen_at": "2026-11-12T19:41:29.046215+00:00",
+    "last_seen_at": "2026-11-13T23:37:19.951548+00:00"
+  },
+  "zombie": {
+    "name": "Zombie",
+    "first_seen_at": "2026-11-12T19:41:29.692730+00:00",
+    "last_seen_at": "2026-11-13T23:36:53.068840+00:00"
+  },
+  "aurora": {
+    "name": "Aurora",
+    "first_seen_at": "2026-11-12T19:41:30.124741+00:00",
+    "last_seen_at": "2026-11-13T23:37:33.189461+00:00"
+  },
+  "arctic": {
+    "name": "Arctic",
+    "first_seen_at": "2026-11-12T19:41:30.124741+00:00",
+    "last_seen_at": "2026-11-12T22:14:08.599983+00:00"
+  },
+  "splash": {
+    "name": "Splash",
+    "first_seen_at": "2026-11-12T19:41:30.554711+00:00",
+    "last_seen_at": "2026-11-12T22:08:56.542826+00:00"
+  },
+  "watcher": {
+    "name": "Watcher",
+    "first_seen_at": "2026-11-12T19:41:30.997902+00:00",
+    "last_seen_at": "2026-11-13T23:36:44.296570+00:00"
+  },
+  "spectral": {
+    "name": "Spectral",
+    "first_seen_at": "2026-11-12T19:45:11.058934+00:00",
+    "last_seen_at": "2026-11-12T22:14:08.730609+00:00"
+  },
+  "vampire": {
+    "name": "Vampire",
+    "first_seen_at": "2026-11-12T20:10:31.425292+00:00",
+    "last_seen_at": "2026-11-13T23:37:36.865873+00:00"
+  },
+  "energized": {
+    "name": "Energized",
+    "first_seen_at": "2026-11-12T20:10:31.425292+00:00",
+    "last_seen_at": "2026-11-13T23:37:29.207836+00:00"
+  },
+  "palms": {
+    "name": "Palms",
+    "first_seen_at": "2026-11-12T20:12:39.657516+00:00",
+    "last_seen_at": "2026-11-12T22:14:07.410204+00:00"
+  },
+  "knife b": {
+    "name": "Knife B",
+    "first_seen_at": "2026-11-12T21:39:43.233293+00:00",
+    "last_seen_at": "2026-11-12T21:52:37.310554+00:00"
+  },
+  "strawberries": {
+    "name": "Strawberries",
+    "first_seen_at": "2026-11-12T21:40:31.744385+00:00",
+    "last_seen_at": "2026-11-14T00:16:00.851975+00:00"
+  },
+  "blue pumpkin": {
+    "name": "Blue Pumpkin",
+    "first_seen_at": "2026-11-12T21:40:32.469088+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.245090+00:00"
+  },
+  "valentine": {
+    "name": "Valentine",
+    "first_seen_at": "2026-11-12T21:40:32.867539+00:00",
+    "last_seen_at": "2026-11-13T23:35:50.760993+00:00"
+  },
+  "snowman": {
+    "name": "Snowman",
+    "first_seen_at": "2026-11-12T21:40:33.495823+00:00",
+    "last_seen_at": "2026-11-13T23:37:33.255367+00:00"
+  },
+  "bramble": {
+    "name": "Bramble",
+    "first_seen_at": "2026-11-12T21:40:34.124555+00:00",
+    "last_seen_at": "2026-11-13T23:37:30.669726+00:00"
+  },
+  "glow": {
+    "name": "Glow",
+    "first_seen_at": "2026-11-12T21:40:34.124555+00:00",
+    "last_seen_at": "2026-11-13T23:37:38.259336+00:00"
+  },
+  "molten": {
+    "name": "Molten",
+    "first_seen_at": "2026-11-12T21:40:34.643570+00:00",
+    "last_seen_at": "2026-11-14T00:16:03.276479+00:00"
+  },
+  "santa": {
+    "name": "Santa",
+    "first_seen_at": "2026-11-12T21:40:35.232036+00:00",
+    "last_seen_at": "2026-11-13T23:37:36.123662+00:00"
+  },
+  "silent night": {
+    "name": "Silent Night",
+    "first_seen_at": "2026-11-12T21:40:35.651445+00:00",
+    "last_seen_at": "2026-11-12T22:14:11.147917+00:00"
+  },
+  "polar bear": {
+    "name": "Polar Bear",
+    "first_seen_at": "2026-11-12T21:40:36.526420+00:00",
+    "last_seen_at": "2026-11-13T23:36:35.379957+00:00"
+  },
+  "raven": {
+    "name": "Raven",
+    "first_seen_at": "2026-11-12T21:40:36.952497+00:00",
+    "last_seen_at": "2026-11-13T23:37:38.259336+00:00"
+  },
+  "eyes": {
+    "name": "Eyes",
+    "first_seen_at": "2026-11-12T21:40:37.367310+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.840827+00:00"
+  },
+  "abduction": {
+    "name": "Abduction",
+    "first_seen_at": "2026-11-12T21:40:37.831353+00:00",
+    "last_seen_at": "2026-11-13T23:37:04.084188+00:00"
+  },
+  "hologram": {
+    "name": "Hologram",
+    "first_seen_at": "2026-11-12T21:40:37.831353+00:00",
+    "last_seen_at": "2026-11-13T23:36:06.325281+00:00"
+  },
+  "frostflame": {
+    "name": "Frostflame",
+    "first_seen_at": "2026-11-12T21:40:37.831353+00:00",
+    "last_seen_at": "2026-11-13T23:37:36.788811+00:00"
+  },
+  "icecracker": {
+    "name": "Icecracker",
+    "first_seen_at": "2026-11-12T22:04:01.929838+00:00",
+    "last_seen_at": "2026-11-12T22:14:06.782799+00:00"
+  },
+  "cane": {
+    "name": "Cane",
+    "first_seen_at": "2026-11-12T22:05:06.532131+00:00",
+    "last_seen_at": "2026-11-14T00:15:59.012884+00:00"
+  },
+  "aquarium": {
+    "name": "Aquarium",
+    "first_seen_at": "2026-11-12T22:13:20.914013+00:00",
+    "last_seen_at": "2026-11-12T22:14:05.682865+00:00"
+  },
+  "sammy": {
+    "name": "Sammy",
+    "first_seen_at": "2026-11-12T22:14:59.842768+00:00",
+    "last_seen_at": "2026-11-13T23:37:05.162190+00:00"
+  },
+  "rose": {
+    "name": "Rose",
+    "first_seen_at": "2026-11-12T22:15:00.458202+00:00",
+    "last_seen_at": "2026-11-13T23:37:31.113764+00:00"
+  },
+  "niks scythe": {
+    "name": "Nik's Scythe",
+    "first_seen_at": "2026-11-12T22:15:00.910775+00:00",
+    "last_seen_at": "2026-11-14T00:16:07.011174+00:00"
+  },
+  "piggy": {
+    "name": "Piggy",
+    "first_seen_at": "2026-11-12T22:15:01.362137+00:00",
+    "last_seen_at": "2026-11-13T23:36:12.223075+00:00"
+  },
+  "laser": {
+    "name": "Laser",
+    "first_seen_at": "2026-11-12T22:15:01.780306+00:00",
+    "last_seen_at": "2026-11-14T00:37:07.298488+00:00"
+  },
+  "bat": {
+    "name": "Bat",
+    "first_seen_at": "2026-11-12T22:15:02.619617+00:00",
+    "last_seen_at": "2026-11-14T00:37:11.191379+00:00"
+  },
+  "rainbow": {
+    "name": "Rainbow",
+    "first_seen_at": "2026-11-12T22:15:03.205820+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.237910+00:00"
+  },
+  "predator": {
+    "name": "Predator",
+    "first_seen_at": "2026-11-12T22:15:04.329457+00:00",
+    "last_seen_at": "2026-11-14T00:36:55.085177+00:00"
+  },
+  "purple": {
+    "name": "Purple",
+    "first_seen_at": "2026-11-12T22:15:04.737902+00:00",
+    "last_seen_at": "2026-11-13T23:37:28.629442+00:00"
+  },
+  "black": {
+    "name": "Black",
+    "first_seen_at": "2026-11-12T22:15:04.737902+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.523405+00:00"
+  },
+  "skulls": {
+    "name": "Skulls",
+    "first_seen_at": "2026-11-12T22:15:04.737902+00:00",
+    "last_seen_at": "2026-11-14T00:36:59.591250+00:00"
+  },
+  "sparkle3": {
+    "name": "Sparkle3",
+    "first_seen_at": "2026-11-12T22:15:05.327096+00:00",
+    "last_seen_at": "2026-11-14T00:16:04.160544+00:00"
+  },
+  "snow dagger": {
+    "name": "Snow Dagger",
+    "first_seen_at": "2026-11-12T22:15:05.950581+00:00",
+    "last_seen_at": "2026-11-13T21:28:50.972771+00:00"
+  },
+  "korblox": {
+    "name": "Korblox",
+    "first_seen_at": "2026-11-12T22:15:06.643100+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.649448+00:00"
+  },
+  "skelly": {
+    "name": "Skelly",
+    "first_seen_at": "2026-11-12T22:15:07.215750+00:00",
+    "last_seen_at": "2026-11-14T00:29:00.942042+00:00"
+  },
+  "zombie dog": {
+    "name": "Zombie Dog",
+    "first_seen_at": "2026-11-12T22:15:07.913430+00:00",
+    "last_seen_at": "2026-11-13T23:37:39.623812+00:00"
+  },
+  "spitfire": {
+    "name": "Spitfire",
+    "first_seen_at": "2026-11-12T22:15:08.359367+00:00",
+    "last_seen_at": "2026-11-13T23:35:47.053385+00:00"
+  },
+  "hearts": {
+    "name": "Hearts",
+    "first_seen_at": "2026-11-12T22:15:08.359367+00:00",
+    "last_seen_at": "2026-11-13T23:37:26.021193+00:00"
+  },
+  "wraiths": {
+    "name": "Wraiths",
+    "first_seen_at": "2026-11-12T22:15:08.733241+00:00",
+    "last_seen_at": "2026-11-13T23:37:38.898659+00:00"
+  },
+  "irevolver": {
+    "name": "iRevolver",
+    "first_seen_at": "2026-11-12T22:15:08.733241+00:00",
+    "last_seen_at": "2026-11-13T23:37:32.683717+00:00"
+  },
+  "elitey": {
+    "name": "Elitey",
+    "first_seen_at": "2026-11-12T22:15:09.100524+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.268242+00:00"
+  },
+  "alex": {
+    "name": "Alex",
+    "first_seen_at": "2026-11-12T22:15:09.487594+00:00",
+    "last_seen_at": "2026-11-13T23:36:14.870066+00:00"
+  },
+  "galaxy": {
+    "name": "Galaxy",
+    "first_seen_at": "2026-11-12T22:15:10.109639+00:00",
+    "last_seen_at": "2026-11-13T23:37:32.870212+00:00"
+  },
+  "deep sea": {
+    "name": "Deep Sea",
+    "first_seen_at": "2026-11-12T22:15:10.109639+00:00",
+    "last_seen_at": "2026-11-13T23:37:24.344080+00:00"
+  },
+  "jack": {
+    "name": "Jack",
+    "first_seen_at": "2026-11-12T22:15:10.538987+00:00",
+    "last_seen_at": "2026-11-13T23:37:08.126950+00:00"
+  },
+  "corl": {
+    "name": "Corl",
+    "first_seen_at": "2026-11-12T22:15:10.538987+00:00",
+    "last_seen_at": "2026-11-13T23:35:50.760993+00:00"
+  },
+  "sketchy": {
+    "name": "Sketchy",
+    "first_seen_at": "2026-11-12T22:15:10.538987+00:00",
+    "last_seen_at": "2026-11-13T23:35:50.760993+00:00"
+  },
+  "fire bat": {
+    "name": "Fire Bat",
+    "first_seen_at": "2026-11-12T22:15:11.231940+00:00",
+    "last_seen_at": "2026-11-13T23:37:18.450478+00:00"
+  },
+  "nether": {
+    "name": "Nether",
+    "first_seen_at": "2026-11-12T22:15:11.616562+00:00",
+    "last_seen_at": "2026-11-14T00:16:03.276479+00:00"
+  },
+  "sparkle1": {
+    "name": "Sparkle1",
+    "first_seen_at": "2026-11-12T22:15:12.296023+00:00",
+    "last_seen_at": "2026-11-14T00:16:04.160544+00:00"
+  },
+  "sparkle5": {
+    "name": "Sparkle5",
+    "first_seen_at": "2026-11-12T22:15:12.296023+00:00",
+    "last_seen_at": "2026-11-14T00:16:03.526209+00:00"
+  },
+  "wolf": {
+    "name": "Wolf",
+    "first_seen_at": "2026-11-12T22:20:52.805194+00:00",
+    "last_seen_at": "2026-11-14T00:37:02.696129+00:00"
+  },
+  "marble": {
+    "name": "Marble",
+    "first_seen_at": "2026-11-12T22:20:52.805194+00:00",
+    "last_seen_at": "2026-11-13T23:37:33.284608+00:00"
+  },
+  "fire dog": {
+    "name": "Fire Dog",
+    "first_seen_at": "2026-11-12T22:29:59.706969+00:00",
+    "last_seen_at": "2026-11-13T23:37:29.172022+00:00"
+  },
+  "spearmint": {
+    "name": "Spearmint",
+    "first_seen_at": "2026-11-12T22:30:52.982577+00:00",
+    "last_seen_at": "2026-11-13T23:37:19.951548+00:00"
+  },
+  "ghost": {
+    "name": "Ghost",
+    "first_seen_at": "2026-11-12T22:31:29.900204+00:00",
+    "last_seen_at": "2026-11-13T23:37:36.999349+00:00"
+  },
+  "icey": {
+    "name": "Icey",
+    "first_seen_at": "2026-11-12T22:34:37.619209+00:00",
+    "last_seen_at": "2026-11-13T23:37:35.222112+00:00"
+  },
+  "prince": {
+    "name": "Prince",
+    "first_seen_at": "2026-11-12T22:43:37.994597+00:00",
+    "last_seen_at": "2026-11-13T23:37:34.044032+00:00"
+  },
+  "purple pumpkin": {
+    "name": "Purple Pumpkin",
+    "first_seen_at": "2026-11-12T22:58:08.490027+00:00",
+    "last_seen_at": "2026-11-13T23:36:50.136527+00:00"
+  },
+  "fire cat": {
+    "name": "Fire Cat",
+    "first_seen_at": "2026-11-12T23:10:56.656007+00:00",
+    "last_seen_at": "2026-11-13T23:37:18.733279+00:00"
+  },
+  "red": {
+    "name": "Red",
+    "first_seen_at": "2026-11-12T23:43:52.518991+00:00",
+    "last_seen_at": "2026-11-13T23:37:28.823273+00:00"
+  },
+  "peppermint": {
+    "name": "Peppermint",
+    "first_seen_at": "2026-11-12T23:43:52.518991+00:00",
+    "last_seen_at": "2026-11-13T23:37:28.975288+00:00"
+  },
+  "phaser": {
+    "name": "Phaser",
+    "first_seen_at": "2026-11-12T23:43:53.033268+00:00",
+    "last_seen_at": "2026-11-14T00:36:57.973557+00:00"
+  },
+  "sweater": {
+    "name": "Sweater",
+    "first_seen_at": "2026-11-12T23:43:53.872997+00:00",
+    "last_seen_at": "2026-11-13T23:37:23.819847+00:00"
+  },
+  "grave": {
+    "name": "Grave",
+    "first_seen_at": "2026-11-12T23:43:53.872997+00:00",
+    "last_seen_at": "2026-11-13T23:36:23.648092+00:00"
+  },
+  "electro": {
+    "name": "Electro",
+    "first_seen_at": "2026-11-12T23:43:54.954666+00:00",
+    "last_seen_at": "2026-11-13T23:37:17.828070+00:00"
+  },
+  "indy": {
+    "name": "Indy",
+    "first_seen_at": "2026-11-12T23:43:55.567437+00:00",
+    "last_seen_at": "2026-11-13T23:36:31.530353+00:00"
+  },
+  "grind": {
+    "name": "Grind",
+    "first_seen_at": "2026-11-12T23:43:55.567437+00:00",
+    "last_seen_at": "2026-11-13T23:37:12.029901+00:00"
+  },
+  "euro": {
+    "name": "Euro",
+    "first_seen_at": "2026-11-12T23:43:55.567437+00:00",
+    "last_seen_at": "2026-11-13T23:36:59.689982+00:00"
+  },
+  "starry": {
+    "name": "Starry",
+    "first_seen_at": "2026-11-12T23:43:56.308101+00:00",
+    "last_seen_at": "2026-11-13T23:37:37.313897+00:00"
+  },
+  "sparkle2": {
+    "name": "Sparkle2",
+    "first_seen_at": "2026-11-12T23:43:56.801927+00:00",
+    "last_seen_at": "2026-11-14T00:16:04.160544+00:00"
+  },
+  "choco": {
+    "name": "Choco",
+    "first_seen_at": "2026-11-12T23:43:57.283837+00:00",
+    "last_seen_at": "2026-11-13T23:37:23.195695+00:00"
+  },
+  "log": {
+    "name": "Log",
+    "first_seen_at": "2026-11-12T23:43:57.772305+00:00",
+    "last_seen_at": "2026-11-13T16:06:12.900320+00:00"
+  },
+  "pumpkin patch": {
+    "name": "Pumpkin Patch",
+    "first_seen_at": "2026-11-12T23:43:57.772305+00:00",
+    "last_seen_at": "2026-11-13T23:36:15.265162+00:00"
+  },
+  "skool": {
+    "name": "Skool",
+    "first_seen_at": "2026-11-12T23:43:58.269209+00:00",
+    "last_seen_at": "2026-11-14T00:16:05.894002+00:00"
+  },
+  "elf": {
+    "name": "Elf",
+    "first_seen_at": "2026-11-12T23:43:58.864524+00:00",
+    "last_seen_at": "2026-11-14T00:37:09.602980+00:00"
+  },
+  "elderwood blade": {
+    "name": "Elderwood Blade",
+    "first_seen_at": "2026-11-12T23:44:34.900525+00:00",
+    "last_seen_at": "2026-11-13T21:28:54.396550+00:00"
+  },
+  "treats": {
+    "name": "Treats",
+    "first_seen_at": "2026-11-13T00:04:00.313772+00:00",
+    "last_seen_at": "2026-11-13T00:12:58.556178+00:00"
+  },
+  "fire fox": {
+    "name": "Fire Fox",
+    "first_seen_at": "2026-11-13T00:04:01.035737+00:00",
+    "last_seen_at": "2026-11-13T23:36:55.125115+00:00"
+  },
+  "robot": {
+    "name": "Robot",
+    "first_seen_at": "2026-11-13T00:04:01.625742+00:00",
+    "last_seen_at": "2026-11-13T23:36:11.502518+00:00"
+  },
+  "nightfire": {
+    "name": "Nightfire",
+    "first_seen_at": "2026-11-13T00:04:01.625742+00:00",
+    "last_seen_at": "2026-11-13T23:37:36.013770+00:00"
+  },
+  "pier": {
+    "name": "Pier",
+    "first_seen_at": "2026-11-13T00:04:01.625742+00:00",
+    "last_seen_at": "2026-11-13T23:37:38.748910+00:00"
+  },
+  "scarecrow": {
+    "name": "Scarecrow",
+    "first_seen_at": "2026-11-13T00:04:02.204530+00:00",
+    "last_seen_at": "2026-11-14T00:37:09.770203+00:00"
+  },
+  "sunset": {
+    "name": "Sunset",
+    "first_seen_at": "2026-11-13T00:04:02.878788+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.067361+00:00"
+  },
+  "dolphins": {
+    "name": "Dolphins",
+    "first_seen_at": "2026-11-13T00:06:42.754358+00:00",
+    "last_seen_at": "2026-11-13T23:37:26.469361+00:00"
+  },
+  "green pumpkin": {
+    "name": "Green Pumpkin",
+    "first_seen_at": "2026-11-13T00:10:25.863315+00:00",
+    "last_seen_at": "2026-11-13T23:37:20.625153+00:00"
+  },
+  "drool has no numeric supreme value": {
+    "name": "Drool has no numeric Supreme value",
+    "first_seen_at": "2026-11-13T00:15:52.675330+00:00",
+    "last_seen_at": "2026-11-14T00:16:06.682498+00:00"
+  },
+  "brew has no numeric supreme value": {
+    "name": "Brew has no numeric Supreme value",
+    "first_seen_at": "2026-11-13T00:15:54.307478+00:00",
+    "last_seen_at": "2026-11-14T00:16:06.571753+00:00"
+  },
+  "candies": {
+    "name": "Candies",
+    "first_seen_at": "2026-11-13T00:15:57.821159+00:00",
+    "last_seen_at": "2026-11-13T23:37:23.768841+00:00"
+  },
+  "lil alien": {
+    "name": "Lil' Alien",
+    "first_seen_at": "2026-11-13T00:15:58.633659+00:00",
+    "last_seen_at": "2026-11-14T00:37:09.513960+00:00"
+  },
+  "ginger": {
+    "name": "Ginger",
+    "first_seen_at": "2026-11-13T00:15:59.136610+00:00",
+    "last_seen_at": "2026-11-13T23:37:22.269822+00:00"
+  },
+  "candleflame": {
+    "name": "Candleflame",
+    "first_seen_at": "2026-11-13T00:15:59.136610+00:00",
+    "last_seen_at": "2026-11-14T00:37:00.037173+00:00"
+  },
+  "neopolitan": {
+    "name": "Neopolitan",
+    "first_seen_at": "2026-11-13T00:15:59.680503+00:00",
+    "last_seen_at": "2026-11-13T23:37:39.594869+00:00"
+  },
+  "storm": {
+    "name": "Storm",
+    "first_seen_at": "2026-11-13T00:16:00.097647+00:00",
+    "last_seen_at": "2026-11-13T23:36:56.606678+00:00"
+  },
+  "bats": {
+    "name": "Bats",
+    "first_seen_at": "2026-11-13T00:16:01.272460+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.298541+00:00"
+  },
+  "candy swirl": {
+    "name": "Candy Swirl",
+    "first_seen_at": "2026-11-13T00:16:02.961756+00:00",
+    "last_seen_at": "2026-11-13T23:36:41.398042+00:00"
+  },
+  "hl2": {
+    "name": "HL2",
+    "first_seen_at": "2026-11-13T00:16:05.273216+00:00",
+    "last_seen_at": "2026-11-13T23:37:32.325235+00:00"
+  },
+  "red pumpkin": {
+    "name": "Red Pumpkin",
+    "first_seen_at": "2026-11-13T00:16:07.737365+00:00",
+    "last_seen_at": "2026-11-14T00:37:00.576607+00:00"
+  },
+  "floral": {
+    "name": "Floral",
+    "first_seen_at": "2026-11-13T00:16:09.502696+00:00",
+    "last_seen_at": "2026-11-14T00:37:07.992160+00:00"
+  },
+  "spectrum": {
+    "name": "Spectrum",
+    "first_seen_at": "2026-11-13T00:16:13.623332+00:00",
+    "last_seen_at": "2026-11-13T23:37:30.188560+00:00"
+  },
+  "overseer eye": {
+    "name": "Overseer Eye",
+    "first_seen_at": "2026-11-13T00:16:13.964402+00:00",
+    "last_seen_at": "2026-11-13T23:37:34.137061+00:00"
+  },
+  "makeshift": {
+    "name": "Makeshift",
+    "first_seen_at": "2026-11-13T00:16:14.730315+00:00",
+    "last_seen_at": "2026-11-13T23:36:52.891152+00:00"
+  },
+  "darkness": {
+    "name": "Darkness",
+    "first_seen_at": "2026-11-13T00:16:15.103921+00:00",
+    "last_seen_at": "2026-11-13T23:36:50.934331+00:00"
+  },
+  "carved": {
+    "name": "Carved",
+    "first_seen_at": "2026-11-13T00:16:15.103921+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.128577+00:00"
+  },
+  "yummy": {
+    "name": "Yummy",
+    "first_seen_at": "2026-11-13T00:16:15.804518+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.237910+00:00"
+  },
+  "badger": {
+    "name": "Badger",
+    "first_seen_at": "2026-11-13T00:16:16.187824+00:00",
+    "last_seen_at": "2026-11-13T23:37:18.381116+00:00"
+  },
+  "pink": {
+    "name": "Pink",
+    "first_seen_at": "2026-11-13T00:16:18.638797+00:00",
+    "last_seen_at": "2026-11-13T23:37:36.077040+00:00"
+  },
+  "tankie": {
+    "name": "Tankie",
+    "first_seen_at": "2026-11-13T00:16:20.467441+00:00",
+    "last_seen_at": "2026-11-13T23:37:10.891823+00:00"
+  },
+  "hardened": {
+    "name": "Hardened",
+    "first_seen_at": "2026-11-13T00:16:22.705333+00:00",
+    "last_seen_at": "2026-11-13T23:37:24.492339+00:00"
+  },
+  "checker": {
+    "name": "Checker",
+    "first_seen_at": "2026-11-13T00:16:23.933015+00:00",
+    "last_seen_at": "2026-11-13T23:37:36.568494+00:00"
+  },
+  "cookie": {
+    "name": "Cookie",
+    "first_seen_at": "2026-11-13T00:16:23.933015+00:00",
+    "last_seen_at": "2026-11-13T23:37:23.195695+00:00"
+  },
+  "painted": {
+    "name": "Painted",
+    "first_seen_at": "2026-11-13T00:16:25.657902+00:00",
+    "last_seen_at": "2026-11-13T23:36:13.272493+00:00"
+  },
+  "copper": {
+    "name": "Copper",
+    "first_seen_at": "2026-11-13T00:16:29.106544+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.245090+00:00"
+  },
+  "duckies": {
+    "name": "Duckies",
+    "first_seen_at": "2026-11-13T00:16:29.106544+00:00",
+    "last_seen_at": "2026-11-13T23:37:35.031962+00:00"
+  },
+  "tourist": {
+    "name": "Tourist",
+    "first_seen_at": "2026-11-13T00:16:29.106544+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.600593+00:00"
+  },
+  "fire bunny": {
+    "name": "Fire Bunny",
+    "first_seen_at": "2026-11-13T00:16:30.309591+00:00",
+    "last_seen_at": "2026-11-13T23:37:17.828070+00:00"
+  },
+  "pengy": {
+    "name": "Pengy",
+    "first_seen_at": "2026-11-13T00:16:36.652076+00:00",
+    "last_seen_at": "2026-11-13T23:36:05.007089+00:00"
+  },
+  "jetstream": {
+    "name": "Jetstream",
+    "first_seen_at": "2026-11-13T00:16:37.781150+00:00",
+    "last_seen_at": "2026-11-13T23:36:36.300584+00:00"
+  },
+  "toxic": {
+    "name": "Toxic",
+    "first_seen_at": "2026-11-13T00:16:38.490161+00:00",
+    "last_seen_at": "2026-11-13T23:37:36.865873+00:00"
+  },
+  "tailslide": {
+    "name": "Tailslide",
+    "first_seen_at": "2026-11-13T00:16:41.798429+00:00",
+    "last_seen_at": "2026-11-14T00:15:59.634724+00:00"
+  },
+  "frozen": {
+    "name": "Frozen",
+    "first_seen_at": "2026-11-13T00:16:41.798429+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.171330+00:00"
+  },
+  "butterflies": {
+    "name": "Butterflies",
+    "first_seen_at": "2026-11-13T00:16:42.995663+00:00",
+    "last_seen_at": "2026-11-13T23:37:02.739104+00:00"
+  },
+  "krypto": {
+    "name": "Krypto",
+    "first_seen_at": "2026-11-13T00:16:45.789806+00:00",
+    "last_seen_at": "2026-11-13T23:36:51.595876+00:00"
+  },
+  "sketch": {
+    "name": "Sketch",
+    "first_seen_at": "2026-11-13T00:17:03.943481+00:00",
+    "last_seen_at": "2026-11-13T23:37:34.464238+00:00"
+  },
+  "clownfish": {
+    "name": "Clownfish",
+    "first_seen_at": "2026-11-13T00:17:03.943481+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.523405+00:00"
+  },
+  "ornament1": {
+    "name": "Ornament1",
+    "first_seen_at": "2026-11-13T00:17:04.358320+00:00",
+    "last_seen_at": "2026-11-13T23:37:35.308618+00:00"
+  },
+  "ice": {
+    "name": "Ice",
+    "first_seen_at": "2026-11-13T00:17:05.522952+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.128577+00:00"
+  },
+  "green": {
+    "name": "Green",
+    "first_seen_at": "2026-11-13T00:17:05.522952+00:00",
+    "last_seen_at": "2026-11-13T23:37:24.142072+00:00"
+  },
+  "ufo": {
+    "name": "UFO",
+    "first_seen_at": "2026-11-13T00:17:06.682337+00:00",
+    "last_seen_at": "2026-11-13T23:36:53.068840+00:00"
+  },
+  "black cat": {
+    "name": "Black Cat",
+    "first_seen_at": "2026-11-13T00:20:55.601765+00:00",
+    "last_seen_at": "2026-11-13T23:37:16.372016+00:00"
+  },
+  "cherries": {
+    "name": "Cherries",
+    "first_seen_at": "2026-11-13T00:21:02.737172+00:00",
+    "last_seen_at": "2026-11-14T00:16:00.851975+00:00"
+  },
+  "magma": {
+    "name": "Magma",
+    "first_seen_at": "2026-11-13T00:21:03.134671+00:00",
+    "last_seen_at": "2026-11-13T23:36:36.890929+00:00"
+  },
+  "aqua": {
+    "name": "Aqua",
+    "first_seen_at": "2026-11-13T00:21:06.296843+00:00",
+    "last_seen_at": "2026-11-13T23:36:15.790522+00:00"
+  },
+  "cold": {
+    "name": "Cold",
+    "first_seen_at": "2026-11-13T00:21:06.296843+00:00",
+    "last_seen_at": "2026-11-13T23:36:51.413953+00:00"
+  },
+  "wrapped": {
+    "name": "Wrapped",
+    "first_seen_at": "2026-11-13T00:21:06.834546+00:00",
+    "last_seen_at": "2026-11-13T23:37:31.213904+00:00"
+  },
+  "sharky": {
+    "name": "Sharky",
+    "first_seen_at": "2026-11-13T00:21:25.452257+00:00",
+    "last_seen_at": "2026-11-13T23:36:16.415096+00:00"
+  },
+  "curse": {
+    "name": "Curse",
+    "first_seen_at": "2026-11-13T00:21:30.387834+00:00",
+    "last_seen_at": "2026-11-13T23:36:16.951233+00:00"
+  },
+  "snowflake": {
+    "name": "Snowflake",
+    "first_seen_at": "2026-11-13T00:21:33.983438+00:00",
+    "last_seen_at": "2026-11-13T23:36:55.395067+00:00"
+  },
+  "graffiti": {
+    "name": "Graffiti",
+    "first_seen_at": "2026-11-13T00:21:35.627772+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.102238+00:00"
+  },
+  "reindeer": {
+    "name": "Reindeer",
+    "first_seen_at": "2026-11-13T00:21:38.764095+00:00",
+    "last_seen_at": "2026-11-13T23:37:34.496251+00:00"
+  },
+  "coal": {
+    "name": "Coal",
+    "first_seen_at": "2026-11-13T00:21:41.883209+00:00",
+    "last_seen_at": "2026-11-14T00:06:49.813372+00:00"
+  },
+  "cursed": {
+    "name": "Cursed",
+    "first_seen_at": "2026-11-13T00:21:44.674179+00:00",
+    "last_seen_at": "2026-11-13T23:37:36.865873+00:00"
+  },
+  "webs": {
+    "name": "Webs",
+    "first_seen_at": "2026-11-13T00:21:46.443704+00:00",
+    "last_seen_at": "2026-11-13T23:37:26.165119+00:00"
+  },
+  "gifts": {
+    "name": "Gifts",
+    "first_seen_at": "2026-11-13T00:21:49.950700+00:00",
+    "last_seen_at": "2026-11-13T23:36:17.888778+00:00"
+  },
+  "darkgun": {
+    "name": "Darkgun",
+    "first_seen_at": "2026-11-13T00:21:50.733971+00:00",
+    "last_seen_at": "2026-11-14T00:16:02.105409+00:00"
+  },
+  "moonlight": {
+    "name": "Moonlight",
+    "first_seen_at": "2026-11-13T00:21:51.082711+00:00",
+    "last_seen_at": "2026-11-13T23:37:08.126950+00:00"
+  },
+  "wrap": {
+    "name": "Wrap",
+    "first_seen_at": "2026-11-13T00:29:10.046863+00:00",
+    "last_seen_at": "2026-11-13T23:36:06.041920+00:00"
+  },
+  "mr reindeer": {
+    "name": "Mr. Reindeer",
+    "first_seen_at": "2026-11-13T00:29:18.720532+00:00",
+    "last_seen_at": "2026-11-13T23:37:27.914766+00:00"
+  },
+  "decorated": {
+    "name": "Decorated",
+    "first_seen_at": "2026-11-13T00:29:38.786731+00:00",
+    "last_seen_at": "2026-11-13T23:36:18.148365+00:00"
+  },
+  "sand": {
+    "name": "Sand",
+    "first_seen_at": "2026-11-13T00:29:43.465397+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.514881+00:00"
+  },
+  "dogey": {
+    "name": "Dogey",
+    "first_seen_at": "2026-11-13T00:29:47.518339+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.600593+00:00"
+  },
+  "hexed": {
+    "name": "Hexed",
+    "first_seen_at": "2026-11-13T00:29:52.716361+00:00",
+    "last_seen_at": "2026-11-13T23:37:36.960254+00:00"
+  },
+  "2015": {
+    "name": "2015",
+    "first_seen_at": "2026-11-13T00:29:53.148543+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.288517+00:00"
+  },
+  "paws": {
+    "name": "Paws",
+    "first_seen_at": "2026-11-13T00:30:03.781299+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.840827+00:00"
+  },
+  "dog": {
+    "name": "Dog",
+    "first_seen_at": "2026-11-13T00:30:07.145767+00:00",
+    "last_seen_at": "2026-11-13T23:37:34.169895+00:00"
+  },
+  "nobledragon": {
+    "name": "Nobledragon",
+    "first_seen_at": "2026-11-13T00:30:08.184253+00:00",
+    "last_seen_at": "2026-11-13T23:37:15.662417+00:00"
+  },
+  "vampire bat": {
+    "name": "Vampire Bat",
+    "first_seen_at": "2026-11-13T00:30:08.184253+00:00",
+    "last_seen_at": "2026-11-13T23:37:24.755055+00:00"
+  },
+  "pop art": {
+    "name": "Pop Art",
+    "first_seen_at": "2026-11-13T00:30:08.914797+00:00",
+    "last_seen_at": "2026-11-13T23:37:37.622962+00:00"
+  },
+  "snowball": {
+    "name": "Snowball",
+    "first_seen_at": "2026-11-13T00:30:08.914797+00:00",
+    "last_seen_at": "2026-11-13T23:37:26.296542+00:00"
+  },
+  "high tech": {
+    "name": "High Tech",
+    "first_seen_at": "2026-11-13T00:30:09.474358+00:00",
+    "last_seen_at": "2026-11-13T23:37:19.842385+00:00"
+  },
+  "candied": {
+    "name": "Candied",
+    "first_seen_at": "2026-11-13T00:30:11.551788+00:00",
+    "last_seen_at": "2026-11-13T23:37:27.441402+00:00"
+  },
+  "frostbird": {
+    "name": "Frostbird",
+    "first_seen_at": "2026-11-13T00:30:13.217462+00:00",
+    "last_seen_at": "2026-11-13T23:36:20.058370+00:00"
+  },
+  "bunny": {
+    "name": "Bunny",
+    "first_seen_at": "2026-11-13T00:30:24.122810+00:00",
+    "last_seen_at": "2026-11-13T23:37:18.415723+00:00"
+  },
+  "leaf": {
+    "name": "Leaf",
+    "first_seen_at": "2026-11-13T00:30:31.049981+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.128577+00:00"
+  },
+  "ritual": {
+    "name": "Ritual",
+    "first_seen_at": "2026-11-13T00:34:15.409938+00:00",
+    "last_seen_at": "2026-11-13T23:37:23.699356+00:00"
+  },
+  "ghosty": {
+    "name": "Ghosty",
+    "first_seen_at": "2026-11-13T00:34:21.258867+00:00",
+    "last_seen_at": "2026-11-13T23:37:34.307373+00:00"
+  },
+  "zombified": {
+    "name": "Zombified",
+    "first_seen_at": "2026-11-13T00:34:25.214952+00:00",
+    "last_seen_at": "2026-11-14T00:37:06.750716+00:00"
+  },
+  "paper": {
+    "name": "Paper",
+    "first_seen_at": "2026-11-13T00:34:31.185011+00:00",
+    "last_seen_at": "2026-11-13T23:36:55.527117+00:00"
+  },
+  "love": {
+    "name": "Love",
+    "first_seen_at": "2026-11-13T00:34:31.185011+00:00",
+    "last_seen_at": "2026-11-13T23:37:31.678542+00:00"
+  },
+  "nova": {
+    "name": "Nova",
+    "first_seen_at": "2026-11-13T00:34:32.158475+00:00",
+    "last_seen_at": "2026-11-13T23:37:36.077040+00:00"
+  },
+  "pumpkin pie": {
+    "name": "Pumpkin Pie",
+    "first_seen_at": "2026-11-13T00:34:38.450101+00:00",
+    "last_seen_at": "2026-11-13T23:36:57.008811+00:00"
+  },
+  "sidewinder": {
+    "name": "Sidewinder",
+    "first_seen_at": "2026-11-13T00:34:40.341609+00:00",
+    "last_seen_at": "2026-11-13T23:36:43.202980+00:00"
+  },
+  "ollie": {
+    "name": "Ollie",
+    "first_seen_at": "2026-11-13T00:34:40.341609+00:00",
+    "last_seen_at": "2026-11-13T23:36:21.911025+00:00"
+  },
+  "rudolph": {
+    "name": "Rudolph",
+    "first_seen_at": "2026-11-13T00:34:40.341609+00:00",
+    "last_seen_at": "2026-11-13T23:36:59.035149+00:00"
+  },
+  "blossom": {
+    "name": "Blossom",
+    "first_seen_at": "2026-11-13T00:34:41.720039+00:00",
+    "last_seen_at": "2026-11-14T00:37:09.770203+00:00"
+  },
+  "monster": {
+    "name": "Monster",
+    "first_seen_at": "2026-11-13T00:34:45.496502+00:00",
+    "last_seen_at": "2026-11-13T23:36:07.637420+00:00"
+  },
+  "fox": {
+    "name": "Fox",
+    "first_seen_at": "2026-11-13T00:34:50.170638+00:00",
+    "last_seen_at": "2026-11-13T23:36:58.248404+00:00"
+  },
+  "bones": {
+    "name": "Bones",
+    "first_seen_at": "2026-11-13T00:34:52.454814+00:00",
+    "last_seen_at": "2026-11-13T23:36:35.319944+00:00"
+  },
+  "witch": {
+    "name": "Witch",
+    "first_seen_at": "2026-11-13T00:34:52.454814+00:00",
+    "last_seen_at": "2026-11-13T23:36:35.319944+00:00"
+  },
+  "brains": {
+    "name": "Brains",
+    "first_seen_at": "2026-11-13T00:34:52.454814+00:00",
+    "last_seen_at": "2026-11-13T23:36:35.319944+00:00"
+  },
+  "splat": {
+    "name": "Splat",
+    "first_seen_at": "2026-11-13T00:34:59.329126+00:00",
+    "last_seen_at": "2026-11-13T23:36:22.703813+00:00"
+  },
+  "lava": {
+    "name": "Lava",
+    "first_seen_at": "2026-11-13T00:34:59.791012+00:00",
+    "last_seen_at": "2026-11-13T23:36:22.765283+00:00"
+  },
+  "soda": {
+    "name": "Soda",
+    "first_seen_at": "2026-11-13T00:34:59.791012+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.172915+00:00"
+  },
+  "skyline": {
+    "name": "Skyline",
+    "first_seen_at": "2026-11-13T00:34:59.791012+00:00",
+    "last_seen_at": "2026-11-13T23:36:22.765283+00:00"
+  },
+  "orange": {
+    "name": "Orange",
+    "first_seen_at": "2026-11-13T00:35:03.293616+00:00",
+    "last_seen_at": "2026-11-13T23:37:23.819847+00:00"
+  },
+  "circuit": {
+    "name": "Circuit",
+    "first_seen_at": "2026-11-13T00:35:07.201170+00:00",
+    "last_seen_at": "2026-11-13T23:37:28.131766+00:00"
+  },
+  "bear": {
+    "name": "Bear",
+    "first_seen_at": "2026-11-13T00:35:07.201170+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.171330+00:00"
+  },
+  "heart": {
+    "name": "Heart",
+    "first_seen_at": "2026-11-13T00:41:24.709677+00:00",
+    "last_seen_at": "2026-11-14T00:16:07.075441+00:00"
+  },
+  "combat": {
+    "name": "Combat",
+    "first_seen_at": "2026-11-13T00:41:28.993953+00:00",
+    "last_seen_at": "2026-11-13T23:37:27.844247+00:00"
+  },
+  "spring": {
+    "name": "Spring",
+    "first_seen_at": "2026-11-13T00:41:38.768179+00:00",
+    "last_seen_at": "2026-11-13T23:37:30.908546+00:00"
+  },
+  "potion": {
+    "name": "Potion",
+    "first_seen_at": "2026-11-13T00:42:07.397574+00:00",
+    "last_seen_at": "2026-11-13T23:37:31.476307+00:00"
+  },
+  "scarytree": {
+    "name": "Scarytree",
+    "first_seen_at": "2026-11-13T00:42:08.421148+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.600593+00:00"
+  },
+  "fire pig": {
+    "name": "Fire Pig",
+    "first_seen_at": "2026-11-13T00:42:16.219965+00:00",
+    "last_seen_at": "2026-11-14T00:37:10.039549+00:00"
+  },
+  "aliens": {
+    "name": "Aliens",
+    "first_seen_at": "2026-11-13T00:42:22.894741+00:00",
+    "last_seen_at": "2026-11-13T23:36:26.709144+00:00"
+  },
+  "deathspeaker": {
+    "name": "Deathspeaker",
+    "first_seen_at": "2026-11-13T00:42:33.648279+00:00",
+    "last_seen_at": "2026-11-13T23:37:24.100400+00:00"
+  },
+  "logcutter": {
+    "name": "Logcutter",
+    "first_seen_at": "2026-11-13T00:42:35.094702+00:00",
+    "last_seen_at": "2026-11-13T23:36:29.185160+00:00"
+  },
+  "cat": {
+    "name": "Cat",
+    "first_seen_at": "2026-11-13T00:42:39.159450+00:00",
+    "last_seen_at": "2026-11-13T23:36:39.152425+00:00"
+  },
+  "witchs brew": {
+    "name": "Witch's Brew",
+    "first_seen_at": "2026-11-13T00:42:41.558281+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.074425+00:00"
+  },
+  "traveller": {
+    "name": "Traveller",
+    "first_seen_at": "2026-11-13T00:42:42.960516+00:00",
+    "last_seen_at": "2026-11-13T23:37:33.930848+00:00"
+  },
+  "squire": {
+    "name": "Squire",
+    "first_seen_at": "2026-11-13T00:42:44.677986+00:00",
+    "last_seen_at": "2026-11-13T23:36:43.646901+00:00"
+  },
+  "ornament2": {
+    "name": "Ornament2",
+    "first_seen_at": "2026-11-13T00:42:50.407108+00:00",
+    "last_seen_at": "2026-11-13T23:37:35.308618+00:00"
+  },
+  "sun": {
+    "name": "Sun",
+    "first_seen_at": "2026-11-13T00:42:51.288358+00:00",
+    "last_seen_at": "2026-11-13T23:37:16.904508+00:00"
+  },
+  "popsicle": {
+    "name": "Popsicle",
+    "first_seen_at": "2026-11-13T00:42:54.586360+00:00",
+    "last_seen_at": "2026-11-13T23:36:28.572600+00:00"
+  },
+  "snakebite": {
+    "name": "Snakebite",
+    "first_seen_at": "2026-11-13T00:42:55.784563+00:00",
+    "last_seen_at": "2026-11-13T23:37:09.486673+00:00"
+  },
+  "heartbreak": {
+    "name": "Heartbreak",
+    "first_seen_at": "2026-11-13T00:43:04.937906+00:00",
+    "last_seen_at": "2026-11-13T23:37:37.044684+00:00"
+  },
+  "cracks": {
+    "name": "Cracks",
+    "first_seen_at": "2026-11-13T00:45:40.184662+00:00",
+    "last_seen_at": "2026-11-13T23:36:29.689218+00:00"
+  },
+  "ice phoenix": {
+    "name": "Ice Phoenix",
+    "first_seen_at": "2026-11-13T00:45:53.508809+00:00",
+    "last_seen_at": "2026-11-13T23:37:25.769767+00:00"
+  },
+  "fire bear": {
+    "name": "Fire Bear",
+    "first_seen_at": "2026-11-13T00:45:54.833190+00:00",
+    "last_seen_at": "2026-11-13T23:37:35.597259+00:00"
+  },
+  "blue": {
+    "name": "Blue",
+    "first_seen_at": "2026-11-13T00:46:18.894072+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.128577+00:00"
+  },
+  "ufos": {
+    "name": "UFOs",
+    "first_seen_at": "2026-11-13T00:46:19.769465+00:00",
+    "last_seen_at": "2026-11-13T23:37:26.884428+00:00"
+  },
+  "box of ultra wrapping paper": {
+    "name": "Box of Ultra Wrapping Paper",
+    "first_seen_at": "2026-11-13T00:46:24.502582+00:00",
+    "last_seen_at": "2026-11-14T00:37:10.519583+00:00"
+  },
+  "gothic": {
+    "name": "Gothic",
+    "first_seen_at": "2026-11-13T00:46:40.884223+00:00",
+    "last_seen_at": "2026-11-13T23:37:24.064803+00:00"
+  },
+  "vortex": {
+    "name": "Vortex",
+    "first_seen_at": "2026-11-13T00:46:43.392132+00:00",
+    "last_seen_at": "2026-11-13T23:36:32.990234+00:00"
+  },
+  "jellyfish": {
+    "name": "Jellyfish",
+    "first_seen_at": "2026-11-13T00:46:46.335036+00:00",
+    "last_seen_at": "2026-11-13T23:36:33.129966+00:00"
+  },
+  "turtle": {
+    "name": "Turtle",
+    "first_seen_at": "2026-11-13T13:59:03.941812+00:00",
+    "last_seen_at": "2026-11-13T23:37:38.208646+00:00"
+  },
+  "melon": {
+    "name": "Melon",
+    "first_seen_at": "2026-11-13T13:59:19.676967+00:00",
+    "last_seen_at": "2026-11-13T23:36:02.770115+00:00"
+  },
+  "rb knife": {
+    "name": "RB Knife",
+    "first_seen_at": "2026-11-13T13:59:19.676967+00:00",
+    "last_seen_at": "2026-11-13T23:37:30.250980+00:00"
+  },
+  "snowy": {
+    "name": "Snowy",
+    "first_seen_at": "2026-11-13T14:00:02.264112+00:00",
+    "last_seen_at": "2026-11-13T21:27:15.430787+00:00"
+  },
+  "eclipse": {
+    "name": "Eclipse",
+    "first_seen_at": "2026-11-13T14:00:02.264112+00:00",
+    "last_seen_at": "2026-11-13T21:27:16.135322+00:00"
+  },
+  "snowflake key 2018": {
+    "name": "Snowflake Key 2018",
+    "first_seen_at": "2026-11-13T14:00:06.633152+00:00",
+    "last_seen_at": "2026-11-13T23:37:24.644779+00:00"
+  },
+  "holly": {
+    "name": "Holly",
+    "first_seen_at": "2026-11-13T14:00:15.268934+00:00",
+    "last_seen_at": "2026-11-13T23:36:04.588197+00:00"
+  },
+  "giftwrap": {
+    "name": "Giftwrap",
+    "first_seen_at": "2026-11-13T14:00:39.909704+00:00",
+    "last_seen_at": "2026-11-13T23:36:05.547238+00:00"
+  },
+  "ribbon": {
+    "name": "Ribbon",
+    "first_seen_at": "2026-11-13T14:00:39.909704+00:00",
+    "last_seen_at": "2026-11-13T23:36:05.547238+00:00"
+  },
+  "wavy": {
+    "name": "Wavy",
+    "first_seen_at": "2026-11-13T14:00:39.909704+00:00",
+    "last_seen_at": "2026-11-13T23:37:19.090721+00:00"
+  },
+  "hunter": {
+    "name": "Hunter",
+    "first_seen_at": "2026-11-13T14:00:51.269727+00:00",
+    "last_seen_at": "2026-11-13T23:36:06.041920+00:00"
+  },
+  "mummy": {
+    "name": "Mummy",
+    "first_seen_at": "2026-11-13T14:01:01.571790+00:00",
+    "last_seen_at": "2026-11-13T23:37:39.138277+00:00"
+  },
+  "teddy": {
+    "name": "Teddy",
+    "first_seen_at": "2026-11-13T14:01:04.039473+00:00",
+    "last_seen_at": "2026-11-13T23:37:31.113764+00:00"
+  },
+  "striped": {
+    "name": "Striped",
+    "first_seen_at": "2026-11-13T14:01:13.000333+00:00",
+    "last_seen_at": "2026-11-13T23:36:39.500977+00:00"
+  },
+  "gingerheart": {
+    "name": "Gingerheart",
+    "first_seen_at": "2026-11-13T14:04:48.291709+00:00",
+    "last_seen_at": "2026-11-13T23:36:09.248067+00:00"
+  },
+  "cats": {
+    "name": "Cats",
+    "first_seen_at": "2026-11-13T14:04:57.813731+00:00",
+    "last_seen_at": "2026-11-13T23:37:12.556705+00:00"
+  },
+  "stickers": {
+    "name": "Stickers",
+    "first_seen_at": "2026-11-13T14:05:22.076865+00:00",
+    "last_seen_at": "2026-11-13T23:37:36.296663+00:00"
+  },
+  "toy": {
+    "name": "Toy",
+    "first_seen_at": "2026-11-13T14:05:22.076865+00:00",
+    "last_seen_at": "2026-11-13T23:37:39.423393+00:00"
+  },
+  "wraith": {
+    "name": "Wraith",
+    "first_seen_at": "2026-11-13T14:05:58.825440+00:00",
+    "last_seen_at": "2026-11-13T23:37:19.881439+00:00"
+  },
+  "lovely": {
+    "name": "Lovely",
+    "first_seen_at": "2026-11-13T14:06:10.787507+00:00",
+    "last_seen_at": "2026-11-13T23:37:32.236536+00:00"
+  },
+  "turtles": {
+    "name": "Turtles",
+    "first_seen_at": "2026-11-13T14:06:17.693830+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.749182+00:00"
+  },
+  "cheesy": {
+    "name": "Cheesy",
+    "first_seen_at": "2026-11-13T14:06:24.189043+00:00",
+    "last_seen_at": "2026-11-13T23:37:20.572850+00:00"
+  },
+  "whiteout": {
+    "name": "Whiteout",
+    "first_seen_at": "2026-11-13T14:06:41.371260+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.128577+00:00"
+  },
+  "unknown item id cmazobvpb00bgnu70lyj4k41r": {
+    "name": "Unknown item ID cmazobvpb00bgnu70lyj4k41r",
+    "first_seen_at": "2026-11-13T14:09:12.248765+00:00",
+    "last_seen_at": "2026-11-13T23:36:37.329537+00:00"
+  },
+  "cheddar": {
+    "name": "Cheddar",
+    "first_seen_at": "2026-11-13T14:09:14.494449+00:00",
+    "last_seen_at": "2026-11-13T23:36:37.569522+00:00"
+  },
+  "sub": {
+    "name": "Sub",
+    "first_seen_at": "2026-11-13T14:14:19.302689+00:00",
+    "last_seen_at": "2026-11-13T15:13:39.181167+00:00"
+  },
+  "fairy": {
+    "name": "Fairy",
+    "first_seen_at": "2026-11-13T14:14:37.168899+00:00",
+    "last_seen_at": "2026-11-14T00:37:10.519583+00:00"
+  },
+  "penguin": {
+    "name": "Penguin",
+    "first_seen_at": "2026-11-13T14:15:51.612653+00:00",
+    "last_seen_at": "2026-11-13T23:37:16.609605+00:00"
+  },
+  "plaid": {
+    "name": "Plaid",
+    "first_seen_at": "2026-11-13T14:15:51.612653+00:00",
+    "last_seen_at": "2026-11-13T23:37:36.296663+00:00"
+  },
+  "carrot": {
+    "name": "Carrot",
+    "first_seen_at": "2026-11-13T14:15:58.915709+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.603404+00:00"
+  },
+  "sandy": {
+    "name": "Sandy",
+    "first_seen_at": "2026-11-13T14:16:07.551086+00:00",
+    "last_seen_at": "2026-11-13T23:37:25.284431+00:00"
+  },
+  "ace": {
+    "name": "Ace",
+    "first_seen_at": "2026-11-13T14:16:10.372000+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.647520+00:00"
+  },
+  "biogun": {
+    "name": "Biogun",
+    "first_seen_at": "2026-11-13T14:16:26.023273+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.245090+00:00"
+  },
+  "floatie": {
+    "name": "Floatie",
+    "first_seen_at": "2026-11-13T14:16:33.613241+00:00",
+    "last_seen_at": "2026-11-13T23:37:38.863040+00:00"
+  },
+  "space": {
+    "name": "Space",
+    "first_seen_at": "2026-11-13T14:16:34.631586+00:00",
+    "last_seen_at": "2026-11-13T23:37:01.296808+00:00"
+  },
+  "night": {
+    "name": "Night",
+    "first_seen_at": "2026-11-13T14:17:40.881392+00:00",
+    "last_seen_at": "2026-11-13T23:37:37.204530+00:00"
+  },
+  "caution": {
+    "name": "Caution",
+    "first_seen_at": "2026-11-13T14:17:40.881392+00:00",
+    "last_seen_at": "2026-11-13T23:36:43.831742+00:00"
+  },
+  "infected": {
+    "name": "Infected",
+    "first_seen_at": "2026-11-13T14:17:59.263619+00:00",
+    "last_seen_at": "2026-11-13T23:36:44.651280+00:00"
+  },
+  "ghosts": {
+    "name": "Ghosts",
+    "first_seen_at": "2026-11-13T14:18:12.800878+00:00",
+    "last_seen_at": "2026-11-13T23:37:16.420147+00:00"
+  },
+  "waves": {
+    "name": "Waves",
+    "first_seen_at": "2026-11-13T14:18:12.800878+00:00",
+    "last_seen_at": "2026-11-13T23:37:37.044684+00:00"
+  },
+  "seahorsey": {
+    "name": "Seahorsey",
+    "first_seen_at": "2026-11-13T14:19:15.844620+00:00",
+    "last_seen_at": "2026-11-13T23:36:45.171079+00:00"
+  },
+  "balloons": {
+    "name": "Balloons",
+    "first_seen_at": "2026-11-13T14:19:38.841880+00:00",
+    "last_seen_at": "2026-11-13T23:37:30.436457+00:00"
+  },
+  "damp": {
+    "name": "Damp",
+    "first_seen_at": "2026-11-13T14:20:10.717321+00:00",
+    "last_seen_at": "2026-11-13T23:36:49.284829+00:00"
+  },
+  "nuke": {
+    "name": "Nuke",
+    "first_seen_at": "2026-11-13T14:20:26.317669+00:00",
+    "last_seen_at": "2026-11-13T23:36:50.098757+00:00"
+  },
+  "moons": {
+    "name": "Moons",
+    "first_seen_at": "2026-11-13T14:20:42.176914+00:00",
+    "last_seen_at": "2026-11-13T23:37:18.971902+00:00"
+  },
+  "donut": {
+    "name": "Donut",
+    "first_seen_at": "2026-11-13T14:20:53.593119+00:00",
+    "last_seen_at": "2026-11-13T23:37:31.213904+00:00"
+  },
+  "goo": {
+    "name": "Goo",
+    "first_seen_at": "2026-11-13T14:21:18.839792+00:00",
+    "last_seen_at": "2026-11-13T23:36:52.002488+00:00"
+  },
+  "pirate": {
+    "name": "Pirate",
+    "first_seen_at": "2026-11-13T14:21:28.457522+00:00",
+    "last_seen_at": "2026-11-13T23:37:36.788811+00:00"
+  },
+  "fallout": {
+    "name": "Fallout",
+    "first_seen_at": "2026-11-13T14:24:00.066389+00:00",
+    "last_seen_at": "2026-11-13T23:36:55.922935+00:00"
+  },
+  "icicles": {
+    "name": "Icicles",
+    "first_seen_at": "2026-11-13T14:24:17.472897+00:00",
+    "last_seen_at": "2026-11-13T23:37:32.146536+00:00"
+  },
+  "tropical": {
+    "name": "Tropical",
+    "first_seen_at": "2026-11-13T14:24:20.499707+00:00",
+    "last_seen_at": "2026-11-13T23:37:37.044684+00:00"
+  },
+  "ornament": {
+    "name": "Ornament",
+    "first_seen_at": "2026-11-13T14:24:22.921267+00:00",
+    "last_seen_at": "2026-11-14T00:36:55.272332+00:00"
+  },
+  "galactic": {
+    "name": "Galactic",
+    "first_seen_at": "2026-11-13T14:24:25.821648+00:00",
+    "last_seen_at": "2026-11-13T23:37:20.674981+00:00"
+  },
+  "forest": {
+    "name": "Forest",
+    "first_seen_at": "2026-11-13T14:24:33.420756+00:00",
+    "last_seen_at": "2026-11-13T23:37:16.836119+00:00"
+  },
+  "snowflakes": {
+    "name": "Snowflakes",
+    "first_seen_at": "2026-11-13T14:24:38.481657+00:00",
+    "last_seen_at": "2026-11-13T23:36:57.475473+00:00"
+  },
+  "steel": {
+    "name": "Steel",
+    "first_seen_at": "2026-11-13T14:24:44.642182+00:00",
+    "last_seen_at": "2026-11-13T23:37:07.454493+00:00"
+  },
+  "yellow": {
+    "name": "Yellow",
+    "first_seen_at": "2026-11-13T14:31:24.633714+00:00",
+    "last_seen_at": "2026-11-13T23:37:36.747496+00:00"
+  },
+  "portal": {
+    "name": "Portal",
+    "first_seen_at": "2026-11-13T14:31:56.869393+00:00",
+    "last_seen_at": "2026-11-13T23:36:59.644364+00:00"
+  },
+  "shaded": {
+    "name": "Shaded",
+    "first_seen_at": "2026-11-13T14:32:07.547571+00:00",
+    "last_seen_at": "2026-11-13T23:37:35.031962+00:00"
+  },
+  "pool": {
+    "name": "Pool",
+    "first_seen_at": "2026-11-13T14:32:07.547571+00:00",
+    "last_seen_at": "2026-11-13T23:37:07.193095+00:00"
+  },
+  "mr snowman": {
+    "name": "Mr. Snowman",
+    "first_seen_at": "2026-11-13T14:32:10.844141+00:00",
+    "last_seen_at": "2026-11-13T23:37:01.262184+00:00"
+  },
+  "chilly": {
+    "name": "Chilly",
+    "first_seen_at": "2026-11-13T14:32:10.844141+00:00",
+    "last_seen_at": "2026-11-13T23:37:29.558349+00:00"
+  },
+  "ornaments": {
+    "name": "Ornaments",
+    "first_seen_at": "2026-11-13T14:32:19.645565+00:00",
+    "last_seen_at": "2026-11-13T23:37:01.977649+00:00"
+  },
+  "tnl": {
+    "name": "TNL",
+    "first_seen_at": "2026-11-13T14:32:39.097433+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.288517+00:00"
+  },
+  "witchbrew": {
+    "name": "Witchbrew",
+    "first_seen_at": "2026-11-13T14:32:43.255509+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.749182+00:00"
+  },
+  "frosty": {
+    "name": "Frosty",
+    "first_seen_at": "2026-11-13T14:32:46.868636+00:00",
+    "last_seen_at": "2026-11-13T23:37:04.084188+00:00"
+  },
+  "carrot bunny": {
+    "name": "Carrot Bunny",
+    "first_seen_at": "2026-11-13T14:32:53.378280+00:00",
+    "last_seen_at": "2026-11-13T23:37:29.369896+00:00"
+  },
+  "etched": {
+    "name": "Etched",
+    "first_seen_at": "2026-11-13T14:33:14.151562+00:00",
+    "last_seen_at": "2026-11-13T23:37:07.026120+00:00"
+  },
+  "lights": {
+    "name": "Lights",
+    "first_seen_at": "2026-11-13T14:33:15.041919+00:00",
+    "last_seen_at": "2026-11-13T23:37:22.015736+00:00"
+  },
+  "8bit": {
+    "name": "8bit",
+    "first_seen_at": "2026-11-13T14:33:16.089135+00:00",
+    "last_seen_at": "2026-11-13T23:37:07.193095+00:00"
+  },
+  "bluesteel": {
+    "name": "Bluesteel",
+    "first_seen_at": "2026-11-13T14:33:24.833127+00:00",
+    "last_seen_at": "2026-11-13T23:37:38.208646+00:00"
+  },
+  "sweetheart": {
+    "name": "Sweetheart",
+    "first_seen_at": "2026-11-13T14:33:28.275615+00:00",
+    "last_seen_at": "2026-11-13T23:37:07.957338+00:00"
+  },
+  "hazard": {
+    "name": "Hazard",
+    "first_seen_at": "2026-11-13T14:35:07.523651+00:00",
+    "last_seen_at": "2026-11-13T23:37:09.486673+00:00"
+  },
+  "pool noodle": {
+    "name": "Pool Noodle",
+    "first_seen_at": "2026-11-13T14:35:13.134479+00:00",
+    "last_seen_at": "2026-11-13T23:37:10.315725+00:00"
+  },
+  "stars": {
+    "name": "Stars",
+    "first_seen_at": "2026-11-13T14:35:37.115473+00:00",
+    "last_seen_at": "2026-11-13T23:37:25.912256+00:00"
+  },
+  "imbued": {
+    "name": "Imbued",
+    "first_seen_at": "2026-11-13T14:35:42.204933+00:00",
+    "last_seen_at": "2026-11-13T23:37:14.484523+00:00"
+  },
+  "slashed": {
+    "name": "Slashed",
+    "first_seen_at": "2026-11-13T14:35:44.330583+00:00",
+    "last_seen_at": "2026-11-13T23:37:14.539911+00:00"
+  },
+  "box of red wrapping paper": {
+    "name": "Box of Red Wrapping Paper",
+    "first_seen_at": "2026-11-13T14:35:46.564338+00:00",
+    "last_seen_at": "2026-11-13T23:37:14.873221+00:00"
+  },
+  "santa dog": {
+    "name": "Santa Dog",
+    "first_seen_at": "2026-11-13T14:35:53.166851+00:00",
+    "last_seen_at": "2026-11-13T23:37:16.318159+00:00"
+  },
+  "phoenix": {
+    "name": "Phoenix",
+    "first_seen_at": "2026-11-13T14:36:01.538402+00:00",
+    "last_seen_at": "2026-11-13T23:37:29.713172+00:00"
+  },
+  "starfish": {
+    "name": "Starfish",
+    "first_seen_at": "2026-11-13T14:36:06.234204+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.128577+00:00"
+  },
+  "bio": {
+    "name": "Bio",
+    "first_seen_at": "2026-11-13T14:36:09.898883+00:00",
+    "last_seen_at": "2026-11-13T23:37:21.745425+00:00"
+  },
+  "wanwood": {
+    "name": "Wanwood",
+    "first_seen_at": "2026-11-13T14:36:14.297480+00:00",
+    "last_seen_at": "2026-11-13T23:37:17.911606+00:00"
+  },
+  "pea": {
+    "name": "Pea",
+    "first_seen_at": "2026-11-13T14:36:15.488808+00:00",
+    "last_seen_at": "2026-11-13T23:37:28.664846+00:00"
+  },
+  "steambird": {
+    "name": "Steambird",
+    "first_seen_at": "2026-11-13T14:36:19.573422+00:00",
+    "last_seen_at": "2026-11-13T23:37:18.450478+00:00"
+  },
+  "lucky": {
+    "name": "Lucky",
+    "first_seen_at": "2026-11-13T14:36:27.394639+00:00",
+    "last_seen_at": "2026-11-13T23:37:18.971902+00:00"
+  },
+  "stalker": {
+    "name": "Stalker",
+    "first_seen_at": "2026-11-13T14:36:27.394639+00:00",
+    "last_seen_at": "2026-11-13T23:37:18.888889+00:00"
+  },
+  "haunted": {
+    "name": "Haunted",
+    "first_seen_at": "2026-11-13T14:36:56.800680+00:00",
+    "last_seen_at": "2026-11-13T23:37:22.890141+00:00"
+  },
+  "camo": {
+    "name": "Camo",
+    "first_seen_at": "2026-11-13T14:37:04.242960+00:00",
+    "last_seen_at": "2026-11-13T23:37:21.745425+00:00"
+  },
+  "cherry": {
+    "name": "Cherry",
+    "first_seen_at": "2026-11-13T14:37:23.357297+00:00",
+    "last_seen_at": "2026-11-13T23:37:23.591883+00:00"
+  },
+  "oily": {
+    "name": "Oily",
+    "first_seen_at": "2026-11-13T14:37:23.357297+00:00",
+    "last_seen_at": "2026-11-13T23:37:23.591883+00:00"
+  },
+  "fragile": {
+    "name": "Fragile",
+    "first_seen_at": "2026-11-13T14:39:32.037134+00:00",
+    "last_seen_at": "2026-11-13T23:37:25.284431+00:00"
+  },
+  "cardboard": {
+    "name": "Cardboard",
+    "first_seen_at": "2026-11-13T14:39:58.708468+00:00",
+    "last_seen_at": "2026-11-13T23:37:25.973952+00:00"
+  },
+  "stockings": {
+    "name": "Stockings",
+    "first_seen_at": "2026-11-13T14:40:10.613235+00:00",
+    "last_seen_at": "2026-11-13T23:37:32.236536+00:00"
+  },
+  "roses": {
+    "name": "Roses",
+    "first_seen_at": "2026-11-13T14:43:46.712078+00:00",
+    "last_seen_at": "2026-11-13T23:35:50.760993+00:00"
+  },
+  "patrick": {
+    "name": "Patrick",
+    "first_seen_at": "2026-11-13T14:43:46.712078+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.288517+00:00"
+  },
+  "passion": {
+    "name": "Passion",
+    "first_seen_at": "2026-11-13T14:43:46.712078+00:00",
+    "last_seen_at": "2026-11-13T23:37:41.288517+00:00"
+  },
+  "xbox": {
+    "name": "Xbox",
+    "first_seen_at": "2026-11-13T14:45:51.861306+00:00",
+    "last_seen_at": "2026-11-13T23:37:29.415801+00:00"
+  },
+  "meadow": {
+    "name": "Meadow",
+    "first_seen_at": "2026-11-13T14:45:55.705263+00:00",
+    "last_seen_at": "2026-11-13T23:37:30.118498+00:00"
+  },
+  "juice": {
+    "name": "Juice",
+    "first_seen_at": "2026-11-13T14:45:56.548228+00:00",
+    "last_seen_at": "2026-11-13T23:37:30.250980+00:00"
+  },
+  "sleigh": {
+    "name": "Sleigh",
+    "first_seen_at": "2026-11-13T14:46:01.123201+00:00",
+    "last_seen_at": "2026-11-13T23:37:31.213904+00:00"
+  },
+  "musical": {
+    "name": "Musical",
+    "first_seen_at": "2026-11-13T14:46:01.939561+00:00",
+    "last_seen_at": "2026-11-13T23:37:30.796523+00:00"
+  },
+  "pig": {
+    "name": "Pig",
+    "first_seen_at": "2026-11-13T14:46:03.187187+00:00",
+    "last_seen_at": "2026-11-13T23:37:36.649338+00:00"
+  },
+  "jigsaw": {
+    "name": "Jigsaw",
+    "first_seen_at": "2026-11-13T14:46:07.593365+00:00",
+    "last_seen_at": "2026-11-13T23:37:31.581027+00:00"
+  },
+  "chick": {
+    "name": "Chick",
+    "first_seen_at": "2026-11-13T14:46:31.677966+00:00",
+    "last_seen_at": "2026-11-13T23:37:34.427423+00:00"
+  },
+  "hazmat": {
+    "name": "Hazmat",
+    "first_seen_at": "2026-11-13T14:46:35.943376+00:00",
+    "last_seen_at": "2026-11-13T23:37:35.031962+00:00"
+  },
+  "ghostly": {
+    "name": "Ghostly",
+    "first_seen_at": "2026-11-13T14:46:35.943376+00:00",
+    "last_seen_at": "2026-11-13T23:37:35.031962+00:00"
+  },
+  "marina": {
+    "name": "Marina",
+    "first_seen_at": "2026-11-13T14:46:35.943376+00:00",
+    "last_seen_at": "2026-11-13T23:37:35.031962+00:00"
+  },
+  "leaves": {
+    "name": "Leaves",
+    "first_seen_at": "2026-11-13T14:46:42.706159+00:00",
+    "last_seen_at": "2026-11-13T23:37:36.296663+00:00"
+  },
+  "wreaths": {
+    "name": "Wreaths",
+    "first_seen_at": "2026-11-13T14:47:11.839978+00:00",
+    "last_seen_at": "2026-11-13T23:37:38.208646+00:00"
+  },
+  "splatter": {
+    "name": "Splatter",
+    "first_seen_at": "2026-11-13T14:47:22.390606+00:00",
+    "last_seen_at": "2026-11-13T23:37:38.784387+00:00"
+  },
+  "tiger": {
+    "name": "Tiger",
+    "first_seen_at": "2026-11-13T14:47:26.884435+00:00",
+    "last_seen_at": "2026-11-13T23:37:39.423393+00:00"
+  },
+  "brown": {
+    "name": "Brown",
+    "first_seen_at": "2026-11-13T14:47:31.263359+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.074425+00:00"
+  },
+  "borders": {
+    "name": "Borders",
+    "first_seen_at": "2026-11-13T14:47:55.803046+00:00",
+    "last_seen_at": "2026-11-13T23:28:27.487473+00:00"
+  },
+  "skeleton key 2018": {
+    "name": "Skeleton Key 2018",
+    "first_seen_at": "2026-11-13T14:47:57.535354+00:00",
+    "last_seen_at": "2026-11-13T23:08:44.134368+00:00"
+  },
+  "tulip": {
+    "name": "Tulip",
+    "first_seen_at": "2026-11-13T14:50:29.935740+00:00",
+    "last_seen_at": "2026-11-13T20:39:28.950455+00:00"
+  },
+  "news": {
+    "name": "News",
+    "first_seen_at": "2026-11-13T14:50:35.286332+00:00",
+    "last_seen_at": "2026-11-13T20:07:26.346370+00:00"
+  },
+  "stainless": {
+    "name": "Stainless",
+    "first_seen_at": "2026-11-13T14:50:40.093088+00:00",
+    "last_seen_at": "2026-11-13T19:42:24.559889+00:00"
+  },
+  "big kill": {
+    "name": "Big Kill",
+    "first_seen_at": "2026-11-13T14:50:49.026829+00:00",
+    "last_seen_at": "2026-11-13T19:22:16.445201+00:00"
+  },
+  "abstract": {
+    "name": "Abstract",
+    "first_seen_at": "2026-11-13T14:51:12.054018+00:00",
+    "last_seen_at": "2026-11-13T17:55:21.864454+00:00"
+  },
+  "carrots": {
+    "name": "Carrots",
+    "first_seen_at": "2026-11-13T15:04:33.851913+00:00",
+    "last_seen_at": "2026-11-13T23:36:00.035594+00:00"
+  },
+  "mechbug": {
+    "name": "Mechbug",
+    "first_seen_at": "2026-11-13T15:52:36.036806+00:00",
+    "last_seen_at": "2026-11-13T23:35:56.572763+00:00"
+  },
+  "phantom": {
+    "name": "Phantom",
+    "first_seen_at": "2026-11-13T16:15:25.613009+00:00",
+    "last_seen_at": "2026-11-13T23:35:57.532848+00:00"
+  },
+  "sunny": {
+    "name": "Sunny",
+    "first_seen_at": "2026-11-13T17:01:58.261738+00:00",
+    "last_seen_at": "2026-11-13T20:12:05.586864+00:00"
+  },
+  "shadow pumpkin": {
+    "name": "Shadow Pumpkin",
+    "first_seen_at": "2026-11-13T19:17:58.839465+00:00",
+    "last_seen_at": "2026-11-13T23:35:53.707145+00:00"
+  },
+  "ghastly": {
+    "name": "Ghastly",
+    "first_seen_at": "2026-11-13T19:21:06.396887+00:00",
+    "last_seen_at": "2026-11-13T20:33:22.576160+00:00"
+  },
+  "swirly gun": {
+    "name": "Swirly Gun",
+    "first_seen_at": "2026-11-13T22:50:22.611439+00:00",
+    "last_seen_at": "2026-11-13T23:37:05.545967+00:00"
+  },
+  "heart wand": {
+    "name": "Heart Wand",
+    "first_seen_at": "2026-11-13T22:50:23.838305+00:00",
+    "last_seen_at": "2026-11-13T23:37:37.313897+00:00"
+  },
+  "sands": {
+    "name": "Sands",
+    "first_seen_at": "2026-11-13T22:50:25.062243+00:00",
+    "last_seen_at": "2026-11-14T00:37:11.191379+00:00"
+  },
+  "lightbringer": {
+    "name": "Lightbringer",
+    "first_seen_at": "2026-11-13T22:50:25.974614+00:00",
+    "last_seen_at": "2026-11-13T23:39:49.313589+00:00"
+  },
+  "snowstorm": {
+    "name": "Snowstorm",
+    "first_seen_at": "2026-11-13T22:50:26.907994+00:00",
+    "last_seen_at": "2026-11-14T00:37:08.532921+00:00"
+  },
+  "blizzard": {
+    "name": "Blizzard",
+    "first_seen_at": "2026-11-13T22:50:26.907994+00:00",
+    "last_seen_at": "2026-11-14T00:37:08.986795+00:00"
+  },
+  "snowcannon": {
+    "name": "Snowcannon",
+    "first_seen_at": "2026-11-13T22:50:26.907994+00:00",
+    "last_seen_at": "2026-11-14T00:37:09.069976+00:00"
+  },
+  "shark": {
+    "name": "Shark",
+    "first_seen_at": "2026-11-13T22:50:28.329069+00:00",
+    "last_seen_at": "2026-11-14T00:37:09.513960+00:00"
+  },
+  "emberbow": {
+    "name": "Emberbow",
+    "first_seen_at": "2026-11-13T22:50:29.404752+00:00",
+    "last_seen_at": "2026-11-14T00:37:10.341801+00:00"
+  },
+  "emberscythe": {
+    "name": "Emberscythe",
+    "first_seen_at": "2026-11-13T22:50:30.178946+00:00",
+    "last_seen_at": "2026-11-14T00:37:08.636722+00:00"
+  },
+  "icecream": {
+    "name": "Icecream",
+    "first_seen_at": "2026-11-13T22:50:30.178946+00:00",
+    "last_seen_at": "2026-11-14T00:37:10.421490+00:00"
+  },
+  "mortal": {
+    "name": "Mortal",
+    "first_seen_at": "2026-11-13T22:50:31.686756+00:00",
+    "last_seen_at": "2026-11-14T00:37:07.560039+00:00"
+  },
+  "raygun": {
+    "name": "Raygun",
+    "first_seen_at": "2026-11-13T22:50:32.604767+00:00",
+    "last_seen_at": "2026-11-14T00:37:00.274233+00:00"
+  },
+  "embersickle": {
+    "name": "Embersickle",
+    "first_seen_at": "2026-11-13T22:50:33.746930+00:00",
+    "last_seen_at": "2026-11-14T00:37:10.519583+00:00"
+  },
+  "beachy": {
+    "name": "Beachy",
+    "first_seen_at": "2026-11-13T22:50:37.074208+00:00",
+    "last_seen_at": "2026-11-14T00:37:09.161509+00:00"
+  },
+  "watergun": {
+    "name": "Watergun",
+    "first_seen_at": "2026-11-13T22:50:37.893098+00:00",
+    "last_seen_at": "2026-11-14T00:37:08.532921+00:00"
+  },
+  "tides": {
+    "name": "Tides",
+    "first_seen_at": "2026-11-13T22:50:38.658804+00:00",
+    "last_seen_at": "2026-11-14T00:37:00.195962+00:00"
+  },
+  "treat": {
+    "name": "Treat",
+    "first_seen_at": "2026-11-13T22:50:39.683846+00:00",
+    "last_seen_at": "2026-11-14T00:36:54.971814+00:00"
+  },
+  "boneblade": {
+    "name": "Boneblade",
+    "first_seen_at": "2026-11-13T22:50:42.401387+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.426531+00:00"
+  },
+  "evergreen": {
+    "name": "Evergreen",
+    "first_seen_at": "2026-11-13T22:50:43.713788+00:00",
+    "last_seen_at": "2026-11-14T00:37:00.878686+00:00"
+  },
+  "alienbeam": {
+    "name": "Alienbeam",
+    "first_seen_at": "2026-11-13T22:50:46.383563+00:00",
+    "last_seen_at": "2026-11-14T00:37:10.111980+00:00"
+  },
+  "darkbringer": {
+    "name": "Darkbringer",
+    "first_seen_at": "2026-11-13T22:50:48.035828+00:00",
+    "last_seen_at": "2026-11-14T00:37:06.859896+00:00"
+  },
+  "sunrise": {
+    "name": "Sunrise",
+    "first_seen_at": "2026-11-13T22:50:48.954973+00:00",
+    "last_seen_at": "2026-11-13T23:37:36.351672+00:00"
+  },
+  "luger": {
+    "name": "Luger",
+    "first_seen_at": "2026-11-13T22:50:51.341771+00:00",
+    "last_seen_at": "2026-11-14T00:16:03.577910+00:00"
+  },
+  "sweet": {
+    "name": "Sweet",
+    "first_seen_at": "2026-11-13T22:50:55.085172+00:00",
+    "last_seen_at": "2026-11-14T00:37:09.680847+00:00"
+  },
+  "saw": {
+    "name": "Saw",
+    "first_seen_at": "2026-11-13T22:50:57.294130+00:00",
+    "last_seen_at": "2026-11-14T00:36:58.135834+00:00"
+  },
+  "slasher": {
+    "name": "Slasher",
+    "first_seen_at": "2026-11-13T22:51:00.025416+00:00",
+    "last_seen_at": "2026-11-13T23:37:25.547648+00:00"
+  },
+  "immortal": {
+    "name": "Immortal",
+    "first_seen_at": "2026-11-13T22:51:00.704982+00:00",
+    "last_seen_at": "2026-11-14T00:37:07.560039+00:00"
+  },
+  "bauble": {
+    "name": "Bauble",
+    "first_seen_at": "2026-11-13T22:51:09.274505+00:00",
+    "last_seen_at": "2026-11-13T23:37:24.889446+00:00"
+  },
+  "seer": {
+    "name": "Seer",
+    "first_seen_at": "2026-11-13T22:51:10.385025+00:00",
+    "last_seen_at": "2026-11-13T23:37:24.596213+00:00"
+  },
+  "evergun": {
+    "name": "Evergun",
+    "first_seen_at": "2026-11-13T22:51:12.193385+00:00",
+    "last_seen_at": "2026-11-13T23:37:36.960254+00:00"
+  },
+  "travelers gun": {
+    "name": "Traveler's Gun",
+    "first_seen_at": "2026-11-13T22:51:12.193385+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.268242+00:00"
+  },
+  "heat": {
+    "name": "Heat",
+    "first_seen_at": "2026-11-13T22:51:14.713374+00:00",
+    "last_seen_at": "2026-11-14T00:36:57.254651+00:00"
+  },
+  "gingerblade": {
+    "name": "Gingerblade",
+    "first_seen_at": "2026-11-13T22:51:34.039047+00:00",
+    "last_seen_at": "2026-11-14T00:37:04.254741+00:00"
+  },
+  "deathshard": {
+    "name": "Deathshard",
+    "first_seen_at": "2026-11-13T22:51:47.647378+00:00",
+    "last_seen_at": "2026-11-14T00:37:00.037173+00:00"
+  },
+  "fang": {
+    "name": "Fang",
+    "first_seen_at": "2026-11-13T22:51:47.647378+00:00",
+    "last_seen_at": "2026-11-13T23:37:37.971031+00:00"
+  },
+  "gemstone": {
+    "name": "Gemstone",
+    "first_seen_at": "2026-11-13T22:51:50.282611+00:00",
+    "last_seen_at": "2026-11-14T00:37:10.192703+00:00"
+  },
+  "cookiecane": {
+    "name": "Cookiecane",
+    "first_seen_at": "2026-11-13T22:51:54.704214+00:00",
+    "last_seen_at": "2026-11-13T23:37:22.798782+00:00"
+  },
+  "vampires gun": {
+    "name": "Vampire's Gun",
+    "first_seen_at": "2026-11-13T22:52:31.926084+00:00",
+    "last_seen_at": "2026-11-13T23:37:37.420020+00:00"
+  },
+  "constellation": {
+    "name": "Constellation",
+    "first_seen_at": "2026-11-13T22:52:52.193451+00:00",
+    "last_seen_at": "2026-11-13T23:37:24.889446+00:00"
+  },
+  "bubbles": {
+    "name": "Bubbles",
+    "first_seen_at": "2026-11-13T23:31:36.752283+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.649448+00:00"
+  },
+  "cupid": {
+    "name": "Cupid",
+    "first_seen_at": "2026-11-13T23:31:37.358894+00:00",
+    "last_seen_at": "2026-11-13T23:37:40.237910+00:00"
+  },
+  "xmas": {
+    "name": "Xmas",
+    "first_seen_at": "2026-11-13T23:31:56.957534+00:00",
+    "last_seen_at": "2026-11-13T23:36:51.173166+00:00"
+  },
+  "received side value weighted demand is low": {
+    "name": "received-side value-weighted Demand is low",
+    "first_seen_at": "2026-11-13T23:55:39.077965+00:00",
+    "last_seen_at": "2026-11-14T00:16:05.048085+00:00"
+  }
+}
