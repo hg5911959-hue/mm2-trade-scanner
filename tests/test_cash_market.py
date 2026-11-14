@@ -205,6 +205,41 @@ class CashMarketTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self._catalog([self._row("Chroma-Laser"), self._row("chroma laser")])
 
+    def test_duplicate_csv_headers_are_rejected(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / "cash.csv"
+        path.write_text(
+            "name,name,cash_price_usd,tier,status,verified_at_utc,source,notes\\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(RuntimeError, "duplicate columns"):
+            load_cash_price_catalog(path)
+
+    def test_missing_csv_row_fields_are_rejected(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / "cash.csv"
+        path.write_text(
+            "name,cash_price_usd,tier,status,verified_at_utc,source,notes\\n"
+            "Item,10,test,unverified,,manual\\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(RuntimeError, "Missing CSV field"):
+            load_cash_price_catalog(path)
+
+    def test_extra_csv_row_fields_are_rejected(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / "cash.csv"
+        path.write_text(
+            "name,cash_price_usd,tier,status,verified_at_utc,source,notes\\n"
+            "Item,10,test,unverified,,manual,note,unexpected\\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(RuntimeError, "Extra CSV fields"):
+            load_cash_price_catalog(path)
+
     def test_invalid_or_nonpositive_price_is_rejected(self):
         for price in ("0", "-1", "nan", "inf"):
             with self.subTest(price=price), self.assertRaises(RuntimeError):
