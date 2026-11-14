@@ -3742,6 +3742,22 @@ class CashFirstEvaluatorTests(unittest.TestCase):
         self.assertIsNone(result)
         self.assertTrue(any("Decreasing" in value for value in missing))
 
+    def test_receding_receive_stability_is_also_blocked(self):
+        values = dict(self.values)
+        values["chroma heat"] = {
+            "name": "Chroma Heat", "value": 1000, "stability": "Receding"
+        }
+        listing = dict(self.listing)
+        listing["receive_items"] = [{
+            "name": "Chroma Heat", "quantity": 1, "quantity_min": 1,
+            "quantity_max": 1, "quantity_source": "implicit_single",
+        }]
+        result, missing = scanner.evaluate_cash_listing(
+            listing, values, {}, self.catalog
+        )
+        self.assertIsNone(result)
+        self.assertTrue(any("Receding" in value for value in missing))
+
     def test_unverified_cash_price_is_never_used(self):
         catalog = {"items": dict(self.catalog["items"])}
         catalog["items"][scanner.normalize_cash_name("Chroma Gemstone")] = {
