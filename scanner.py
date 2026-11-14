@@ -1966,10 +1966,16 @@ def _enrich_untyped_catalog_items(values, cache_document, source_meta=None, pers
             if not slug:
                 continue
             prior = state["attempted"].get(slug, {})
-            if isinstance(prior, dict) and prior.get("source_version") == source_version:
-                retry_after = float(prior.get("retry_after", 0) or 0)
-                if prior.get("status") != "error" or retry_after > now:
+            if isinstance(prior, dict):
+                if (
+                    prior.get("status") in {"enriched", "no_additional_metadata"}
+                    and prior.get("item_last_updated") == variant.get("last_updated")
+                ):
                     continue
+                if prior.get("source_version") == source_version:
+                    retry_after = float(prior.get("retry_after", 0) or 0)
+                    if prior.get("status") != "error" or retry_after > now:
+                        continue
             try:
                 value_priority = float(variant.get("value") or 0)
             except (TypeError, ValueError):
@@ -1984,6 +1990,7 @@ def _enrich_untyped_catalog_items(values, cache_document, source_meta=None, pers
         state["daily_lookups"] += 1
         state["attempted"][slug] = {
             "source_version": source_version,
+            "item_last_updated": variant.get("last_updated"),
             "attempted_at": now,
             "retry_after": now + RBLXVALUE_DETAIL_RETRY_SECONDS,
             "status": "pending",
