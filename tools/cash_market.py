@@ -96,7 +96,21 @@ def load_cash_price_catalog(path="data/cash_prices.csv"):
             }
     except csv.Error as exc:
         raise RuntimeError("[cash] Malformed cash-price CSV.") from exc
-    return {"items": rows, "sha256": digest, "row_count": len(rows)}
+    now_utc = datetime.now(timezone.utc)
+    fresh_rows = [row for row in rows.values() if cash_price_is_fresh(row, now=now_utc)]
+    expiring_rows = []
+    for row in fresh_rows:
+        verified = datetime.fromisoformat(row["verified_at_utc"].replace("Z", "+00:00"))
+        age_days = (now_utc - verified).total_seconds() / 86400
+        if 11 <= age_days <= 14:
+            expiring_rows.append(row)
+    oldest_verified_at = min((row["verified_at_utc"] for row in fresh_rows), default=None)
+    return {
+        "items": rows, "sha256": digest, "row_count": len(rows),
+        "verified_count": len(fresh_rows),
+        "expiring_within_3_days": len(expiring_rows),
+        "oldest_verified_at": oldest_verified_at,
+    }
 
 
 def calculate_cash_side(items, catalog, side, sell_haircut_pct=15.0, max_age_days=14, now=None):
