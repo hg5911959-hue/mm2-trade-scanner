@@ -23,7 +23,7 @@ from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 import rblxvalue_guard
 from tools.metrics import update_metrics
 from tools.alert_policy import rank_and_split
-from tools.cash_market import calculate_cash_side, cash_profit_bounds, load_cash_price_catalog, normalize_cash_name
+from tools.cash_market import calculate_cash_side, cash_profit_bounds, load_cash_price_catalog, normalize_cash_name, cash_price_is_fresh
 
 BLOXSWAPS_URL = os.environ.get(
     "BLOXSWAPS_URL",
@@ -92,6 +92,7 @@ SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "1
 CASH_SELL_HAIRCUT_PCT = float(os.environ.get("CASH_SELL_HAIRCUT_PCT", "15"))
 CASH_MIN_PROFIT_USD = float(os.environ.get("CASH_MIN_PROFIT_USD", "1"))
 CASH_MIN_MARGIN_PERCENT = float(os.environ.get("CASH_MIN_MARGIN_PERCENT", "0"))
+CASH_MAX_AGE_DAYS = max(1, int(os.environ.get("CASH_MAX_AGE_DAYS", "14")))
 CASH_PRICE_FILE = Path("data/cash_prices.csv")
 CASH_PRICE_SNAPSHOT_FILE = Path("data/cash_price_snapshot.json")
 TELEGRAM_MAX_CHARS = 4000
@@ -3749,10 +3750,10 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog):
         return None, ["one side has no Supreme-catalogued items"]
 
     give_min, give_max, give_lines, give_missing = calculate_cash_side(
-        prepared["give"], cash_catalog, "give", 0
+        prepared["give"], cash_catalog, "give", 0, max_age_days=CASH_MAX_AGE_DAYS
     )
     receive_min, receive_max, receive_lines, receive_missing = calculate_cash_side(
-        prepared["receive"], cash_catalog, "receive", CASH_SELL_HAIRCUT_PCT
+        prepared["receive"], cash_catalog, "receive", CASH_SELL_HAIRCUT_PCT, max_age_days=CASH_MAX_AGE_DAYS
     )
     missing = give_missing + receive_missing
     if missing:
@@ -3968,8 +3969,19 @@ def scan_once(include_backlog_rechecks=True):
     print("[stage] Loading Supreme Values before evaluating trades")
     values = load_supreme_values()
     cash_catalog = load_cash_price_catalog(CASH_PRICE_FILE)
-    verified_cash_rows = sum(1 for row in cash_catalog["items"].values() if row["status"] == "verified")
+    verified_cash_rows = sum(1 for row in cash_catalog["items"].values() if row["status"] == "verified" and cash_price_is_fresh(row, CASH_MAX_AGE_DAYS))
+    expired_cash_rows = [row for row in cash_catalog["items"].values()
+                         if row["status"] == "verified" and not cash_price_is_fresh(row, CASH_MAX_AGE_DAYS)]
+    expired_cash_rows.sort(key=lambda row: row.get("verified_at_utc") or "")
     unverified_cash_rows = sum(1 for row in cash_catalog["items"].values() if row["status"] == "unverified")
+    if expired_cash_rows:
+        oldest_names = ", ".join(row["name"] for row in expired_cash_rows[:5])
+        send_maintenance_alert(
+            "cash-price-expired-" + datetime.now(timezone.utc).date().isoformat(),
+            f"{len(expired_cash_rows)} verified cash prices have expired (>{CASH_MAX_AGE_DAYS} days). "
+            f"Oldest entries: {oldest_names}. Re-verify them before they can qualify.",
+            cooldown_seconds=86400,
+        )
     previous_cash_hash = cash_catalog_snapshot_hash()
     cash_prices_changed = previous_cash_hash != cash_catalog["sha256"]
     print("[cash] Loaded %s price rows; verified=%s; unverified=%s; sell_haircut=%s%%" % (
