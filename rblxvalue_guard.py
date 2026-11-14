@@ -12,7 +12,11 @@ from typing import Any
 
 BUDGET_FILE = Path("data/rblxvalue_request_budget.json")
 BLOCK_FILE = Path("data/api_key_blocked.json")
-DAILY_REQUEST_LIMIT = max(1, int(os.environ.get("RBLXVALUE_DAILY_REQUEST_LIMIT", "60")))
+HARD_DAILY_REQUEST_LIMIT = 60
+DAILY_REQUEST_LIMIT = min(
+    HARD_DAILY_REQUEST_LIMIT,
+    max(1, int(os.environ.get("RBLXVALUE_DAILY_REQUEST_LIMIT", "60"))),
+)
 BLOCK_STEPS = (21600, 43200, 86400, 172800)
 PERMANENT_BLOCK_AFTER = 3
 ALERT_INTERVAL_SECONDS = 24 * 60 * 60
@@ -282,7 +286,14 @@ def reserve_request(*, now: float | None = None, key: str | None = None,
         # not silently grant extra requests until wall-clock time catches up.
         if stamp > cutoff:
             timestamps.append(stamp)
-    cap = DAILY_REQUEST_LIMIT if limit is None else max(1, int(limit))
+    if limit is None:
+        cap = DAILY_REQUEST_LIMIT
+    else:
+        if isinstance(limit, bool) or not isinstance(limit, int):
+            raise RblxValueGuardError(
+                "[rblxvalue-state] request budget limit must be an integer; refusing API request"
+            )
+        cap = min(HARD_DAILY_REQUEST_LIMIT, max(1, limit))
     if len(timestamps) >= cap:
         _atomic_json(path, {
             "schema_version": 1,
