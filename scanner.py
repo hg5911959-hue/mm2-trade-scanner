@@ -22,7 +22,7 @@ from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 import rblxvalue_guard
 from tools.metrics import update_metrics
 from tools.alert_policy import rank_and_split
-from tools.cash_market import calculate_cash_side, cash_profit_bounds, load_cash_price_catalog, normalize_cash_name, cash_price_is_fresh, strict_quantity
+from tools.cash_market import calculate_cash_side, cash_profit_bounds, load_cash_price_catalog, normalize_cash_name, cash_price_is_fresh, strict_quantity, parse_haircut_tiers
 
 BLOXSWAPS_URL = os.environ.get(
     "BLOXSWAPS_URL",
@@ -89,7 +89,19 @@ UNCERTAIN_TTL_SECONDS = max(3600, int(os.environ.get("UNCERTAIN_TTL_SECONDS", st
 BLOXSWAPS_ITEMS_FILE = Path("data/bloxswaps_items.json")
 SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "100"))
 CASH_SELL_HAIRCUT_PCT = float(os.environ.get("CASH_SELL_HAIRCUT_PCT", "15"))
-CASH_MIN_PROFIT_USD = float(os.environ.get("CASH_MIN_PROFIT_USD", "1"))
+CASH_SELL_HAIRCUT_OVERRIDE = "CASH_SELL_HAIRCUT_PCT" in os.environ
+CASH_SELL_HAIRCUT_TIERS = parse_haircut_tiers(
+    os.environ.get("CASH_SELL_HAIRCUT_TIERS", "0-2:30,2-10:20,10-50:15,50-:10")
+)
+if not math.isfinite(CASH_SELL_HAIRCUT_PCT) or not 0 <= CASH_SELL_HAIRCUT_PCT <= 99:
+    raise ValueError("CASH_SELL_HAIRCUT_PCT must be between 0 and 99")
+CASH_MIN_PROFIT_USD = float(os.environ.get("CASH_MIN_PROFIT_USD", "0.50"))
+CASH_MIN_PROFIT_USD_SMALL = float(os.environ.get("CASH_MIN_PROFIT_USD_SMALL", "0.25"))
+CASH_MIN_VERIFIED_ROWS = max(0, int(os.environ.get("CASH_MIN_VERIFIED_ROWS", "8")))
+if any(not math.isfinite(value) or value < 0 for value in (
+    CASH_MIN_PROFIT_USD, CASH_MIN_PROFIT_USD_SMALL
+)):
+    raise ValueError("Cash minimum-profit thresholds must be finite and non-negative")
 CASH_MIN_MARGIN_PERCENT = float(os.environ.get("CASH_MIN_MARGIN_PERCENT", "0"))
 CASH_MAX_AGE_DAYS = max(1, int(os.environ.get("CASH_MAX_AGE_DAYS", "14")))
 CASH_PRICE_FILE = Path("data/cash_prices.csv")
@@ -3815,6 +3827,7 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
     receive_min, receive_max, receive_lines, receive_missing = calculate_cash_side(
         prepared["receive"], cash_catalog, "receive", CASH_SELL_HAIRCUT_PCT,
         max_age_days=CASH_MAX_AGE_DAYS, allow_unverified_estimates=estimate_mode,
+        sell_haircut_tiers=None if CASH_SELL_HAIRCUT_OVERRIDE else CASH_SELL_HAIRCUT_TIERS,
     )
     missing = give_missing + receive_missing
     if missing:
@@ -3857,7 +3870,8 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
         "margin": margin,
         "manual_review": manual_review,
         "uncertain_items": uncertain_items,
-        "cash_sell_haircut_pct": CASH_SELL_HAIRCUT_PCT,
+        "cash_sell_haircut_pct": CASH_SELL_HAIRCUT_PCT if CASH_SELL_HAIRCUT_OVERRIDE else None,
+        "cash_sell_haircut_mode": "fixed" if CASH_SELL_HAIRCUT_OVERRIDE else "tiered",
         "cash_profit_worst": profit_worst,
         "cash_profit_best": profit_best,
         "cash_price_basis": "unverified legacy estimate only" if estimate_mode else "verified manual USD resale catalogue",
@@ -3877,20 +3891,22 @@ def qualifies_cash(result):
         or result.get("cash_price_basis") != "verified manual USD resale catalogue"
     ):
         return False
-    if "cash_profit_worst" not in result or "margin" not in result:
+    if "cash_profit_worst" not in result or "margin" not in result or "give_total_max" not in result:
         return False
-    raw_profit = result["cash_profit_worst"]
-    raw_margin = result["margin"]
-    if isinstance(raw_profit, bool) or isinstance(raw_margin, bool):
+    raw_profit, raw_margin, raw_give = (
+        result["cash_profit_worst"], result["margin"], result["give_total_max"]
+    )
+    if any(isinstance(value, bool) for value in (raw_profit, raw_margin, raw_give)):
         return False
     try:
-        profit = float(raw_profit)
-        margin = float(raw_margin)
+        profit, margin, give_total = float(raw_profit), float(raw_margin), float(raw_give)
     except (TypeError, ValueError, OverflowError):
         return False
+    threshold = CASH_MIN_PROFIT_USD_SMALL if give_total < 5.0 else CASH_MIN_PROFIT_USD
     return (
-        math.isfinite(profit) and math.isfinite(margin)
-        and profit >= CASH_MIN_PROFIT_USD
+        math.isfinite(profit) and math.isfinite(margin) and math.isfinite(give_total)
+        and give_total >= 0
+        and profit >= threshold
         and margin >= CASH_MIN_MARGIN_PERCENT
     )
 
@@ -4029,6 +4045,21 @@ def record_success_if_complete(stats):
     return True
 
 
+def alert_cash_price_runway(cash_catalog, verified_rows, minimum_rows=CASH_MIN_VERIFIED_ROWS):
+    """Send one daily counts-only notice for near-expiry or low verified-row runway."""
+    expiring = int(cash_catalog.get("expiring_within_3_days", 0) or 0)
+    if expiring <= 0 and verified_rows >= minimum_rows:
+        return False
+    message = (
+        "Cash-price runway warning: "
+        f"verified rows={verified_rows}; expiring within 3 days={expiring}; "
+        f"minimum required={minimum_rows}. Re-verify catalogue rows."
+    )
+    return send_maintenance_alert(
+        "cash-price-runway", message, cooldown_seconds=86400,
+    )
+
+
 def alert_expired_cash_prices(expired_rows, max_age_days=CASH_MAX_AGE_DAYS):
     """Send a bounded daily notice; expired rows never become eligible by alerting."""
     if not expired_rows:
@@ -4087,7 +4118,7 @@ def scan_once(include_backlog_rechecks=True):
                          if row["status"] == "verified" and not cash_price_is_fresh(row, CASH_MAX_AGE_DAYS)]
     expired_cash_rows.sort(key=lambda row: row.get("verified_at_utc") or "")
     unverified_cash_rows = sum(1 for row in cash_catalog["items"].values() if row["status"] == "unverified")
-    alert_expired_cash_prices(expired_cash_rows, CASH_MAX_AGE_DAYS)
+    alert_cash_price_runway(cash_catalog, verified_cash_rows)
     previous_cash_hash = cash_catalog_snapshot_hash()
     cash_prices_changed = previous_cash_hash != cash_catalog["sha256"]
     print("[cash] Loaded %s price rows; verified=%s; expired=%s; unverified=%s; max_age=%sd; sell_haircut=%s%%" % (

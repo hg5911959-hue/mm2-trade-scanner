@@ -8,6 +8,23 @@ import scanner
 
 
 class CashExpiryAlertTests(unittest.TestCase):
+    def test_runway_notice_triggers_at_three_day_boundary_and_lists_counts_only(self):
+        with patch.object(scanner, "send_maintenance_alert") as alert:
+            scanner.alert_cash_price_runway({"expiring_within_3_days": 1}, 8)
+        alert.assert_called_once()
+        self.assertEqual(alert.call_args.args[0], "cash-price-runway")
+        self.assertIn("verified rows=8", alert.call_args.args[1])
+        self.assertIn("expiring within 3 days=1", alert.call_args.args[1])
+        self.assertNotIn("Test Item", alert.call_args.args[1])
+        self.assertEqual(alert.call_args.kwargs["cooldown_seconds"], 86400)
+
+    def test_runway_warning_when_below_eight_rows_but_not_at_eight(self):
+        with patch.object(scanner, "send_maintenance_alert") as alert:
+            scanner.alert_cash_price_runway({"expiring_within_3_days": 0}, 7)
+            scanner.alert_cash_price_runway({"expiring_within_3_days": 0}, 8)
+        alert.assert_called_once()
+        self.assertIn("verified rows=7", alert.call_args.args[1])
+
     def test_expiry_notice_is_sent_once_per_24_hours(self):
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory) / "maintenance.json"

@@ -20,7 +20,7 @@ class CashMarketTests(unittest.TestCase):
         with path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=[
                 "name", "cash_price_usd", "tier", "status",
-                "verified_at_utc", "source", "notes",
+                "verified_at_utc", "source", "notes", "price_low_usd", "price_high_usd",
             ])
             writer.writeheader()
             writer.writerows(rows)
@@ -161,6 +161,54 @@ class CashMarketTests(unittest.TestCase):
         )
         self.assertEqual((low, high), (8.0, 16.0))
         self.assertEqual(missing, [])
+
+    def test_price_ranges_apply_conservative_bounds_on_both_sides(self):
+        catalog = self._catalog([self._row(price="8") | {
+            "price_low_usd": "7", "price_high_usd": "9"
+        }])
+        give = calculate_cash_side(
+            [{"canonical_name": "Chroma Laser", "quantity_min": 1, "quantity_max": 1}],
+            catalog, "give", 0,
+        )
+        receive = calculate_cash_side(
+            [{"canonical_name": "Chroma Laser", "quantity_min": 1, "quantity_max": 1}],
+            catalog, "receive", 15,
+        )
+        self.assertEqual((give[0], give[1]), (7.0, 9.0))
+        self.assertEqual((receive[0], receive[1]), (5.95, 7.65))
+        self.assertIn("haircut 15%", receive[2][0])
+
+    def test_old_csv_header_without_optional_range_columns_remains_valid(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.csv"
+            path.write_text(
+                "name,cash_price_usd,tier,status,verified_at_utc,source,notes\\n"
+                "Chroma Laser,8,test,verified,2026-11-14T00:00:00Z,manual,\\n",
+                encoding="utf-8",
+            )
+            catalog = load_cash_price_catalog(path)
+            row = catalog["items"][normalize_cash_name("Chroma Laser")]
+            self.assertEqual((row["price_low_usd"], row["price_high_usd"]), (8.0, 8.0))
+
+    def test_invalid_price_ranges_are_rejected(self):
+        for low, high in (("9", "10"), ("7", "7"), ("nan", "10"), ("7", "inf")):
+            with self.subTest(low=low, high=high), self.assertRaises(RuntimeError):
+                self._catalog([self._row(price="8") | {
+                    "price_low_usd": low, "price_high_usd": high
+                }])
+
+    def test_tiered_haircut_boundaries(self):
+        from tools.cash_market import parse_haircut_tiers, haircut_for_price
+        tiers = parse_haircut_tiers("0-2:30,2-10:20,10-50:15,50-:10")
+        self.assertEqual(haircut_for_price(2.00, tiers), 20)
+        self.assertEqual(haircut_for_price(10.00, tiers), 15)
+        self.assertEqual(haircut_for_price(50.00, tiers), 10)
+
+    def test_tiered_haircut_rejects_gaps_overlaps_and_bad_percent(self):
+        from tools.cash_market import parse_haircut_tiers
+        for raw in ("0-2:20,3-:10", "0-3:20,2-:10", "0-:100", "1-:10", "0-2:10,2-3:10"):
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                parse_haircut_tiers(raw)
 
     def test_cash_profit_uses_worst_case_not_supreme_value(self):
         self.assertEqual(cash_profit_bounds((5, 8), (12, 15)), (4, 10))
