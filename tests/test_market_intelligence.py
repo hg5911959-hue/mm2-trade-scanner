@@ -67,6 +67,16 @@ class PublicSourceTests(unittest.TestCase):
         rows = parse_rss(xml, "https://www.reddit.com/r/test/new/.rss")
         self.assertEqual(rows[0]["url"], "https://www.reddit.com/r/test/comments/1/a/")
 
+    def test_parse_rss_rejects_dtd_and_entity_declarations(self):
+        xml = """<!DOCTYPE rss [<!ENTITY x "expanded">]>
+        <rss><channel><item><title>&x;</title></item></channel></rss>"""
+        with self.assertRaisesRegex(ValueError, "DTD and entity"):
+            parse_rss(xml, "https://www.reddit.com/r/test/new/.rss")
+
+    def test_parse_rss_rejects_untrusted_source_url(self):
+        with self.assertRaises(ValueError):
+            parse_rss("<rss/>", "https://example.com/feed.rss")
+
 
 class AIAdvisorTests(unittest.TestCase):
     def test_payload_is_bounded_and_allowlisted(self):
