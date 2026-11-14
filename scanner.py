@@ -4545,7 +4545,7 @@ def append_history(listing, op):
     from io import StringIO
     fieldnames = [
         "detected_at_utc", "first_seen_at_utc", "alert_attempted_at_utc",
-        "alerted_at_utc", "listing_id", "profit_supreme",
+        "alerted_at_utc", "listing_id", "profit_supreme", "profit_cash_usd", "profit_basis",
         "profit_margin_percent", "you_give", "you_receive", "listing_url", "owner_url",
     ]
     buffer = StringIO(newline="")
@@ -4573,7 +4573,9 @@ def append_history(listing, op):
         "alert_attempted_at_utc": listing.get("alert_attempted_at_utc", alerted_at),
         "alerted_at_utc": alerted_at,
         "listing_id": listing["id"],
-        "profit_supreme": round(op["difference"], 2),
+        "profit_supreme": "" if listing.get("valuation_mode") == "cash" else round(op["difference"], 2),
+        "profit_cash_usd": round(op.get("cash_profit_worst", op["difference"]), 2) if listing.get("valuation_mode") == "cash" else "",
+        "profit_basis": "cash_usd" if listing.get("valuation_mode") == "cash" else "supreme_value",
         "profit_margin_percent": round(op["margin"], 2),
         "you_give": round(op["give_total"], 2),
         "you_receive": round(op["receive_total"], 2),
