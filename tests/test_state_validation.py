@@ -2,12 +2,13 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from test_support import IsolatedDataTestCase
 from pathlib import Path
 
 from tools.validate_state import validate_state
 
 
-class StateValidationTests(unittest.TestCase):
+class StateValidationTests(IsolatedDataTestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

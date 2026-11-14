@@ -1,12 +1,13 @@
 import csv
 import tempfile
 import unittest
+from test_support import IsolatedDataTestCase
 from pathlib import Path
 
 from tools.verify_cash_prices import verify, parse_line
 
 
-class VerifyCashPricesTests(unittest.TestCase):
+class VerifyCashPricesTests(IsolatedDataTestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

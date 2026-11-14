@@ -1,13 +1,14 @@
 import json
 import os
 import unittest
+from test_support import IsolatedDataTestCase
 from datetime import datetime, timezone
 from unittest.mock import patch
 
 import watchdog
 
 
-class WatchdogRepositoryTests(unittest.TestCase):
+class WatchdogRepositoryTests(IsolatedDataTestCase):
     def test_active_run_lookup_checks_running_and_queued_scans(self):
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         running = {"workflow_runs": [{"id": 123, "status": "in_progress", "created_at": now}]}
@@ -125,7 +126,7 @@ class WatchdogRepositoryTests(unittest.TestCase):
                 watchdog.latest_success_age_minutes("test-token")
 
 
-class WatchdogPollingWindowTests(unittest.TestCase):
+class WatchdogPollingWindowTests(IsolatedDataTestCase):
     def test_stale_threshold_matches_faster_scan_schedule(self):
         self.assertFalse(watchdog.should_alert(19.9))
         self.assertTrue(watchdog.should_alert(20))
@@ -139,7 +140,7 @@ class WatchdogPollingWindowTests(unittest.TestCase):
         self.assertTrue(watchdog.should_alert(60))
 
 
-class WatchdogActiveRunGraceTests(unittest.TestCase):
+class WatchdogActiveRunGraceTests(IsolatedDataTestCase):
     def test_suppresses_alert_while_scan_and_state_persistence_can_still_be_running(self):
         self.assertTrue(watchdog.should_suppress_stale_success(26.9, {"id": 1}))
         self.assertFalse(watchdog.should_suppress_stale_success(27, {"id": 1}))

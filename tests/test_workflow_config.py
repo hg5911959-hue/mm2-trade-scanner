@@ -1,11 +1,12 @@
 import unittest
+from test_support import IsolatedDataTestCase
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class WorkflowReliabilityTests(unittest.TestCase):
+class WorkflowReliabilityTests(IsolatedDataTestCase):
     def test_ci_linter_version_is_pinned(self):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
         self.assertIn("ruff==0.17.5", workflow)
