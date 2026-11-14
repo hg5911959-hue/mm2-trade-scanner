@@ -267,7 +267,7 @@ jobs:
 
       - name: Persist API safety ledger after failed scan
         id: persist-api-safety
-        if: needs.scan.result != 'success' && steps.safety-download.outcome == 'success' && steps.validate-api-safety.outcome == 'success'
+        if: needs.scan.result != 'success' && steps.safety-download.outcome == 'success' && steps.validate-api-safety.outcome == 'success' && hashFiles('api-safety-artifact/data/*.json') != ''
         run: |
           set -euo pipefail
           if [ ! -d api-safety-artifact/data ] || ! find api-safety-artifact/data -type f -print -quit | grep -q .; then
