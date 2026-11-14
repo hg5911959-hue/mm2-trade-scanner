@@ -1498,8 +1498,8 @@ class ReliabilityTests(unittest.TestCase):
                  patch("scanner.PENDING_FILE", root / "pending.json"), \
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"), \
                  patch("scanner.load_supreme_values", return_value={
-                     "knife a": {"name": "Knife A", "value": 10},
-                     "knife b": {"name": "Knife B", "value": 20},
+                     "knife a": {"name": "Knife A", "value": 10, "stability": "Stable"},
+                     "knife b": {"name": "Knife B", "value": 20, "stability": "Stable"},
                  }), patch("scanner.fetch_bloxswaps", side_effect=[with_rsc(item) for item in sequence]), \
                  patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)), \
                  patch("scanner.compare_secondary_values", return_value=""):
