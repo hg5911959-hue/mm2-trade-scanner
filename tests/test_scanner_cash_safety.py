@@ -3,6 +3,7 @@
 import unittest
 
 import scanner
+from tools.cash_market import load_cash_price_catalog
 
 
 class ScannerCashSafetyTests(unittest.TestCase):
@@ -65,6 +66,36 @@ class ScannerCashSafetyTests(unittest.TestCase):
             "margin": 20.0,
         }
         self.assertTrue(scanner.qualifies_cash(result))
+
+    def test_user_confirmed_cash_catalogue_items_resolve_through_scanner(self):
+        catalog = load_cash_price_catalog("data/cash_prices.csv")
+        names = (
+            "Spirit", "Harvester", "Bat", "Immortal", "Icebreaker", "Bloom",
+            "Snowstorm", "Candy", "Watergun", "Evergun", "Celestial",
+        )
+        values = {
+            name.casefold(): {
+                "name": name,
+                "variants": [{
+                    "id": f"test-{index}",
+                    "name": name,
+                    "value": 1,
+                    "stability": "Stable",
+                }],
+            }
+            for index, name in enumerate(names)
+        }
+        listing = {
+            "id": "cash-catalog-integration",
+            "give_items": [{"name": name, "quantity": 1} for name in names],
+            "receive_items": [{"name": name, "quantity": 1} for name in names],
+        }
+        result, missing = scanner.evaluate_cash_listing(
+            listing, values, {}, catalog,
+        )
+        self.assertEqual(missing, [])
+        self.assertIsNotNone(result)
+        self.assertIn("verified manual USD resale catalogue", result["cash_price_basis"])
 
     def test_malformed_cash_profit_or_margin_fails_closed(self):
         for field, value in (
