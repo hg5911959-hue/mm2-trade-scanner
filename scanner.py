@@ -2503,7 +2503,7 @@ def load_supreme_values():
             cached_age = VALUES_TTL_SECONDS + 1
     if cached_values is not None and cached_age is not None and cached_age <= VALUES_TTL_SECONDS:
         print(f"[supreme] Using fresh source_b snapshot (age {cached_age}s; TTL {VALUES_TTL_SECONDS}s)")
-        _enrich_untyped_catalog_items(cached_values, cached_document, source_meta)
+        _enrich_catalog_metadata_gaps(cached_values, cached_document, source_meta)
         _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
         return cached_values
     if not RBLXVALUE_API_KEY:
