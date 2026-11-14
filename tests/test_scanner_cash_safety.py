@@ -1,6 +1,7 @@
 """Regression tests for scanner cash-alert safety gates."""
 
 import unittest
+from datetime import UTC, datetime
 
 import scanner
 from tools.cash_market import load_cash_price_catalog
@@ -70,6 +71,11 @@ class ScannerCashSafetyTests(unittest.TestCase):
 
     def test_user_confirmed_cash_catalogue_items_resolve_through_scanner(self):
         catalog = load_cash_price_catalog("data/cash_prices.csv")
+        # Keep this integration test deterministic when the production prices expire.
+        now = datetime.now(UTC).isoformat()
+        for row in catalog["items"].values():
+            if row["status"] == "verified":
+                row["verified_at_utc"] = now
         names = (
             "Spirit", "Harvester", "Bat", "Immortal", "Icebreaker", "Bloom",
             "Snowstorm", "Candy", "Watergun", "Evergun", "Celestial",
