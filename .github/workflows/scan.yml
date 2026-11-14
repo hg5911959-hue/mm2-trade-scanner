@@ -24,7 +24,7 @@ on:
         description: "Evaluate and log opportunities without sending Telegram messages or recording alerts"
         required: false
         type: boolean
-        default: false
+        default: true
 permissions:
   contents: read
 
