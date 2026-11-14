@@ -25,6 +25,38 @@ class ScannerCashSafetyTests(unittest.TestCase):
         }
         self.assertFalse(scanner.qualifies_cash(result))
 
+
+    def test_non_finite_cash_profit_is_never_alert_eligible(self):
+        for profit in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(profit=profit):
+                result = {
+                    "cash_estimate_only": False,
+                    "manual_review": False,
+                    "cash_profit_worst": profit,
+                    "margin": 1000.0,
+                }
+                self.assertFalse(scanner.qualifies_cash(result))
+
+    def test_non_finite_cash_margin_is_never_alert_eligible(self):
+        for margin in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(margin=margin):
+                result = {
+                    "cash_estimate_only": False,
+                    "manual_review": False,
+                    "cash_profit_worst": 1000.0,
+                    "margin": margin,
+                }
+                self.assertFalse(scanner.qualifies_cash(result))
+
+    def test_negative_cash_profit_is_never_alert_eligible(self):
+        result = {
+            "cash_estimate_only": False,
+            "manual_review": False,
+            "cash_profit_worst": -1000.0,
+            "margin": 1000.0,
+        }
+        self.assertFalse(scanner.qualifies_cash(result))
+
     def test_verified_cash_profit_can_pass_alert_gate(self):
         result = {
             "cash_estimate_only": False,
