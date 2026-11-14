@@ -175,7 +175,7 @@ def calculate_cash_side(items, catalog, side, sell_haircut_pct=15.0, max_age_day
 def _strict_quantity(value):
     """Parse a positive whole-item quantity without silently truncating data."""
     if isinstance(value, bool):
-        raise ValueError("quantity must be a whole number, not a boolean")
+        raise TypeError("quantity must be a whole number, not a boolean")
     if isinstance(value, int):
         quantity = value
     elif isinstance(value, float):
