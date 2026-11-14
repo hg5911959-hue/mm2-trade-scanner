@@ -10,7 +10,7 @@ import hashlib
 import math
 import re
 import unicodedata
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 REQUIRED_COLUMNS = {
@@ -23,10 +23,10 @@ def cash_price_is_fresh(entry, max_age_days=14, now=None):
     if entry.get("status") != "verified":
         return False
     try:
-        current = now or datetime.now(timezone.utc)
+        current = now or datetime.now(UTC)
         if current.tzinfo is None or current.utcoffset() != timedelta(0):
             return False
-        verified = datetime.fromisoformat(str(entry.get("verified_at_utc", "")).replace("Z", "+00:00"))
+        verified = datetime.fromisoformat(str(entry.get("verified_at_utc", "")))
         if verified.tzinfo is None or verified.utcoffset() != timedelta(0):
             return False
         age_seconds = (current - verified).total_seconds()
@@ -100,7 +100,7 @@ def load_cash_price_catalog(path="data/cash_prices.csv", max_age_days=14):
     fresh_rows = [row for row in rows.values() if cash_price_is_fresh(row, max_age_days=max_age_days, now=now_utc)]
     expiring_rows = []
     for row in fresh_rows:
-        verified = datetime.fromisoformat(row["verified_at_utc"].replace("Z", "+00:00"))
+        verified = datetime.fromisoformat(row["verified_at_utc"])
         age_days = (now_utc - verified).total_seconds() / 86400
         if max(0, float(max_age_days) - 3) <= age_days <= float(max_age_days):
             expiring_rows.append(row)
