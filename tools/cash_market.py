@@ -141,13 +141,14 @@ def calculate_cash_side(items, catalog, side, sell_haircut_pct=15.0, max_age_day
             missing.append(f"{name} (cash price expired)")
             continue
         try:
-            qmin = int(item.get("quantity_min", item.get("quantity", 1)))
-            qmax_raw = item.get("quantity_max", item.get("quantity", qmin))
-            qmax = int(qmax_raw) if qmax_raw is not None else None
+            qmin_raw = item.get("quantity_min", item.get("quantity", 1))
+            qmax_raw = item.get("quantity_max", item.get("quantity", qmin_raw))
+            qmin = _strict_quantity(qmin_raw)
+            qmax = _strict_quantity(qmax_raw) if qmax_raw is not None else None
         except (TypeError, ValueError):
             missing.append(f"{name} (quantity invalid)")
             continue
-        if qmin < 1 or qmin > 100 or qmax is None or qmax < qmin or qmax > 100:
+        if qmax is None or qmax < qmin:
             missing.append(f"{name} (quantity uncertain/unbounded)")
             continue
         unit = float(entry["cash_price_usd"])
@@ -171,7 +172,35 @@ def calculate_cash_side(items, catalog, side, sell_haircut_pct=15.0, max_age_day
     return low_total, high_total, lines, missing
 
 
+def _strict_quantity(value):
+    """Parse a positive whole-item quantity without silently truncating data."""
+    if isinstance(value, bool):
+        raise ValueError("quantity must be a whole number, not a boolean")
+    if isinstance(value, int):
+        quantity = value
+    elif isinstance(value, float):
+        if not math.isfinite(value) or not value.is_integer():
+            raise ValueError("quantity must be a finite whole number")
+        quantity = int(value)
+    elif isinstance(value, str) and re.fullmatch(r"\\d+", value.strip()):
+        quantity = int(value.strip())
+    else:
+        raise ValueError("quantity must be a whole number")
+    if not 1 <= quantity <= 100:
+        raise ValueError("quantity must be between 1 and 100")
+    return quantity
+
+
 def cash_profit_bounds(give_bounds, receive_bounds):
-    give_min, give_max = give_bounds
-    receive_min, receive_max = receive_bounds
+    """Return conservative profit bounds after validating both monetary ranges."""
+    try:
+        give_min, give_max = (float(value) for value in give_bounds)
+        receive_min, receive_max = (float(value) for value in receive_bounds)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("cash bounds must contain two numeric values") from exc
+    values = (give_min, give_max, receive_min, receive_max)
+    if not all(math.isfinite(value) and value >= 0 for value in values):
+        raise ValueError("cash bounds must be finite and non-negative")
+    if give_min > give_max or receive_min > receive_max:
+        raise ValueError("cash lower bounds cannot exceed upper bounds")
     return receive_min - give_max, receive_max - give_min
