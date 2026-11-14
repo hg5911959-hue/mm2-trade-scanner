@@ -1,10 +1,11 @@
 import json, tempfile, unittest
+from test_support import IsolatedDataTestCase
 from pathlib import Path
 from datetime import datetime, timezone
 from tools.metrics import update_metrics
 from tools.weekly_report import build_report
 
-class MetricsReportTests(unittest.TestCase):
+class MetricsReportTests(IsolatedDataTestCase):
     def test_metrics_atomic_counter_and_14_day_retention(self):
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)/"metrics.json"

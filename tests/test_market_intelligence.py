@@ -1,5 +1,6 @@
 import json
 import unittest
+from test_support import IsolatedDataTestCase
 from unittest.mock import MagicMock, patch
 from urllib.request import Request
 
@@ -15,7 +16,7 @@ from market_intelligence.public_sources import (
 )
 
 
-class PublicSourceTests(unittest.TestCase):
+class PublicSourceTests(IsolatedDataTestCase):
     def test_rejects_non_reddit_and_non_https(self):
         urls = (
             "http://www.reddit.com/r/test/.rss",
@@ -78,7 +79,7 @@ class PublicSourceTests(unittest.TestCase):
             parse_rss("<rss/>", "https://example.com/feed.rss")
 
 
-class AIAdvisorTests(unittest.TestCase):
+class AIAdvisorTests(IsolatedDataTestCase):
     def test_payload_is_bounded_and_allowlisted(self):
         rows = [{"id": str(i), "profit": 5, "secret": "never"} for i in range(40)]
         payload = build_analysis_payload(rows)

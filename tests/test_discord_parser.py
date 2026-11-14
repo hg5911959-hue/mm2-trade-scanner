@@ -1,12 +1,13 @@
 import json
 import tempfile
 import unittest
+from test_support import IsolatedDataTestCase
 from pathlib import Path
 
 from discord_parser import load_discord_listings, parse_trade_text
 
 
-class DiscordParserTests(unittest.TestCase):
+class DiscordParserTests(IsolatedDataTestCase):
     def test_labelled_trade_parses_items_and_quantities(self):
         listing = parse_trade_text(
             "Trading: 2x Icebreaker, Luger | Looking for: Candy x3, Heat",

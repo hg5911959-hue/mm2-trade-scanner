@@ -1,13 +1,14 @@
 import sqlite3
 import tempfile
 import unittest
+from test_support import IsolatedDataTestCase
 from pathlib import Path
 
 import market_history
 from tools.export_dashboard import build_dashboard_data
 
 
-class MarketHistoryTests(unittest.TestCase):
+class MarketHistoryTests(IsolatedDataTestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
