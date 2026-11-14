@@ -97,17 +97,17 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
                 text = path.read_text(encoding="utf-8")
                 self.assertNotIn("write-all", text)
                 for line in text.splitlines():
-                    match = re.match(r"\\s*uses:\\s*([^\\s#]+)", line)
+                    match = re.match(r"\s*uses:\s*([^\s#]+)", line)
                     if match and not match.group(1).startswith("./"):
                         self.assertRegex(match.group(1), r"^[^@]+@[0-9a-f]{40}$")
-                    if re.search(r"\\b(?:echo|printf)\\b.*(?:\\$\\{\\{\\s*secrets\\.|\\$[A-Z_]*(?:TOKEN|KEY|SECRET|CHAT))", line, re.I):
+                    if re.search(r"\b(?:echo|printf)\b.*(?:\$\{\{\s*secrets\.|\$[A-Z_]*(?:TOKEN|KEY|SECRET|CHAT))", line, re.I):
                         self.fail("workflow prints a secret-bearing value: " + path.name)
-                root_permissions = re.search(r"(?m)^permissions:\\n((?:[ \\t]+[^\\n]*\\n)+)", text)
+                root_permissions = re.search(r"(?m)^permissions:\n((?:[ \t]+[^\n]*\n)+)", text)
                 if root_permissions:
-                    self.assertNotRegex(root_permissions.group(1), r"(?m):\\s*write\\b")
-                for match in re.finditer(r"(?m)^\\s*actions:\\s*write\\s*$", text):
+                    self.assertNotRegex(root_permissions.group(1), r"(?m):\s*write\b")
+                for match in re.finditer(r"(?m)^\s*actions:\s*write\s*$", text):
                     prefix = text[:match.start()]
-                    job_match = list(re.finditer(r"(?m)^  ([a-zA-Z0-9_-]+):\\s*$", prefix))
+                    job_match = list(re.finditer(r"(?m)^  ([a-zA-Z0-9_-]+):\s*$", prefix))
                     job_name = job_match[-1].group(1) if job_match else ""
                     self.assertEqual((path.name, job_name), ("watchdog-scheduler.yml", "enable-schedules"))
 
