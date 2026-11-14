@@ -223,7 +223,7 @@ jobs:
 
       - name: Validate downloaded scanner state before publishing
         id: validate-state
-        if: steps.download.outcome == 'success'
+        if: needs.scan.result == 'success' && steps.download.outcome == 'success'
         run: |
           set -euo pipefail
           # Never replace the durable branch with a partial artifact, even if
