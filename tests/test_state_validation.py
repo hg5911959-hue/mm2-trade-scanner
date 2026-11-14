@@ -95,6 +95,20 @@ class StateValidationTests(unittest.TestCase):
         self.assertTrue(any("budget timestamps" in error for error in errors))
         self.assertTrue(any("breaker timing" in error for error in errors))
 
+    def test_invalid_api_key_breaker_blocks_full_state_persistence(self):
+        from tools.validate_state import validate_state
+        self._write_valid_state()
+        (self.root / "api_key_blocked.json").write_text(json.dumps({
+            "schema_version": 2,
+            "key_fingerprint": "a" * 16,
+            "permanent": False,
+            "consecutive_blocks": True,
+            "blocked_seconds": 21600,
+            "blocked_until_epoch": 1_800_021_600,
+        }), encoding="utf-8")
+        errors = validate_state(self.root, require_cache=True)
+        self.assertTrue(any("breaker timing or schema" in error for error in errors))
+
     def test_api_safety_ledger_rejects_unexpected_files_and_oversized_budget(self):
         from tools.validate_state import validate_api_safety_state
         (self.root / "rblxvalue_request_budget.json").write_text(json.dumps({
