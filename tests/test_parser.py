@@ -1,4 +1,5 @@
 import unittest
+import csv
 import scanner
 import watchdog
 import json
@@ -1125,7 +1126,8 @@ class ReliabilityTests(unittest.TestCase):
             result = {"difference": 5, "margin": 50, "give_total": 10, "receive_total": 15}
             with patch("scanner.HISTORY_FILE", path):
                 scanner.append_history(listing, result)
-            rows = list(__import__("csv").DictReader(path.open(encoding="utf-8")))
+            with path.open(encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle))
             self.assertEqual([row["listing_id"] for row in rows], ["old-id", "new-id"])
             self.assertEqual(rows[0]["alerted_at_utc"], "2026-11-11T10:00:00+00:00")
             self.assertEqual(rows[1]["first_seen_at_utc"], listing["first_seen_at_utc"])
