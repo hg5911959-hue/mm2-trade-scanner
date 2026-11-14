@@ -3,8 +3,9 @@ from __future__ import annotations
 import json, os, urllib.parse, urllib.request
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from tools.cash_market import cash_price_is_fresh, load_cash_price_catalog
 
-def build_report(metrics, discord_status=None, key_state=None, daily_limit=60, now=None):
+def build_report(metrics, discord_status=None, key_state=None, daily_limit=60, now=None, cash_summary=None):
     current = now or datetime.now(timezone.utc)
     days = [(current.date() - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
     rows = [metrics.get(day, {}) for day in days]
@@ -26,6 +27,7 @@ def build_report(metrics, discord_status=None, key_state=None, daily_limit=60, n
             f"7-day total: {requests}\n"
             f"Key state: {key_label}\n"
             f"Discord manual import: {'STALE / missing' if stale else 'fresh'}\n"
+            f"Cash prices: {cash_summary or 'catalogue unavailable'}\n"
             f"Last 7 days alerts: {trend}")
 
 def main():
@@ -37,7 +39,18 @@ def main():
     except (OSError, ValueError): discord = None
     try: key = json.loads((data / "api_key_blocked.json").read_text(encoding="utf-8"))
     except (OSError, ValueError): key = None
-    report = build_report(metrics, discord, key, int(os.environ.get("RBLXVALUE_DAILY_REQUEST_LIMIT", "60")))
+    cash_summary = None
+    try:
+        max_age = int(os.environ.get("CASH_MAX_AGE_DAYS", "14"))
+        cash = load_cash_price_catalog(data / "cash_prices.csv", max_age_days=max_age)
+        fresh = [row for row in cash["items"].values() if cash_price_is_fresh(row, max_age)]
+        cash_summary = (
+            f"verified={len(fresh)}, expiring<=3d={cash['expiring_within_3_days']}, "
+            f"oldest_verified_at={cash['oldest_verified_at'] or 'none'}"
+        )
+    except Exception as exc:
+        cash_summary = f"unavailable ({type(exc).__name__})"
+    report = build_report(metrics, discord, key, int(os.environ.get("RBLXVALUE_DAILY_REQUEST_LIMIT", "60")), cash_summary=cash_summary)
     print("[weekly-report] " + report.replace("\n", " | "))
     token, chat = os.environ.get("TELEGRAM_BOT_TOKEN", ""), os.environ.get("TELEGRAM_CHAT_ID", "")
     if token and chat:
