@@ -3623,6 +3623,32 @@ class MinimumProfitMarginTests(unittest.TestCase):
 
 
 class UpstreamForbiddenDiagnosticsTests(unittest.TestCase):
+    def test_api_key_header_cannot_be_sent_to_non_allowlisted_origin(self):
+        from urllib.request import Request
+
+        request = Request(
+            "https://attacker.example/collect",
+            headers={"X-Api-Key": "rbx_test_secret"},
+        )
+        with (
+            patch("scanner._open_rblxvalue_url") as open_url,
+            patch("rblxvalue_guard.reserve_request") as reserve,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "non-allowlisted HTTPS origin"):
+                scanner.request_with_retry(request, 10, "some other label", attempts=1)
+        open_url.assert_not_called()
+        reserve.assert_not_called()
+
+    def test_rblxvalue_label_rejects_non_https_or_noncanonical_origin(self):
+        for url in (
+            "http://api.rblxvalue.com/v2/items",
+            "https://api.rblxvalue.com.attacker.example/v2/items",
+            "https://api.rblxvalue.com:444/v2/items",
+        ):
+            with self.subTest(url=url):
+                with self.assertRaisesRegex(RuntimeError, "non-allowlisted HTTPS origin"):
+                    scanner.request_with_retry(url, 10, "RBLXValue API", attempts=1)
+
     def test_rblxvalue_redirects_are_rejected_before_forwarding_api_key(self):
         from urllib.error import HTTPError
         from urllib.request import Request
