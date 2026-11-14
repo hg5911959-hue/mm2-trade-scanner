@@ -9,8 +9,11 @@ From the scanner user's perspective:
 - **BloxSwaps Propose** = items you receive.
 - **BloxSwaps Recherche** = items you give.
 - Any listing containing **Ajout / Ajouts** is excluded. The filter is applied to the individual card and also checks the structured `requestedWildcards` data for `ADD`.
-- Profit = total Supreme Values of received items minus total Supreme Values of given items.
-- The scheduled workflow uses a minimum absolute difference of **0** and minimum percentage of **5%**, but a Telegram trade alert requires a conservative positive profit and a margin of at least **5%**.
+- **Primary ranking and alert filter = estimated real-money resale profit in USD**, not Supreme Value spread. For each offer, the cash cost of items given is compared with conservative net resale proceeds for items received.
+- Supreme Values is used to confirm that every item identity exists in the catalogue and to supply the received item's RBLXValue Stability label. Supreme numeric value and Demand do not determine cash profit or ranking.
+- Cash profit = (verified cash resale prices of received items after a configurable resale haircut) − (verified cash replacement prices of given items). Default resale haircut: **15%**; minimum conservative cash profit: **$1**; minimum cash ROI: **10%**. The best offers are ranked by worst-case USD profit, then ROI.
+- Any received item with missing/unrecognized Stability or a blocked status (Decreasing, Unsafe, Untradeable, Unstable, Volatile, Fluctuating) is excluded. The Stability field is sourced from RBLXValue and is not represented as a direct Supreme website verification.
+- Cash prices must be manually verified before they can qualify. The initial data/cash_prices.csv contains **190 historical reference rows supplied by the user**, all marked unverified; therefore no live cash-profit alerts are sent until the relevant prices are checked and marked verified.
 - The scanner never uses BloxSwaps' own Win/Loss label, never uses the visible listing price as an item value, and never invents a missing item value or quantity.
 - A listing is excluded if any item on the received (`Propose`) side has a risky RBLXValue stability label: `Decreasing`, `Unsafe`, `Untradeable`, `Unstable`, or `Volatile`. If the RBLXValue source provides a missing or unrecognized stability label for a received item, the listing is held back rather than assumed safe. Telegram labels the field `Stability (RBLXValue)` to avoid implying direct verification against the Supreme website; exact Supreme-specific `Decreasing` verification requires an authorized data source.
 
@@ -32,7 +35,13 @@ If a quantity is uncertain, the scanner computes a conservative best/worst profi
 - If only the best-case profit is positive, it is held for recheck/manual review and is not advertised as a WIN.
 - If even the best-case profit is not positive, it does not send a trade alert.
 
-Telegram alerts show owner/listing links and every valued item line (Supreme-source unit value, quantity, line total, Stability, Demand and Rarity when supplied), both side totals, profit and result. Received-side items with missing/unrecognized Stability or Demand are rejected. The received basket must have value-weighted Demand of at least 4/10 and value-weighted Stability of at least 3/9; this admits genuinely Stable items, while preventing a large Underpaid For component from being hidden by the basket's total value. Decreasing, Unsafe, Untradeable, Unstable, Volatile and Fluctuating received items are excluded from primary alerts; Fluctuating is blocked for unpredictability, not because it necessarily means a decline. The message shows the weighted received-side Demand and Stability scores. Uncertain quantities, large stacks, and suspiciously high profit retain short safety warnings. Parser provenance, raw excerpts, and HTML/API diagnostics stay in GitHub Actions logs.
+Telegram cash alerts show owner/listing links, every item, verified USD reference price, net resale estimate, Stability label, cash replacement cost, net resale proceeds, conservative USD profit and cash ROI. Demand is informational only in cash-first mode. Uncertain quantities are calculated with worst-case bounds; a listing is not alerted if the worst-case cash profit is not positive. Parser provenance, raw excerpts, and HTML/API diagnostics stay in GitHub Actions logs.
+
+### Manual cash-price maintenance
+
+Edit data/cash_prices.csv in the repository. Keep each item name aligned with its canonical Supreme catalogue name. Update cash_price_usd to the cash price you have checked, set status to verified, and enter an ISO-8601 UTC timestamp in verified_at_utc (for example, 2026-11-14T12:00:00Z). Use status=unverified for estimates and status=disabled to suppress an item. Invalid prices, duplicate normalized names, or verified rows without a timestamp fail validation. On the next successful scan, a changed catalogue hash triggers rechecks of watched and pending offers so previously seen listings can become eligible after a price update. The initial 190 prices are preserved as historical user-provided references, not current market facts.
+
+The default resale haircut is controlled by CASH_SELL_HAIRCUT_PCT (15%), the minimum net cash profit by CASH_MIN_PROFIT_USD ($1), and the minimum cash ROI by CASH_MIN_MARGIN_PERCENT (10%). These are conservative starting thresholds and should be calibrated after verified completed-sale data is available.
 
 ### Item names and duplicate values
 
