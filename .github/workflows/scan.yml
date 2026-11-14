@@ -87,6 +87,15 @@ jobs:
                   print(f"[state-audit] supreme_cache_present=true bytes={len(raw)} parse_error={type(exc).__name__}")
           PY
 
+      - name: Run scanner preflight checks (warnings do not block the scan)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CASH_PRICES_CSV: ${{ secrets.CASH_PRICES_CSV }}
+          CASH_MAX_AGE_DAYS: "14"
+          CASH_MIN_VERIFIED_ROWS: "8"
+        run: python tools/preflight.py --warn
+
       - name: Collect authorized Discord trade channels
         env:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
