@@ -36,17 +36,33 @@ class CashMarketTests(unittest.TestCase):
     def test_name_normalization_handles_apostrophes_and_case(self):
         self.assertEqual(normalize_cash_name("Traveler’s Axe"), normalize_cash_name("TRAVELER'S AXE"))
 
-    def test_user_seed_catalogue_contains_all_190_supplied_rows_as_unverified(self):
+    def test_legacy_catalogue_rows_remain_unverified_except_user_confirmed_sales(self):
         catalog = load_cash_price_catalog("data/cash_prices.csv")
         self.assertEqual(catalog["row_count"], 190)
         self.assertEqual(
             sum(row["status"] == "unverified" for row in catalog["items"].values()),
-            190,
+            179,
         )
         self.assertEqual(
             sum(row["status"] == "verified" for row in catalog["items"].values()),
-            0,
+            11,
         )
+
+    def test_user_confirmed_selling_prices_are_loaded_with_provenance(self):
+        catalog = load_cash_price_catalog("data/cash_prices.csv")
+        expected = {
+            "Spirit": 8.00, "Harvester": 5.50, "Bat": 2.80,
+            "Immortal": 2.80, "Icebreaker": 1.10, "Bloom": 7.00,
+            "Snowstorm": 4.00, "Candy": 2.20, "Watergun": 2.60,
+            "Evergun": 65.00, "Celestial": 34.00,
+        }
+        for name, price in expected.items():
+            with self.subTest(name=name):
+                row = catalog["items"][normalize_cash_name(name)]
+                self.assertEqual(row["cash_price_usd"], price)
+                self.assertEqual(row["status"], "verified")
+                self.assertEqual(row["source"], "user_confirmed_selling_prices")
+                self.assertIn("not independently cross-checked", row["notes"])
 
     def test_verified_catalogue_prices_can_be_used(self):
         catalog = self._catalog([self._row()])
