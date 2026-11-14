@@ -69,7 +69,7 @@ class WorkflowReliabilityTests(unittest.TestCase):
         self.assertIn('cron: "*/5 * * * *"', scheduler)
         self.assertIn("uses: ./.github/workflows/watchdog.yml", scheduler)
         self.assertIn("secrets: inherit", scheduler)
-        self.assertIn("actions: read", scheduler)
+        self.assertIn("actions: write", scheduler)
         self.assertIn('workflows: ["MM2 Scanner Scheduler"]', scheduler)
         self.assertIn("types: [completed]", scheduler)
 
