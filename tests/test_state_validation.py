@@ -31,10 +31,30 @@ class StateValidationTests(unittest.TestCase):
         }), encoding="utf-8")
         with sqlite3.connect(self.root / "market_history.sqlite3") as db:
             db.executescript("""
-                CREATE TABLE market_snapshots (id INTEGER PRIMARY KEY);
-                CREATE TABLE market_values (id INTEGER PRIMARY KEY);
-                CREATE TABLE listings (id INTEGER PRIMARY KEY);
-                CREATE TABLE opportunities (id INTEGER PRIMARY KEY);
+                CREATE TABLE market_snapshots (
+                    id INTEGER PRIMARY KEY, captured_at_utc TEXT NOT NULL,
+                    snapshot_hash TEXT NOT NULL, item_count INTEGER NOT NULL,
+                    source TEXT NOT NULL
+                );
+                CREATE TABLE market_values (
+                    snapshot_id INTEGER NOT NULL, item_key TEXT NOT NULL,
+                    item_name TEXT NOT NULL, slug TEXT, category TEXT, item_type TEXT,
+                    supreme_value REAL, secondary_value REAL, difference_percent REAL,
+                    confidence TEXT NOT NULL, stability TEXT
+                );
+                CREATE TABLE listings (
+                    listing_id TEXT PRIMARY KEY, source TEXT NOT NULL,
+                    source_id TEXT NOT NULL, owner_name TEXT, owner_url TEXT,
+                    listing_url TEXT, first_seen_at_utc TEXT, last_seen_at_utc TEXT NOT NULL,
+                    give_items_json TEXT NOT NULL, receive_items_json TEXT NOT NULL,
+                    content_hash TEXT NOT NULL
+                );
+                CREATE TABLE opportunities (
+                    opportunity_id TEXT PRIMARY KEY, listing_id TEXT NOT NULL,
+                    source TEXT NOT NULL, detected_at_utc TEXT NOT NULL,
+                    give_total REAL, receive_total REAL, profit REAL, margin_percent REAL,
+                    listing_url TEXT, details_json TEXT NOT NULL
+                );
             """)
 
     def test_valid_state_passes_strict_success_validation(self):
@@ -116,6 +136,27 @@ class StateValidationTests(unittest.TestCase):
     def test_corrupt_sqlite_database_blocks_persistence(self):
         (self.root / "market_history.sqlite3").write_text("not a database", encoding="utf-8")
         self.assertTrue(any("corrupt" in error for error in validate_state(self.root)))
+
+    def test_incomplete_sqlite_table_schema_blocks_persistence(self):
+        self._write_valid_state()
+        with sqlite3.connect(self.root / "market_history.sqlite3") as db:
+            db.execute("DROP TABLE market_values")
+            db.execute("CREATE TABLE market_values (id INTEGER PRIMARY KEY)")
+        self.assertTrue(any(
+            "incomplete schema: market_values" in error
+            for error in validate_state(self.root, require_cache=True)
+        ))
+
+    def test_boolean_budget_timestamp_is_rejected(self):
+        self._write_valid_state()
+        (self.root / "rblxvalue_request_budget.json").write_text(json.dumps({
+            "limit": 60,
+            "request_timestamps_epoch": [True],
+        }), encoding="utf-8")
+        self.assertTrue(any(
+            "request budget contains an invalid timestamp" in error
+            for error in validate_state(self.root, require_cache=True)
+        ))
 
     def test_private_discord_messages_are_rejected(self):
         (self.root / "discord_messages.json").write_text('{"messages":[]}', encoding="utf-8")
