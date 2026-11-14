@@ -3808,10 +3808,14 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
 
 
 def qualifies_cash(result):
-    """Cash-only alert gate; malformed, estimated and review cases fail closed."""
+    """Cash-only alert gate; missing provenance and uncertain results fail closed."""
     if not isinstance(result, dict):
         return False
-    if result.get("manual_review") or result.get("cash_estimate_only"):
+    if (
+        result.get("manual_review") is not False
+        or result.get("cash_estimate_only") is not False
+        or result.get("cash_price_basis") != "verified manual USD resale catalogue"
+    ):
         return False
     raw_profit = result.get("cash_profit_worst", result.get("profit_worst", 0))
     raw_margin = result.get("margin", 0)
