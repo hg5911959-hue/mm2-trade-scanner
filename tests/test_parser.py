@@ -1,4 +1,5 @@
 import unittest
+from test_support import IsolatedDataTestCase
 import csv
 import scanner
 import watchdog
@@ -61,7 +62,7 @@ def cash_ready_values(values):
     return ready
 
 
-class ParserTests(unittest.TestCase):
+class ParserTests(IsolatedDataTestCase):
     def test_extracts_both_trade_sides_and_links(self):
         html = """
         <article>
@@ -357,7 +358,7 @@ class ParserTests(unittest.TestCase):
 
 
 
-class ReliabilityTests(unittest.TestCase):
+class ReliabilityTests(IsolatedDataTestCase):
     def setUp(self):
         self.cash_state_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.cash_state_dir.cleanup)
@@ -1515,7 +1516,7 @@ class ReliabilityTests(unittest.TestCase):
 
 
 
-class CloudflareDetectionTests(unittest.TestCase):
+class CloudflareDetectionTests(IsolatedDataTestCase):
     def test_http_200_cloudflare_challenge_is_not_treated_as_empty_feed(self):
         challenge = b"<html><title>Just a moment...</title><div id='challenge-platform'></div></html>"
         with patch("scanner.request_with_retry", return_value=challenge):
@@ -1523,7 +1524,7 @@ class CloudflareDetectionTests(unittest.TestCase):
                 scanner.http_get("https://bloxswaps.com/fr/trade-mm2")
 
 
-class ReceiveMarketQualityTests(unittest.TestCase):
+class ReceiveMarketQualityTests(IsolatedDataTestCase):
     @staticmethod
     def _listing():
         return {
@@ -1595,7 +1596,7 @@ class ReceiveMarketQualityTests(unittest.TestCase):
         self.assertTrue(any("Demand unverified" in item for item in missing))
 
 
-class UntypedCatalogEnrichmentTests(unittest.TestCase):
+class UntypedCatalogEnrichmentTests(IsolatedDataTestCase):
     def _make_values(self, count=1):
         values = {}
         for index in range(count):
@@ -1759,7 +1760,7 @@ class UntypedCatalogEnrichmentTests(unittest.TestCase):
             self.assertEqual(values["untyped-0"]["variants"][0]["type"], "")
 
 
-class SourceMetaSnapshotTests(unittest.TestCase):
+class SourceMetaSnapshotTests(IsolatedDataTestCase):
     def test_cache_requires_both_source_timestamp_and_item_count_to_match(self):
         document = {"source_last_updated": "2026-11-14 00:00:00", "source_items_total": 1091}
         matching = {"last_updated": "2026-11-14 00:00:00", "items_total": 1091}
@@ -1770,7 +1771,7 @@ class SourceMetaSnapshotTests(unittest.TestCase):
         self.assertFalse(scanner._source_snapshot_matches_meta(document, changed_count))
         self.assertFalse(scanner._source_snapshot_matches_meta({}, matching))
 
-class RblxValueMetaPollingTests(unittest.TestCase):
+class RblxValueMetaPollingTests(IsolatedDataTestCase):
     def test_meta_is_cached_for_one_hour_and_refreshed_when_due(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "rblxvalue_meta.json"
@@ -1832,7 +1833,7 @@ class RblxValueMetaPollingTests(unittest.TestCase):
                     scanner._fetch_rblxvalue_meta()
 
 
-class CacheTTLTests(unittest.TestCase):
+class CacheTTLTests(IsolatedDataTestCase):
     def test_supreme_audit_records_every_identity_and_collision(self):
         with tempfile.TemporaryDirectory() as directory:
             audit_path = Path(directory) / "supreme_values_audit.json"
@@ -1983,7 +1984,7 @@ class CacheTTLTests(unittest.TestCase):
 
 
 
-class SupremePaginationIntegrityTests(unittest.TestCase):
+class SupremePaginationIntegrityTests(IsolatedDataTestCase):
     @staticmethod
     def _rows(start, count):
         return [
@@ -2021,7 +2022,7 @@ class SupremePaginationIntegrityTests(unittest.TestCase):
 
 
 
-class RblxValueKeyHealthCheckTests(unittest.TestCase):
+class RblxValueKeyHealthCheckTests(IsolatedDataTestCase):
     @staticmethod
     def _fresh_cache(path):
         values = {
@@ -2180,7 +2181,7 @@ class RblxValueKeyHealthCheckTests(unittest.TestCase):
                     scanner.load_supreme_values()
 
 
-class PendingRecheckStateTests(unittest.TestCase):
+class PendingRecheckStateTests(IsolatedDataTestCase):
     def test_expired_pending_ids_are_reported_before_removal(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "pending.json"
@@ -2205,7 +2206,7 @@ class PendingRecheckStateTests(unittest.TestCase):
                 self.assertEqual(scanner.load_pending_ids(), pending)
 
 
-class SeenAdStateTests(unittest.TestCase):
+class SeenAdStateTests(IsolatedDataTestCase):
     def test_seen_state_round_trips_and_corruption_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "seen_ads.json"
@@ -2218,7 +2219,7 @@ class SeenAdStateTests(unittest.TestCase):
                     scanner.load_seen_ads()
 
 
-class MaintenanceAndUnmatchedNameTests(unittest.TestCase):
+class MaintenanceAndUnmatchedNameTests(IsolatedDataTestCase):
     def test_unmatched_names_are_alerted_once_and_kept_for_recheck(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -2247,7 +2248,7 @@ class MaintenanceAndUnmatchedNameTests(unittest.TestCase):
             self.assertEqual(send.call_count, 1)
 
 
-class SafeNameResolutionTests(unittest.TestCase):
+class SafeNameResolutionTests(IsolatedDataTestCase):
     def test_irregular_plural_is_not_auto_matched(self):
         values = {"knife": {"name": "Knife", "value": 100}}
         record, source, candidates = scanner.resolve_value_record("Knives", values)
@@ -2283,7 +2284,7 @@ class SafeNameResolutionTests(unittest.TestCase):
         self.assertEqual(source, "unmatched")
 
 
-class StructuredQuantityCrossCheckTests(unittest.TestCase):
+class StructuredQuantityCrossCheckTests(IsolatedDataTestCase):
     def test_rsc_quantity_two_conflicts_with_implicit_html_single(self):
         listing = {
             "receive_items": [{
@@ -2325,7 +2326,7 @@ class StructuredQuantityCrossCheckTests(unittest.TestCase):
         self.assertEqual(listing["receive_items"][0]["quantity_source"], "structured")
 
 
-class StructuredFirstPageRecoveryTests(unittest.TestCase):
+class StructuredFirstPageRecoveryTests(IsolatedDataTestCase):
     def test_rsc_recovers_offer_when_html_card_parser_misses_it(self):
         post = {
             "id": "rsc-only-post",
@@ -2387,7 +2388,7 @@ class StructuredFirstPageRecoveryTests(unittest.TestCase):
         self.assertEqual(merged["id"], "html-id")
 
 
-class CursorPaginationTests(unittest.TestCase):
+class CursorPaginationTests(IsolatedDataTestCase):
     @staticmethod
     def _first_page_html():
         page = {
@@ -2550,7 +2551,7 @@ class CursorPaginationTests(unittest.TestCase):
         self.assertEqual(seed_ids, ["first-post"])
 
 
-class CardScopedAjoutFilterTests(unittest.TestCase):
+class CardScopedAjoutFilterTests(IsolatedDataTestCase):
     def test_ajout_marker_is_scoped_to_its_own_card_not_header_or_neighbor(self):
         html = """
         <header>Ajout guide and filters</header>
@@ -2574,7 +2575,7 @@ class CardScopedAjoutFilterTests(unittest.TestCase):
         self.assertEqual(stats["addition_ids"], ["with-add"])
 
 
-class LiveBloxSwapsFixtureTests(unittest.TestCase):
+class LiveBloxSwapsFixtureTests(IsolatedDataTestCase):
     def test_redacted_real_bloxswaps_card_matches_rsc_quantities(self):
         fixture = Path(__file__).parent / "fixtures" / "bloxswaps-live-sample.html"
         html = fixture.read_text(encoding="utf-8")
@@ -2598,7 +2599,7 @@ class LiveBloxSwapsFixtureTests(unittest.TestCase):
         self.assertTrue(any(re.search(r"\d+\.\d{1,2}", item.get("raw_excerpt", "")) for item in all_items))
 
 
-class StructuredQuantityTests(unittest.TestCase):
+class StructuredQuantityTests(IsolatedDataTestCase):
     @staticmethod
     def _html_with_rsc(trade_items, wildcards=None, visible_badge=""):
         page = {
@@ -2652,7 +2653,7 @@ class StructuredQuantityTests(unittest.TestCase):
         self.assertEqual(stats["addition_count"], 1)
 
 
-class QuantityIncidentReproductionTests(unittest.TestCase):
+class QuantityIncidentReproductionTests(IsolatedDataTestCase):
     def test_explicit_quantity_regex_accepts_split_text_nodes(self):
         self.assertEqual(scanner._explicit_stack_quantities("Snowcannon 750.0 x 2"), [2])
         self.assertEqual(scanner._explicit_stack_quantities("Snowcannon 750.0 x" + chr(160) + "2"), [2])
@@ -2760,7 +2761,7 @@ class QuantityIncidentReproductionTests(unittest.TestCase):
         self.assertEqual(result["difference"], 10)
 
 
-class StructuredHtmlConflictRegressionTests(unittest.TestCase):
+class StructuredHtmlConflictRegressionTests(IsolatedDataTestCase):
     def test_data_quantity_conflicting_with_visible_badge_is_uncertain_not_crash(self):
         html = """
         <article>
@@ -2784,7 +2785,7 @@ class StructuredHtmlConflictRegressionTests(unittest.TestCase):
 
 
 
-class QuantityBadgeAttributeBoundaryTests(unittest.TestCase):
+class QuantityBadgeAttributeBoundaryTests(IsolatedDataTestCase):
     def _listing(self, badge):
         html = f"""
         <article>
@@ -2848,7 +2849,7 @@ class QuantityBadgeAttributeBoundaryTests(unittest.TestCase):
 
 
 
-class QuantityDomFuzzRegressionTests(unittest.TestCase):
+class QuantityDomFuzzRegressionTests(IsolatedDataTestCase):
     def test_seeded_dom_layout_variants_keep_each_badge_with_its_own_weapon(self):
         import random
         rng = random.Random(20261112)
@@ -2912,7 +2913,7 @@ class QuantityDomFuzzRegressionTests(unittest.TestCase):
                 self.assertEqual(listing["receive_items"][0]["listed_price"], 750.0)
 
 
-class DuplicateBatchRegressionTests(unittest.TestCase):
+class DuplicateBatchRegressionTests(IsolatedDataTestCase):
     def test_duplicate_rows_with_same_listing_id_are_collapsed(self):
         first = {"id": "stable-ad-1", "source_ad_id": "ad-1", "receive_items": [], "give_items": []}
         duplicate = dict(first)
@@ -2929,7 +2930,7 @@ class DuplicateBatchRegressionTests(unittest.TestCase):
         self.assertEqual(first_id, second_id)
 
 
-class SupremeETagCacheTests(unittest.TestCase):
+class SupremeETagCacheTests(IsolatedDataTestCase):
     def test_expired_cache_reuses_page_only_after_matching_etag_304(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "supreme.json"
@@ -2992,7 +2993,7 @@ class SupremeETagCacheTests(unittest.TestCase):
         self.assertTrue(not_modified)
 
 
-class AdditionalHardeningRegressionTests(unittest.TestCase):
+class AdditionalHardeningRegressionTests(IsolatedDataTestCase):
     def test_single_malformed_card_is_reportable(self):
         self.assertTrue(scanner.should_alert_malformed_cards(1))
         self.assertTrue(scanner.should_alert_malformed_cards(3))
@@ -3028,7 +3029,7 @@ class AdditionalHardeningRegressionTests(unittest.TestCase):
             self.assertEqual(len(cache["pages"]["0"]["items"]), 100)
 
 
-class LegacyAlertStateMigrationTests(unittest.TestCase):
+class LegacyAlertStateMigrationTests(IsolatedDataTestCase):
     def test_old_quantity_sensitive_hash_is_recognized_as_already_alerted(self):
         receive = [{"name": "Snowcannon", "quantity": 1, "quantity_source": "structured"}]
         give = [{"name": "Spirit", "quantity": 1, "quantity_source": "structured"}]
@@ -3053,7 +3054,7 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class HardeningRegressionTests(unittest.TestCase):
+class HardeningRegressionTests(IsolatedDataTestCase):
     def test_refreshed_seen_post_at_feed_head_does_not_hide_new_posts_below(self):
         refreshed = CursorPaginationTests._post("seen-refreshed")
         refreshed["lastRefreshedAt"] = datetime.now(timezone.utc).isoformat()
@@ -3129,7 +3130,7 @@ class HardeningRegressionTests(unittest.TestCase):
                 scanner.fetch_bloxswaps_all(set())
 
 
-class WatchWindowRegressionTests(unittest.TestCase):
+class WatchWindowRegressionTests(IsolatedDataTestCase):
     def _listing(self, receive_quantity=1):
         return {
             "source_ad_id": "watch-ad",
@@ -3172,7 +3173,7 @@ class WatchWindowRegressionTests(unittest.TestCase):
                 self.assertEqual(scanner.load_watch_state(), {})
 
 
-class CatalogueRefreshRegressionTests(unittest.TestCase):
+class CatalogueRefreshRegressionTests(IsolatedDataTestCase):
     def test_unknown_item_catalogue_refresh_bypasses_hour_ttl_once(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "items.json"
@@ -3204,7 +3205,7 @@ class CatalogueRefreshRegressionTests(unittest.TestCase):
                 api.assert_not_called()
 
 
-class ColdStartRecentOfferTests(unittest.TestCase):
+class ColdStartRecentOfferTests(IsolatedDataTestCase):
     def test_cold_start_evaluates_recently_refreshed_post(self):
         post = CursorPaginationTests._post("recent-cold-post")
         post["lastRefreshedAt"] = datetime.now(timezone.utc).isoformat()
@@ -3224,7 +3225,7 @@ class ColdStartRecentOfferTests(unittest.TestCase):
         self.assertEqual(discovered, ["recent-cold-post"])
 
 
-class MaintenanceDefaultModeTests(unittest.TestCase):
+class MaintenanceDefaultModeTests(IsolatedDataTestCase):
     def test_maintenance_paths_have_no_loop_environment_gate(self):
         import inspect
         self.assertNotIn("MM2_SCAN_LOOP", inspect.getsource(scanner.fetch_bloxswaps_all))
@@ -3248,7 +3249,7 @@ class MaintenanceDefaultModeTests(unittest.TestCase):
             self.assertEqual(send.call_count, len(keys))
 
 
-class PaginationFailureSafetyTests(unittest.TestCase):
+class PaginationFailureSafetyTests(IsolatedDataTestCase):
     def test_api_failure_does_not_mark_unscanned_posts_seen(self):
         post = CursorPaginationTests._post("first-unseen-post")
         page = {"items": [post], "meta": {"cursor": "cursor-more"}}
@@ -3267,7 +3268,7 @@ class PaginationFailureSafetyTests(unittest.TestCase):
         save_seen.assert_not_called()
 
 
-class WatchValueReevaluationTests(unittest.TestCase):
+class WatchValueReevaluationTests(IsolatedDataTestCase):
     def test_watched_unprofitable_offer_becomes_profitable_after_supreme_value_change(self):
         listing = {
             "id": "stable-ad-id", "source_ad_id": "same-ad",
@@ -3296,7 +3297,7 @@ class WatchValueReevaluationTests(unittest.TestCase):
             self.assertTrue(scanner.update_watch_entry(state, listing, values_after))
 
 
-class PollingLoopTests(unittest.TestCase):
+class PollingLoopTests(IsolatedDataTestCase):
     def test_loop_runs_a_scan_and_returns_before_job_timeout(self):
         with patch("scanner.scan_once") as scan:
             result = scanner.run_scan_loop(duration_seconds=1, interval_seconds=30)
@@ -3313,7 +3314,7 @@ class PollingLoopTests(unittest.TestCase):
         self.assertTrue(scanner.should_start_scan_cycle(0.5, 1))
 
 
-class AliasSuggestionToolTests(unittest.TestCase):
+class AliasSuggestionToolTests(IsolatedDataTestCase):
     def test_suggestions_only_target_unique_numeric_supreme_records(self):
         from tools.suggest_aliases import build_suggestions
         report = build_suggestions(
@@ -3380,7 +3381,7 @@ class AliasSuggestionToolTests(unittest.TestCase):
                 )
 
 
-class WorkflowSecurityTests(unittest.TestCase):
+class WorkflowSecurityTests(IsolatedDataTestCase):
     def test_scan_and_state_jobs_have_separate_permissions_and_no_legacy_cache(self):
         workflow = Path(".github/workflows/scan.yml").read_text(encoding="utf-8")
         scheduler = Path(".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
@@ -3443,7 +3444,7 @@ class WorkflowSecurityTests(unittest.TestCase):
                 self.assertRegex(reference.rsplit("@", 1)[1], r"^[0-9a-f]{40}$", msg=f"{path}: {reference}")
 
 
-class WatchWindowPaginationTests(unittest.TestCase):
+class WatchWindowPaginationTests(IsolatedDataTestCase):
     def test_pagination_passes_seen_streak_to_revisit_watched_ads(self):
         seen_posts = [CursorPaginationTests._post(f"old-seen-{i}") for i in range(25)]
         page = {"items": seen_posts, "meta": {"cursor": "cursor-to-watch"}}
@@ -3467,7 +3468,7 @@ class WatchWindowPaginationTests(unittest.TestCase):
         self.assertTrue(stats["watch_search_complete"])
 
 
-class ColdStartPaginationTests(unittest.TestCase):
+class ColdStartPaginationTests(IsolatedDataTestCase):
     def test_cold_start_paginates_recent_posts_and_ignores_pinned_old_boundary(self):
         pinned = CursorPaginationTests._post("pinned-old")
         pinned["lastRefreshedAt"] = "2026-11-12T00:00:00Z"
@@ -3504,7 +3505,7 @@ class ColdStartPaginationTests(unittest.TestCase):
         self.assertIn("cold-old-24", discovered)
 
 
-class RealAlertReevaluationIntegrationTests(unittest.TestCase):
+class RealAlertReevaluationIntegrationTests(IsolatedDataTestCase):
     def test_previously_alerted_ad_realerts_when_cash_prices_make_it_profitable(self):
         listing = {
             "id": "stable-ad-id", "source_ad_id": "same-source-ad",
@@ -3592,7 +3593,7 @@ class RealAlertReevaluationIntegrationTests(unittest.TestCase):
 
 
 
-class PaginationHealthCheckpointTests(unittest.TestCase):
+class PaginationHealthCheckpointTests(IsolatedDataTestCase):
     def test_incomplete_pagination_does_not_refresh_success_checkpoint(self):
         with (
             patch("scanner.record_success") as record_success,
@@ -3609,7 +3610,7 @@ class PaginationHealthCheckpointTests(unittest.TestCase):
         record_success.assert_called_once()
 
 
-class MinimumProfitMarginTests(unittest.TestCase):
+class MinimumProfitMarginTests(IsolatedDataTestCase):
     def test_only_conservative_positive_trades_with_at_least_five_percent_margin_qualify(self):
         base = {"manual_review": False, "profit_worst": 1, "difference": 1}
         self.assertFalse(scanner.qualifies({**base, "margin": 4.99}, 0, 5))
@@ -3622,7 +3623,7 @@ class MinimumProfitMarginTests(unittest.TestCase):
         self.assertFalse(scanner.qualifies({**base, "profit_worst": -1}, 0, 5))
 
 
-class UpstreamForbiddenDiagnosticsTests(unittest.TestCase):
+class UpstreamForbiddenDiagnosticsTests(IsolatedDataTestCase):
     def test_api_key_header_cannot_be_sent_to_non_allowlisted_origin(self):
         from urllib.request import Request
 
@@ -3784,7 +3785,7 @@ class UpstreamForbiddenDiagnosticsTests(unittest.TestCase):
                 self.assertFalse((root / "blocked.json").exists())
 
 
-class CashFirstEvaluatorTests(unittest.TestCase):
+class CashFirstEvaluatorTests(IsolatedDataTestCase):
     def setUp(self):
         self.values = {
             "chroma laser": {"name": "Chroma Laser", "value": 100, "stability": "Stable", "demand": 0},

@@ -1,10 +1,11 @@
 import unittest
+from test_support import IsolatedDataTestCase
 from datetime import UTC, datetime
 
 from tools.next_to_verify import rank_blockers
 
 
-class NextToVerifyTests(unittest.TestCase):
+class NextToVerifyTests(IsolatedDataTestCase):
     def test_rank_and_cumulative_unlock_use_listing_cooccurrence_fixture(self):
         metrics = {
             "2026-11-13": {

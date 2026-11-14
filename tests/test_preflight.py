@@ -1,13 +1,14 @@
 import json
 import tempfile
 import unittest
+from test_support import IsolatedDataTestCase
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from tools.preflight import collect_preflight_checks
 
 
-class PreflightTests(unittest.TestCase):
+class PreflightTests(IsolatedDataTestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

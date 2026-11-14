@@ -1,13 +1,14 @@
 import json
 import tempfile
 import unittest
+from test_support import IsolatedDataTestCase
 from datetime import datetime, timezone
 from pathlib import Path
 
 from tools.metrics import update_metrics
 
 
-class CashBlockerMetricsTests(unittest.TestCase):
+class CashBlockerMetricsTests(IsolatedDataTestCase):
     def test_blockers_increment_once_by_normalized_item_and_retain_14_days(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "metrics.json"

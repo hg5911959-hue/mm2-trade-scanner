@@ -1,9 +1,10 @@
 import unittest
+from test_support import IsolatedDataTestCase
 
 import scanner
 
 
-class CashBlockerAggregationTests(unittest.TestCase):
+class CashBlockerAggregationTests(IsolatedDataTestCase):
     def test_counts_each_normalized_item_once_per_listing(self):
         counts = {}
         groups = {}
