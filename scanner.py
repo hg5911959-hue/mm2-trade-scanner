@@ -1043,6 +1043,31 @@ def parse_listings(html):
     return parse_page(html)[0]
 
 
+RBLXVALUE_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+
+
+class _RejectCredentialRedirects(urllib.request.HTTPRedirectHandler):
+    """Never forward the RBLXValue API key to a redirect target."""
+
+    handler_order = 100
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise HTTPError(
+            req.full_url,
+            code,
+            "Redirect refused for credential-bearing RBLXValue request",
+            headers,
+            fp,
+        )
+
+
+def _open_rblxvalue_url(req, timeout):
+    # urllib's default redirect handler can copy custom headers to a new host.
+    # RBLXValue requests carry X-Api-Key, so reject redirects before following.
+    opener = urllib.request.build_opener(_RejectCredentialRedirects())
+    return opener.open(req, timeout=timeout)
+
+
 def request_with_retry(req, timeout, label, attempts=4, return_headers=False, allow_not_modified=False):
     """Retry transient failures with exponential backoff and respect Retry-After."""
     is_rblxvalue = label == "RBLXValue API"
@@ -1050,8 +1075,19 @@ def request_with_retry(req, timeout, label, attempts=4, return_headers=False, al
         if is_rblxvalue:
             rblxvalue_guard.reserve_request(key=RBLXVALUE_API_KEY)
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as response:
-                body = response.read()
+            response_context = (
+                _open_rblxvalue_url(req, timeout)
+                if is_rblxvalue else urllib.request.urlopen(req, timeout=timeout)
+            )
+            with response_context as response:
+                if is_rblxvalue:
+                    body = response.read(RBLXVALUE_MAX_RESPONSE_BYTES + 1)
+                    if len(body) > RBLXVALUE_MAX_RESPONSE_BYTES:
+                        raise RuntimeError(
+                            "[rblxvalue] Response exceeded the 8 MiB safety limit; refusing payload"
+                        )
+                else:
+                    body = response.read()
                 print(f"[http] {label}: HTTP {response.status} ({len(body)} bytes)")
                 return (body, response.headers) if return_headers else body
         except HTTPError as exc:
