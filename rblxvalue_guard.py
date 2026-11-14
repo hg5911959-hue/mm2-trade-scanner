@@ -71,8 +71,50 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
     os.replace(temp, path)
 
 
+def _validated_block_state(path: Path) -> dict[str, Any]:
+    """Validate persisted breaker state; malformed safety state must fail closed."""
+    state = _read_json(path)
+    if not state:
+        return {}
+    fingerprint = state.get("key_fingerprint")
+    if not isinstance(fingerprint, str) or len(fingerprint) != 16 or any(
+        char not in "0123456789abcdef" for char in fingerprint
+    ):
+        raise RblxValueGuardError(
+            f"[rblxvalue-state] safety state file {path.name} has an invalid key fingerprint; refusing API request"
+        )
+    permanent = state.get("permanent")
+    if not isinstance(permanent, bool):
+        raise RblxValueGuardError(
+            f"[rblxvalue-state] safety state file {path.name} has an invalid permanent flag; refusing API request"
+        )
+    try:
+        until = float(state["blocked_until_epoch"])
+        consecutive = state["consecutive_blocks"]
+        seconds = float(state["blocked_seconds"])
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise RblxValueGuardError(
+            f"[rblxvalue-state] safety state file {path.name} has invalid block timing; refusing API request"
+        ) from exc
+    if (
+        not (until > 0 and until < float("inf"))
+        or isinstance(consecutive, bool)
+        or not isinstance(consecutive, int)
+        or consecutive < 1
+        or not (seconds > 0 and seconds < float("inf"))
+    ):
+        raise RblxValueGuardError(
+            f"[rblxvalue-state] safety state file {path.name} has invalid block timing; refusing API request"
+        )
+    if permanent and consecutive < PERMANENT_BLOCK_AFTER:
+        raise RblxValueGuardError(
+            f"[rblxvalue-state] safety state file {path.name} has inconsistent permanent block; refusing API request"
+        )
+    return state
+
+
 def _active_block(now: float, key: str, block_path: Path) -> dict[str, Any] | None:
-    state = _read_json(block_path)
+    state = _validated_block_state(block_path)
     if not state:
         return None
     fingerprint = key_fingerprint(key)
@@ -83,10 +125,7 @@ def _active_block(now: float, key: str, block_path: Path) -> dict[str, Any] | No
         except FileNotFoundError:
             pass
         return None
-    try:
-        until = float(state.get("blocked_until_epoch", 0))
-    except (TypeError, ValueError):
-        until = 0
+    until = float(state["blocked_until_epoch"])
     return state if until > now else None
 
 
