@@ -41,7 +41,7 @@ def normalize_cash_name(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", text)
 
 
-def load_cash_price_catalog(path="data/cash_prices.csv"):
+def load_cash_price_catalog(path="data/cash_prices.csv", max_age_days=14):
     path = Path(path)
     try:
         raw = path.read_bytes()
@@ -97,12 +97,12 @@ def load_cash_price_catalog(path="data/cash_prices.csv"):
     except csv.Error as exc:
         raise RuntimeError("[cash] Malformed cash-price CSV.") from exc
     now_utc = datetime.now(timezone.utc)
-    fresh_rows = [row for row in rows.values() if cash_price_is_fresh(row, now=now_utc)]
+    fresh_rows = [row for row in rows.values() if cash_price_is_fresh(row, max_age_days=max_age_days, now=now_utc)]
     expiring_rows = []
     for row in fresh_rows:
         verified = datetime.fromisoformat(row["verified_at_utc"].replace("Z", "+00:00"))
         age_days = (now_utc - verified).total_seconds() / 86400
-        if 11 <= age_days <= 14:
+        if max(0, float(max_age_days) - 3) <= age_days <= float(max_age_days):
             expiring_rows.append(row)
     oldest_verified_at = min((row["verified_at_utc"] for row in fresh_rows), default=None)
     return {
