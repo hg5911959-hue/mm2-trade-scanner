@@ -59,8 +59,8 @@ class CashMarketTests(unittest.TestCase):
         self.assertIn("$8.50", lines[0])
 
     def test_13_day_old_verified_price_is_accepted(self):
-        from datetime import datetime, timezone, timedelta
-        now = datetime(2026, 11, 14, tzinfo=timezone.utc)
+        from datetime import UTC, datetime, timedelta
+        now = datetime(2026, 11, 14, tzinfo=UTC)
         catalog = self._catalog([self._row(verified=(now - timedelta(days=13)).isoformat())])
         result = calculate_cash_side(
             [{"canonical_name": "Chroma Laser", "quantity_min": 1, "quantity_max": 1}],
