@@ -4,6 +4,17 @@ on:
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Preview a manual scan without Telegram alerts; set false only for an intentional live run"
+        required: false
+        type: boolean
+        default: true
+      verify_rblxvalue_key:
+        description: "Send one small request to verify the configured RBLXValue API key"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -12,4 +23,7 @@ jobs:
   scan:
     name: Run the reusable MM2 scanner
     uses: ./.github/workflows/scan.yml
+    with:
+      dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+      verify_rblxvalue_key: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_rblxvalue_key || false }}
     secrets: inherit
