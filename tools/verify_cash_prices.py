@@ -94,7 +94,7 @@ def verify(input_path, csv_path=DEFAULT_CSV, source="manual_market_list", max_ch
                 continue
             parsed, error = parse_line(raw)
             if error:
-                skipped.append((line_no, raw.strip(), error))
+                skipped.append((line_no, "<unparsed line>", error))
                 continue
             name, error = match_catalog_name(parsed["name"], list(by_name))
             if error:
