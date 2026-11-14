@@ -18,11 +18,14 @@ on:
 
 permissions:
   actions: read
-  contents: write
+  contents: read
 
 jobs:
   scan:
     name: Run the reusable MM2 scanner
+    permissions:
+      actions: read
+      contents: write
     uses: ./.github/workflows/scan.yml
     with:
       dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}

@@ -268,3 +268,10 @@ Weekly cash maintenance routine:
 3. Read the preflight message and `python tools/next_to_verify.py` output before relying on the cash-first alerts.
 
 Supreme numeric values are never converted into cash prices; the USD catalogue remains a separate, manually verified source.
+
+
+### Test isolation and workflow permissions
+
+Every unittest case uses its own temporary working directory. Tests that need catalogue data use synthetic fixtures under `tests/fixtures`; no test reads or writes the repository's real `data/` directory. CI runs `python -m unittest discover -s tests` twice and checks `git status --porcelain data` after each pass. `tests/test_no_data_pollution.py` hashes every file in the real data directory before and after a mocked scan.
+
+Scanner and tool path defaults are module constants or explicit function arguments so tests can patch them. Workflow permissions default to read-only; write access is scoped to state persistence, schedule enablement, repository keepalive, or Pages deployment. Third-party Actions are pinned to full 40-character commit SHAs, and workflow steps must never echo secrets.

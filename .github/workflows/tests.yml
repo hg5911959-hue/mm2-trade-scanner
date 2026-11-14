@@ -22,8 +22,19 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run parser and reliability regression tests
-        run: python -m unittest discover -s tests -v
+      - name: Run the full isolated suite twice and verify data remains untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pass in 1 2; do
+            echo "Regression suite pass $pass/2"
+            python -m unittest discover -s tests
+            if [ -n "$(git status --porcelain data)" ]; then
+              echo "::error::Tests changed tracked data/ files"
+              git status --short data
+              exit 1
+            fi
+          done
 
       - name: Install Ruff
         run: python -m pip install --disable-pip-version-check ruff==0.17.5

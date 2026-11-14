@@ -8,6 +8,8 @@ from tools.cash_market import cash_price_is_fresh, load_cash_price_catalog
 from tools.next_to_verify import format_blockers
 from tools.preflight import collect_preflight_checks
 
+DATA_DIR = Path("data")
+
 def build_report(metrics, discord_status=None, key_state=None, daily_limit=60, now=None, cash_summary=None, blocker_summary=None, preflight_checks=None):
     current = now or datetime.now(timezone.utc)
     days = [(current.date() - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
@@ -36,7 +38,7 @@ def build_report(metrics, discord_status=None, key_state=None, daily_limit=60, n
             + ("\\n\\nPreflight checks: " + "; ".join(preflight_checks) if preflight_checks else "\\n\\nPreflight checks: PASS"))
 
 def main():
-    data = Path("data")
+    data = DATA_DIR
     try: metrics = json.loads((data / "metrics.json").read_text(encoding="utf-8"))
     except FileNotFoundError: metrics = {}
     except (OSError, ValueError): metrics = {}

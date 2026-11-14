@@ -11,10 +11,9 @@ on:
 
 permissions:
   contents: read
-  actions: write
 
 jobs:
-  restore-scanner-schedule:
+  enable-schedules:
     runs-on: ubuntu-latest
     permissions:
       actions: write
@@ -52,6 +51,9 @@ jobs:
           esac
 
   watchdog:
-    needs: restore-scanner-schedule
+    needs: enable-schedules
+    permissions:
+      actions: read
+      contents: read
     uses: ./.github/workflows/watchdog.yml
     secrets: inherit
