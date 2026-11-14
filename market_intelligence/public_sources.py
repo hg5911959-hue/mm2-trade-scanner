@@ -59,7 +59,7 @@ def parse_rss(xml_text: str, source_url: str, limit: int = _MAX_ITEMS) -> list[d
     """Parse bounded RSS/Atom without DTD/entity expansion or untrusted feed origins."""
     if not isinstance(xml_text, str) or len(xml_text.encode("utf-8")) > _MAX_BYTES:
         raise ValueError("Reddit RSS document exceeds the safety limit")
-    if re.search(r"<!\\s*(?:DOCTYPE|ENTITY)\\b", xml_text, re.IGNORECASE):
+    if re.search(r"<!\s*(?:DOCTYPE|ENTITY)\b", xml_text, re.IGNORECASE):
         raise ValueError("DTD and entity declarations are not supported")
     source_url = validate_reddit_feed_url(source_url)
     root = ET.fromstring(xml_text)
