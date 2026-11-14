@@ -175,15 +175,16 @@ class CashMarketTests(unittest.TestCase):
             catalog, "receive", 15,
         )
         self.assertEqual((give[0], give[1]), (7.0, 9.0))
-        self.assertEqual((receive[0], receive[1]), (5.95, 7.65))
+        self.assertAlmostEqual(receive[0], 5.95)
+        self.assertAlmostEqual(receive[1], 7.65)
         self.assertIn("haircut 15%", receive[2][0])
 
     def test_old_csv_header_without_optional_range_columns_remains_valid(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "legacy.csv"
             path.write_text(
-                "name,cash_price_usd,tier,status,verified_at_utc,source,notes\\n"
-                "Chroma Laser,8,test,verified,2026-11-14T00:00:00Z,manual,\\n",
+                "name,cash_price_usd,tier,status,verified_at_utc,source,notes\n"
+                "Chroma Laser,8,test,verified,2026-11-14T00:00:00Z,manual,\n",
                 encoding="utf-8",
             )
             catalog = load_cash_price_catalog(path)

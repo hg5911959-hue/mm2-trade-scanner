@@ -152,6 +152,7 @@ class ScannerCashSafetyTests(unittest.TestCase):
             "cash_price_basis": "verified manual USD resale catalogue",
             "cash_profit_worst": 100.0,
             "margin": 20.0,
+            "give_total_max": 10.0,
         }
         self.assertTrue(scanner.qualifies_cash(base))
         for field in (
