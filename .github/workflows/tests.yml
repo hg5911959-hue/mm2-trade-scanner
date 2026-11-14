@@ -33,3 +33,6 @@ jobs:
 
       - name: Run focused correctness lint on scanner
         run: ruff check --select F scanner.py
+ 
+      - name: Run undefined and unused-name checks across the repository
+        run: ruff check --select F .
