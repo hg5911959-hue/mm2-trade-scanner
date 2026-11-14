@@ -3467,19 +3467,37 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
     ]
     if listing.get("url") and listing.get("url") != owner_link:
         lines.extend(["", f"🔗 {listing['url']}"])
-    lines.extend([
-        "",
-        "📤 GIVE:",
-        *_compact_telegram_items(give_lines),
-        f"Total: {format_number(give_total)}",
-        "",
-        "📥 GET:",
-        *_compact_telegram_items(receive_lines),
-        f"Total: {format_number(receive_total)}",
-        "",
-        f"💰 PROFIT: {'+' if difference > 0 else ''}{format_number(difference)}",
-        f"RESULT: {result}",
-    ])
+    if listing.get("valuation_mode") == "cash":
+        roi = (difference / give_total * 100.0) if give_total else 0.0
+        lines.extend([
+            "",
+            "📤 GIVE (CASH REPLACEMENT COST):",
+            *_compact_telegram_items(give_lines),
+            f"Total cost: ${format_number(give_total)}",
+            "",
+            "📥 GET (NET CASH RESALE):",
+            *_compact_telegram_items(receive_lines),
+            f"Net resale: ${format_number(receive_total)}",
+            "",
+            f"💵 CASH PROFIT (CONSERVATIVE): {'+' if difference > 0 else ''}${format_number(difference)}",
+            f"CASH ROI: {roi:.2f}%",
+            f"Resale haircut: {CASH_SELL_HAIRCUT_PCT:.1f}%",
+            f"RESULT: {'CASH WIN' if difference > 0 else 'NO CASH PROFIT'}",
+        ])
+    else:
+        lines.extend([
+            "",
+            "📤 GIVE:",
+            *_compact_telegram_items(give_lines),
+            f"Total: {format_number(give_total)}",
+            "",
+            "📥 GET:",
+            *_compact_telegram_items(receive_lines),
+            f"Total: {format_number(receive_total)}",
+            "",
+            f"💰 PROFIT: {'+' if difference > 0 else ''}{format_number(difference)}",
+            f"RESULT: {result}",
+        ])
     return "\n".join(lines)
 
 
