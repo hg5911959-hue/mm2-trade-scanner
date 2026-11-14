@@ -61,7 +61,7 @@ def load_cash_price_catalog(path="data/cash_prices.csv"):
                 if not verified_at:
                     raise RuntimeError(f"[cash] Verified row requires verified_at_utc: {name}")
                 try:
-                    parsed_verified_at = datetime.fromisoformat(verified_at.replace("Z", "+00:00"))
+                    parsed_verified_at = datetime.fromisoformat(verified_at)
                 except ValueError as exc:
                     raise RuntimeError(f"[cash] verified_at_utc must be ISO-8601: {name}") from exc
                 if parsed_verified_at.tzinfo is None or parsed_verified_at.utcoffset() != timedelta(0):
