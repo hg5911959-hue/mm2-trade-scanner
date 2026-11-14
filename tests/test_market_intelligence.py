@@ -1,6 +1,7 @@
 import json
 import unittest
 from unittest.mock import MagicMock, patch
+from urllib.request import Request
 
 from market_intelligence.ai_advisor import (
     build_analysis_payload,
@@ -31,9 +32,7 @@ class PublicSourceTests(unittest.TestCase):
 
     def test_redirect_handler_rejects_offsite_redirects_before_fetch(self):
         handler = _RedditOnlyRedirectHandler()
-        request = __import__("urllib.request", fromlist=["Request"]).Request(
-            "https://www.reddit.com/r/test/new/.rss"
-        )
+        request = Request("https://www.reddit.com/r/test/new/.rss")
         for target in (
             "https://example.com/steal",
             "http://www.reddit.com/r/test/new/.rss",
@@ -43,8 +42,6 @@ class PublicSourceTests(unittest.TestCase):
                 handler.redirect_request(request, None, 302, "Found", {}, target)
 
     def test_redirect_handler_allows_reddit_rss_redirect(self):
-        from urllib.request import Request
-
         handler = _RedditOnlyRedirectHandler()
         request = Request("https://www.reddit.com/r/test/new/.rss")
         redirected = handler.redirect_request(
