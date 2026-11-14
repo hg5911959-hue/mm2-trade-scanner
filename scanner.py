@@ -3975,6 +3975,12 @@ def scan_once(include_backlog_rechecks=True):
     print("[cash] Loaded %s price rows; verified=%s; unverified=%s; sell_haircut=%s%%" % (
         cash_catalog["row_count"], verified_cash_rows, unverified_cash_rows, CASH_SELL_HAIRCUT_PCT
     ))
+    if unverified_cash_rows > 0:
+        send_maintenance_alert(
+            "cash-price-catalog-unverified",
+            f"Cash-first alerts only use verified USD prices. Current catalogue: {verified_cash_rows} verified, "
+            f"{unverified_cash_rows} unverified. Offers with missing/unverified prices are held, not sent.",
+        )
     if verified_cash_rows == 0:
         print("[cash] No verified cash prices yet; cash-profit alerts are safely disabled until prices are manually verified.")
     values_snapshot_changed = False
