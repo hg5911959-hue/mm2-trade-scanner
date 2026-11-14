@@ -66,6 +66,17 @@ class MarketHistoryTests(unittest.TestCase):
         })
         self.assertEqual(rows[0]["confidence"], "estimated")
 
+    def test_nonfinite_and_nonpositive_values_are_discarded(self):
+        rows = market_history.MarketHistory._value_rows({
+            "item": {"name": "Item", "variants": [{
+                "id": "bad-values", "name": "Bad values",
+                "value": float("inf"), "secondary_value": float("nan"),
+            }]}
+        })
+        self.assertIsNone(rows[0]["supreme_value"])
+        self.assertIsNone(rows[0]["secondary_value"])
+        self.assertEqual(rows[0]["confidence"], "unrated")
+
     def test_listing_upsert_preserves_first_seen_and_updates_last_seen(self):
         self.assertEqual(self.store.record_listings([self.listing()]), 1)
         self.assertEqual(self.store.record_listings([self.listing()]), 1)
