@@ -51,7 +51,7 @@ The default resale haircut is controlled by CASH_SELL_HAIRCUT_PCT (15%), the min
 - A new unmatched name is reported through a cooldown-controlled maintenance alert and is rechecked. `python tools/suggest_aliases.py` compares BloxSwaps catalogue names with Supreme names and produces review-only candidates; it never writes suggestions automatically. Apply only a manually reviewed JSON mapping with `--approve reviewed-aliases.json`.
 - If several Supreme source rows normalize to the same name, all numeric variants are retained. The scanner uses the **higher** value when you give an item and the **lower** value when you receive it, avoiding optimistic duplicate-name valuation.
 
-Items without a numeric Supreme value are never assigned zero or partially valued. Brew and Drool are not included in totals, but their presence blocks a profitable alert until a numeric Supreme value is available; this prevents unknown-value items from manufacturing a false WIN.
+Cash-first mode does not use a Supreme numeric value as a dollar proxy. An item must resolve to one exact, unambiguous Supreme catalogue identity and must have a manually verified USD cash price; missing cash prices are never treated as zero. Thus an item with no numeric Supreme value can only participate if its identity is present in Supreme and its cash price has been independently verified.
 
 ## Data sources and pagination
 
