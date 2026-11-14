@@ -180,13 +180,20 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
     if budget_path.exists() and not isinstance(budget, dict):
         errors.append("RBLXValue request budget root must be an object")
     elif budget_path.exists():
+        version = budget.get("schema_version", 1)
+        if type(version) is not int or version != 1:
+            errors.append("RBLXValue request budget schema is unsupported")
+        if budget.get("window", "rolling_24_hours") != "rolling_24_hours":
+            errors.append("RBLXValue request budget window is invalid")
         timestamps = budget.get("request_timestamps_epoch")
-        if not isinstance(timestamps, list):
-            errors.append("RBLXValue request budget timestamps must be a list")
-        elif any(not _finite_positive(value) for value in timestamps):
+        if (
+            not isinstance(timestamps, list)
+            or len(timestamps) > 60
+            or any(not _finite_positive(value) for value in timestamps)
+        ):
             errors.append("RBLXValue request budget contains an invalid timestamp")
         limit = budget.get("limit")
-        if type(limit) is not int or limit < 1:
+        if type(limit) is not int or not 1 <= limit <= 60:
             errors.append("RBLXValue request budget limit is invalid")
 
     health = documents.get("rblxvalue_key_health.json")
