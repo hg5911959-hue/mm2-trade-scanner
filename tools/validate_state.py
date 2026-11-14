@@ -48,6 +48,38 @@ def _finite_positive(value: Any) -> bool:
         return False
 
 
+def _validate_api_key_block_document(block: Any) -> list[str]:
+    errors: list[str] = []
+    if not isinstance(block, dict):
+        return ["RBLXValue breaker root must be an object"]
+    fingerprint = block.get("key_fingerprint")
+    if (
+        not isinstance(fingerprint, str) or len(fingerprint) != 16
+        or any(char not in "0123456789abcdef" for char in fingerprint)
+    ):
+        errors.append("RBLXValue breaker fingerprint is invalid")
+    permanent = block.get("permanent")
+    consecutive = block.get("consecutive_blocks")
+    seconds = block.get("blocked_seconds")
+    until = block.get("blocked_until_epoch")
+    if (
+        type(block.get("schema_version")) is not int
+        or block.get("schema_version") != 2
+        or not isinstance(permanent, bool)
+        or type(consecutive) is not int or consecutive < 1
+        or not _finite_positive(seconds)
+        or seconds not in (21600, 43200, 86400, 172800)
+        or not _finite_positive(until)
+    ):
+        errors.append("RBLXValue breaker timing or schema is invalid")
+    else:
+        expected_permanent = consecutive >= 3
+        expected_seconds = (21600, 43200, 86400, 172800)[min(consecutive - 1, 3)]
+        if permanent != expected_permanent or seconds != expected_seconds:
+            errors.append("RBLXValue breaker escalation is inconsistent")
+    return errors
+
+
 def validate_state(directory: str | Path, *, require_cache: bool = False) -> list[str]:
     """Return validation errors; never mutate the supplied state directory."""
     root = Path(directory)
@@ -174,6 +206,10 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
         if last_success is not None and not _finite_positive(last_success):
             errors.append("RBLXValue health success timestamp is invalid")
 
+    breaker_path = root / "api_key_blocked.json"
+    if breaker_path.exists():
+        errors.extend(_validate_api_key_block_document(documents.get("api_key_blocked.json")))
+
     database_path = root / "market_history.sqlite3"
     if database_path.exists():
         try:
@@ -251,34 +287,7 @@ def validate_api_safety_state(directory: str | Path) -> list[str]:
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             block = None
             errors.append("RBLXValue breaker JSON is invalid")
-        if not isinstance(block, dict):
-            errors.append("RBLXValue breaker root must be an object")
-        else:
-            fingerprint = block.get("key_fingerprint")
-            if (
-                not isinstance(fingerprint, str) or len(fingerprint) != 16
-                or any(char not in "0123456789abcdef" for char in fingerprint)
-            ):
-                errors.append("RBLXValue breaker fingerprint is invalid")
-            permanent = block.get("permanent")
-            consecutive = block.get("consecutive_blocks")
-            seconds = block.get("blocked_seconds")
-            until = block.get("blocked_until_epoch")
-            if (
-                type(block.get("schema_version")) is not int
-                or block.get("schema_version") != 2
-                or not isinstance(permanent, bool)
-                or type(consecutive) is not int or consecutive < 1
-                or not _finite_positive(seconds)
-                or seconds not in (21600, 43200, 86400, 172800)
-                or not _finite_positive(until)
-            ):
-                errors.append("RBLXValue breaker timing or schema is invalid")
-            else:
-                expected_permanent = consecutive >= 3
-                expected_seconds = (21600, 43200, 86400, 172800)[min(consecutive - 1, 3)]
-                if permanent != expected_permanent or seconds != expected_seconds:
-                    errors.append("RBLXValue breaker escalation is inconsistent")
+        errors.extend(_validate_api_key_block_document(block))
     return errors
 
 
