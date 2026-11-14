@@ -113,8 +113,15 @@ def load_cash_price_catalog(path="data/cash_prices.csv", max_age_days=14):
     }
 
 
-def calculate_cash_side(items, catalog, side, sell_haircut_pct=15.0, max_age_days=14, now=None):
-    """Return conservative cash bounds; receive-side proceeds include haircut."""
+def calculate_cash_side(
+    items, catalog, side, sell_haircut_pct=15.0, max_age_days=14, now=None,
+    allow_unverified_estimates=False, estimate_uncertainty_pct=30.0,
+):
+    """Return cash bounds; unverified legacy prices are estimate-only and opt-in.
+
+    Estimate mode is for offline research only. It must never be used to qualify
+    live trade alerts; all such outputs are explicitly labelled ESTIMATE.
+    """
     if side not in {"give", "receive"}:
         raise ValueError("side must be give or receive")
     try:
@@ -123,6 +130,12 @@ def calculate_cash_side(items, catalog, side, sell_haircut_pct=15.0, max_age_day
         raise ValueError("sell_haircut_pct must be numeric")
     if not math.isfinite(haircut) or not 0 <= haircut < 100:
         raise ValueError("sell_haircut_pct must be between 0 and 100")
+    try:
+        uncertainty = float(estimate_uncertainty_pct)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("estimate_uncertainty_pct must be numeric") from exc
+    if not math.isfinite(uncertainty) or not 0 <= uncertainty < 100:
+        raise ValueError("estimate_uncertainty_pct must be between 0 and 100")
 
     low_total = high_total = 0.0
     lines, missing = [], []
@@ -134,10 +147,13 @@ def calculate_cash_side(items, catalog, side, sell_haircut_pct=15.0, max_age_day
         if not entry:
             missing.append(f"{name} (cash price missing)")
             continue
-        if entry.get("status") != "verified":
+        estimate_only = False
+        if entry.get("status") == "unverified" and allow_unverified_estimates:
+            estimate_only = True
+        elif entry.get("status") != "verified":
             missing.append(f"{name} (cash price unverified)")
             continue
-        if not cash_price_is_fresh(entry, max_age_days=max_age_days, now=now):
+        elif not cash_price_is_fresh(entry, max_age_days=max_age_days, now=now):
             missing.append(f"{name} (cash price expired)")
             continue
         try:
@@ -152,22 +168,24 @@ def calculate_cash_side(items, catalog, side, sell_haircut_pct=15.0, max_age_day
             missing.append(f"{name} (quantity uncertain/unbounded)")
             continue
         unit = float(entry["cash_price_usd"])
+        uncertainty_factor = uncertainty / 100.0 if estimate_only else 0.0
         if side == "receive":
-            unit_low = unit * (1.0 - haircut / 100.0)
-            unit_high = unit_low
-            basis = "net resale"
+            unit_low = unit * (1.0 - uncertainty_factor) * (1.0 - haircut / 100.0)
+            unit_high = unit * (1.0 + uncertainty_factor) * (1.0 - haircut / 100.0)
+            basis = "estimated net resale" if estimate_only else "net resale"
         else:
-            unit_low = unit_high = unit
-            basis = "replacement cost"
+            unit_low = unit * (1.0 - uncertainty_factor)
+            unit_high = unit * (1.0 + uncertainty_factor)
+            basis = "estimated replacement cost" if estimate_only else "replacement cost"
         line_low = unit_low * qmin
         line_high = unit_high * qmax
         low_total += line_low
         high_total += line_high
         quantity_label = f"x{qmin}" if qmin == qmax else f"x? ({qmin}..{qmax})"
+        estimate_label = " [ESTIMATE — UNVERIFIED LEGACY PRICE]" if estimate_only else ""
         lines.append(
-            f"• {name} {quantity_label} — ${unit_low:.2f} each "
-            f"({basis}) = ${line_low:.2f}"
-            + (f".. ${line_high:.2f}" if line_high != line_low else "")
+            f"• {name} {quantity_label} — ${unit_low:.2f}..${unit_high:.2f} each "
+            f"({basis}) = ${line_low:.2f}..${line_high:.2f}{estimate_label}"
         )
     return low_total, high_total, lines, missing
 
