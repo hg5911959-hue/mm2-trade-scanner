@@ -87,6 +87,39 @@ class CashMarketTests(unittest.TestCase):
         )
         self.assertIn("cash price expired", result[3][0])
 
+    def test_unverified_legacy_prices_are_available_only_in_explicit_estimate_mode(self):
+        catalog = self._catalog([self._row(price="10", status="unverified")])
+        item = [{"canonical_name": "Chroma Laser", "quantity_min": 1, "quantity_max": 1}]
+        strict = calculate_cash_side(item, catalog, "receive", 15)
+        self.assertEqual((strict[0], strict[1], strict[2]), (0.0, 0.0, []))
+        estimate = calculate_cash_side(
+            item, catalog, "receive", 15, allow_unverified_estimates=True,
+            estimate_uncertainty_pct=30,
+        )
+        self.assertAlmostEqual(estimate[0], 5.95)
+        self.assertAlmostEqual(estimate[1], 9.775)
+        self.assertIn("ESTIMATE", estimate[2][0])
+        self.assertEqual(estimate[3], [])
+
+    def test_estimate_mode_does_not_use_disabled_rows(self):
+        catalog = self._catalog([self._row(price="10", status="disabled")])
+        result = calculate_cash_side(
+            [{"canonical_name": "Chroma Laser"}], catalog, "receive",
+            allow_unverified_estimates=True,
+        )
+        self.assertEqual(result[:3], (0.0, 0.0, []))
+        self.assertIn("unverified", result[3][0])
+
+    def test_estimate_uncertainty_is_validated(self):
+        catalog = self._catalog([self._row(status="unverified")])
+        for uncertainty in (-1, 100, float("nan"), float("inf")):
+            with self.subTest(uncertainty=uncertainty), self.assertRaises(ValueError):
+                calculate_cash_side(
+                    [{"canonical_name": "Chroma Laser"}], catalog, "give",
+                    allow_unverified_estimates=True,
+                    estimate_uncertainty_pct=uncertainty,
+                )
+
     def test_unverified_prices_never_enter_cash_profit(self):
         catalog = self._catalog([self._row(status="unverified")])
         low, high, lines, missing = calculate_cash_side(
