@@ -1226,10 +1226,11 @@ class ReliabilityTests(IsolatedDataTestCase):
                 patch("scanner.load_supreme_values", return_value=cash_ready_values(values)),
                 patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)),
                 patch("scanner.send_telegram", side_effect=[RuntimeError("rejected"), None]) as send,
+                patch("scanner.alert_cash_price_runway"),
                 patch("scanner.compare_secondary_values", return_value=""),
             ):
                 scanner.main()
-            self.assertEqual(send.call_count, 3)
+            self.assertEqual(send.call_count, 2)
             second_message = send.call_args_list[1].args[0]
             self.assertIn("WARNING: quantity 5+", second_message)
             self.assertIn("WARNING: unusually high profit", second_message)
@@ -1365,7 +1366,8 @@ class ReliabilityTests(IsolatedDataTestCase):
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"), \
                  patch("scanner.load_supreme_values", side_effect=[cash_ready_values(value) for value in value_sets]), \
                  patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)), \
-                 patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)), \
+                 patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)),
+                patch("scanner.alert_cash_price_runway"), \
                  patch("scanner.compare_secondary_values", return_value=""):
                 scanner.main()
                 scanner.main()
@@ -1418,7 +1420,7 @@ class ReliabilityTests(IsolatedDataTestCase):
                 patch("scanner.ALERT_DELAY_SECONDS", 0),
             ):
                 scanner.main()
-                self.assertEqual(len(sent), 6)
+                self.assertEqual(len(sent), 5)
                 scanner.main()
                 scanner.main()
                 alerted = scanner.load_alerted()
@@ -3384,7 +3386,7 @@ class AliasSuggestionToolTests(IsolatedDataTestCase):
 class WorkflowSecurityTests(IsolatedDataTestCase):
     def test_scan_and_state_jobs_have_separate_permissions_and_no_legacy_cache(self):
         workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/scan.yml").read_text(encoding="utf-8")
-        scheduler = Path(".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
+        scheduler = (Path(__file__).resolve().parents[1] / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
         scan_job, state_job = workflow.split("  persist-state:", 1)
         self.assertIn('cron: "*/10 * * * *"', scheduler)
         self.assertIn("uses: ./.github/workflows/scan.yml", scheduler)
