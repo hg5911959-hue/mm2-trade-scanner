@@ -3769,7 +3769,14 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog):
     profit_worst, profit_best = cash_profit_bounds(
         (give_min, give_max), (receive_min, receive_max)
     )
-    manual_review = profit_worst <= 0 < profit_best
+    uncertain_items = [
+        {"side": side, "name": item["canonical_name"], "quantity_min": item["quantity_min"],
+         "quantity_max": item["quantity_max"]}
+        for side in ("give", "receive")
+        for item in prepared[side]
+        if item["quantity_min"] != item["quantity_max"]
+    ]
+    manual_review = bool(uncertain_items and profit_worst <= 0 < profit_best)
     margin = (profit_worst / give_max * 100.0) if give_max > 0 else 0.0
     listing["valuation_mode"] = "cash"
     return {
@@ -3787,7 +3794,7 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog):
         "profit_best": profit_best,
         "margin": margin,
         "manual_review": manual_review,
-        "uncertain_items": [],
+        "uncertain_items": uncertain_items,
         "cash_sell_haircut_pct": CASH_SELL_HAIRCUT_PCT,
         "cash_profit_worst": profit_worst,
         "cash_profit_best": profit_best,
@@ -4321,7 +4328,11 @@ def scan_once(include_backlog_rechecks=True):
                 f"\n⚠️ POSSIBLE PROFIT RANGE: {format_number(op['profit_worst'])} "
                 f"to {format_number(op['profit_best'])}"
             )
-        message += f"\n📊 MARGIN: {op['margin']:.2f}%"
+        if listing.get("valuation_mode") == "cash":
+            message += f"\n💵 CASH PROFIT RANGE: \${op['cash_profit_worst']:.2f} to \${op['cash_profit_best']:.2f}"
+            message += f"\n📊 CASH ROI: {op['margin']:.2f}%"
+        else:
+            message += f"\n📊 MARGIN: {op['margin']:.2f}%"
         if op.get("receive_demand_score") is not None and op.get("receive_stability_score") is not None:
             message += (
                 f"\n📈 GET QUALITY: Demand {op['receive_demand_score']:.2f}/10"
@@ -4347,8 +4358,8 @@ def scan_once(include_backlog_rechecks=True):
             message += "\nSECOND-SOURCE CHECK (MM2Values): " + secondary_note
         trade_id = listing["id"]
         print(
-            f"[telegram] Sending ranked trade id={trade_id}; "
-            f"profit={op['difference']:g}"
+            f"[telegram] Sending ranked cash trade id={trade_id}; "
+            f"cash_profit_usd={op['cash_profit_worst']:g}"
         )
         # Persist a delivery guard before the non-idempotent Telegram request.
         # It is cleared only after a definite success or definite API rejection.
@@ -4426,7 +4437,7 @@ def scan_once(include_backlog_rechecks=True):
         )
         if trade_id in alerted_set and not fingerprint_changed:
             if not previous_watch:
-                update_watch_entry(watch_state, listing, values, aliases)
+                update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
             already_alerted_skipped += 1
             mark_seen_ad(listing)
             continue
@@ -4459,7 +4470,7 @@ def scan_once(include_backlog_rechecks=True):
             ]
             if unknown_names:
                 record_unmatched_names(unknown_names)
-            update_watch_entry(watch_state, listing, values, aliases)
+            update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
             # Low-priority missing values/stability remain queued but leave the
             # hot path. Urgent quantity uncertainty stays visible for quick retry.
             if pending_reason not in PRIORITY_PENDING_REASONS:
@@ -4470,7 +4481,7 @@ def scan_once(include_backlog_rechecks=True):
                 mark_pending(listing, reason="quantity_uncertain")
             else:
                 mark_seen_ad(listing)
-            update_watch_entry(watch_state, listing, values, aliases)
+            update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
             continue
         opportunities.append(result)
         if history_store is not None:
