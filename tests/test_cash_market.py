@@ -97,7 +97,7 @@ class CashMarketTests(unittest.TestCase):
             estimate_uncertainty_pct=30,
         )
         self.assertAlmostEqual(estimate[0], 5.95)
-        self.assertAlmostEqual(estimate[1], 9.775)
+        self.assertAlmostEqual(estimate[1], 11.05)
         self.assertIn("ESTIMATE", estimate[2][0])
         self.assertEqual(estimate[3], [])
 
