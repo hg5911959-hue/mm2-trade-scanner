@@ -76,6 +76,11 @@ MAX_FEED_PAGES = max(1, min(1000, int(os.environ.get("MAX_FEED_PAGES", "1000")))
 VALUES_REVALIDATION_INTERVAL_SECONDS = 12 * 60 * 60
 RBLXVALUE_META_POLL_INTERVAL_SECONDS = 60 * 60
 RBLXVALUE_META_FILE = Path("data/rblxvalue_meta.json")
+RBLXVALUE_DETAIL_FILE = Path("data/rblxvalue_detail_enrichment.json")
+RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY = max(
+    0, int(os.environ.get("RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY", "6"))
+)
+RBLXVALUE_DETAIL_RETRY_SECONDS = 6 * 60 * 60
 RBLXVALUE_META_POLL_ENABLED = os.environ.get("RBLXVALUE_META_POLL_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 VALUES_TTL_SECONDS = min(VALUES_REVALIDATION_INTERVAL_SECONDS, max(60, int(os.environ.get("VALUES_TTL_SECONDS", str(VALUES_REVALIDATION_INTERVAL_SECONDS)))))
 BLOXSWAPS_ITEMS_TTL_SECONDS = max(300, int(os.environ.get("BLOXSWAPS_ITEMS_TTL_SECONDS", "3600")))
@@ -1909,6 +1914,171 @@ def _optional_bounded_int(value, minimum, maximum):
     return parsed if minimum <= parsed <= maximum else None
 
 
+def _load_rblxvalue_detail_state():
+    if not RBLXVALUE_DETAIL_FILE.exists():
+        return {"version": 1, "day": "", "daily_lookups": 0, "attempted": {}}
+    try:
+        state = json.loads(RBLXVALUE_DETAIL_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("[state] RBLXValue detail-enrichment state is unreadable.") from exc
+    if (
+        not isinstance(state, dict) or state.get("version") != 1
+        or not isinstance(state.get("attempted"), dict)
+        or not isinstance(state.get("daily_lookups"), int)
+    ):
+        raise RuntimeError("[state] RBLXValue detail-enrichment state has an invalid structure.")
+    return state
+
+
+def _save_rblxvalue_detail_state(state):
+    atomic_write_text(
+        RBLXVALUE_DETAIL_FILE,
+        json.dumps(state, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+    )
+
+
+def _enrich_catalog_metadata_gaps(values, cache_document, source_meta=None, persist_cache=True):
+    """Use the official single-item API endpoint to recover missing type/metadata, budgeted daily."""
+    if not RBLXVALUE_API_KEY or not isinstance(values, dict):
+        return 0
+    source_version = (
+        (source_meta or {}).get("last_updated")
+        or (cache_document or {}).get("source_last_updated")
+        or ""
+    )
+    if not source_version:
+        return 0
+    state = _load_rblxvalue_detail_state()
+    now = time.time()
+    today = datetime.now(timezone.utc).date().isoformat()
+    if state.get("day") != today:
+        state["day"] = today
+        state["daily_lookups"] = 0
+    candidates = []
+    for record in values.values():
+        if not isinstance(record, dict):
+            continue
+        variants = record.get("variants") or [record]
+        for variant in variants:
+            if not isinstance(variant, dict):
+                continue
+            missing_type = not str(variant.get("type") or "").strip()
+            has_numeric_value = variant.get("value") is not None
+            missing_valuable_metadata = has_numeric_value and (
+                not variant.get("stability")
+                or variant.get("demand") is None
+                or variant.get("rarity") is None
+            )
+            if not missing_type and not missing_valuable_metadata:
+                continue
+            slug = str(variant.get("slug") or "").strip()
+            if not slug:
+                continue
+            prior = state["attempted"].get(slug, {})
+            if isinstance(prior, dict):
+                if (
+                    prior.get("status") in {"enriched", "no_additional_metadata"}
+                    and prior.get("item_last_updated") == variant.get("last_updated")
+                ):
+                    continue
+                if prior.get("source_version") == source_version:
+                    status = prior.get("status")
+                    retry_after = float(prior.get("retry_after", 0) or 0)
+                    if status in {"pending", "error"}:
+                        if retry_after > now:
+                            continue
+                    else:
+                        continue
+            try:
+                value_priority = float(variant.get("value") or 0)
+            except (TypeError, ValueError):
+                value_priority = 0.0
+            priority = 0 if missing_type else 1
+            candidates.append((priority, -value_priority, slug, variant))
+    candidates.sort(key=lambda row: (row[0], row[1], row[2]))
+    remaining = max(
+        0, RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY - int(state.get("daily_lookups", 0))
+    )
+    changed = 0
+    for _priority, _value_priority, slug, variant in candidates[:remaining]:
+        state["daily_lookups"] += 1
+        state["attempted"][slug] = {
+            "source_version": source_version,
+            "item_last_updated": variant.get("last_updated"),
+            "attempted_at": now,
+            "retry_after": now + RBLXVALUE_DETAIL_RETRY_SECONDS,
+            "status": "pending",
+        }
+        _save_rblxvalue_detail_state(state)
+        try:
+            payload = api_get_json(f"/items/{slug}")
+            detail = payload.get("item") if isinstance(payload, dict) else None
+            if not isinstance(detail, dict):
+                raise RuntimeError("detail endpoint returned no item")
+            source_id = str(variant.get("id") or "")
+            detail_id = str(detail.get("id") or "")
+            if source_id and detail_id and source_id != detail_id:
+                raise RuntimeError("detail endpoint item ID did not match catalogue identity")
+            detail_slug = str(detail.get("slug") or "").strip().casefold()
+            if detail_slug and detail_slug != slug.casefold():
+                raise RuntimeError("detail endpoint slug did not match catalogue identity")
+            before = dict(variant)
+            detail_type = str(detail.get("type") or "").strip().casefold()
+            if detail_type:
+                variant["type"] = detail_type
+            if not variant.get("stability") and detail.get("stability"):
+                variant["stability"] = _normalize_stability(detail.get("stability"))
+            if variant.get("demand") is None:
+                variant["demand"] = _optional_bounded_int(detail.get("demand"), 0, 10)
+            if variant.get("rarity") is None:
+                variant["rarity"] = _optional_bounded_int(detail.get("rarity"), 0, 10)
+            if not variant.get("range") and detail.get("range"):
+                variant["range"] = str(detail.get("range"))
+            for field in ("acronym", "event_name", "description", "image_url", "fandom_url", "last_updated"):
+                if not variant.get(field) and detail.get(field) is not None:
+                    variant[field] = str(detail.get(field))[:500] if field == "description" else detail.get(field)
+            if variant.get("tier") is None:
+                variant["tier"] = _optional_bounded_int(detail.get("tier"), 0, 100)
+            if variant.get("raw_source_value") is None and detail.get("value_source_b") is not None:
+                variant["raw_source_value"] = detail.get("value_source_b")
+            if variant.get("value") is None:
+                numeric_value, value_status = _supreme_numeric_value(detail)
+                if numeric_value is not None:
+                    variant["value"] = numeric_value
+                    low, high = _parse_numeric_value_range(detail.get("range"), numeric_value)
+                    variant["value_min"], variant["value_max"] = low, high
+                    variant["value_status"] = value_status
+            if variant.get("secondary_value") is None and detail.get("value_source_a") is not None:
+                try:
+                    secondary = float(detail["value_source_a"])
+                    if math.isfinite(secondary) and secondary > 0:
+                        variant["secondary_value"] = secondary
+                except (TypeError, ValueError):
+                    pass
+            changed_fields = [key for key in variant if before.get(key) != variant.get(key)]
+            state["attempted"][slug]["status"] = "enriched" if changed_fields else "no_additional_metadata"
+            state["attempted"][slug]["fields"] = changed_fields
+            if changed_fields:
+                changed += 1
+                print(f"[rblxvalue-detail] Enriched {variant.get('name') or slug}: {', '.join(changed_fields)}")
+        except Exception as exc:
+            state["attempted"][slug]["status"] = "error"
+            state["attempted"][slug]["error"] = type(exc).__name__
+            print(f"[rblxvalue-detail] Lookup skipped safely for {slug}: {type(exc).__name__}")
+            if rblxvalue_guard.is_key_blocked(key=RBLXVALUE_API_KEY):
+                _save_rblxvalue_detail_state(state)
+                raise RuntimeError("[rblxvalue-detail] API key became blocked during detail enrichment.") from exc
+        _save_rblxvalue_detail_state(state)
+    if changed and isinstance(cache_document, dict):
+        cache_document["values"] = values
+        if persist_cache:
+            atomic_write_text(
+                VALUES_FILE,
+                json.dumps(cache_document, ensure_ascii=False, indent=2) + "\n",
+            )
+    return changed
+
+
 def _read_rblxvalue_meta_state():
     try:
         state = json.loads(RBLXVALUE_META_FILE.read_text(encoding="utf-8"))
@@ -2319,6 +2489,7 @@ def load_supreme_values():
                 f"(updated {source_meta.get('last_updated')}; items {source_meta.get('items_total')}); "
                 "reusing complete cached catalogue"
             )
+            _enrich_catalog_metadata_gaps(cached_values, cached_document, source_meta)
             _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
             return cached_values
         if source_meta and cached_document:
@@ -2332,6 +2503,7 @@ def load_supreme_values():
             cached_age = VALUES_TTL_SECONDS + 1
     if cached_values is not None and cached_age is not None and cached_age <= VALUES_TTL_SECONDS:
         print(f"[supreme] Using fresh source_b snapshot (age {cached_age}s; TTL {VALUES_TTL_SECONDS}s)")
+        _enrich_catalog_metadata_gaps(cached_values, cached_document, source_meta)
         _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
         return cached_values
     if not RBLXVALUE_API_KEY:
@@ -2506,14 +2678,18 @@ def load_supreme_values():
             raise RuntimeError(
                 f"[supreme] Could not verify source version after pagination ({type(exc).__name__}); refusing snapshot"
             ) from exc
-    VALUES_FILE.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(VALUES_FILE, json.dumps({
+    cache_document = {
         "schema_version": 4, "fetched_at": time.time(),
         "source_last_updated": source_meta.get("last_updated") if source_meta else None,
         "source_items_total": source_meta.get("items_total") if source_meta else None,
         "source": "Supreme Values via RBLXValue API value_source_b",
         "pages": refreshed_pages, "values": all_values,
-    }, ensure_ascii=False, indent=2) + "\n")
+    }
+    _enrich_catalog_metadata_gaps(all_values, cache_document, source_meta, persist_cache=False)
+    VALUES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(
+        VALUES_FILE, json.dumps(cache_document, ensure_ascii=False, indent=2) + "\n"
+    )
     collisions = sum(1 for record in all_values.values() if len(record.get("variants", [])) > 1)
     print(f"[supreme] Loaded {numeric_count} numeric Supreme source_b values across {len(all_values)} names; {collisions} collisions kept separate")
     _write_supreme_values_audit(all_values, fetched_at=time.time())

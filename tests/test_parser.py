@@ -1551,6 +1551,170 @@ class ReceiveMarketQualityTests(unittest.TestCase):
         self.assertTrue(any("Demand unverified" in item for item in missing))
 
 
+class UntypedCatalogEnrichmentTests(unittest.TestCase):
+    def _make_values(self, count=1):
+        values = {}
+        for index in range(count):
+            slug = f"untyped-{index}"
+            values[slug] = {
+                "name": f"Untyped {index}",
+                "variants": [{
+                    "id": str(100 + index), "slug": slug, "name": f"Untyped {index}",
+                    "category": "uncommon", "type": "", "value": None,
+                    "raw_source_value": 25, "value_status": "not_listed",
+                    "stability": "Stable", "demand": 3, "rarity": 4,
+                }],
+            }
+        return values
+
+    def test_detail_endpoint_recovers_missing_type_and_persists_cache(self):
+        with tempfile.TemporaryDirectory() as directory:
+            values = self._make_values()
+            cache_path = Path(directory) / "supreme_values.json"
+            detail_path = Path(directory) / "detail_state.json"
+            document = {
+                "schema_version": 4, "source_last_updated": "2026-11-14 00:02:35",
+                "source_items_total": 1091, "values": values,
+            }
+            detail = {
+                "id": 100, "slug": "untyped-0", "name": "Untyped 0",
+                "type": "Knife", "value_source_b": 25, "value_source_a": 20,
+                "stability": "Stable", "demand": 3, "rarity": 4,
+                "range": "20 - 25", "last_updated": "2026-11-14 00:02:35",
+            }
+            with (
+                patch("scanner.RBLXVALUE_DETAIL_FILE", detail_path),
+                patch("scanner.VALUES_FILE", cache_path),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY", 6),
+                patch("scanner.api_get_json", return_value={"item": detail}) as api,
+            ):
+                changed = scanner._enrich_catalog_metadata_gaps(
+                    values, document, {"last_updated": "2026-11-14 00:02:35"}
+                )
+                second = scanner._enrich_catalog_metadata_gaps(
+                    values, document, {"last_updated": "2026-11-14 00:02:35"}
+                )
+            self.assertEqual(changed, 1)
+            self.assertEqual(second, 0)
+            api.assert_called_once_with("/items/untyped-0")
+            variant = values["untyped-0"]["variants"][0]
+            self.assertEqual(variant["type"], "knife")
+            self.assertEqual(variant["value"], 25)
+            self.assertEqual(variant["value_min"], 20)
+            self.assertEqual(variant["value_max"], 25)
+            self.assertTrue(cache_path.exists())
+
+    def test_numeric_weapon_with_missing_stability_is_enriched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            values = {
+                "seer": {"name": "Seer", "variants": [{
+                    "id": "1", "slug": "seer", "name": "Seer", "type": "knife",
+                    "category": "godly", "value": 3, "value_min": 3, "value_max": 3,
+                    "raw_source_value": 3, "value_status": "numeric",
+                    "stability": None, "demand": 5, "rarity": 4,
+                    "last_updated": "2026-11-13 00:00:00",
+                }]}
+            }
+            document = {"source_last_updated": "source-v1", "values": values}
+            with (
+                patch("scanner.RBLXVALUE_DETAIL_FILE", Path(directory) / "detail.json"),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY", 6),
+                patch("scanner.api_get_json", return_value={"item": {
+                    "id": 1, "slug": "seer", "type": "Knife", "stability": "Stable",
+                    "demand": 5, "rarity": 4, "last_updated": "2026-11-13 00:00:00",
+                }}),
+            ):
+                changed = scanner._enrich_catalog_metadata_gaps(values, document)
+            self.assertEqual(changed, 1)
+            self.assertEqual(values["seer"]["variants"][0]["stability"], "Stable")
+
+    def test_detail_enrichment_never_exceeds_daily_lookup_budget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            values = self._make_values(7)
+            document = {"source_last_updated": "2026-11-14 00:02:35", "values": values}
+            def detail_for(path):
+                slug = path.rsplit("/", 1)[-1]
+                index = int(slug.rsplit("-", 1)[-1])
+                return {"item": {"id": str(100 + index), "slug": slug, "type": "Knife"}}
+            with (
+                patch("scanner.RBLXVALUE_DETAIL_FILE", Path(directory) / "detail.json"),
+                patch("scanner.VALUES_FILE", Path(directory) / "values.json"),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY", 6),
+                patch("scanner.api_get_json", side_effect=detail_for) as api,
+            ):
+                changed = scanner._enrich_catalog_metadata_gaps(values, document)
+            self.assertEqual(api.call_count, 6)
+            self.assertEqual(changed, 6)
+            self.assertEqual(sum(bool(v["variants"][0]["type"]) for v in values.values()), 6)
+
+    def test_unchanged_untyped_item_is_not_requeried_after_source_refresh(self):
+        with tempfile.TemporaryDirectory() as directory:
+            values = self._make_values()
+            variant = values["untyped-0"]["variants"][0]
+            variant["last_updated"] = "2026-11-13 00:00:00"
+            document = {"source_last_updated": "source-v1", "values": values}
+            detail = {"item": {
+                "id": "100", "slug": "untyped-0", "name": "Untyped 0",
+                "type": None, "last_updated": "2026-11-13 00:00:00",
+            }}
+            with (
+                patch("scanner.RBLXVALUE_DETAIL_FILE", Path(directory) / "detail.json"),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY", 6),
+                patch("scanner.api_get_json", return_value=detail) as api,
+            ):
+                scanner._enrich_catalog_metadata_gaps(values, document, {"last_updated": "source-v1"})
+                document["source_last_updated"] = "source-v2"
+                scanner._enrich_catalog_metadata_gaps(values, document, {"last_updated": "source-v2"})
+            api.assert_called_once_with("/items/untyped-0")
+
+    def test_interrupted_pending_detail_lookup_retries_after_backoff(self):
+        with tempfile.TemporaryDirectory() as directory:
+            values = self._make_values()
+            document = {"source_last_updated": "source-v1", "values": values}
+            detail_path = Path(directory) / "detail.json"
+            detail_path.write_text(json.dumps({
+                "version": 1, "day": "", "daily_lookups": 0,
+                "attempted": {
+                    "untyped-0": {
+                        "source_version": "source-v1", "item_last_updated": None,
+                        "attempted_at": 1, "retry_after": 1, "status": "pending",
+                    }
+                },
+            }), encoding="utf-8")
+            with (
+                patch("scanner.RBLXVALUE_DETAIL_FILE", detail_path),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY", 6),
+                patch("scanner.time.time", return_value=100000),
+                patch("scanner.api_get_json", return_value={"item": {
+                    "id": "100", "slug": "untyped-0", "type": "Knife",
+                }}) as api,
+            ):
+                changed = scanner._enrich_catalog_metadata_gaps(values, document)
+            self.assertEqual(changed, 1)
+            api.assert_called_once_with("/items/untyped-0")
+
+    def test_detail_identity_mismatch_does_not_change_item_type(self):
+        with tempfile.TemporaryDirectory() as directory:
+            values = self._make_values()
+            document = {"source_last_updated": "2026-11-14 00:02:35", "values": values}
+            with (
+                patch("scanner.RBLXVALUE_DETAIL_FILE", Path(directory) / "detail.json"),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY", 6),
+                patch("scanner.api_get_json", return_value={"item": {
+                    "id": "999", "slug": "untyped-0", "type": "Knife"
+                }}),
+            ):
+                changed = scanner._enrich_catalog_metadata_gaps(values, document)
+            self.assertEqual(changed, 0)
+            self.assertEqual(values["untyped-0"]["variants"][0]["type"], "")
+
+
 class SourceMetaSnapshotTests(unittest.TestCase):
     def test_cache_requires_both_source_timestamp_and_item_count_to_match(self):
         document = {"source_last_updated": "2026-11-14 00:00:00", "source_items_total": 1091}
