@@ -182,7 +182,7 @@ def _strict_quantity(value):
         if not math.isfinite(value) or not value.is_integer():
             raise ValueError("quantity must be a finite whole number")
         quantity = int(value)
-    elif isinstance(value, str) and re.fullmatch(r"\\d+", value.strip()):
+    elif isinstance(value, str) and re.fullmatch(r"\d+", value.strip()):
         quantity = int(value.strip())
     else:
         raise ValueError("quantity must be a whole number")
