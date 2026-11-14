@@ -55,9 +55,17 @@ def load_cash_price_catalog(path="data/cash_prices.csv", max_age_days=14):
     rows = {}
     try:
         reader = csv.DictReader(text.splitlines())
-        if not reader.fieldnames or not REQUIRED_COLUMNS.issubset(set(reader.fieldnames)):
-            raise RuntimeError("[cash] Cash-price CSV header is incomplete.")
+        if (
+            not reader.fieldnames
+            or len(reader.fieldnames) != len(set(reader.fieldnames))
+            or not REQUIRED_COLUMNS.issubset(set(reader.fieldnames))
+        ):
+            raise RuntimeError("[cash] Cash-price CSV header is incomplete or contains duplicate columns.")
         for line_number, row in enumerate(reader, start=2):
+            if None in row:
+                raise RuntimeError(f"[cash] Extra CSV fields on line {line_number}.")
+            if any(row.get(column) is None for column in REQUIRED_COLUMNS):
+                raise RuntimeError(f"[cash] Missing CSV field on line {line_number}.")
             name = str(row.get("name") or "").strip()
             key = normalize_cash_name(name)
             if not name or not key:
