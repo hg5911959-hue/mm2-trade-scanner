@@ -4074,7 +4074,7 @@ def scan_once(include_backlog_rechecks=True):
         )
         if not listings:
             record_success_if_complete(stats)
-    save_cash_catalog_snapshot(cash_catalog["sha256"])
+            save_cash_catalog_snapshot(cash_catalog["sha256"])
             write_step_summary("Cold-start baseline saved; no verifiably recent post was eligible for evaluation.")
             return
     else:
@@ -4143,13 +4143,13 @@ def scan_once(include_backlog_rechecks=True):
         if stats.get("seen_boundary_reached") and not stats.get("malformed_count") and not html_issue_count:
             print("[bloxswaps] Feed is current: first visible offers were already processed.")
             record_success_if_complete(stats)
-    save_cash_catalog_snapshot(cash_catalog["sha256"])
+            save_cash_catalog_snapshot(cash_catalog["sha256"])
             write_step_summary("Feed current: no new trade posts before the seen cursor boundary.")
             return
         if stats["candidate_count"] > 0 and stats["addition_count"] == stats["candidate_count"]:
             print(f"[bloxswaps] No eligible listings: all {stats['addition_count']} candidate cards contained Ajouts.")
             record_success_if_complete(stats)
-    save_cash_catalog_snapshot(cash_catalog["sha256"])
+            save_cash_catalog_snapshot(cash_catalog["sha256"])
             write_step_summary("Successful scan: all current candidates excluded for Ajouts.")
             return
         if stats["candidate_count"] == 0 and stats.get("pagination_source") == "html-only":
