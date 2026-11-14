@@ -3952,6 +3952,20 @@ def record_success_if_complete(stats):
     return True
 
 
+def alert_expired_cash_prices(expired_rows, max_age_days=CASH_MAX_AGE_DAYS):
+    """Send a bounded daily notice; expired rows never become eligible by alerting."""
+    if not expired_rows:
+        return False
+    oldest = sorted(expired_rows, key=lambda row: row.get("verified_at_utc") or "")[:5]
+    names = ", ".join(str(row.get("name") or "Unknown item") for row in oldest)
+    return send_maintenance_alert(
+        "cash-price-expired",
+        f"{len(expired_rows)} verified cash prices have expired (>{max_age_days} days). "
+        f"Oldest entries: {names}. Re-verify them before they can qualify.",
+        cooldown_seconds=86400,
+    )
+
+
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     dry_run = os.environ.get("DRY_RUN", "").strip().casefold() == "true"
@@ -3974,14 +3988,7 @@ def scan_once(include_backlog_rechecks=True):
                          if row["status"] == "verified" and not cash_price_is_fresh(row, CASH_MAX_AGE_DAYS)]
     expired_cash_rows.sort(key=lambda row: row.get("verified_at_utc") or "")
     unverified_cash_rows = sum(1 for row in cash_catalog["items"].values() if row["status"] == "unverified")
-    if expired_cash_rows:
-        oldest_names = ", ".join(row["name"] for row in expired_cash_rows[:5])
-        send_maintenance_alert(
-            "cash-price-expired",
-            f"{len(expired_cash_rows)} verified cash prices have expired (>{CASH_MAX_AGE_DAYS} days). "
-            f"Oldest entries: {oldest_names}. Re-verify them before they can qualify.",
-            cooldown_seconds=86400,
-        )
+    alert_expired_cash_prices(expired_cash_rows, CASH_MAX_AGE_DAYS)
     previous_cash_hash = cash_catalog_snapshot_hash()
     cash_prices_changed = previous_cash_hash != cash_catalog["sha256"]
     print("[cash] Loaded %s price rows; verified=%s; expired=%s; unverified=%s; max_age=%sd; sell_haircut=%s%%" % (
