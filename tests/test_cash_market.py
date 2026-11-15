@@ -1,9 +1,10 @@
 import csv
 import tempfile
 import unittest
-from test_support import IsolatedDataTestCase
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+from test_support import IsolatedDataTestCase
 
 from tools.cash_market import (
     calculate_cash_side,
