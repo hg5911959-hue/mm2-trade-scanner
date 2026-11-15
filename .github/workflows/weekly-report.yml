@@ -12,6 +12,8 @@ jobs:
   weekly-report:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      CASH_FILTER: "false" # set to true only after fresh verified prices exist
     permissions:
       contents: read
     steps:
@@ -33,7 +35,6 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RBLXVALUE_DAILY_REQUEST_LIMIT: "60"
-          CASH_FILTER: "false" # set to true only after fresh verified prices exist
-          CASH_PRICES_CSV: ${{ secrets.CASH_PRICES_CSV }}
+          CASH_PRICES_CSV: ${{ env.CASH_FILTER == 'true' && secrets.CASH_PRICES_CSV || '' }}
           CASH_MAX_AGE_DAYS: "14"
         run: python tools/weekly_report.py
