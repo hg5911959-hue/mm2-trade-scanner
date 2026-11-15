@@ -2,8 +2,9 @@ import json
 import sqlite3
 import tempfile
 import unittest
-from test_support import IsolatedDataTestCase
 from pathlib import Path
+
+from test_support import IsolatedDataTestCase
 
 from tools.validate_state import validate_state
 
