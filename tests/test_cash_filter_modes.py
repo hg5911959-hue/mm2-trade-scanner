@@ -75,5 +75,84 @@ class WeeklyReportValueModeTests(IsolatedDataTestCase):
                 load.assert_not_called()
 
 
+
+class DisabledScanIntegrationTests(IsolatedDataTestCase):
+    def test_qualifying_value_listing_sends_exactly_one_non_cash_alert(self):
+        listing = {
+            "id": "value-mode-alert", "source_ad_id": "value-mode-source",
+            "source": "bloxswaps", "owner_url": "https://bloxswaps.com/users/1",
+            "url": "https://bloxswaps.com/trade/1",
+            "give_items": [{"name": "Knife A", "quantity": 1}],
+            "receive_items": [{"name": "Knife B", "quantity": 1}],
+        }
+        now = datetime.now(timezone.utc).isoformat()
+        stats = {
+            "cold_start": False, "pending_remaining_ids": [], "unparsed_ad_ids": [],
+            "addition_ids": [], "watch_remaining_ids": [], "watch_search_complete": True,
+            "pagination_complete": True, "pagination_pages": 1, "pagination_api_posts": 0,
+            "seen_boundary_reached": False, "candidate_count": 1, "malformed_count": 0,
+            "html_malformed_count": 0, "html_parse_warning_count": 0,
+            "html_parse_warning_ids": [], "malformed_samples": [], "owner_link_count": 1,
+        }
+        result = {
+            "listing": listing, "give_total": 10, "give_lines": ["Knife A: 10"],
+            "receive_total": 20, "receive_lines": ["Knife B: 20"],
+            "difference": 10, "profit_worst": 10, "profit_best": 10,
+            "margin": 100, "manual_review": False,
+        }
+        sent = []
+        fake_history = type("FakeHistory", (), {
+            "record_values_snapshot": lambda self, values: False,
+            "record_listings": lambda self, rows: 0,
+            "record_opportunity": lambda self, row: None,
+        })()
+        with (
+            patch.object(scanner, "CASH_FILTER", False),
+            patch.object(scanner, "BOT_TOKEN", "test-token"),
+            patch.object(scanner, "CHAT_ID", "123"),
+            patch.dict(os.environ, {"DRY_RUN": "false"}),
+            patch.object(scanner, "update_metrics"),
+            patch.object(scanner, "load_supreme_values", return_value={}),
+            patch.object(scanner, "load_cash_price_catalog",
+                         side_effect=AssertionError("cash catalogue must not load")) as load_catalog,
+            patch.object(scanner, "cash_catalog_snapshot_hash",
+                         side_effect=AssertionError("cash snapshot must not be read")),
+            patch.object(scanner, "save_cash_catalog_snapshot",
+                         side_effect=AssertionError("cash snapshot must not be written")),
+            patch.object(scanner, "alert_cash_price_runway",
+                         side_effect=AssertionError("cash runway alert must not run")),
+            patch.object(scanner, "load_aliases", return_value={}),
+            patch.object(scanner, "load_seen_ads", return_value={"value-mode-source"}),
+            patch.object(scanner, "load_pending_ids", return_value={}),
+            patch.object(scanner, "load_pending_recheck_schedule", return_value={}),
+            patch.object(scanner, "load_watch_state", return_value={}),
+            patch.object(scanner, "load_first_seen_ads", return_value={"value-mode-source": now}),
+            patch.object(scanner, "fetch_bloxswaps_all",
+                         return_value=([listing], stats, ["value-mode-source"])),
+            patch.object(scanner, "record_pending_recheck_attempts", return_value={}),
+            patch("discord_parser.load_discord_listings", return_value=([], 0)),
+            patch.object(scanner, "load_alerted", return_value=set()),
+            patch.object(scanner, "load_uncertain_state", return_value=({}, [])),
+            patch.object(scanner, "evaluate_listing", return_value=result),
+            patch.object(scanner, "send_telegram", side_effect=lambda message: sent.append(message)),
+            patch.object(scanner, "send_maintenance_alert"),
+            patch.object(scanner, "compare_secondary_values", return_value=""),
+            patch.object(scanner, "record_success_if_complete"),
+            patch.object(scanner, "append_history"),
+            patch.object(scanner, "update_watch_entry"),
+            patch.object(scanner, "save_alerted"),
+            patch.object(scanner, "save_uncertain_ids"),
+            patch.object(scanner, "save_seen_ads"),
+            patch.object(scanner, "write_step_summary"),
+            patch.object(scanner, "ALERT_DELAY_SECONDS", 0),
+            patch("market_history.MarketHistory", return_value=fake_history),
+        ):
+            scanner.scan_once(include_backlog_rechecks=False)
+            load_catalog.assert_not_called()
+        self.assertEqual(len(sent), 1)
+        self.assertIn("PROFIT (game value)", sent[0])
+        self.assertNotRegex(sent[0].casefold(), r"cash|usd|\\$")
+
+
 if __name__ == "__main__":
     unittest.main()
