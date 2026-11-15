@@ -1419,6 +1419,7 @@ class ReliabilityTests(IsolatedDataTestCase):
                 patch("scanner.fetch_bloxswaps", return_value=with_rsc(page)),
                 patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)),
                 patch("scanner.compare_secondary_values", return_value=""),
+                patch("scanner.alert_cash_price_runway"),
                 patch("scanner.MAX_ALERTS_PER_RUN", 2),
                 patch("scanner.ALERT_DELAY_SECONDS", 0),
             ):
