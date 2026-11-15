@@ -1,8 +1,9 @@
 import json
 import tempfile
 import unittest
-from test_support import IsolatedDataTestCase
 from pathlib import Path
+
+from test_support import IsolatedDataTestCase
 
 from discord_parser import load_discord_listings, parse_trade_text
 
