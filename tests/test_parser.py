@@ -3563,6 +3563,7 @@ class RealAlertReevaluationIntegrationTests(IsolatedDataTestCase):
             root = Path(directory)
             sent = []
             with ExitStack() as stack:
+                stack.enter_context(patch("scanner.CASH_FILTER", True))
                 stack.enter_context(patch("scanner.BOT_TOKEN", "test-token"))
                 stack.enter_context(patch("scanner.CHAT_ID", "123"))
                 stack.enter_context(patch("scanner.ALERTED_FILE", root / "alerted.json"))
