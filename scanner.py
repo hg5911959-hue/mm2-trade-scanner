@@ -88,6 +88,7 @@ PENDING_TTL_SECONDS = max(86400, int(os.environ.get("PENDING_TTL_SECONDS", str(7
 UNCERTAIN_TTL_SECONDS = max(3600, int(os.environ.get("UNCERTAIN_TTL_SECONDS", str(24 * 3600))))
 BLOXSWAPS_ITEMS_FILE = Path("data/bloxswaps_items.json")
 SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "100"))
+CASH_FILTER = os.environ.get("CASH_FILTER", "false").strip().casefold() in {"1", "true", "yes", "on"}
 CASH_SELL_HAIRCUT_PCT = float(os.environ.get("CASH_SELL_HAIRCUT_PCT", "15"))
 CASH_SELL_HAIRCUT_OVERRIDE = "CASH_SELL_HAIRCUT_PCT" in os.environ
 CASH_SELL_HAIRCUT_TIERS = parse_haircut_tiers(
@@ -122,9 +123,15 @@ def redact(text):
         for name in (
             "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "RBLXVALUE_API_KEY",
             "DISCORD_BOT_TOKEN", "DISCORD_MANUAL_MESSAGES_JSON",
-            "DISCORD_MANUAL_MESSAGES_JSON_2", "CASH_PRICES_CSV",
+            "DISCORD_MANUAL_MESSAGES_JSON_2",
+        )
+    } | ({os.environ.get("CASH_PRICES_CSV", "").strip()} if CASH_FILTER else set())
+    # CASH_PRICES_CSV is intentionally not read or redacted while value mode is active.
+    configured_unused = (
         )
     } | {BOT_TOKEN, CHAT_ID, RBLXVALUE_API_KEY}
+    configured.discard("")
+    configured.update(configured_unused)
     # Also redact individual text fields from manual-import JSON in case a
     # diagnostic accidentally emits a parsed field rather than the full secret.
     for env_name in ("DISCORD_MANUAL_MESSAGES_JSON", "DISCORD_MANUAL_MESSAGES_JSON_2"):
@@ -4112,27 +4119,33 @@ def scan_once(include_backlog_rechecks=True):
         print("[stage] API key present; secret contents are intentionally never logged")
     print("[stage] Loading Supreme Values before evaluating trades")
     values = load_supreme_values()
-    cash_catalog = load_cash_price_catalog(CASH_PRICE_FILE)
-    verified_cash_rows = sum(1 for row in cash_catalog["items"].values() if row["status"] == "verified" and cash_price_is_fresh(row, CASH_MAX_AGE_DAYS))
-    expired_cash_rows = [row for row in cash_catalog["items"].values()
-                         if row["status"] == "verified" and not cash_price_is_fresh(row, CASH_MAX_AGE_DAYS)]
-    expired_cash_rows.sort(key=lambda row: row.get("verified_at_utc") or "")
-    unverified_cash_rows = sum(1 for row in cash_catalog["items"].values() if row["status"] == "unverified")
-    alert_cash_price_runway(cash_catalog, verified_cash_rows)
-    previous_cash_hash = cash_catalog_snapshot_hash()
-    cash_prices_changed = previous_cash_hash != cash_catalog["sha256"]
-    print("[cash] Loaded %s price rows; verified=%s; expired=%s; unverified=%s; max_age=%sd; sell_haircut=%s%%" % (
-        cash_catalog["row_count"], verified_cash_rows, len(expired_cash_rows),
-        unverified_cash_rows, CASH_MAX_AGE_DAYS, CASH_SELL_HAIRCUT_PCT
-    ))
-    if unverified_cash_rows > 0:
-        send_maintenance_alert(
-            "cash-price-catalog-unverified",
-            f"Cash-first alerts only use verified USD prices. Current catalogue: {verified_cash_rows} verified, "
-            f"{unverified_cash_rows} unverified. Offers with missing/unverified prices are held, not sent.",
-        )
-    if verified_cash_rows == 0:
-        print("[cash] No verified cash prices yet; cash-profit alerts are safely disabled until prices are manually verified.")
+    cash_catalog = None
+    cash_prices_changed = False
+    if CASH_FILTER:
+        cash_catalog = load_cash_price_catalog(CASH_PRICE_FILE)
+        verified_cash_rows = sum(1 for row in cash_catalog["items"].values() if row["status"] == "verified" and cash_price_is_fresh(row, CASH_MAX_AGE_DAYS))
+        expired_cash_rows = [row for row in cash_catalog["items"].values()
+                             if row["status"] == "verified" and not cash_price_is_fresh(row, CASH_MAX_AGE_DAYS)]
+        expired_cash_rows.sort(key=lambda row: row.get("verified_at_utc") or "")
+        unverified_cash_rows = sum(1 for row in cash_catalog["items"].values() if row["status"] == "unverified")
+        alert_cash_price_runway(cash_catalog, verified_cash_rows)
+        previous_cash_hash = cash_catalog_snapshot_hash()
+        cash_prices_changed = previous_cash_hash != cash_catalog["sha256"]
+        print("[mode] mode=cash")
+        print("[cash] Loaded %s price rows; verified=%s; expired=%s; unverified=%s; max_age=%sd; sell_haircut=%s%%" % (
+            cash_catalog["row_count"], verified_cash_rows, len(expired_cash_rows),
+            unverified_cash_rows, CASH_MAX_AGE_DAYS, CASH_SELL_HAIRCUT_PCT
+        ))
+        if unverified_cash_rows > 0:
+            send_maintenance_alert(
+                "cash-price-catalog-unverified",
+                f"Cash-first alerts only use verified USD prices. Current catalogue: {verified_cash_rows} verified, "
+                f"{unverified_cash_rows} unverified. Offers with missing/unverified prices are held, not sent.",
+            )
+        if verified_cash_rows == 0:
+            print("[cash] No verified cash prices yet; cash-profit alerts are safely disabled until prices are manually verified.")
+    else:
+        print("[mode] mode=value")
     values_snapshot_changed = False
     history_store = None
     try:
@@ -4243,7 +4256,9 @@ def scan_once(include_backlog_rechecks=True):
         )
         if not listings:
             record_success_if_complete(stats)
-            save_cash_catalog_snapshot(cash_catalog["sha256"])
+            if CASH_FILTER:
+                if CASH_FILTER:
+        save_cash_catalog_snapshot(cash_catalog["sha256"])
             write_step_summary("Cold-start baseline saved; no verifiably recent post was eligible for evaluation.")
             return
     else:
@@ -4502,6 +4517,7 @@ def scan_once(include_backlog_rechecks=True):
             message += f"\n💵 {prefix}: ${op['cash_profit_worst']:.2f} to ${op['cash_profit_best']:.2f}"
             message += f"\n📊 CASH ROI: {op['margin']:.2f}%"
         else:
+            message += f"\n💰 PROFIT (game value): {op['difference']:+g}"
             message += f"\n📊 MARGIN: {op['margin']:.2f}%"
         if op.get("receive_demand_score") is not None and op.get("receive_stability_score") is not None:
             message += (
@@ -4527,10 +4543,13 @@ def scan_once(include_backlog_rechecks=True):
         if secondary_note:
             message += "\nSECOND-SOURCE CHECK (MM2Values): " + secondary_note
         trade_id = listing["id"]
-        print(
-            f"[telegram] Sending ranked cash trade id={trade_id}; "
-            f"cash_profit_usd={op['cash_profit_worst']:g}"
-        )
+        if listing.get("valuation_mode") == "cash":
+            print(
+                f"[telegram] Sending ranked cash trade id={trade_id}; "
+                f"cash_profit_usd={op['cash_profit_worst']:g}"
+            )
+        else:
+            print(f"[telegram] Sending ranked value trade id={trade_id}; profit={op['difference']:g}")
         # Persist a delivery guard before the non-idempotent Telegram request.
         # It is cleared only after a definite success or definite API rejection.
         uncertain_ids.add(trade_id)
@@ -4621,9 +4640,14 @@ def scan_once(include_backlog_rechecks=True):
             uncertain_skipped += 1
             mark_seen_ad(listing)
             continue
-        result, missing = evaluate_cash_listing(
-            listing, values, aliases, cash_catalog, estimate_mode=dry_run
-        )
+        if CASH_FILTER:
+            result, missing = evaluate_cash_listing(
+                listing, values, aliases, cash_catalog, estimate_mode=dry_run
+            )
+        else:
+            result, missing = evaluate_listing(listing, values, aliases)
+            if result is not None:
+                listing["valuation_mode"] = "value"
         evaluated += 1
         if result is None:
             skipped_unknown += 1
@@ -4667,7 +4691,7 @@ def scan_once(include_backlog_rechecks=True):
             for line in result.get("receive_lines", []):
                 print(f"[dry-run-estimate] RECEIVE {line}")
             continue
-        if not qualifies_cash(result):
+        if not (qualifies_cash(result) if CASH_FILTER else qualifies(result)):
             if result.get("uncertain_items"):
                 mark_pending(listing, reason="quantity_uncertain")
             else:
@@ -4682,7 +4706,7 @@ def scan_once(include_backlog_rechecks=True):
                 print(f"[market-history] Opportunity storage skipped safely: {type(history_error).__name__}")
         # Delivery is deferred until all candidates are ranked.
 
-    if cash_blocker_counts:
+    if CASH_FILTER and cash_blocker_counts:
         update_metrics(
             cash_blockers=cash_blocker_counts,
             cash_blocker_groups=cash_blocker_groups,
@@ -4707,7 +4731,7 @@ def scan_once(include_backlog_rechecks=True):
         print(f"[dry-run] {deferred} qualifying offers deferred")
 
     summary = (
-        f"Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | "
+        f"mode={'cash' if CASH_FILTER else 'value'} | Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | "
         f"already_alerted={already_alerted_skipped} | watch_unchanged={watch_unchanged_skipped} | uncertain_quarantined={uncertain_skipped} | "
         f"pending_recheck={len(pending_ids)} | qualified={len(opportunities)} | "
         f"alerts={sent} | deferred={deferred}"
