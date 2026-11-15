@@ -92,7 +92,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          CASH_PRICES_CSV: ${{ env.CASH_FILTER == 'true' && secrets.CASH_PRICES_CSV || '' }}
+          CASH_PRICES_CSV: ${{ (env.CASH_FILTER == '1' || env.CASH_FILTER == 'true' || env.CASH_FILTER == 'yes' || env.CASH_FILTER == 'on') && secrets.CASH_PRICES_CSV || '' }}
           CASH_MAX_AGE_DAYS: "14"
           CASH_MIN_VERIFIED_ROWS: "8"
         run: python tools/preflight.py --warn
@@ -146,11 +146,11 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RBLXVALUE_API_KEY: ${{ secrets.RBLXVALUE_API_KEY }}
-          CASH_PRICES_CSV: ${{ env.CASH_FILTER == 'true' && secrets.CASH_PRICES_CSV || '' }}
+          CASH_PRICES_CSV: ${{ (env.CASH_FILTER == '1' || env.CASH_FILTER == 'true' || env.CASH_FILTER == 'yes' || env.CASH_FILTER == 'on') && secrets.CASH_PRICES_CSV || '' }}
           CASH_MAX_AGE_DAYS: "14"
         run: |
           mkdir -p data
-          if [ "$CASH_FILTER" = "true" ] && [ -n "$CASH_PRICES_CSV" ]; then
+          if [[ "${CASH_FILTER,,}" =~ ^(1|true|yes|on)$ ]] && [ -n "$CASH_PRICES_CSV" ]; then
             python - <<'PY'
           import csv, io, os, tempfile
           from pathlib import Path
