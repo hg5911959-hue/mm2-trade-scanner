@@ -51,10 +51,11 @@ class NoDataPollutionTests(IsolatedDataTestCase):
         }
         with (
             patch.dict(os.environ, {"DRY_RUN": "true"}),
+            patch.object(scanner, "CASH_FILTER", False),
             patch.object(scanner, "update_metrics"),
             patch.object(scanner, "load_supreme_values", return_value={}),
-            patch.object(scanner, "load_cash_price_catalog", return_value=empty_catalog),
-            patch.object(scanner, "cash_catalog_snapshot_hash", return_value=""),
+            patch.object(scanner, "load_cash_price_catalog", side_effect=AssertionError("cash catalogue must not load")),
+            patch.object(scanner, "cash_catalog_snapshot_hash", side_effect=AssertionError("cash snapshot must not be read")),
             patch.object(scanner, "load_aliases", return_value={}),
             patch.object(scanner, "load_seen_ads", return_value=set()),
             patch.object(scanner, "load_pending_ids", return_value={}),
@@ -65,7 +66,7 @@ class NoDataPollutionTests(IsolatedDataTestCase):
             patch.object(scanner, "send_maintenance_alert"),
             patch.object(scanner, "alert_cash_price_runway"),
             patch.object(scanner, "record_success_if_complete"),
-            patch.object(scanner, "save_cash_catalog_snapshot"),
+            patch.object(scanner, "save_cash_catalog_snapshot", side_effect=AssertionError("cash snapshot must not be written")),
             patch.object(scanner, "save_first_seen_ads"),
             patch.object(discord_parser, "load_discord_listings", return_value=([], 0)),
             patch.object(market_history, "MarketHistory", return_value=FakeHistory()),
