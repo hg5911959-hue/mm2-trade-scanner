@@ -91,6 +91,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CASH_FILTER: "false" # set to true only after fresh verified prices exist
           CASH_PRICES_CSV: ${{ secrets.CASH_PRICES_CSV }}
           CASH_MAX_AGE_DAYS: "14"
           CASH_MIN_VERIFIED_ROWS: "8"
