@@ -39,7 +39,10 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("python tools/validate_state.py --directory state-artifact/data --require-cache", workflow)
         restore = workflow.split("      - name: Restore durable state branch", 1)[1].split("      - name:", 1)[0]
         self.assertIn("set -euo pipefail", restore)
-        self.assertIn("git checkout -- data/cash_prices.csv", restore)
+        self.assertIn("tar --exclude='data/cash_prices.csv' -x", restore)
+        self.assertNotIn("git checkout -- data/cash_prices.csv", restore)
+        weekly = (ROOT / ".github/workflows/weekly-report.yml").read_text(encoding="utf-8")
+        self.assertIn("tar --exclude='data/cash_prices.csv' -x", weekly)
         artifact = workflow.split("      - name: Prepare state artifact", 1)[1].split("      - name:", 1)[0]
         self.assertIn("rm -f state-bundle/data/cash_prices.csv", artifact)
         self.assertIn('cron: "*/10 * * * *"', scheduler)
