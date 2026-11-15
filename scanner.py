@@ -22,7 +22,13 @@ from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 import rblxvalue_guard
 from tools.metrics import update_metrics
 from tools.alert_policy import rank_and_split
-from tools.cash_market import calculate_cash_side, cash_profit_bounds, load_cash_price_catalog, normalize_cash_name, cash_price_is_fresh, strict_quantity, parse_haircut_tiers
+from tools.cash_market import calculate_cash_side, cash_profit_bounds, normalize_cash_name, cash_price_is_fresh, strict_quantity, parse_haircut_tiers
+
+
+def load_cash_price_catalog(*args, **kwargs):
+    """Lazily import the cash catalogue loader only when cash mode is enabled."""
+    from tools.cash_market import load_cash_price_catalog as loader
+    return loader(*args, **kwargs)
 
 BLOXSWAPS_URL = os.environ.get(
     "BLOXSWAPS_URL",
