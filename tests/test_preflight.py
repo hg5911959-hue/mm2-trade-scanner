@@ -31,7 +31,7 @@ class PreflightTests(IsolatedDataTestCase):
             "permanent": False, "blocked_until_epoch": self.now.timestamp() - 1,
         }), encoding="utf-8")
         self.env = {"TELEGRAM_BOT_TOKEN": "not-a-real-token", "TELEGRAM_CHAT_ID": "123",
-                    "CASH_MIN_VERIFIED_ROWS": "8", "CASH_MAX_AGE_DAYS": "14"}
+                    "CASH_MIN_VERIFIED_ROWS": "8", "CASH_MAX_AGE_DAYS": "14", "CASH_FILTER": "true"}
 
     def _checks(self, **kwargs):
         return collect_preflight_checks(
