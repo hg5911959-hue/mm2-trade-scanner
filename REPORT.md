@@ -12,15 +12,15 @@
 
 | Phase | Status | Commit |
 |---|---|---|
-| 0 — Safety/baseline | Baseline recorded; tag blocked by missing tag-write operation | pending |
+| 0 — Safety/baseline | Baseline recorded; tag blocked by missing tag-write operation | `c16165ba07f33b20348201e4ed2729b12a08f401` (report); test assertion `ef452658e30cff20fa0a29f1bed316dc9c5f4039` |\n| 1 — Pause USD feature | Audited default-off path; added assertions for value-mode log and no cash maintenance alert | pending |
 
 ## Environment variables
 
-(To be completed phase by phase.)
+- `CASH_FILTER=false` by default; accepted true values: `1`, `true`, `yes`, `on` (case-insensitive).
 
 ## Changed files
 
-(To be completed phase by phase.)
+- Phase 0: `REPORT.md`, `tests/test_workflow_config.py`.\n- Phase 1: `tests/test_cash_filter_modes.py` (existing default-off integration coverage strengthened).
 
 ## Open questions / blockers
 
