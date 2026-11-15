@@ -88,7 +88,12 @@ PENDING_TTL_SECONDS = max(86400, int(os.environ.get("PENDING_TTL_SECONDS", str(7
 UNCERTAIN_TTL_SECONDS = max(3600, int(os.environ.get("UNCERTAIN_TTL_SECONDS", str(24 * 3600))))
 BLOXSWAPS_ITEMS_FILE = Path("data/bloxswaps_items.json")
 SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "100"))
-CASH_FILTER = os.environ.get("CASH_FILTER", "false").strip().casefold() in {"1", "true", "yes", "on"}
+def cash_filter_enabled(value=None):
+    raw = os.environ.get("CASH_FILTER", "false") if value is None else value
+    return str(raw).strip().casefold() in {"1", "true", "yes", "on"}
+
+
+CASH_FILTER = cash_filter_enabled()
 CASH_SELL_HAIRCUT_PCT = float(os.environ.get("CASH_SELL_HAIRCUT_PCT", "15"))
 CASH_SELL_HAIRCUT_OVERRIDE = "CASH_SELL_HAIRCUT_PCT" in os.environ
 CASH_SELL_HAIRCUT_TIERS = parse_haircut_tiers(
