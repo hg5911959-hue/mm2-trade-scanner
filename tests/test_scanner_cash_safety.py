@@ -2,7 +2,6 @@
 
 import csv
 import unittest
-from pathlib import Path
 from test_support import IsolatedDataTestCase
 from datetime import UTC, datetime
 
