@@ -2,6 +2,17 @@
 
 Automated scanner for public **BloxSwaps MM2 P2P listings**, with concise Telegram alerts. GitHub Actions schedules a scan every 10 minutes; each scan polls the feed every 30 seconds for up to 540 seconds (9 minutes), leaving a short persistence window. GitHub cron can be delayed, so this is a target cadence, not a real-time guarantee.
 
+## Cash mode is OFF by default
+
+`CASH_FILTER` defaults to `false`. The scanner uses the value-based filter and does not load the cash-price catalogue, inspect the private cash-price secret, update cash snapshots, or emit cash-price maintenance notices while this flag is off. Cash code, data, and verification tools remain available.
+
+Re-enable cash mode only after reliable fresh verified prices exist:
+
+1. Verify fresh prices with `python tools/verify_cash_prices.py` and review every skipped or ambiguous entry.
+2. Set `CASH_FILTER: "true"` in `.github/workflows/scan.yml` (and the matching weekly-report environment when enabling cash reporting).
+3. Run the scheduler with `dry_run=true` to preview the results without sending live alerts.
+4. Check the preview alerts and catalogue coverage carefully before enabling live mode.
+
 ## Trade evaluation
 
 From the scanner user's perspective:
@@ -9,9 +20,9 @@ From the scanner user's perspective:
 - **BloxSwaps Propose** = items you receive.
 - **BloxSwaps Recherche** = items you give.
 - Any listing containing **Ajout / Ajouts** is excluded. The filter is applied to the individual card and also checks the structured `requestedWildcards` data for `ADD`.
-- **Primary ranking and alert filter = estimated real-money resale profit in USD**, not Supreme Value spread. For each offer, the cash cost of items given is compared with conservative net resale proceeds for items received.
-- Supreme Values is used to confirm that every item identity exists in the catalogue and to supply the received item's RBLXValue Stability label. Supreme numeric value and Demand do not determine cash profit or ranking.
-- Cash profit = (verified cash resale prices of received items after a configurable resale haircut) − (verified cash replacement prices of given items). Default resale haircut: **15%**; minimum conservative cash profit: **$0.50**; minimum cash ROI: **0%** (positive profit is the gate; ROI is used for ranking and display). The best offers are ranked by worst-case USD profit, then ROI.
+- **Default mode = game-value profit**. When cash mode is disabled, offers are evaluated with the Supreme game-value difference and the configured `MIN_VALUE_DIFFERENCE` / `MIN_PROFIT_PERCENT` thresholds.
+- Supreme Values is used for game-value comparison and item identity/stability validation. Items that cannot be matched or valued remain excluded; uncertain listings retain the existing manual-review/recheck protections.
+- Optional cash mode compares verified manual resale prices, with configurable resale haircuts and conservative profit bounds. Supreme numeric values are never converted into cash prices.
 - Any received item with missing/unrecognized Stability or a blocked status (Decreasing, Receding, Unsafe, Untradeable, Unstable, Volatile, Fluctuating) is excluded. The Stability field is sourced from RBLXValue and is not represented as a direct Supreme website verification.
 - Cash prices must be fresh and explicitly verified before they can qualify. The current catalogue contains **190 rows**: 11 user-confirmed USD selling prices and 179 historical references that remain unverified. The 11 confirmed entries are user-attested inputs, not independent marketplace cross-checks; they expire after 14 days unless reconfirmed. Any listing containing an item with a missing, unverified, or expired price is held back.
 - **Estimate-only dry run:** when `DRY_RUN=true`, the scanner may use unverified legacy references for exploratory calculations, applying a ±30% uncertainty band and the resale haircut. Every dry-run cash result is labelled as estimate-only and is hard-blocked from the live alert eligibility gate. This uncertainty band is an engineering assumption, not a statistically measured confidence interval or proof of current market prices. Normal production runs continue to reject unverified rows.
