@@ -360,6 +360,9 @@ class ParserTests(IsolatedDataTestCase):
 
 class ReliabilityTests(IsolatedDataTestCase):
     def setUp(self):
+        self.cash_filter_patch = patch("scanner.CASH_FILTER", True)
+        self.cash_filter_patch.start()
+        self.addCleanup(self.cash_filter_patch.stop)
         self.cash_state_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.cash_state_dir.cleanup)
         names = {
