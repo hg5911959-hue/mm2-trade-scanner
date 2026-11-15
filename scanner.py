@@ -125,13 +125,11 @@ def redact(text):
             "DISCORD_BOT_TOKEN", "DISCORD_MANUAL_MESSAGES_JSON",
             "DISCORD_MANUAL_MESSAGES_JSON_2",
         )
-    } | ({os.environ.get("CASH_PRICES_CSV", "").strip()} if CASH_FILTER else set())
-    # CASH_PRICES_CSV is intentionally not read or redacted while value mode is active.
-    configured_unused = (
-        )
     } | {BOT_TOKEN, CHAT_ID, RBLXVALUE_API_KEY}
+    if CASH_FILTER:
+        configured.add(os.environ.get("CASH_PRICES_CSV", "").strip())
+    # CASH_PRICES_CSV is intentionally not read while value mode is active.
     configured.discard("")
-    configured.update(configured_unused)
     # Also redact individual text fields from manual-import JSON in case a
     # diagnostic accidentally emits a parsed field rather than the full secret.
     for env_name in ("DISCORD_MANUAL_MESSAGES_JSON", "DISCORD_MANUAL_MESSAGES_JSON_2"):
@@ -4258,6 +4256,7 @@ def scan_once(include_backlog_rechecks=True):
             record_success_if_complete(stats)
             if CASH_FILTER:
                 if CASH_FILTER:
+        if CASH_FILTER:
         save_cash_catalog_snapshot(cash_catalog["sha256"])
             write_step_summary("Cold-start baseline saved; no verifiably recent post was eligible for evaluation.")
             return
@@ -4327,7 +4326,8 @@ def scan_once(include_backlog_rechecks=True):
         if stats.get("seen_boundary_reached") and not stats.get("malformed_count") and not html_issue_count:
             print("[bloxswaps] Feed is current: first visible offers were already processed.")
             record_success_if_complete(stats)
-            save_cash_catalog_snapshot(cash_catalog["sha256"])
+            if CASH_FILTER:
+                save_cash_catalog_snapshot(cash_catalog["sha256"])
             write_step_summary("Feed current: no new trade posts before the seen cursor boundary.")
             return
         if stats["candidate_count"] > 0 and stats["addition_count"] == stats["candidate_count"]:
@@ -4651,7 +4651,7 @@ def scan_once(include_backlog_rechecks=True):
         evaluated += 1
         if result is None:
             skipped_unknown += 1
-            if missing and all("cash price" in str(value).casefold() for value in missing):
+            if CASH_FILTER and missing and all("cash price" in str(value).casefold() for value in missing):
                 accumulate_cash_blockers(missing, cash_blocker_counts, cash_blocker_groups)
                 print("[cash] Listing held from alerts: one or more manual USD prices are missing/unverified.")
                 update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
@@ -4680,7 +4680,7 @@ def scan_once(include_backlog_rechecks=True):
             if pending_reason not in PRIORITY_PENDING_REASONS:
                 mark_seen_ad(listing, clear_pending=False)
             continue
-        if result.get("cash_estimate_only"):
+        if CASH_FILTER and result.get("cash_estimate_only"):
             print(
                 f"[dry-run-estimate] listing={trade_id} "
                 f"estimated_cash_profit_range=${result['cash_profit_worst']:.2f}.."
