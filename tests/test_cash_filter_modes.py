@@ -108,47 +108,47 @@ class DisabledScanIntegrationTests(IsolatedDataTestCase):
             "record_listings": lambda self, rows: 0,
             "record_opportunity": lambda self, row: None,
         })()
-        with (
-            patch.object(scanner, "CASH_FILTER", False),
-            patch.object(scanner, "BOT_TOKEN", "test-token"),
-            patch.object(scanner, "CHAT_ID", "123"),
-            patch.dict(os.environ, {"DRY_RUN": "false"}),
-            patch.object(scanner, "update_metrics"),
-            patch.object(scanner, "load_supreme_values", return_value={}),
-            patch.object(scanner, "load_cash_price_catalog",
-                         side_effect=AssertionError("cash catalogue must not load")) as load_catalog,
-            patch.object(scanner, "cash_catalog_snapshot_hash",
-                         side_effect=AssertionError("cash snapshot must not be read")),
-            patch.object(scanner, "save_cash_catalog_snapshot",
-                         side_effect=AssertionError("cash snapshot must not be written")),
-            patch.object(scanner, "alert_cash_price_runway",
-                         side_effect=AssertionError("cash runway alert must not run")),
-            patch.object(scanner, "load_aliases", return_value={}),
-            patch.object(scanner, "load_seen_ads", return_value={"value-mode-source"}),
-            patch.object(scanner, "load_pending_ids", return_value={}),
-            patch.object(scanner, "load_pending_recheck_schedule", return_value={}),
-            patch.object(scanner, "load_watch_state", return_value={}),
-            patch.object(scanner, "load_first_seen_ads", return_value={"value-mode-source": now}),
-            patch.object(scanner, "fetch_bloxswaps_all",
-                         return_value=([listing], stats, ["value-mode-source"])),
-            patch.object(scanner, "record_pending_recheck_attempts", return_value={}),
-            patch("discord_parser.load_discord_listings", return_value=([], 0)),
-            patch.object(scanner, "load_alerted", return_value=set()),
-            patch.object(scanner, "load_uncertain_state", return_value=({}, [])),
-            patch.object(scanner, "evaluate_listing", return_value=result),
-            patch.object(scanner, "send_telegram", side_effect=lambda message: sent.append(message)),
-            patch.object(scanner, "send_maintenance_alert"),
-            patch.object(scanner, "compare_secondary_values", return_value=""),
-            patch.object(scanner, "record_success_if_complete"),
-            patch.object(scanner, "append_history"),
-            patch.object(scanner, "update_watch_entry"),
-            patch.object(scanner, "save_alerted"),
-            patch.object(scanner, "save_uncertain_ids"),
-            patch.object(scanner, "save_seen_ads"),
-            patch.object(scanner, "write_step_summary"),
-            patch.object(scanner, "ALERT_DELAY_SECONDS", 0),
-            patch("market_history.MarketHistory", return_value=fake_history),
-        ):
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(patch.object(scanner, "CASH_FILTER", False))
+            stack.enter_context(patch.object(scanner, "BOT_TOKEN", "test-token"))
+            stack.enter_context(patch.object(scanner, "CHAT_ID", "123"))
+            stack.enter_context(patch.dict(os.environ, {"DRY_RUN": "false"}))
+            stack.enter_context(patch.object(scanner, "update_metrics"))
+            stack.enter_context(patch.object(scanner, "load_supreme_values", return_value={}))
+            load_catalog = stack.enter_context(patch.object(
+                scanner, "load_cash_price_catalog",
+                side_effect=AssertionError("cash catalogue must not load")))
+            stack.enter_context(patch.object(scanner, "cash_catalog_snapshot_hash",
+                side_effect=AssertionError("cash snapshot must not be read")))
+            stack.enter_context(patch.object(scanner, "save_cash_catalog_snapshot",
+                side_effect=AssertionError("cash snapshot must not be written")))
+            stack.enter_context(patch.object(scanner, "alert_cash_price_runway",
+                side_effect=AssertionError("cash runway alert must not run")))
+            stack.enter_context(patch.object(scanner, "load_aliases", return_value={}))
+            stack.enter_context(patch.object(scanner, "load_seen_ads", return_value={"value-mode-source"}))
+            stack.enter_context(patch.object(scanner, "load_pending_ids", return_value={}))
+            stack.enter_context(patch.object(scanner, "load_pending_recheck_schedule", return_value={}))
+            stack.enter_context(patch.object(scanner, "load_watch_state", return_value={}))
+            stack.enter_context(patch.object(scanner, "load_first_seen_ads", return_value={"value-mode-source": now}))
+            stack.enter_context(patch.object(scanner, "fetch_bloxswaps_all",
+                return_value=([listing], stats, ["value-mode-source"])))
+            stack.enter_context(patch.object(scanner, "record_pending_recheck_attempts", return_value={}))
+            stack.enter_context(patch("discord_parser.load_discord_listings", return_value=([], 0)))
+            stack.enter_context(patch.object(scanner, "load_alerted", return_value=set()))
+            stack.enter_context(patch.object(scanner, "load_uncertain_state", return_value=({}, [])))
+            stack.enter_context(patch.object(scanner, "evaluate_listing", return_value=result))
+            stack.enter_context(patch.object(scanner, "send_telegram", side_effect=lambda message: sent.append(message)))
+            stack.enter_context(patch.object(scanner, "send_maintenance_alert"))
+            stack.enter_context(patch.object(scanner, "compare_secondary_values", return_value=""))
+            stack.enter_context(patch.object(scanner, "record_success_if_complete"))
+            stack.enter_context(patch.object(scanner, "append_history"))
+            stack.enter_context(patch.object(scanner, "update_watch_entry"))
+            stack.enter_context(patch.object(scanner, "save_alerted"))
+            stack.enter_context(patch.object(scanner, "save_uncertain_ids"))
+            stack.enter_context(patch.object(scanner, "save_seen_ads"))
+            stack.enter_context(patch.object(scanner, "write_step_summary"))
+            stack.enter_context(patch.object(scanner, "ALERT_DELAY_SECONDS", 0))
+            stack.enter_context(patch("market_history.MarketHistory", return_value=fake_history))
             scanner.scan_once(include_backlog_rechecks=False)
             load_catalog.assert_not_called()
         self.assertEqual(len(sent), 1)
