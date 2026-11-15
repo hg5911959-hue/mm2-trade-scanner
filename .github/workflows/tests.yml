@@ -26,11 +26,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          data_hash() {
+            if [ -d data ]; then
+              find data -type f -print0 | sort -z | xargs -0 -r sha256sum | sha256sum | cut -d' ' -f1
+            else
+              printf 'missing-data-directory'
+            fi
+          }
           for pass in 1 2; do
             echo "Regression suite pass $pass/2"
+            before_hash="$(data_hash)"
             python -m unittest discover -s tests
+            after_hash="$(data_hash)"
+            if [ "$before_hash" != "$after_hash" ]; then
+              echo "::error::Test suite changed one or more files under data/"
+              exit 1
+            fi
             if [ -n "$(git status --porcelain data)" ]; then
-              echo "::error::Tests changed tracked data/ files"
+              echo "::error::Tests changed tracked or untracked data/ files"
               git status --short data
               exit 1
             fi

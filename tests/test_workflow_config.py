@@ -14,6 +14,13 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
     def test_ci_runs_repository_wide_correctness_lint(self):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
         self.assertIn("ruff check --select F .", workflow)
+    def test_ci_hashes_every_data_file_around_both_suite_runs(self):
+        workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
+        self.assertIn("find data -type f -print0", workflow)
+        self.assertIn('before_hash="$(data_hash)"', workflow)
+        self.assertIn('after_hash="$(data_hash)"', workflow)
+        self.assertIn('git status --porcelain data', workflow)
+
     def test_report_records_verified_baseline_and_unresolved_tag_operation(self):
         report = (ROOT / "REPORT.md").read_text(encoding="utf-8")
         self.assertIn("Baseline test suite: **387 tests**", report)

@@ -1,3 +1,4 @@
+import ast
 import hashlib
 import os
 from pathlib import Path
@@ -21,6 +22,27 @@ def _hash_data_tree():
 
 
 class NoDataPollutionTests(IsolatedDataTestCase):
+    def test_every_test_case_uses_the_isolated_base_class(self):
+        tests_root = Path(__file__).resolve().parent
+        for test_file in sorted(tests_root.glob("test_*.py")):
+            if test_file.name == "test_support.py":
+                continue
+            module = ast.parse(test_file.read_text(encoding="utf-8"), filename=str(test_file))
+            for node in ast.walk(module):
+                if not isinstance(node, ast.ClassDef):
+                    continue
+                for base in node.bases:
+                    base_name = ast.unparse(base)
+                    self.assertNotIn(
+                        base_name, {"unittest.TestCase", "TestCase"},
+                        f"{test_file.name}:{node.name} must inherit IsolatedDataTestCase",
+                    )
+                    if base_name.endswith("TestCase"):
+                        self.assertEqual(
+                            base_name, "IsolatedDataTestCase",
+                            f"{test_file.name}:{node.name} bypasses the isolated base",
+                        )
+
     def test_mocked_scan_never_changes_repository_data(self):
         before = _hash_data_tree()
 
