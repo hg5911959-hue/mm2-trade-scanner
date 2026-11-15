@@ -35,7 +35,7 @@ class SecretRedactionTests(IsolatedDataTestCase):
 
     def test_private_cash_price_catalogue_secret_is_redacted(self):
         secret = "private-cash-price-catalogue-secret"
-        with patch.dict(os.environ, {"CASH_PRICES_CSV": secret}, clear=False):
+        with patch.object(scanner, "CASH_FILTER", True), patch.dict(os.environ, {"CASH_PRICES_CSV": secret}, clear=False):
             output = scanner.redact("loaded=" + secret)
         self.assertNotIn(secret, output)
         self.assertEqual(output, "loaded=[REDACTED]")
