@@ -145,11 +145,12 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RBLXVALUE_API_KEY: ${{ secrets.RBLXVALUE_API_KEY }}
+          CASH_FILTER: "false" # set to true only after fresh verified prices exist
           CASH_PRICES_CSV: ${{ secrets.CASH_PRICES_CSV }}
           CASH_MAX_AGE_DAYS: "14"
         run: |
           mkdir -p data
-          if [ -n "$CASH_PRICES_CSV" ]; then
+          if [ "$CASH_FILTER" = "true" ] && [ -n "$CASH_PRICES_CSV" ]; then
             python - <<'PY'
           import csv, io, os, tempfile
           from pathlib import Path
