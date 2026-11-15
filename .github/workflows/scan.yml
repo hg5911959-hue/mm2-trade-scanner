@@ -59,10 +59,8 @@ jobs:
             git fetch origin refs/heads/state:refs/remotes/origin/state
             rm -rf data
             mkdir -p data
-            git archive origin/state data | tar -x
-            # Cash prices are tracked configuration, not durable runtime state.
-            # Restore the current main-branch CSV after extracting old state.
-            git checkout -- data/cash_prices.csv
+            # Keep the cash catalogue untouched when restoring durable runtime state.
+            git archive origin/state data | tar --exclude='data/cash_prices.csv' -x
             echo "Restored scanner state from branch 'state'."
           else
             echo "State branch not found; cold-start safety window will evaluate recent posts."
