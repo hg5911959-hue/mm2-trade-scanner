@@ -14,6 +14,12 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
     def test_ci_runs_repository_wide_correctness_lint(self):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
         self.assertIn("ruff check --select F .", workflow)
+    def test_report_records_verified_baseline_and_unresolved_tag_operation(self):
+        report = (ROOT / "REPORT.md").read_text(encoding="utf-8")
+        self.assertIn("Baseline test suite: **387 tests**", report)
+        self.assertIn("before-v13", report)
+        self.assertIn("tag creation operation", report)
+
     def test_scanner_is_reusable_and_scheduler_owns_the_cron(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         scheduler = (ROOT / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
