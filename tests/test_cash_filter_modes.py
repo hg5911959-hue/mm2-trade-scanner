@@ -56,6 +56,7 @@ class WeeklyReportValueModeTests(IsolatedDataTestCase):
         with tempfile.TemporaryDirectory() as directory:
             response = type("Response", (), {"status": 200, "__enter__": lambda self: self,
                                               "__exit__": lambda self, *args: None})()
+            output = io.StringIO()
             with (
                 patch.object(weekly_report, "DATA_DIR", Path(directory)),
                 patch.dict(os.environ, {
@@ -69,10 +70,11 @@ class WeeklyReportValueModeTests(IsolatedDataTestCase):
                 patch.object(weekly_report, "collect_preflight_checks",
                              return_value={"checks": []}),
                 patch.object(weekly_report.urllib.request, "urlopen", return_value=response),
-                contextlib.redirect_stdout(io.StringIO()),
+                contextlib.redirect_stdout(output),
             ):
                 weekly_report.main()
                 load.assert_not_called()
+            self.assertIn("Cash prices: disabled (value-based mode)", output.getvalue())
 
 
 
