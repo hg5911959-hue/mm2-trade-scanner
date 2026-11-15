@@ -37,10 +37,6 @@ class NoDataPollutionTests(IsolatedDataTestCase):
             def close(self):
                 return None
 
-        empty_catalog = {
-            "items": {}, "sha256": "fixture", "row_count": 0,
-            "verified_count": 0, "expiring_within_3_days": 0,
-        }
         stats = {
             "pagination_complete": True,
             "candidate_count": 0,
