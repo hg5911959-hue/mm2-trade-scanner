@@ -1,8 +1,9 @@
 import sqlite3
 import tempfile
 import unittest
-from test_support import IsolatedDataTestCase
 from pathlib import Path
+
+from test_support import IsolatedDataTestCase
 
 import market_history
 from tools.export_dashboard import build_dashboard_data
