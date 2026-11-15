@@ -28,7 +28,7 @@ jobs:
           set -euo pipefail
           git fetch origin refs/heads/state:refs/remotes/origin/state || true
           if git rev-parse --verify origin/state >/dev/null 2>&1; then
-            git archive origin/state data | tar -x
+            git archive origin/state data | tar --exclude='data/cash_prices.csv' -x
           fi
       - name: Send weekly report
         env:
