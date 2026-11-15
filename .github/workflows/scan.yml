@@ -41,6 +41,7 @@ jobs:
       actions: read
     env:
       HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
+      CASH_FILTER: "false" # set to true only after fresh verified prices exist
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -91,8 +92,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          CASH_FILTER: "false" # set to true only after fresh verified prices exist
-          CASH_PRICES_CSV: ${{ secrets.CASH_PRICES_CSV }}
+          CASH_PRICES_CSV: ${{ env.CASH_FILTER == 'true' && secrets.CASH_PRICES_CSV || '' }}
           CASH_MAX_AGE_DAYS: "14"
           CASH_MIN_VERIFIED_ROWS: "8"
         run: python tools/preflight.py --warn
@@ -146,8 +146,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RBLXVALUE_API_KEY: ${{ secrets.RBLXVALUE_API_KEY }}
-          CASH_FILTER: "false" # set to true only after fresh verified prices exist
-          CASH_PRICES_CSV: ${{ secrets.CASH_PRICES_CSV }}
+          CASH_PRICES_CSV: ${{ env.CASH_FILTER == 'true' && secrets.CASH_PRICES_CSV || '' }}
           CASH_MAX_AGE_DAYS: "14"
         run: |
           mkdir -p data
