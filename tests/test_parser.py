@@ -3401,7 +3401,7 @@ class WorkflowSecurityTests(IsolatedDataTestCase):
         self.assertNotIn("Test parser and value calculations", scan_job)
         self.assertIn("git checkout --orphan state-new", state_job)
         self.assertIn("git push --force origin state-new:state", state_job)
-        self.assertIn("git archive origin/state data | tar -x", scan_job)
+        self.assertIn("git archive origin/state data | tar --exclude='data/cash_prices.csv' -x", scan_job)
         self.assertIn("rm -f state-bundle/data/discord_messages.json", scan_job)
         self.assertIn("DISCORD_MANUAL_MESSAGES_JSON", scan_job)
         self.assertIn("message contents are not logged or persisted to public state", scan_job)
