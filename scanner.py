@@ -4255,9 +4255,7 @@ def scan_once(include_backlog_rechecks=True):
         if not listings:
             record_success_if_complete(stats)
             if CASH_FILTER:
-                if CASH_FILTER:
-        if CASH_FILTER:
-        save_cash_catalog_snapshot(cash_catalog["sha256"])
+                save_cash_catalog_snapshot(cash_catalog["sha256"])
             write_step_summary("Cold-start baseline saved; no verifiably recent post was eligible for evaluation.")
             return
     else:
@@ -4333,7 +4331,8 @@ def scan_once(include_backlog_rechecks=True):
         if stats["candidate_count"] > 0 and stats["addition_count"] == stats["candidate_count"]:
             print(f"[bloxswaps] No eligible listings: all {stats['addition_count']} candidate cards contained Ajouts.")
             record_success_if_complete(stats)
-            save_cash_catalog_snapshot(cash_catalog["sha256"])
+            if CASH_FILTER:
+                save_cash_catalog_snapshot(cash_catalog["sha256"])
             write_step_summary("Successful scan: all current candidates excluded for Ajouts.")
             return
         if stats["candidate_count"] == 0 and stats.get("pagination_source") == "html-only":
@@ -4739,7 +4738,8 @@ def scan_once(include_backlog_rechecks=True):
     print(f"[summary] {summary}")
     write_step_summary(summary)
     record_success_if_complete(stats)
-    save_cash_catalog_snapshot(cash_catalog["sha256"])
+    if CASH_FILTER:
+        save_cash_catalog_snapshot(cash_catalog["sha256"])
 
 
 def compare_secondary_values(items, values):
