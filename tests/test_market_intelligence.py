@@ -1,8 +1,9 @@
 import json
 import unittest
-from test_support import IsolatedDataTestCase
 from unittest.mock import MagicMock, patch
 from urllib.request import Request
+
+from test_support import IsolatedDataTestCase
 
 from market_intelligence.ai_advisor import (
     build_analysis_payload,
