@@ -46,28 +46,31 @@ def main():
     except (OSError, ValueError): discord = None
     try: key = json.loads((data / "api_key_blocked.json").read_text(encoding="utf-8"))
     except (OSError, ValueError): key = None
-    cash_summary = None
-    try:
-        max_age = int(os.environ.get("CASH_MAX_AGE_DAYS", "14"))
-        private_csv = os.environ.get("CASH_PRICES_CSV", "")
-        if private_csv:
-            with tempfile.TemporaryDirectory() as tmp:
-                private_path = Path(tmp) / "cash_prices.csv"
-                private_path.write_text(private_csv, encoding="utf-8")
-                cash = load_cash_price_catalog(private_path, max_age_days=max_age)
-        else:
-            cash = load_cash_price_catalog(data / "cash_prices.csv", max_age_days=max_age)
-        fresh = [row for row in cash["items"].values() if cash_price_is_fresh(row, max_age)]
-        cash_summary = (
-            f"verified={len(fresh)}, expiring<=3d={cash['expiring_within_3_days']}, "
-            f"oldest_verified_at={cash['oldest_verified_at'] or 'none'}"
-        )
-    except Exception as exc:
-        cash_summary = f"unavailable ({type(exc).__name__})"
-    try:
-        blocker_summary = format_blockers(metrics, cash["items"] and cash or {"items": {}}, limit=10)
-    except Exception:
-        blocker_summary = "Cash-price blocker ranking unavailable."
+    cash_filter = os.environ.get("CASH_FILTER", "false").strip().casefold() in {"1", "true", "yes", "on"}
+    cash_summary = "catalogue unavailable"
+    blocker_summary = None
+    if not cash_filter:
+        cash_summary = "disabled (value-based mode)"
+    else:
+        try:
+            max_age = int(os.environ.get("CASH_MAX_AGE_DAYS", "14"))
+            private_csv = os.environ.get("CASH_PRICES_CSV", "")
+            if private_csv:
+                with tempfile.TemporaryDirectory() as tmp:
+                    private_path = Path(tmp) / "cash_prices.csv"
+                    private_path.write_text(private_csv, encoding="utf-8")
+                    cash = load_cash_price_catalog(private_path, max_age_days=max_age)
+            else:
+                cash = load_cash_price_catalog(data / "cash_prices.csv", max_age_days=max_age)
+            fresh = [row for row in cash["items"].values() if cash_price_is_fresh(row, max_age)]
+            cash_summary = (
+                f"verified={len(fresh)}, expiring<=3d={cash['expiring_within_3_days']}, "
+                f"oldest_verified_at={cash['oldest_verified_at'] or 'none'}"
+            )
+            blocker_summary = format_blockers(metrics, cash, limit=10)
+        except Exception as exc:
+            cash_summary = f"unavailable ({type(exc).__name__})"
+            blocker_summary = "Cash-price blocker ranking unavailable."
     try:
         preflight_checks = collect_preflight_checks(data_dir=data, env=os.environ)["checks"]
     except Exception as exc:
