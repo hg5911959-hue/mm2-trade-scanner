@@ -52,26 +52,29 @@ def collect_preflight_checks(data_dir="data", *, env=None, now=None,
         minimum = 8
         checks.append("CASH_MIN_VERIFIED_ROWS is invalid")
 
-    try:
-        private_csv = environment.get("CASH_PRICES_CSV", "")
-        if catalog_path is not None:
-            catalog = load_cash_price_catalog(catalog_path, int(environment.get("CASH_MAX_AGE_DAYS", "14")), now=current)
-        elif private_csv:
-            with tempfile.TemporaryDirectory() as tmp:
-                path = Path(tmp) / "cash_prices.csv"
-                path.write_text(private_csv, encoding="utf-8")
-                catalog = load_cash_price_catalog(path, int(environment.get("CASH_MAX_AGE_DAYS", "14")), now=current)
-        else:
-            catalog = load_cash_price_catalog(root / "cash_prices.csv", int(environment.get("CASH_MAX_AGE_DAYS", "14")), now=current)
-        fresh = sum(
-            cash_price_is_fresh(row, int(environment.get("CASH_MAX_AGE_DAYS", "14")), now=current)
-            for row in catalog["items"].values()
-        )
-        if fresh < minimum:
-            checks.append("fresh verified cash prices: " + str(fresh) + " / " + str(minimum))
-    except (OSError, ValueError, RuntimeError, TypeError):
-        fresh = 0
-        checks.append("cash-price catalogue unavailable or invalid")
+    cash_filter = environment.get("CASH_FILTER", "false").strip().casefold() in {"1", "true", "yes", "on"}
+    fresh = None
+    if cash_filter:
+        try:
+            private_csv = environment.get("CASH_PRICES_CSV", "")
+            if catalog_path is not None:
+                catalog = load_cash_price_catalog(catalog_path, int(environment.get("CASH_MAX_AGE_DAYS", "14")), now=current)
+            elif private_csv:
+                with tempfile.TemporaryDirectory() as tmp:
+                    path = Path(tmp) / "cash_prices.csv"
+                    path.write_text(private_csv, encoding="utf-8")
+                    catalog = load_cash_price_catalog(path, int(environment.get("CASH_MAX_AGE_DAYS", "14")), now=current)
+            else:
+                catalog = load_cash_price_catalog(root / "cash_prices.csv", int(environment.get("CASH_MAX_AGE_DAYS", "14")), now=current)
+            fresh = sum(
+                cash_price_is_fresh(row, int(environment.get("CASH_MAX_AGE_DAYS", "14")), now=current)
+                for row in catalog["items"].values()
+            )
+            if fresh < minimum:
+                checks.append("fresh verified cash prices: " + str(fresh) + " / " + str(minimum))
+        except (OSError, ValueError, RuntimeError, TypeError):
+            fresh = 0
+            checks.append("cash-price catalogue unavailable or invalid")
 
     breaker = _read_json(root / BREAKER_FILE.name)
     if breaker is not None:
@@ -109,7 +112,7 @@ def collect_preflight_checks(data_dir="data", *, env=None, now=None,
         "checks": checks,
         "fresh_verified_rows": fresh,
         "minimum_verified_rows": minimum,
-        "expiring_within_3_days": catalog.get("expiring_within_3_days", 0) if "catalog" in locals() else 0,
+        "expiring_within_3_days": catalog.get("expiring_within_3_days", 0) if cash_filter and "catalog" in locals() else 0,
     }
 
 
