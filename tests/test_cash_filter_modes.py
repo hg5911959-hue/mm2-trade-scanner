@@ -136,7 +136,7 @@ class DisabledScanIntegrationTests(IsolatedDataTestCase):
             stack.enter_context(patch("discord_parser.load_discord_listings", return_value=([], 0)))
             stack.enter_context(patch.object(scanner, "load_alerted", return_value=set()))
             stack.enter_context(patch.object(scanner, "load_uncertain_state", return_value=({}, [])))
-            stack.enter_context(patch.object(scanner, "evaluate_listing", return_value=result))
+            stack.enter_context(patch.object(scanner, "evaluate_listing", return_value=(result, [])))
             stack.enter_context(patch.object(scanner, "send_telegram", side_effect=lambda message: sent.append(message)))
             stack.enter_context(patch.object(scanner, "send_maintenance_alert"))
             stack.enter_context(patch.object(scanner, "compare_secondary_values", return_value=""))
