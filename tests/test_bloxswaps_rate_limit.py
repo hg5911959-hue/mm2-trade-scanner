@@ -18,7 +18,7 @@ class BloxSwapsRateLimitTests(IsolatedDataTestCase):
                 req.full_url,
                 429,
                 "too many requests",
-                {"Retry-After": "37"},
+                {"Retry-After": "37", "Server": "cloudflare", "CF-Ray": "test-ray", "Content-Type": "text/html"},
                 BytesIO(b"rate limited"),
             )
 
@@ -26,7 +26,7 @@ class BloxSwapsRateLimitTests(IsolatedDataTestCase):
         with patch("scanner.urllib.request.urlopen", side_effect=rate_limited), \
              patch("scanner.time.sleep") as sleep:
             with self.assertRaisesRegex(
-                scanner.BloxSwapsRateLimitError, r"HTTP 429.*Retry-After=37s"
+                scanner.BloxSwapsRateLimitError, r"HTTP 429.*Retry-After=37s.*Server=cloudflare.*CF-Ray=test-ray"
             ):
                 scanner.request_with_retry(request, 10, "BloxSwaps page")
 
