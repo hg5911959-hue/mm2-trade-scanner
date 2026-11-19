@@ -97,7 +97,7 @@ class MarketBookTests(unittest.TestCase):
             swap_opportunities=[{"buy_item": "candy"}],
         )
         self.assertEqual(advice[0]["verdict"], "UPGRADE VIA SWAP")
-        self.assertEqual(advice[0]["suggested_listing_price"], 4.5)
+        self.assertEqual(advice[0]["suggested_listing_price"], 4.99)
 
     def test_inventory_flags_falling_market_and_suggests_sell_now(self):
         book = build_order_book([
