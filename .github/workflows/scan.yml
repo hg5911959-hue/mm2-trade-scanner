@@ -8,6 +8,11 @@ on:
         required: false
         type: boolean
         default: false
+      enable_discord:
+        description: "Enable authorized Discord collection and parsing; requires the existing Telegram bot token for encrypted private state"
+        required: false
+        type: boolean
+        default: false
       dry_run:
         description: "Evaluate and log opportunities without sending Telegram messages or recording alerts"
         required: false
@@ -47,7 +52,7 @@ jobs:
       MARKET_BOOK_ENABLED: "false"
       TELEGRAM_COMMANDS_ENABLED: "false"
       INVENTORY_ENABLED: "false"
-      PRIVATE_STATE_ENABLED: "false"
+      PRIVATE_STATE_ENABLED: ${{ inputs.enable_discord && 'true' || 'false' }}
       MAX_ALERTS_PER_SCAN: "15"
       MARKET_ALERT_PROFIT_DELTA_USD: "0.50"
       MARKET_TRANSFER_FEE_USD: "0.50"
@@ -110,6 +115,10 @@ jobs:
           MM2_PRIVATE_STATE_KEY: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
           set -euo pipefail
+          if [ "${#MM2_PRIVATE_STATE_KEY}" -lt 32 ]; then
+            echo "::error::Discord processing requires the existing Telegram bot token for encrypted private state."
+            exit 1
+          fi
           if [ -f data/private_state.enc ]; then
             python private_state.py decrypt --input data/private_state.enc --directory data
           else
