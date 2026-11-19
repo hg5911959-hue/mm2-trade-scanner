@@ -1195,8 +1195,20 @@ def request_with_retry(req, timeout, label, attempts=4, return_headers=False, al
                         f"({int(delay)}s > {MAX_RETRY_AFTER_SECONDS}s); aborting this scan without retry"
                     ) from exc
                 suffix = f"; Retry-After={int(delay)}s" if delay is not None else "; no Retry-After header"
+                headers = exc.headers or {}
+                diagnostic_headers = []
+                for header in ("Server", "CF-Ray", "Content-Type", "X-RateLimit-Limit",
+                               "X-RateLimit-Remaining", "X-RateLimit-Reset"):
+                    value = headers.get(header)
+                    if value:
+                        diagnostic_headers.append(f"{header}={str(value)[:100]}")
+                header_summary = (
+                    "; response=" + ", ".join(diagnostic_headers)
+                    if diagnostic_headers else ""
+                )
                 raise BloxSwapsRateLimitError(
-                    f"{label}: HTTP 429 rate limited{suffix}; aborting this scan without retry"
+                    f"{label}: HTTP 429 rate limited{suffix}{header_summary}; "
+                    "aborting this scan without retry"
                 ) from exc
             retryable = exc.code == 429 or 500 <= exc.code <= 599
             if not retryable or attempt == attempts - 1:
