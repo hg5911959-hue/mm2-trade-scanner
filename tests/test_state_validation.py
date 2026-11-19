@@ -124,6 +124,18 @@ class StateValidationTests(IsolatedDataTestCase):
         self.assertTrue(any("unexpected files" in error for error in errors))
         self.assertTrue(any("budget timestamps" in error for error in errors))
 
+    def test_plaintext_private_market_state_is_rejected_from_public_branch(self):
+        (self.root / "cash_market_offers.json").write_text('{"offers":[]}', encoding="utf-8")
+        errors = validate_state(self.root)
+        self.assertTrue(any("private Telegram/market state" in error for error in errors))
+
+    def test_encrypted_private_state_blob_is_allowed_but_header_is_checked(self):
+        (self.root / "private_state.enc").write_bytes(b"MM2PSTATE1" + b"\x00" * 64)
+        self.assertEqual(validate_state(self.root), [])
+        (self.root / "private_state.enc").write_bytes(b"not-encrypted")
+        self.assertTrue(any("encrypted private-state bundle header" in error
+                            for error in validate_state(self.root)))
+
     def test_valid_state_passes_strict_success_validation(self):
         self._write_valid_state()
         self.assertEqual(validate_state(self.root, require_cache=True), [])
