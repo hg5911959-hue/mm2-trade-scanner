@@ -221,6 +221,8 @@ def ingest_manual_discord_imports(
                 offers.append(offer)
                 known.add(identity)
                 added += 1
+        if parsed["demand_hints"]:
+            changed = True
         hints.extend(parsed["demand_hints"])
     if changed or added:
         _save_offers(offers, hints)
