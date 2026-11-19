@@ -41,7 +41,8 @@ class DiscordCollectorTests(IsolatedDataTestCase):
         import json
         import tempfile
         from unittest.mock import patch
-                from discord_collector import collect
+        from pathlib import Path
+        from discord_collector import collect
 
         calls = []
         def fake_get(path, token, params=None, timeout=20):
