@@ -434,12 +434,15 @@ def _save_forwarded_post(message: dict[str, Any], chat_id: str) -> tuple[int, in
 
 def process_telegram_updates(
     *, token: str, chat_id: str, market_enabled: bool, inventory_enabled: bool,
+    private_state_confirmed: bool = False,
     get_updates: Callable[[str, int], list[dict[str, Any]]] = telegram_get_updates,
     send_message: Callable[[str, str, str], None] = telegram_send,
     now: float | None = None,
 ) -> int:
     """Poll and process owner messages. Offset advances only after safe handling."""
-    if not token or not chat_id or not market_enabled:
+    # The repository is public. Never persist offers, inventory, chat IDs, or
+    # Telegram offsets unless the owner explicitly confirms private storage.
+    if not token or not chat_id or not market_enabled or not private_state_confirmed:
         return 0
     current = datetime.now(UTC).timestamp() if now is None else float(now)
     state = _read_object(UPDATES_FILE, {"schema_version": 1, "offset": 0})
