@@ -155,8 +155,6 @@ def send_daily_notice(checks, *, data_dir="data", env=None, now=None):
     if isinstance(last, (int, float)) and not isinstance(last, bool):
         if datetime.fromtimestamp(last, UTC).date() == current.date():
             return False
-    state["preflight-daily"] = current.timestamp()
-    _atomic_json(path, state)
     message = "MM2 PREFLIGHT WARNING\n" + "\n".join("- " + check for check in checks)
     body = urllib.parse.urlencode({"chat_id": chat, "text": message}).encode()
     request = urllib.request.Request(
@@ -164,7 +162,13 @@ def send_daily_notice(checks, *, data_dir="data", env=None, now=None):
     )
     try:
         with _TELEGRAM_OPENER.open(request, timeout=15) as response:
-            return response.status == 200
+            if response.status != 200:
+                return False
+        # Record the daily notice only after Telegram confirms delivery. A failed
+        # request must remain retryable on the next scan.
+        state["preflight-daily"] = current.timestamp()
+        _atomic_json(path, state)
+        return True
     except Exception as exc:
         print("[preflight] Telegram notice failed: " + type(exc).__name__)
         return False
