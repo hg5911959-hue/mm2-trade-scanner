@@ -285,3 +285,15 @@ Not yet scored at the end of Phase 2. See the evidence-based readiness assessmen
 - No live Discord or Telegram data was collected or sent during this validation.
 
 - A one-time dry-run workflow push marked `[rblxvalue-key-check]` is reserved to verify the configured RBLXValue credential using the shared request budget; no secret value is stored in this report.
+
+
+### Phase 22 — Bounded credential verification and isolated Discord market dry-run
+- Verified the updated RBLXValue credential against the live API: HTTP 200 and one valid item returned. The verification run then incorrectly continued into the full scanner, consumed 20 requests while refreshing the expired cache, and ultimately failed because BloxSwaps returned HTTP 429 on its feed. The key itself was accepted; BloxSwaps rate limiting remains an external source blocker.
+- Fixed one-shot key verification to exit immediately after its single successful request. Added a regression test proving the normal scan loop is not entered and the request counter is logged once.
+- Added explicit enable_discord and discord_only workflow inputs, both defaulting to false. An opt-in Discord run enables encrypted private state and the cash-market parser only for that run; Telegram commands and inventory remain disabled. The existing Telegram bot token is required as the private-state encryption key and is checked without printing it.
+- Added a Discord-only dry-run mode that performs one parser/evaluation cycle without calling BloxSwaps, sending alerts, or updating the BloxSwaps success checkpoint. This lets Discord ingestion be validated independently while BloxSwaps is rate-limited.
+- Hardened Discord collection: any partial channel-collection failure now discards the partial live message file before manual imports are merged, preventing incomplete channel coverage from being treated as a complete feed.
+- Added regression tests for one-request key verification, Discord-only dry-run safety, opt-in workflow defaults, encrypted-state requirements, and fail-closed partial collection.
+- Hosted validation at [run #1214](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44636412210): **486 tests passed twice**, data-tree immutability passed, and all configured Ruff/correctness checks passed.
+- The next [discord-dry-run] candidate run is intended to verify actual bot credentials, channel permissions, live parser counts, and encrypted state persistence. It has not yet completed; no live Discord offer has been declared successfully ingested.
+- No plugin dedicated to reading private Discord server channels was available in the connected app directory. The project uses Discord's official read-only bot API instead.
