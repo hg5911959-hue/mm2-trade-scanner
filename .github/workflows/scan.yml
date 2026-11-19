@@ -42,6 +42,10 @@ jobs:
     env:
       HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
       CASH_FILTER: "false" # set to true only after fresh verified prices exist
+      MARKET_BOOK_ENABLED: "false"
+      TELEGRAM_COMMANDS_ENABLED: "false"
+      INVENTORY_ENABLED: "false"
+      PRIVATE_STATE_ENABLED: "false"
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -85,6 +89,25 @@ jobs:
               except Exception as exc:
                   print(f"[state-audit] supreme_cache_present=true bytes={len(raw)} parse_error={type(exc).__name__}")
           PY
+
+      - name: Decrypt private market state
+        id: decrypt-private-state
+        if: env.PRIVATE_STATE_ENABLED == 'true'
+        env:
+          MM2_PRIVATE_STATE_KEY: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -f data/private_state.enc ]; then
+            python private_state.py decrypt --input data/private_state.enc --directory data
+          else
+            for file in cash_market_offers.json inventory.json telegram_update_state.json telegram_last_run.json market_book_history.json; do
+              if [ -f "data/$file" ]; then
+                echo "Refusing unencrypted private state on the public state branch."
+                exit 1
+              fi
+            done
+            echo "No previous encrypted private market state exists."
+          fi
 
       - name: Run scanner preflight checks (warnings do not block the scan)
         env:
@@ -139,6 +162,12 @@ jobs:
           RBLXVALUE_META_POLL_ENABLED: "true"
           RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY: "6"
           RBLXVALUE_DAILY_REQUEST_LIMIT: "60"
+          RBLXVALUE_MAX_CACHE_AGE_SECONDS: "86400"
+          MARKET_BOOK_ENABLED: ${{ env.MARKET_BOOK_ENABLED }}
+          TELEGRAM_COMMANDS_ENABLED: ${{ env.TELEGRAM_COMMANDS_ENABLED }}
+          INVENTORY_ENABLED: ${{ env.INVENTORY_ENABLED }}
+          PRIVATE_STATE_ENABLED: ${{ env.PRIVATE_STATE_ENABLED }}
+          LANG: "ar"
           RBLXVALUE_FORCE_KEY_CHECK: ${{ inputs.verify_rblxvalue_key && 'true' || 'false' }}
           BLOXSWAPS_ITEMS_TTL_SECONDS: "3600"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -180,8 +209,16 @@ jobs:
           fi
 
       - name: Prepare state artifact
-        if: always()
+        if: always() && (env.PRIVATE_STATE_ENABLED != 'true' || steps.decrypt-private-state.outcome == 'success')
+        env:
+          MM2_PRIVATE_STATE_KEY: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
+          set -euo pipefail
+          if [ "${PRIVATE_STATE_ENABLED}" = "true" ]; then
+            python private_state.py encrypt --directory data --output data/private_state.enc
+          else
+            rm -f data/cash_market_offers.json data/inventory.json data/telegram_update_state.json data/telegram_last_run.json data/market_book_history.json
+          fi
           mkdir -p state-bundle/data
           if [ -d data ]; then cp -a data/. state-bundle/data/; fi
           # Discord messages may come from private servers; process them in this
