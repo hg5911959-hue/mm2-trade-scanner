@@ -294,11 +294,10 @@ Not yet scored at the end of Phase 2. See the evidence-based readiness assessmen
 - Added a Discord-only dry-run mode that performs one parser/evaluation cycle without calling BloxSwaps, sending alerts, or updating the BloxSwaps success checkpoint. This lets Discord ingestion be validated independently while BloxSwaps is rate-limited.
 - Hardened Discord collection: any partial channel-collection failure now discards the partial live message file before manual imports are merged, preventing incomplete channel coverage from being treated as a complete feed.
 - Added regression tests for one-request key verification, Discord-only dry-run safety, opt-in workflow defaults, encrypted-state requirements, and fail-closed partial collection.
-- Hosted validation at [run #1214](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44636412210): **486 tests passed twice**, data-tree immutability passed, and all configured Ruff/correctness checks passed.
-- The next [discord-dry-run] candidate run is intended to verify actual bot credentials, channel permissions, live parser counts, and encrypted state persistence. It has not yet completed; no live Discord offer has been declared successfully ingested.
+- Hosted validation at [run #?](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44638328832): **495 tests passed twice**, data-tree immutability passed, and all configured Ruff/correctness checks passed.
+- The one-time [discord-dry-run] candidate run completed but stopped before reading any Discord messages because neither `DISCORD_BOT_TOKEN` nor either authorized manual-import secret was configured. No live Discord offer was ingested and no alert was sent.
 - No plugin dedicated to reading private Discord server channels was available in the connected app directory. The project uses Discord's official read-only bot API instead.
 
-- One-time Discord-only collector validation uses `DRY_RUN=true`; it skips BloxSwaps and RBLXValue, sends no alerts, and persists only encrypted private state.
 
 
 ### Phase 23 — Budget preservation and Discord collection completeness
