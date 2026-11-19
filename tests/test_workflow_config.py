@@ -28,7 +28,10 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("secret-scan:", workflow)
         self.assertIn("fetch-depth: 0", workflow)
         self.assertIn("GITLEAKS_LOG_OPTS: --all", workflow)
-        self.assertIn("gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7", workflow)
+        self.assertIn("actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c", workflow)
+        self.assertIn("go install github.com/zricethezav/gitleaks/v8@v8.24.3", workflow)
+        self.assertIn('gitleaks" git --redact --no-banner --exit-code 1 --log-opts="--all"', workflow)
+        self.assertIn("repo: https://github.com/gitleaks/gitleaks", (ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
     def test_ci_hashes_every_data_file_around_both_suite_runs(self):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
         self.assertIn("find data -type f -print0", workflow)
