@@ -174,7 +174,10 @@ def find_direct_arbitrage(
             continue
         ask_price, bid_price = float(ask["unit_price_usd"]), float(bid["unit_price_usd"])
         quantity = min(int(ask["quantity"]), int(bid["quantity"]))
-        if quantity <= 0 or ask_price >= bid_price:
+        minimum_quantity = max(
+            int(ask.get("min_quantity") or 1), int(bid.get("min_quantity") or 1)
+        )
+        if quantity < minimum_quantity or ask_price >= bid_price:
             continue
         ask_author = str(ask.get("author") or "").strip().casefold()
         bid_author = str(bid.get("author") or "").strip().casefold()
@@ -253,7 +256,10 @@ def find_swap_chains(
                     continue
                 # 1→1 and N→1 only; the received item must be worth the
                 # offered aggregate game value within the configured tolerance.
-                for qty_a in range(1, ask_qty + 1):
+                minimum_ask_quantity = max(1, int(ask.get("min_quantity") or 1))
+            if int(bid.get("min_quantity") or 1) > 1:
+                continue
+            for qty_a in range(minimum_ask_quantity, ask_qty + 1):
                     if value_b["value"] < value_a["value"] * qty_a * (1 - tolerance / 100):
                         continue
                     qty_b = 1
@@ -332,9 +338,13 @@ def inventory_advice(
             risk.append("thin_market")
         if falling:
             risk.append("price_falling")
+        bid_minimum = max(1, int(bid.get("min_quantity") or 1)) if bid else None
+        below_bid_minimum = bool(bid and quantity < bid_minimum)
+        if below_bid_minimum:
+            risk.append("below_buyer_minimum")
         if item_key in upgrade_items:
             verdict = "UPGRADE VIA SWAP"
-        elif not bid or market["confidence"] == "low":
+        elif not bid or below_bid_minimum or market["confidence"] == "low":
             verdict = "HOLD"
         elif falling and market["bid_quantity"] >= quantity:
             verdict = "SELL NOW"
