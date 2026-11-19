@@ -38,7 +38,7 @@ permissions:
 
 jobs:
   scan:
-    if: ${{ github.event_name != 'push' || contains(github.event.head_commit.message, '[discord-dry-run]') || contains(github.event.head_commit.message, '[rblxvalue-key-check]') }}
+    if: ${{ github.event_name != 'push' || contains(github.event.head_commit.message, '[discord-dry-run]') || contains(github.event.head_commit.message, '[rblxvalue-key-check]') || contains(github.event.head_commit.message, '[post-cache-recovery]') }}
     name: Run the reusable MM2 scanner
     permissions:
       actions: read
