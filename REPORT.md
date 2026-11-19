@@ -186,3 +186,8 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - Added bounded response sizes, bounded 429 retries, 403 permission handling, message-count/channel caps, and redirect rejection so the bot Authorization header cannot be forwarded to another host.
 - Removed the `pip install discord.py` workflow step and added tests for channel filtering, read-only request paths, redirect rejection, and absence of the third-party dependency.
 - Hosted verification is pending for the current implementation head after this phase. The last verified complete suite is 455 tests twice on Actions run #1018; it does not include this collector refactor.
+
+### Hosted verification — Phase 11 test indentation correction
+- Current implementation head: `c8a162fe13aa8440819141a7391249bdd1a4f36c`.
+- The first Phase 11 run exposed an indentation error and a missing local `Path` import in the newly added test; production collector code was not implicated. Corrected the test fixture. The failed attempt is retained and not counted as a pass.
+- Re-run the full suite twice, data-tree immutability check, and all Ruff checks.
