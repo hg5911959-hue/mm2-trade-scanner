@@ -93,10 +93,12 @@ class MarketBookTests(IsolatedDataTestCase):
         self.assertEqual(find_direct_arbitrage(book), [])
 
     def test_swap_chain_rejects_received_bid_with_minimum_above_one(self):
-        ask = offer("sell", "A", 5, 2, "seller", "ask")
-        bid = offer("buy", "B", 10, 10, "buyer", "bid")
+        ask = offer("sell", "A", 5, 2, "seller-a", "ask")
+        ask_other = offer("sell", "A", 5.2, 2, "seller-b", "ask-other")
+        bid = offer("buy", "B", 10, 10, "buyer-a", "bid")
+        bid_other = offer("buy", "B", 9.5, 10, "buyer-b", "bid-other")
         bid["min_quantity"] = 2
-        book = build_order_book([ask, bid], now=NOW)
+        book = build_order_book([ask, ask_other, bid, bid_other], now=NOW)
         values = {
             "a": {"value": 100, "stability": "Stable", "confidence": "high", "data_age_seconds": 60},
             "b": {"value": 200, "stability": "Stable", "confidence": "high", "data_age_seconds": 60},
