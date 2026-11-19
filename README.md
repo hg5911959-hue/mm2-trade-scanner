@@ -46,6 +46,8 @@ The optional bot collector uses only official Discord REST GET requests and Pyth
   RBLXValue cache age is explicitly labelled `stale` when older than the
   configured maximum; this disables swap chains without suppressing direct
   cash-only signals. Missing or blocked stability is surfaced as a risk flag.
+  Unpriced wanted-list demand hints appear separately as informational demand;
+  they never become a bid, market price, or buy signal.
   Threshold-qualified alerts are deduplicated and repeated only when net profit
   changes by more than `MARKET_ALERT_PROFIT_DELTA_USD`.
 

@@ -317,7 +317,7 @@ def _csv_dry_run_fallback(now: float) -> dict[str, dict[str, Any]]:
 def _load_market(now: float | None = None) -> dict[str, Any]:
     import scanner
 
-    offers, _hints = _load_offers()
+    offers, hints = _load_offers()
     current = datetime.now(UTC).timestamp() if now is None else float(now)
     book = build_order_book(
         offers, now=current,
@@ -398,14 +398,14 @@ def _load_market(now: float | None = None) -> dict[str, Any]:
             previous = last["items"]
     return {
         "book": book, "direct": direct, "chains": chains, "game_values": game_values,
-        "game_values_status": game_values_status,
+        "game_values_status": game_values_status, "demand_hints": hints,
         "cache_age": cache_age, "previous": previous, "offers_count": len(offers),
     }
 
 
 def _format_item(
     item: dict[str, Any], market: dict[str, Any], game: dict[str, Any] | None,
-    game_values_status: str = "unavailable",
+    game_values_status: str = "unavailable", demand_quantity: int = 0,
 ) -> str:
     ask, bid = market.get("best_ask"), market.get("best_bid")
     ask_text = _format_usd(ask.get("unit_price_usd")) if ask else "غير متاح"
@@ -448,17 +448,40 @@ def _format_item(
         elif stability in BLOCKED_STABILITY:
             risk_flags.append("untradeable")
     risks = "، ".join(sorted(set(risk_flags))) or "لا توجد"
+    demand_text = f" | طلب بلا سعر: x{demand_quantity} (معلومة فقط)" if demand_quantity > 0 else ""
     return (
         f"{item.get('item') or market.get('item')}\n"
         f"أفضل بيع: {ask_text} | أفضل شراء: {bid_text}\n"
         f"وسيط البيع: {median_ask} | وسيط الشراء: {median_bid}\n"
         f"الوسيط العام: {median} | الفارق: {spread_text}\n"
-        f"الكميات: بيع {market.get('ask_quantity', 0)} / شراء {market.get('bid_quantity', 0)}\n"
+        f"الكميات: بيع {market.get('ask_quantity', 0)} / شراء {market.get('bid_quantity', 0)}{demand_text}\n"
         f"عمر عروض Discord: {age_text} | عمر RBLXValue: {game_age_text}\n"
         f"قيمة اللعبة: {value_text} | $/Value: {ratio_text}\n"
         f"الثقة: {market.get('confidence')} | المخاطر: {risks}"
     )
 
+
+
+def _demand_hint_quantity(snapshot: dict[str, Any], item_key: str) -> int:
+    """Sum distinct, bounded, unpriced demand hints for display only."""
+    total = 0
+    seen: set[tuple[str, str]] = set()
+    hints = snapshot.get("demand_hints", [])
+    if not isinstance(hints, list):
+        return 0
+    for index, hint in enumerate(hints):
+        if not isinstance(hint, dict) or str(hint.get("item_key") or "") != item_key:
+            continue
+        message_id = str(hint.get("message_id") or hint.get("url") or f"row:{index}")
+        identity = (message_id, item_key)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        quantity = hint.get("quantity")
+        if isinstance(quantity, bool) or not isinstance(quantity, int) or not 1 <= quantity <= 5000:
+            continue
+        total += quantity
+    return total
 
 
 def _resolve_command_item(raw: str) -> tuple[str | None, str]:
@@ -500,12 +523,19 @@ def _command_reply(
                 continue
             key = normalize_key(match)
             market = book.get(key)
+            demand_quantity = _demand_hint_quantity(snapshot, key)
             if not market:
-                replies.append(f"{match}: لا توجد عروض حديثة.")
+                if demand_quantity:
+                    replies.append(
+                        f"{match}\nلا توجد عروض مسعّرة حديثة.\n"
+                        f"طلب بلا سعر: x{demand_quantity} (معلومة فقط؛ لا يُحتسب كأفضل شراء)."
+                    )
+                else:
+                    replies.append(f"{match}: لا توجد عروض حديثة.")
             else:
                 replies.append(_format_item(
                     {"item": match}, market, snapshot["game_values"].get(key),
-                    snapshot.get("game_values_status", "unavailable"),
+                    snapshot.get("game_values_status", "unavailable"), demand_quantity,
                 ))
             index = end_match
         return "\n\n".join(replies)

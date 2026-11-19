@@ -282,6 +282,23 @@ class TelegramMarketTests(IsolatedDataTestCase):
         self.assertIn("أفضل بيع: $71.00", reply)
         self.assertIn("أفضل شراء: $63.00", reply)
 
+    def test_demand_hints_are_displayed_without_becoming_a_bid_or_signal(self):
+        hint = {
+            "item": "Candy", "item_key": telegram_market.normalize_key("Candy"),
+            "quantity": 684, "author": "buyer", "message_id": "hint-1",
+            "url": "https://discord.com/channels/1/2/100", "posted_at": "",
+        }
+        with self._paths():
+            with patch("telegram_market._load_offers", return_value=([], [hint])):
+                with patch("scanner._read_values_cache_document", return_value=None):
+                    snapshot = telegram_market._load_market(now=NOW)
+        reply = telegram_market._command_reply("/p candy", snapshot, inventory_enabled=False)
+        self.assertEqual(snapshot["book"], {})
+        self.assertEqual(snapshot["direct"], [])
+        self.assertEqual(snapshot["chains"], [])
+        self.assertIn("طلب بلا سعر: x684", reply)
+        self.assertNotIn("أفضل شراء: $", reply)
+
     def test_price_command_exposes_stale_missing_and_blocked_game_value_risks(self):
         market = {
             "best_ask": {"unit_price_usd": 2}, "best_bid": {"unit_price_usd": 1},
