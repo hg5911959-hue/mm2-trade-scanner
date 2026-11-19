@@ -14,6 +14,20 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
     def test_ci_runs_repository_wide_correctness_lint(self):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
         self.assertIn("ruff check --select F .", workflow)
+
+    def test_ruff_has_shared_project_and_precommit_configuration(self):
+        config = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        precommit = (ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+        self.assertIn('target-version = "py312"', config)
+        self.assertIn('select = ["E4", "E7", "E9", "F"]', config)
+        self.assertIn("ruff-pre-commit", precommit)
+        self.assertIn("rev: v0.17.5", precommit)
+
+    def test_ci_scans_full_git_history_for_secrets_with_pinned_gitleaks(self):
+        workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
+        self.assertIn("secret-scan:", workflow)
+        self.assertIn("fetch-depth: 0", workflow)
+        self.assertIn("gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7", workflow)
     def test_ci_hashes_every_data_file_around_both_suite_runs(self):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
         self.assertIn("find data -type f -print0", workflow)
