@@ -1,12 +1,12 @@
 """Regression tests for Telegram credential redirect protection."""
 import urllib.request
-import unittest
+from test_support import IsolatedDataTestCase
 
 import scanner
 from tools import weekly_report
 
 
-class TelegramRedirectSecurityTests(unittest.TestCase):
+class TelegramRedirectSecurityTests(IsolatedDataTestCase):
     def _request(self):
         return urllib.request.Request(
             "https://api.telegram.org/botplaceholder/sendMessage",
