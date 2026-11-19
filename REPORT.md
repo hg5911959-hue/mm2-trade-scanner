@@ -299,3 +299,14 @@ Not yet scored at the end of Phase 2. See the evidence-based readiness assessmen
 - No plugin dedicated to reading private Discord server channels was available in the connected app directory. The project uses Discord's official read-only bot API instead.
 
 - One-time Discord-only collector validation uses `DRY_RUN=true`; it skips BloxSwaps and RBLXValue, sends no alerts, and persists only encrypted private state.
+
+
+### Phase 23 — Budget preservation and Discord collection completeness
+- The cache-recovery workflow restored the validated public RBLXValue catalogue and metadata from the successful key-verification run without resetting or consuming the rolling request ledger. A subsequent full-scan dry run used the recovered snapshot at age 1,188 seconds and logged requests_this_run=0.
+- BloxSwaps continues to return HTTP 429. The scanner now aborts that source immediately without repeated requests or retries; this remains an upstream availability blocker, not something to bypass.
+- Added immediate termination when the RBLXValue rolling budget is exhausted, and restricted feature-branch push smoke runs to explicitly marked verification modes so ordinary code commits do not consume API budget.
+- Discord collection is now opt-in only. When enabled, the workflow requires either the official bot token or an authorized manual-import secret; bot collection errors and partial channel coverage fail the run rather than silently appearing healthy. Manual-import-only operation remains supported.
+- Added bounded Discord message pagination (up to six 100-message pages per channel), cursor-progress checks, and fail-closed channel/thread coverage caps. The collector remains read-only, uses the official bot API, rejects redirects, and does not log message contents.
+- The Discord-only cash-market dry-run now exits after cash-offer ingestion/evaluation, without calling RBLXValue or BloxSwaps, sending alerts, or reporting a full-scan heartbeat. Missing optional cash-price CSV data now yields an empty fallback rather than a runtime failure.
+- Hosted validation at [run #1272](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44638328832): **495 tests passed twice**, data-tree immutability passed, and all configured Ruff/correctness checks passed.
+- Live Discord collection remains blocked because the DISCORD_BOT_TOKEN secret was absent in the last attempted run. The connected app directory did not expose a suitable Discord server-reading plugin; the supported path is the official read-only bot integration.
