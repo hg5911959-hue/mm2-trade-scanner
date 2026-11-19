@@ -112,3 +112,15 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - Swap-chain quantity search is bounded analytically: it evaluates the minimum executable lot and the largest still-profitable N:1 lot rather than iterating every quantity up to 5,000 for every item pair.
 
 - Backlog/detail rechecks were also audited: `_enrich_catalog_metadata_gaps` tracks attempts per item slug and source version, honors `retry_after`, skips already-enriched/no-additional-metadata items for the same item version, and shares the 6-lookups/day cap. It is not an independent unbounded retry loop. Each detail request still passes through the global pre-request budget and breaker. Metadata pre/post checks are only reached during a full catalogue refresh; the fresh-cache early return bypasses them.
+
+
+### Phase 5 — Telegram owner identity hardening
+- Tightened command authorization from chat-ID-only to a private one-to-one chat whose `chat.id` and `from.id` both match the configured `TELEGRAM_CHAT_ID`. Group/supergroup messages and private messages from other users are ignored; their update offsets are advanced without replying or processing commands.
+- Added regression coverage for a supergroup message and a different sender in the owner's private chat. Existing authorized private-chat command and forwarded-post tests were updated to include Telegram's private chat type and sender identity.
+- Hosted verification on commit `c0d9d0d08e88ff1d9b781e75ed97bba41a0dad4d`, Actions run [#985](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44616757100): **445 tests passed twice** (445/445 on each pass); the data-tree hash remained unchanged after each pass. Ruff passed on all new market/privacy/API modules, scanner correctness checks, and repository-wide undefined/unused-name checks.
+- This closes the code-level Telegram authorization issue. It does not enable the market features or prove live Telegram connectivity; all four market/private-state feature flags remain false.
+
+### Remaining acceptance and operational blockers
+- The supplied acceptance material still has no seller-side Celestial Set offer at $71/1. The fixture has a buyer offer at $63/1; the $71 ask currently exists only in a synthetic formatting test. Do not invent a seller offer or treat the test fixture as market evidence. A source post with its Discord permalink and timestamp is required for end-to-end acceptance.
+- The requested `before-market-book` safety tag has not been created because the connected GitHub operations expose branch creation but not tag-object/ref creation. The safety branch exists.
+- Live activation remains blocked pending owner-controlled secrets/configuration, confirmation that the Telegram bot is in a private one-to-one chat, and an explicit dry-run review. The suspended RBLXValue key remains a provider-side recovery issue.
