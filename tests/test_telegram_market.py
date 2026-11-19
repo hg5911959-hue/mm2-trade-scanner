@@ -1,5 +1,6 @@
 import json
 import tempfile
+from contextlib import ExitStack
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -25,13 +26,13 @@ class TelegramMarketTests(IsolatedDataTestCase):
         self.history = root / "market_book_history.json"
 
     def _paths(self):
-        return (
-            patch("telegram_market.OFFERS_FILE", self.offers),
-            patch("telegram_market.INVENTORY_FILE", self.inventory),
-            patch("telegram_market.UPDATES_FILE", self.offset),
-            patch("telegram_market.LAST_RUN_FILE", self.last_run),
-            patch("telegram_market.HISTORY_FILE", self.history),
-        )
+        stack = ExitStack()
+        stack.enter_context(patch("telegram_market.OFFERS_FILE", self.offers))
+        stack.enter_context(patch("telegram_market.INVENTORY_FILE", self.inventory))
+        stack.enter_context(patch("telegram_market.UPDATES_FILE", self.offset))
+        stack.enter_context(patch("telegram_market.LAST_RUN_FILE", self.last_run))
+        stack.enter_context(patch("telegram_market.HISTORY_FILE", self.history))
+        return stack
 
     def test_public_storage_is_blocked_without_explicit_confirmation(self):
         called = []
