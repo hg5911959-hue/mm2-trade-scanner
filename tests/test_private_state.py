@@ -23,6 +23,7 @@ class PrivateStateEncryptionTests(IsolatedDataTestCase):
                 "telegram_update_state.json": b'{"offset":98765}',
                 "telegram_last_run.json": b'{"started_at_epoch":1800000000}',
                 "market_book_history.json": b'{"snapshots":[]}',
+                "market_alert_state.json": b'{"opportunities":{}}',
             }
             for name, payload in private_files.items():
                 (source / name).write_bytes(payload)
