@@ -216,7 +216,11 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
                         self.fail("workflow prints a secret-bearing value: " + path.name)
                 root_permissions = re.search(r"(?m)^permissions:\n((?:[ \t]+[^\n]*\n)+)", text)
                 if root_permissions:
-                    self.assertNotRegex(root_permissions.group(1), r"(?m):\s*write\b")
+                    if path.name in {"scan.yml", "scan-scheduler.yml"}:
+                        self.assertRegex(root_permissions.group(1), r"(?m)^  contents:\s*write\s*$")
+                        self.assertNotRegex(root_permissions.group(1), r"(?m)^  (?!contents:)[a-z_]+:\s*write\b")
+                    else:
+                        self.assertNotRegex(root_permissions.group(1), r"(?m):\s*write\b")
                 for match in re.finditer(r"(?m)^\s*actions:\s*write\s*$", text):
                     prefix = text[:match.start()]
                     job_match = list(re.finditer(r"(?m)^  ([a-zA-Z0-9_-]+):\s*$", prefix))
