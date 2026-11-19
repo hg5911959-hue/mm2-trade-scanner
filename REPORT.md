@@ -203,8 +203,8 @@ Not yet scored at the end of Phase 2. See the evidence-based readiness assessmen
 
 ## Current overall status — 2026-11-19
 
-- Current implementation branch: `before-market-book`; latest validated PR head before this report-only update: `143523b5cbb092e817f5d6d77688b3bf4dbc1412`. Implementation PR [#85](https://github.com/hg5911959-hue/mm2-trade-scanner/pull/85) remains open and unmerged.
-- Latest complete hosted validation: **472/472 tests passed twice** on Python 3.12; the `data/` tree hash was unchanged after both runs; targeted Ruff checks, scanner correctness lint, and repository-wide undefined/unused-name checks all passed. Validation run [#1090](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44629202062) validates the latest code and documentation head before this report-only update.
+- Current implementation branch: `before-market-book`; latest validated code/test head: `3da174a944f645fad039f32f8ab08546eccdcfcc`. Implementation PR [#85](https://github.com/hg5911959-hue/mm2-trade-scanner/pull/85) remains open and unmerged.
+- Latest complete hosted validation: **477/477 tests passed twice** on Python 3.12; the `data/` tree hash was unchanged after both runs; targeted Ruff checks, scanner correctness lint, and repository-wide undefined/unused-name checks all passed. Validation run [#1132](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44631204718) validates the latest code head.
 - This is strong code/test evidence for the implemented scope, not a guarantee of zero undiscovered defects, live data accuracy, or profitable trades.
 - The requested safety branch exists. The requested Git tag `before-market-book` is still **not created** because the available GitHub integration has no tag-object/ref creation operation.
 - All runtime feature flags remain OFF by default: `MARKET_BOOK_ENABLED`, `TELEGRAM_COMMANDS_ENABLED`, `INVENTORY_ENABLED`, and `PRIVATE_STATE_ENABLED`. No live Telegram messages, trades, or market alerts were sent by this work.
@@ -218,7 +218,7 @@ Not yet scored at the end of Phase 2. See the evidence-based readiness assessmen
 6. **Private-state key rotation:** encrypted private state derives its keys from the existing Telegram bot token to avoid introducing a new secret. Rotating that token without first decrypting/re-encrypting the private-state bundle will make the old bundle unreadable; the workflow now verifies its authentication before publishing it.
 
 ### Readiness assessment
-- Code and test readiness for the implemented, feature-flagged scope: **472 tests twice and all configured Ruff checks clean** on the latest validated PR head.
+- Code and test readiness for the implemented, feature-flagged scope: **477 tests twice and all configured Ruff checks clean** on the latest validated code head.
 - Live operational readiness: **not yet verified** because of the suspended RBLXValue key, unverified Telegram/Discord credentials and permissions, missing tag operation, source-author metadata, and bounded GitHub Actions polling model.
 - The project is therefore **not honestly certifiable as 10/10 or 100% operational yet**. No automatic trading is enabled; the system remains advisory and profit is not guaranteed.
 
@@ -273,3 +273,13 @@ Not yet scored at the end of Phase 2. See the evidence-based readiness assessmen
   - Documented the actual CI push branches, including `before-market-book`.
 - Documentation commits: `4b957443f6fc5599fdbefd8d40a1c8e55c23bd7f`, `e0c471874d8a16bd8d93b10b59056fde151cf6b0`, `66c95cc972f2be4ad627426a29607e9600ff3e00`, and `143523b5cbb092e817f5d6d77688b3bf4dbc1412`.
 - Hosted verification [#1090](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44629202062): **472 tests passed twice**, data immutability passed, and all configured Ruff checks passed.
+
+### Phase 21 — Private Discord offer isolation and encrypted deduplication
+- A data-flow audit found that although `market_history.py` already excluded Discord records from SQLite listings/opportunities, the shared scanner could still write private item names to unmatched-name state and diagnostics, and use public alert/watch/quarantine identifiers.
+- Discord offers are now parsed/evaluated only when `PRIVATE_STATE_ENABLED=true`. With private state disabled, the scanner skips parsing them.
+- Added `discord_alert_state.json` to the authenticated private-state encryption allowlist. Alerted and uncertain-delivery Discord message IDs are now stored there and encrypted with the other private state; they are no longer written to public `alerted.json`, `watch_ads.json`, or `telegram_uncertain.json`.
+- Suppressed Discord item names, message IDs, source URLs, and stack quantities from scanner logs and unmatched-name records. The existing SQLite/history guards remain in place; cash-blocker metrics do not aggregate private item names.
+- Added the new file to workflow plaintext guards and cleanup, and to `tools/validate_state.py` so it cannot be published unencrypted in the public state branch or state artifact.
+- Added regression coverage for encrypted-state round trips, malformed-state fail-closed behavior, plaintext-state rejection, disabled-feature ingestion, and full-scan log/unmatched-state privacy.
+- The first test run exposed a Python static nesting limit in the integration test; refactored the test to use `ExitStack`. Final validation: [#1132](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44631204718), **477 tests passed twice**, data-tree immutability passed, and all configured Ruff checks passed.
+- No live Discord or Telegram data was collected or sent during this validation.
