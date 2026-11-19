@@ -657,6 +657,8 @@ def send_market_alerts(
     if limit == 0:
         return 0
     current = datetime.now(UTC).timestamp() if now is None else float(now)
+    if not math.isfinite(current) or current <= 0:
+        raise ValueError("market-alert timestamp must be finite and positive")
     state = _read_object(MARKET_ALERTS_FILE, {"schema_version": 1, "opportunities": {}})
     if state.get("schema_version") != 1 or not isinstance(state.get("opportunities"), dict):
         raise RuntimeError("private market-alert state has an invalid schema")
