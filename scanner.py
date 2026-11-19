@@ -1075,6 +1075,18 @@ RBLXVALUE_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_RETRY_AFTER_SECONDS = 120
 
 
+class _RejectTelegramRedirects(urllib.request.HTTPRedirectHandler):
+    """Never forward the bot token embedded in a Telegram URL to a redirect."""
+
+    handler_order = 100
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_TELEGRAM_OPENER = urllib.request.build_opener(_RejectTelegramRedirects())
+
+
 class _RejectCredentialRedirects(urllib.request.HTTPRedirectHandler):
     """Never forward the RBLXValue API key to a redirect target."""
 
@@ -3032,7 +3044,7 @@ def send_telegram(message):
         _wait_for_telegram_rate_limit()
         req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=20) as response:
+            with _TELEGRAM_OPENER.open(req, timeout=20) as response:
                 raw = response.read()
         except HTTPError as exc:
             raw = exc.read(2000)
