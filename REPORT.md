@@ -12,15 +12,23 @@
 
 | Phase | Status | Commit |
 |---|---|---|
-| 0 — Safety/baseline | Baseline recorded; tag blocked by missing tag-write operation | `c16165ba07f33b20348201e4ed2729b12a08f401` (report); test assertion `ef452658e30cff20fa0a29f1bed316dc9c5f4039` |\n| 1 — Pause USD feature | Complete: default-off code audited; added integration assertions for mode summary, no catalogue/snapshot access, no maintenance notice, and value-only alert. | `9807dc54ec0ee32b2c59a68561a6527883076528`; report `e698c91970d86c1ac91b62620cb8f2ecdd380c38` |
+| 0 — Safety/baseline | Baseline recorded; tag blocked by missing tag-write operation | `c16165ba07f33b20348201e4ed2729b12a08f401` (report); test assertion `ef452658e30cff20fa0a29f1bed316dc9c5f4039` |
+| 1 — Pause USD feature | Complete: default-off code audited; added integration assertions for mode summary, no catalogue/snapshot access, no maintenance notice, and value-only alert. | `9807dc54ec0ee32b2c59a68561a6527883076528`; report `e698c91970d86c1ac91b62620cb8f2ecdd380c38` |
 
-- Phase 1 verification: **388 tests passed twice** (Python 3.12, full Ruff checks green) in Actions run [#43746330397](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/43746330397).\n- Cash remains disabled by default. The Supreme/game-value path remains active and does not consult cash prices.\n\n- Phase 2 verification: **390 tests passed twice**; data-tree hashes remained identical and `git status --porcelain data` was empty in both passes. Actions run [#43746531576](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/43746531576).\n\n## Environment variables
+- Phase 1 verification: **388 tests passed twice** (Python 3.12, full Ruff checks green) in Actions run [#43746330397](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/43746330397).
+- Cash remains disabled by default. The Supreme/game-value path remains active and does not consult cash prices.
+
+- Phase 2 verification: **390 tests passed twice**; data-tree hashes remained identical and `git status --porcelain data` was empty in both passes. Actions run [#43746531576](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/43746531576).
+
+## Environment variables
 
 - `CASH_FILTER=false` by default; accepted true values: `1`, `true`, `yes`, `on` (case-insensitive).
 
 ## Changed files
 
-- Phase 0: `REPORT.md`, `tests/test_workflow_config.py`.\n- Phase 1: `tests/test_cash_filter_modes.py` (existing default-off integration coverage strengthened).\n- Phase 2: `.github/workflows/tests.yml`, `tests/test_no_data_pollution.py`, `tests/test_workflow_config.py`.
+- Phase 0: `REPORT.md`, `tests/test_workflow_config.py`.
+- Phase 1: `tests/test_cash_filter_modes.py` (existing default-off integration coverage strengthened).
+- Phase 2: `.github/workflows/tests.yml`, `tests/test_no_data_pollution.py`, `tests/test_workflow_config.py`.
 
 ## Open questions / blockers
 
@@ -310,3 +318,14 @@ Not yet scored at the end of Phase 2. See the evidence-based readiness assessmen
 - Hosted validation at [run #1272](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44638328832): **495 tests passed twice**, data-tree immutability passed, and all configured Ruff/correctness checks passed.
 - Live Discord collection remains blocked because the DISCORD_BOT_TOKEN secret was absent in the last attempted run. The connected app directory did not expose a suitable Discord server-reading plugin; the supported path is the official read-only bot integration.
 - A follow-up dry-run captures safe BloxSwaps 429 response headers while using the recovered values cache; it does not spend additional RBLXValue requests or send alerts.
+
+
+### Phase 24 — Audit findings reconciled and repository guardrails
+- Added a shared Ruff configuration in pyproject.toml and a local pre-commit hook pinned to Ruff 0.17.5. CI already ran Ruff before this phase; the improvement is centralized, reproducible configuration and a local pre-commit entrypoint.
+- Added a pinned Gitleaks action that scans the complete Git history in CI, not only the shallow checkout. This provides ongoing leak detection; it does not prove that all historical secrets are safe or revoke any credential.
+- Reconciled the reported market features against the current code: cash offers in Selling/Buying USD formats are already parsed and covered by tests; Telegram commands (/p, /buy, /sell, /chains, /inv, /add, /remove, /status, /help) already exist, but remain disabled by default in the scheduled workflow.
+- The empty root aliases.json is not the active cash-market alias file. cash_offer_parser.py loads cash_item_aliases.json, which currently contains 46 aliases and 6 deliberately ambiguous names. The ambiguous entries remain fail-closed rather than being guessed.
+- data/cash_prices.csv contains 190 item rows: 11 marked verified and 179 marked unverified. The unverified prices are not promoted into verified live cash signals. The public tree contains this CSV and a test fixture; no separate private price-list file was found in the current main or feature-branch trees. Secret scanning of the full Git history is now enforced by CI; its result must be reviewed before asserting historical absence of leaks.
+- scanner.py remains a refactoring risk: 242,987 characters and 5,248 lines; scan_once is approximately 792 lines. This phase deliberately does not perform a broad rewrite. Extracting its stages into focused modules must be done incrementally with characterization tests and one behavior-preserving extraction per change.
+- Fixed literal backslash-n sequences in REPORT.md that were breaking Markdown table and paragraph formatting.
+
