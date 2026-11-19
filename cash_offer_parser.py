@@ -99,6 +99,9 @@ def _parse_segment(segment: str, side: str, metadata: dict[str, Any],
     line = _clean_line(segment)
     if not line:
         return None, None, None
+    # A bundle total is not an individual item's unit price.
+    if re.match(r"(?i)^(?:all|everything|bundle)\s+for\b", line):
+        return None, None, "bundle_total_not_item_price"
     if re.search(r"(?i)\b(?:usdt\s*bep20|bep20\s*usdt)\b", line):
         metadata["payment"] = "usdt_bep20"
         line = re.sub(r"(?i)\b(?:usdt\s*bep20|bep20\s*usdt)\b", " ", line).strip()
