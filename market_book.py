@@ -211,7 +211,14 @@ def find_swap_chains(
     """Find 1:1 and N:1 buy→swap→sell chains; stale or unsafe values fail closed."""
     tolerance = float(tolerance_percent)
     fee = float(transfer_fee_usd)
-    if not 0 <= tolerance < 100 or fee < 0 or max_value_age_hours <= 0:
+    min_profit = float(min_profit_usd)
+    min_profit_pct = float(min_profit_percent)
+    max_value_age = float(max_value_age_hours)
+    if (
+        not all(math.isfinite(value) for value in (tolerance, fee, min_profit, min_profit_pct, max_value_age))
+        or not 0 <= tolerance < 100 or fee < 0 or min_profit < 0
+        or min_profit_pct < 0 or max_value_age <= 0
+    ):
         raise ValueError("invalid swap-chain thresholds")
     eligible = {}
     for key, item in game_values.items():
@@ -226,7 +233,7 @@ def find_swap_chains(
         stability = str(item.get("stability") or "").casefold()
         if (
             not math.isfinite(value) or value <= 0 or not math.isfinite(age)
-            or age < 0 or age > max_value_age_hours * 3600
+            or age < 0 or age > max_value_age * 3600
             or confidence not in {"medium", "high"}
             or stability in BLOCKED_STABILITY
         ):
@@ -268,7 +275,7 @@ def find_swap_chains(
                     profit = gross - fees
                     cost = ask_price * qty_a + fees
                     profit_pct = profit / cost * 100 if cost > 0 else 0.0
-                    if profit < min_profit_usd or profit_pct < min_profit_percent:
+                    if profit < min_profit or profit_pct < min_profit_pct:
                         continue
                     chains.append({
                         "type": "swap_chain", "buy_item": item_a, "swap_item": item_b,
@@ -302,6 +309,9 @@ def inventory_advice(
     undercut_usd: float = 0.01,
 ) -> list[dict[str, Any]]:
     """Return conservative sell/list/hold guidance for a private owner inventory."""
+    undercut = float(undercut_usd)
+    if not math.isfinite(undercut) or undercut < 0:
+        raise ValueError("undercut_usd must be finite and non-negative")
     advice = []
     upgrade_quantities: dict[str, int] = {}
     for row in swap_opportunities or []:
@@ -336,7 +346,7 @@ def inventory_advice(
         median = market.get("median_market")
         suggested = None
         if ask:
-            suggested = max(best_bid or 0.0, float(ask["unit_price_usd"]) - max(0.0, undercut_usd))
+            suggested = max(best_bid or 0.0, float(ask["unit_price_usd"]) - undercut)
         previous = (previous_snapshot or {}).get(item_key, {})
         falling = bool(
             isinstance(previous, dict) and previous.get("median_market") is not None
