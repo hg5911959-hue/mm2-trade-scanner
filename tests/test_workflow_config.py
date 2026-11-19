@@ -64,6 +64,8 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("secrets: inherit", scheduler)
         self.assertIn("enable_discord:", scheduler)
         self.assertIn("contains(github.event.head_commit.message, '[discord-dry-run]')", scheduler)
+        self.assertIn("github.event_name != 'push'", scheduler)
+        self.assertIn("contains(github.event.head_commit.message, '[rblxvalue-key-check]')", scheduler)
         self.assertIn("contents: write", scheduler)
         self.assertIn("actions: read", scheduler)
         self.assertNotIn("workflow_run:", scheduler)
