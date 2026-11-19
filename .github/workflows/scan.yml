@@ -111,7 +111,7 @@ jobs:
           if [ -f data/private_state.enc ]; then
             python private_state.py decrypt --input data/private_state.enc --directory data
           else
-            for file in cash_market_offers.json inventory.json telegram_update_state.json telegram_last_run.json market_book_history.json market_alert_state.json; do
+            for file in cash_market_offers.json inventory.json telegram_update_state.json telegram_last_run.json market_book_history.json market_alert_state.json discord_alert_state.json; do
               if [ -f "data/$file" ]; then
                 echo "Refusing unencrypted private state on the public state branch."
                 exit 1
