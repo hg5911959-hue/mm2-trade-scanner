@@ -75,13 +75,15 @@ def _clean_line(value: str) -> str:
 
 
 def _detect_header(line: str) -> tuple[str | None, str]:
-    text = normalize_key(line)
     # QUICK SELL is deliberately a sell-side header.
-    if re.match(r"^(?:quick sell|selling|sell|wts)(?:\b|$)", text):
-        return "sell", ""
-    if re.match(r"^(?:buying|buy|wtb|looking for)(?:\b|$)", text):
-        return "buy", ""
-    return None, line
+    match = re.match(r"(?i)^\\s*(quick\\s+sell|selling|sell|wts|buying|buy|wtb|looking\\s+for)\\b\\s*[:：-]?\\s*(.*)$", line)
+    if not match:
+        return None, line
+    token, remainder = match.group(1).casefold(), match.group(2).strip()
+    side = "sell" if token in {"quick sell", "selling", "sell", "wts"} else "buy"
+    if re.fullmatch(r"(?i)(?:mm2|for\\s+usdt\\s*bep20|usdt\\s*bep20)?", remainder):
+        return side, "usdt bep20" if "usdt" in remainder.casefold() else ""
+    return side, remainder
 
 
 def _parse_segment(segment: str, side: str, metadata: dict[str, Any],
