@@ -57,7 +57,7 @@ class PreflightTests(IsolatedDataTestCase):
             self.assertTrue(send_daily_notice(
                 ["API key is blocked"], data_dir=self.root, env=self.env, now=self.now
             ))
-            state = json.loads((self.root / "preflight_state.json").read_text(encoding="utf-8"))
+            state = json.loads((self.root / "maintenance_alerts.json").read_text(encoding="utf-8"))
             self.assertEqual(state["preflight-daily"], self.now.timestamp())
             self.assertFalse(send_daily_notice(
                 ["API key is blocked"], data_dir=self.root, env=self.env, now=self.now
@@ -69,7 +69,7 @@ class PreflightTests(IsolatedDataTestCase):
             self.assertFalse(send_daily_notice(
                 ["API key is blocked"], data_dir=self.root, env=self.env, now=self.now
             ))
-        state_path = self.root / "preflight_state.json"
+        state_path = self.root / "maintenance_alerts.json"
         self.assertFalse(state_path.exists())
 
     def test_healthy_fixture_passes(self):
