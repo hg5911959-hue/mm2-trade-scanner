@@ -181,5 +181,33 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         self.assertFalse(scanner.qualifies_cash(generic_only))
 
 
+    def test_discord_only_mode_refuses_non_dry_run(self):
+        from unittest.mock import patch
+
+        with patch.dict("os.environ", {"DISCORD_ONLY": "true", "DRY_RUN": "false"}):
+            with self.assertRaisesRegex(RuntimeError, "only with DRY_RUN=true"):
+                scanner.scan_once()
+
+    def test_rblxvalue_key_verification_exits_before_full_scanner_run(self):
+        from unittest.mock import patch
+
+        with (
+            patch.dict("os.environ", {"RBLXVALUE_FORCE_KEY_CHECK": "true"}),
+            patch.object(scanner, "install_redacting_streams"),
+            patch.object(scanner.rblxvalue_guard, "reset_run_counter"),
+            patch.object(
+                scanner, "api_get_json_conditional",
+                return_value=({"items": [{"id": "test-item"}]}, None, False),
+            ) as api_check,
+            patch.object(scanner.rblxvalue_guard, "log_request_count") as log_count,
+            patch.object(scanner, "run_scan_loop") as full_scan,
+        ):
+            self.assertEqual(scanner.main(), 0)
+
+        api_check.assert_called_once_with("/items", {"limit": 1, "offset": 0})
+        log_count.assert_called_once_with()
+        full_scan.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
