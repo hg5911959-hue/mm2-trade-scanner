@@ -99,7 +99,7 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
         errors.append("private Discord message file must not enter durable public state")
     private_plaintext = {
         "cash_market_offers.json", "inventory.json", "telegram_update_state.json",
-        "telegram_last_run.json", "market_book_history.json",
+        "telegram_last_run.json", "market_book_history.json", "market_alert_state.json",
     }
     leaked = [path.name for path in files if path.name in private_plaintext]
     if leaked:
