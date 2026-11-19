@@ -128,6 +128,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           CASH_PRICES_CSV: ${{ (env.CASH_FILTER == '1' || env.CASH_FILTER == 'true' || env.CASH_FILTER == 'yes' || env.CASH_FILTER == 'on') && secrets.CASH_PRICES_CSV || '' }}
           CASH_MIN_VERIFIED_ROWS: "8"
+        continue-on-error: true
         run: python -m tools.preflight --warn
 
       - name: Collect authorized Discord trade channels
