@@ -194,6 +194,8 @@ def parse_cash_post(text: str, *, author: str = "", message_id: str = "",
                 continue
             offer, hint, reason = _parse_segment(segment, side, metadata, alias_data)
             if offer:
+                if offer["side"] == "buy" and re.search(r"(?i)\\bsell\\s+before\\s+it\\s+drops\\b", body):
+                    offer["flags"].append("sell_before_drop")
                 fingerprint = (offer["side"], offer["item_key"], offer["quantity"],
                                offer["unit_price_usd"], offer["min_quantity"])
                 if fingerprint not in seen:
