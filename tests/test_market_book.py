@@ -150,6 +150,11 @@ class MarketBookTests(IsolatedDataTestCase):
         self.assertEqual(advice[0]["verdict"], "SELL NOW")
         self.assertIn("price_falling", advice[0]["risk_flags"])
 
+    def test_malformed_offer_minimum_is_ignored(self):
+        malformed = offer("buy", "Candy", 2, 5, "buyer", "bad-min")
+        malformed["min_quantity"] = 0
+        self.assertEqual(build_order_book([malformed], now=NOW), {})
+
     def test_non_finite_thresholds_fail_closed(self):
         with self.assertRaises(ValueError):
             build_order_book([], now=NOW, max_age_hours=float("nan"))
