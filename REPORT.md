@@ -199,3 +199,7 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - `/p` displays the aggregate unpriced wanted quantity separately as informational demand. It is never added to `best_bid`, bid quantity, median, direct arbitrage, or swap-chain calculations. If there are no priced offers, the command still shows the demand hint while clearly stating that it is not a priced buy offer.
 - Added a regression proving an unpriced demand hint is visible but produces no book row, bid, direct opportunity, or chain.
 - Hosted verification is pending for this additional behavior.
+
+### Hosted verification — Phase 13 demand hints
+- Current implementation head: `d1a4a0b69969207124404a7c49811fc9dae42714`.
+- Validate the full suite twice, data-tree immutability, and all Ruff checks for the new informational-only demand hint display path.
