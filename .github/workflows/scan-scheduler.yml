@@ -18,7 +18,9 @@ on:
 
 permissions:
   actions: read
-  contents: read
+  # The reusable scanner persists validated state to the state branch.
+  # The caller must grant this permission; a called workflow cannot elevate it.
+  contents: write
 
 jobs:
   scan:
