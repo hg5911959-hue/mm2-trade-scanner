@@ -83,6 +83,29 @@ class CashOfferParserTests(IsolatedDataTestCase):
         self.assertEqual(len(result["offers"]), 2)
         self.assertEqual(result["offers"][1]["item"], "Traveler Axe")
 
+    def test_seller_bundle_listing_keeps_individual_prices_and_rejects_bundle_total(self):
+        permalink = "https://discord.com/channels/1/2/1573076681072189520"
+        posted_at = "2026-11-19T20:45:07.119000+00:00"
+        result = parse_cash_post(
+            "SELLING MM2\nCELESTIAL SET - 72$\nSNOWCANNON - 14.5$\n"
+            "SPIRIT - 8.5$\nALL FOR 92$",
+            message_id="discord:1573076681072189520",
+            url=permalink,
+            posted_at=posted_at,
+        )
+        by_item = {row["item"]: row for row in result["offers"]}
+        self.assertEqual(
+            {name: row["unit_price_usd"] for name, row in by_item.items()},
+            {"Celestial Set": 72.0, "Snowcannon": 14.5, "Spirit": 8.5},
+        )
+        self.assertTrue(all(row["side"] == "sell" for row in result["offers"]))
+        self.assertTrue(all(row["url"] == permalink for row in result["offers"]))
+        self.assertTrue(all(row["posted_at"] == posted_at for row in result["offers"]))
+        self.assertEqual(
+            [row["reason"] for row in result["rejected"]],
+            ["bundle_total_not_item_price"],
+        )
+
     def test_payment_hint_applies_to_following_offers(self):
         result = parse_cash_post("Selling for usdt bep20\n1x Candy 2$/1\n1x Sweet 3$/1", message_id="q")
         self.assertEqual([row["payment"] for row in result["offers"]], ["usdt_bep20", "usdt_bep20"])
