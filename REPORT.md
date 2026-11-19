@@ -170,3 +170,11 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - Hardened state persistence when the optional `data/api_key_blocked.json` file is absent: the workflow now stages the budget file unconditionally and stages/removes the breaker file only when appropriate, avoiding a missing-path `git add` failure.
 - Added workflow-config regression assertions for redirect rejection and optional breaker-file persistence.
 - This is a preventive security/operational hardening change. Hosted verification is pending for commit `2ff0f9548d6e459a832ccd6caf0e55fad9512df7`; do not treat the prior 449-test run as verification of this new change.
+
+
+### Phase 10 — Explicit stale-value state and opportunity risk transparency
+- The cash-market snapshot now distinguishes fresh, stale, invalid, and unavailable RBLXValue snapshots. Values older than the configurable maximum (24 hours by default) are explicitly marked `stale`; swap-chain calculation remains disabled while direct cash arbitrage continues from current offers.
+- `/p` now labels stale or invalid game values and reports `stale_game_values`, `missing_stability`, and `untradeable` risk flags rather than conflating every missing value with a generic unavailable state. `/status` exposes stale/invalid cache status, and `/chains` explains when stale game values disable chains.
+- Swap-chain rows now retain risk flags from both market legs. `/buy`, `/chains`, and Telegram opportunity alerts display source links and applicable risk flags; direct cash opportunities remain usable without game values.
+- Added regressions for stale-cache cash-only operation, stability risk display, chain risk propagation, and source/risk visibility in commands.
+- Hosted verification for the new phase is pending; the last verified baseline is 451 tests twice on Actions run [#1013](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44620780337). The new code has not yet been counted as passing.
