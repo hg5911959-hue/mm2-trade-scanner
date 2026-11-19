@@ -2182,7 +2182,7 @@ def _read_rblxvalue_meta_state():
 
 
 def _fetch_rblxvalue_meta(force=False):
-    """Poll source metadata hourly; the upstream dataset itself updates every ~12h."""
+    """Read source metadata; forced pre/post checks bracket a full catalogue refresh."""
     if not RBLXVALUE_META_POLL_ENABLED or not RBLXVALUE_API_KEY:
         return None
     now = time.time()
