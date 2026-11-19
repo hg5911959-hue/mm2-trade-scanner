@@ -50,3 +50,66 @@ jobs:
       enable_discord: ${{ (github.event_name == 'push' && contains(github.event.head_commit.message, '[discord-dry-run]')) || (github.event_name == 'workflow_dispatch' && inputs.enable_discord) || false }}
       discord_only: ${{ (github.event_name == 'push' && contains(github.event.head_commit.message, '[discord-dry-run]')) || (github.event_name == 'workflow_dispatch' && inputs.discord_only) || false }}
     secrets: inherit
+
+  recover-rblx-cache:
+    if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[recover-rblx-cache:44635098506]') }}
+    name: Recover validated RBLXValue cache
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: mm2-trade-scanner
+      cancel-in-progress: false
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Download validated scanner state artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mm2-scanner-state
+          run-id: 44635098506
+          repository: ${{ github.repository }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: state-artifact
+
+      - name: Validate fresh public RBLXValue cache
+        run: python tools/validate_state.py --directory state-artifact/data --rblxvalue-cache-only
+
+      - name: Persist only the validated public cache and metadata
+        run: |
+          set -euo pipefail
+          if ! git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
+            echo "::error::Durable state branch is missing; refusing cache recovery."
+            exit 1
+          fi
+          git fetch origin refs/heads/state:refs/remotes/origin/state
+          git checkout --detach refs/remotes/origin/state
+          mkdir -p data
+          cp "$GITHUB_WORKSPACE/state-artifact/data/supreme_values.json" data/supreme_values.json
+          cp "$GITHUB_WORKSPACE/state-artifact/data/rblxvalue_meta.json" data/rblxvalue_meta.json
+          git add data/supreme_values.json data/rblxvalue_meta.json
+          if git diff --cached --quiet; then
+            echo "The validated RBLXValue cache is already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+users.noreply.github.com"
+          git commit -m "chore(state): recover validated RBLXValue cache from run 44635098506"
+          git push origin HEAD:state
+
+      - name: Verify recovered cache without altering the request budget
+        run: |
+          set -euo pipefail
+          git fetch origin refs/heads/state:refs/remotes/origin/state
+          git cat-file -e refs/remotes/origin/state:data/supreme_values.json
+          git cat-file -e refs/remotes/origin/state:data/rblxvalue_meta.json
+          git cat-file -e refs/remotes/origin/state:data/rblxvalue_request_budget.json
+          echo "[cache-recovery] public catalogue and metadata persisted; rolling request budget preserved."
