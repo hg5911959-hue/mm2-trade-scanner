@@ -369,6 +369,8 @@ def save_private_price_history(
     snapshots = [row for row in existing["snapshots"] if isinstance(row, dict)
                  and _timestamp(row.get("timestamp")) is not None
                  and 0 <= current - float(_timestamp(row["timestamp"])) <= retention_days * 86400]
+    if snapshots and current - float(_timestamp(snapshots[-1]["timestamp"])) < 3600:
+        return
     compact = {
         str(key): {
             "best_ask": value.get("best_ask", {}).get("unit_price_usd") if value.get("best_ask") else None,
