@@ -53,6 +53,7 @@ class PreflightTests(IsolatedDataTestCase):
     def test_daily_notice_is_recorded_only_after_telegram_delivery(self):
         response = MagicMock()
         response.__enter__.return_value.status = 200
+        response.__enter__.return_value.read.return_value = b'{"ok":true}'
         with patch("tools.preflight._TELEGRAM_OPENER.open", return_value=response) as opened:
             self.assertTrue(send_daily_notice(
                 ["API key is blocked"], data_dir=self.root, env=self.env, now=self.now
@@ -63,6 +64,16 @@ class PreflightTests(IsolatedDataTestCase):
                 ["API key is blocked"], data_dir=self.root, env=self.env, now=self.now
             ))
             self.assertEqual(opened.call_count, 1)
+
+    def test_telegram_http_200_with_api_error_is_not_recorded(self):
+        response = MagicMock()
+        response.__enter__.return_value.status = 200
+        response.__enter__.return_value.read.return_value = b'{"ok":false,"description":"chat not found"}'
+        with patch("tools.preflight._TELEGRAM_OPENER.open", return_value=response):
+            self.assertFalse(send_daily_notice(
+                ["API key is blocked"], data_dir=self.root, env=self.env, now=self.now
+            ))
+        self.assertFalse((self.root / "maintenance_alerts.json").exists())
 
     def test_failed_daily_notice_remains_retryable(self):
         with patch("tools.preflight._TELEGRAM_OPENER.open", side_effect=OSError("network unavailable")):
