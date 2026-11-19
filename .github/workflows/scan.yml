@@ -317,6 +317,18 @@ jobs:
           # the scan failed. The previous cache/database must survive failures.
           python tools/validate_state.py --directory state-artifact/data --require-cache
 
+      - name: Verify encrypted private-state authentication
+        id: verify-private-state
+        if: steps.download.outcome == 'success' && hashFiles('state-artifact/data/private_state.enc') != ''
+        env:
+          MM2_PRIVATE_STATE_KEY: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          verify_dir="$(mktemp -d)"
+          trap 'rm -rf "$verify_dir"' EXIT
+          python private_state.py decrypt --input state-artifact/data/private_state.enc --directory "$verify_dir"
+          echo "Authenticated encrypted private-state bundle verified; plaintext stayed in temporary runner storage."
+
       - name: Persist API safety ledger after failed scan
         id: persist-api-safety
         if: needs.scan.result != 'success' && steps.safety-download.outcome == 'success' && steps.validate-api-safety.outcome == 'success' && hashFiles('api-safety-artifact/data/*.json') != ''
@@ -351,7 +363,7 @@ jobs:
           echo "Persisted only validated API safety files; previous market cache remains untouched."
 
       - name: Persist encrypted private state after failed scan
-        if: needs.scan.result != 'success' && steps.download.outcome == 'success' && hashFiles('state-artifact/data/private_state.enc') != ''
+        if: needs.scan.result != 'success' && steps.download.outcome == 'success' && steps.verify-private-state.outcome == 'success' && hashFiles('state-artifact/data/private_state.enc') != ''
         run: |
           set -euo pipefail
           python -c 'from pathlib import Path; p=Path("state-artifact/data/private_state.enc"); d=p.read_bytes(); assert d.startswith(b"MM2PSTATE1") and len(d) >= 74'
@@ -389,7 +401,7 @@ jobs:
 
       - name: Persist state branch
         id: persist-state
-        if: steps.download.outcome == 'success' && steps.validate-state.outcome == 'success'
+        if: steps.download.outcome == 'success' && steps.validate-state.outcome == 'success' && (steps.verify-private-state.outcome == 'success' || steps.verify-private-state.outcome == 'skipped')
         run: |
           set -euo pipefail
           if [ ! -d state-artifact/data ]; then
