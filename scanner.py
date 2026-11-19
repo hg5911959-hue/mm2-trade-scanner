@@ -5155,6 +5155,10 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
                 break
             except Exception as exc:
                 last_failure = exc
+                if "[rblxvalue-budget-exhausted]" in str(exc) or "RblxValueBudgetExceeded" in str(exc):
+                    print("[loop] RBLXValue rolling request budget exhausted; stopping this job without retrying.")
+                    record_failure(exc)
+                    break
                 print(f"[loop] Scan cycle {cycles} failed safely: {type(exc).__name__}; reason={redact(exc)[:240]}")
                 record_failure(exc)
             cycle_elapsed = time.monotonic() - cycle_started
