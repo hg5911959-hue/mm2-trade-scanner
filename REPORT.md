@@ -228,3 +228,11 @@ Not yet scored at the end of Phase 2. See the evidence-based readiness assessmen
 - Added `tests/test_weekly_report.py` covering blocker/preflight line separation and the default PASS line, including an assertion that literal escaped newline text is absent.
 - Changes are committed on `before-market-book` (source commit `87e12e6f3761edccb6f0875aa366e10d243084f4`; test commit `15e847af1f4ba4371d874e4feb6c5eb4b2fc1888`).
 - Hosted CI status: **pending / not yet observed**. The available workflow-run lookup returned no run for the latest commit at the time of this report update. Do not count this phase as validated until the PR Actions run confirms both full-suite passes and Ruff.
+
+
+### Phase 15 — Telegram API redirect protection (2026-11-19)
+- Security review found that telegram_market._request_json used the default urllib.request.urlopen, which follows HTTP redirects. Since the Telegram bot token is embedded in the API URL path, a redirect could risk forwarding credential-bearing requests.
+- Added a dedicated HTTPRedirectHandler that refuses redirects and routed all Telegram API requests through the protected opener.
+- Added a regression test asserting a 302 redirect target is not followed.
+- Source commit: fbfc1afb090698a277b06b2306153cbf0c98cb8a; test commit: 9fa2fc3e33d48daa5071fb527f5c98dad1246386.
+- Hosted CI status: PENDING / not yet observed. This security fix is not considered validated until the full PR workflow and Ruff checks pass.
