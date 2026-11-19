@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -100,6 +101,14 @@ class PreflightTests(IsolatedDataTestCase):
             ))
         state_path = self.root / "maintenance_alerts.json"
         self.assertFalse(state_path.exists())
+
+    def test_dry_run_environment_suppresses_telegram_notice(self):
+        with patch.dict(os.environ, {"PREFLIGHT_SEND_NOTICES": "false"}):
+            with patch("tools.preflight.send_daily_notice") as notice:
+                from tools.preflight import main
+                self.assertEqual(main(["--warn"]), 0)
+                notice.assert_not_called()
+
 
     def test_healthy_fixture_passes(self):
         self.assertEqual(self._checks(), [])
