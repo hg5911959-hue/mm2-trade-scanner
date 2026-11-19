@@ -39,6 +39,16 @@ class PreflightTests(IsolatedDataTestCase):
             state_checker=kwargs.pop("state_checker", lambda: True), **kwargs,
         )["checks"]
 
+    def test_preflight_telegram_redirects_are_rejected(self):
+        handler = __import__("tools.preflight", fromlist=["_RejectTelegramRedirects"])._RejectTelegramRedirects()
+        request = __import__("urllib.request", fromlist=["Request"]).Request(
+            "https://api.telegram.org/botplaceholder/sendMessage", data=b"chat_id=123"
+        )
+        redirected = handler.redirect_request(
+            request, None, 302, "Found", {}, "https://attacker.example/collect"
+        )
+        self.assertIsNone(redirected)
+
     def test_healthy_fixture_passes(self):
         self.assertEqual(self._checks(), [])
 
