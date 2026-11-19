@@ -77,7 +77,7 @@ class MarketBookTests(IsolatedDataTestCase):
         self.assertIn("single_author", row["risk_flags"])
 
     def test_direct_arbitrage_respects_buyer_and_seller_minimum_quantities(self):
-        ask = offer("sell", "Candy", 1, 2, "seller", "ask")
+        ask = offer("sell", "Candy", 1, 10, "seller", "ask")
         bid = offer("buy", "Candy", 10, 5, "buyer", "bid")
         ask["min_quantity"] = 8
         book = build_order_book([ask, bid], now=NOW)
@@ -96,7 +96,7 @@ class MarketBookTests(IsolatedDataTestCase):
 
     def test_inventory_does_not_claim_sellability_below_buyers_minimum(self):
         ask = offer("sell", "Candy", 50, 1, "seller", "ask")
-        bid = offer("buy", "Candy", 50, 2, "buyer", "bid")
+        bid = offer("buy", "Candy", 50, 50, "buyer", "bid")
         bid["min_quantity"] = 20
         book = build_order_book([ask, bid], now=NOW)
         advice = inventory_advice({"candy": {"item": "Candy", "quantity": 5}}, book)
