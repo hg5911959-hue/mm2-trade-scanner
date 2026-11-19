@@ -162,3 +162,7 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - The first hosted test attempt found the missing Spirit alias and failed on that new regression; the defect was fixed before final verification.
 - Final validation commit `c867dcaee032de93532f9fd8ab6cfa1b04589e8d`, Actions run [#1000](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44619126582): **449 tests passed twice** (449/449 on both passes). Ruff passed for all targeted market/privacy/API modules, scanner correctness checks, and repository-wide undefined/unused-name checks. The workflow's data-tree hash guard passed.
 - The new feature flags remain disabled. This validates parser and regression behavior only; it does not prove the offer is still available or independently verify the Discord author's identity.
+
+### Full prompt validation run — 2026-11-19
+- Validation branch starts from the exact current implementation head `aeb66bc9d39b2832a5df02c8ee585e6a2f347c82`, including the owner-supplied Celestial Set listing parser regression and provenance documentation.
+- This documentation-only commit exists to trigger the required hosted full-suite validation twice, data-tree immutability check, and repository Ruff checks. All runtime feature flags remain disabled; this does not contact Discord, activate Telegram, or send alerts.
