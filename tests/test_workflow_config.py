@@ -84,7 +84,12 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertLess(decrypt_pos, scan_pos)
         self.assertLess(encrypt_pos, artifact_pos)
         self.assertIn("private_state.enc", workflow)
-        self.assertIn("private Telegram/market state", (ROOT / "tools/validate_state.py").read_text(encoding="utf-8"))
+        self.assertIn("discord_alert_state.json", workflow)
+        validator = (ROOT / "tools/validate_state.py").read_text(encoding="utf-8")
+        self.assertIn("private Telegram/market state", validator)
+        self.assertIn("discord_alert_state.json", validator)
+        private_state = (ROOT / "private_state.py").read_text(encoding="utf-8")
+        self.assertIn('"discord_alert_state.json"', private_state)
 
     def test_encrypted_private_state_survives_failed_scans_without_plaintext(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
