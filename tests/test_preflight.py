@@ -1,11 +1,12 @@
 import json
 import tempfile
 import unittest
+from unittest.mock import MagicMock, patch
 from test_support import IsolatedDataTestCase
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from tools.preflight import collect_preflight_checks
+from tools.preflight import collect_preflight_checks, send_daily_notice
 
 
 class PreflightTests(IsolatedDataTestCase):
@@ -48,6 +49,28 @@ class PreflightTests(IsolatedDataTestCase):
             request, None, 302, "Found", {}, "https://attacker.example/collect"
         )
         self.assertIsNone(redirected)
+
+    def test_daily_notice_is_recorded_only_after_telegram_delivery(self):
+        response = MagicMock()
+        response.__enter__.return_value.status = 200
+        with patch("tools.preflight._TELEGRAM_OPENER.open", return_value=response) as opened:
+            self.assertTrue(send_daily_notice(
+                ["API key is blocked"], data_dir=self.root, env=self.env, now=self.now
+            ))
+            state = json.loads((self.root / "preflight_state.json").read_text(encoding="utf-8"))
+            self.assertEqual(state["preflight-daily"], self.now.timestamp())
+            self.assertFalse(send_daily_notice(
+                ["API key is blocked"], data_dir=self.root, env=self.env, now=self.now
+            ))
+            self.assertEqual(opened.call_count, 1)
+
+    def test_failed_daily_notice_remains_retryable(self):
+        with patch("tools.preflight._TELEGRAM_OPENER.open", side_effect=OSError("network unavailable")):
+            self.assertFalse(send_daily_notice(
+                ["API key is blocked"], data_dir=self.root, env=self.env, now=self.now
+            ))
+        state_path = self.root / "preflight_state.json"
+        self.assertFalse(state_path.exists())
 
     def test_healthy_fixture_passes(self):
         self.assertEqual(self._checks(), [])
