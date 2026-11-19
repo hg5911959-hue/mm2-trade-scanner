@@ -2557,52 +2557,28 @@ def _source_snapshot_matches_meta(cached_document, source_meta):
 
 
 def load_supreme_values():
-    # Never spend API budget or perform health checks for a credential already blocked.
+    # A fresh persisted catalogue is authoritative for this scan tick.
+    # In particular, a 30-second loop tick must never call RBLXValue while the
+    # cache is fresh (including metadata, health checks, and detail enrichment).
     if RBLXVALUE_API_KEY and rblxvalue_guard.is_key_blocked(key=RBLXVALUE_API_KEY):
         raise RuntimeError(
             "[supreme] API key circuit breaker active; refusing stale-cache calculations "
             "[rblxvalue-key-blocked] no request sent"
         )
-    # Schema v4 preserves item identity and Supreme stability; older caches lack stability.
     cached_document = _read_values_cache_document()
     cached_values, cached_age = _read_values_cache()
-    source_meta = None
-    if (
-        cached_values is not None and RBLXVALUE_API_KEY
-        and cached_age is not None and cached_age <= VALUES_TTL_SECONDS
-    ):
-        verify_rblxvalue_key_if_due()
-        if RBLXVALUE_META_POLL_ENABLED:
-            try:
-                source_meta = _fetch_rblxvalue_meta()
-            except Exception as exc:
-                print(f"[rblxvalue-meta] Poll failed safely: {type(exc).__name__}; cached snapshot policy remains in force")
-        if source_meta and _source_snapshot_matches_meta(cached_document, source_meta):
-            print(
-                "[supreme] Source metadata and catalogue size unchanged "
-                f"(updated {source_meta.get('last_updated')}; items {source_meta.get('items_total')}); "
-                "reusing complete cached catalogue"
-            )
-            _enrich_catalog_metadata_gaps(cached_values, cached_document, source_meta)
-            _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
-            return cached_values
-        if source_meta and cached_document:
-            previous_updated = cached_document.get("source_last_updated") or "unknown"
-            previous_total = cached_document.get("source_items_total") or "unknown"
-            print(
-                "[supreme] Source snapshot mismatch "
-                f"(timestamp {previous_updated} -> {source_meta.get('last_updated')}; "
-                f"items {previous_total} -> {source_meta.get('items_total')}); refreshing catalogue now"
-            )
-            cached_age = VALUES_TTL_SECONDS + 1
     if cached_values is not None and cached_age is not None and cached_age <= VALUES_TTL_SECONDS:
-        print(f"[supreme] Using fresh source_b snapshot (age {cached_age}s; TTL {VALUES_TTL_SECONDS}s)")
-        _enrich_catalog_metadata_gaps(cached_values, cached_document, source_meta)
+        print(f"[supreme] Using fresh source_b snapshot (age {cached_age}s; TTL {VALUES_TTL_SECONDS}s); no RBLXValue request")
         _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
         return cached_values
+
+    source_meta = None
     if not RBLXVALUE_API_KEY:
         raise RuntimeError("[supreme] API key missing and no fresh cached source_b snapshot; refusing stale values.")
-    if RBLXVALUE_META_POLL_ENABLED and source_meta is None:
+    # Health and metadata checks are deliberately confined to an expired-cache
+    # refresh, never to each 30-second scan-loop tick.
+    verify_rblxvalue_key_if_due()
+    if RBLXVALUE_META_POLL_ENABLED:
         try:
             source_meta = _fetch_rblxvalue_meta(force=True)
         except Exception as exc:
