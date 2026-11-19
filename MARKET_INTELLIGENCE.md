@@ -29,8 +29,10 @@ Price-list messages are accepted only from:
   `DISCORD_MANUAL_MESSAGES_JSON_2` imports.
 - The existing authorized read-only Discord bot collector, when configured
   with the documented read-only channel permissions.
-- The owner forwarding or pasting a post into the owner-authorized Telegram
-  chat.
+- The owner forwarding or pasting a post and its Discord permalink into the
+  owner-authorized Telegram chat. A pasted post without a verifiable Discord
+  snowflake timestamp is rejected; Telegram receipt time is never substituted
+  for the original offer time.
 
 `cash_offer_parser.py` parses seller/buyer blocks, including `QUICK SELL`
 as a seller header. It uses the explicit owner-editable
