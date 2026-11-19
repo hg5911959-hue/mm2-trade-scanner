@@ -19,6 +19,11 @@ on:
         required: false
         type: boolean
         default: false
+      enable_discord:
+        description: "Run an authorized Discord collection and parser dry-run; requires the existing Telegram bot token"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   actions: read
@@ -36,4 +41,5 @@ jobs:
     with:
       dry_run: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run) || false }}
       verify_rblxvalue_key: ${{ (github.event_name == 'push' && contains(github.event.head_commit.message, '[rblxvalue-key-check]')) || (github.event_name == 'workflow_dispatch' && inputs.verify_rblxvalue_key) || false }}
+      enable_discord: ${{ (github.event_name == 'push' && contains(github.event.head_commit.message, '[discord-dry-run]')) || (github.event_name == 'workflow_dispatch' && inputs.enable_discord) || false }}
     secrets: inherit
