@@ -1,4 +1,5 @@
 """Regression tests for Telegram credential redirect protection."""
+import unittest
 import urllib.request
 from test_support import IsolatedDataTestCase
 
