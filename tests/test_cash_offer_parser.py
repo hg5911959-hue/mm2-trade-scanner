@@ -1,4 +1,4 @@
-import unittest
+from test_support import IsolatedDataTestCase
 from pathlib import Path
 
 from cash_offer_parser import parse_cash_post
@@ -8,7 +8,7 @@ from market_book import build_order_book, find_direct_arbitrage
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class CashOfferParserTests(unittest.TestCase):
+class CashOfferParserTests(IsolatedDataTestCase):
     def test_appendix_fixture_extracts_expected_prices_and_sides(self):
         fixture = ROOT / "tests" / "fixtures" / "discord_cash_posts_sample.txt"
         result = parse_cash_post(fixture.read_text(encoding="utf-8"), author="seller", message_id="sample-1")
