@@ -354,6 +354,31 @@ jobs:
           git push origin HEAD:state
           echo "Persisted only validated API safety files; previous market cache remains untouched."
 
+      - name: Persist encrypted private state after failed scan
+        if: needs.scan.result != 'success' && steps.download.outcome == 'success' && hashFiles('state-artifact/data/private_state.enc') != ''
+        run: |
+          set -euo pipefail
+          python -c 'from pathlib import Path; p=Path("state-artifact/data/private_state.enc"); d=p.read_bytes(); assert d.startswith(b"MM2PSTATE1") and len(d) >= 74'
+          if git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
+            git fetch origin refs/heads/state:refs/remotes/origin/state
+            git checkout --detach origin/state
+          else
+            git checkout --orphan state-private
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+          mkdir -p data
+          cp state-artifact/data/private_state.enc data/private_state.enc
+          git add data/private_state.enc
+          if git diff --cached --quiet; then
+            echo "Encrypted private state unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(state): persist encrypted private market state"
+          git push origin HEAD:state
+          echo "Persisted encrypted private state only; plaintext was not published."
+
       - name: Verify API safety ledger after failed scan
         if: steps.persist-api-safety.outcome == 'success'
         run: |
@@ -417,7 +442,7 @@ jobs:
             exit 1
           fi
           git fetch origin refs/heads/state:refs/remotes/origin/state
-          for file in data/supreme_values.json data/rblxvalue_request_budget.json data/api_key_blocked.json data/rblxvalue_key_health.json data/market_history.sqlite3; do
+          for file in data/supreme_values.json data/rblxvalue_request_budget.json data/api_key_blocked.json data/rblxvalue_key_health.json data/market_history.sqlite3 data/private_state.enc; do
             if git cat-file -e "refs/remotes/origin/state:$file" 2>/dev/null; then
               bytes="$(git cat-file -s "refs/remotes/origin/state:$file")"
               echo "[state-persist-audit] present=$file bytes=$bytes"
