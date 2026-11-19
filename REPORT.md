@@ -27,9 +27,9 @@
 1. Who or what can create and push the annotated/lightweight Git tag `before-v13` at the baseline commit? Current integration has no tag creation operation.
 2. The user requests Telegram command search with bounded freshness and a live scan process. This repository currently runs bounded GitHub Actions jobs; command responsiveness outside an active job cannot be guaranteed without changing the hosting/transport model. No alternative service will be introduced without an explicit supported architecture.
 
-## Self-assessment
+## Self-assessment (historical Phase 2 snapshot)
 
-Not yet scored. Scores will be evidence-based after the corresponding phases and tests are complete.
+Not yet scored at the end of Phase 2. See the evidence-based readiness assessment in the current overall status at the end of this report.
 
 
 ## MM2 cash-market upgrade — 2026-11-19
@@ -55,8 +55,8 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - Weekly reporting reads metrics and does not call RBLXValue. Dashboard export reads persisted market history and does not call RBLXValue. The connection-test workflow was the only separately identified direct API caller outside the scanner and is now budgeted/serialized.
 - Verification is pending PR CI. The live API key remains an owner/provider-side operational issue; code changes cannot reactivate a suspended credential.
 
-### Remaining phases
-- Market book, direct arbitrage, swap chains, inventory advice, private price history, Telegram `getUpdates` commands, privacy regression tests, workflow feature flags, and full user documentation are not yet complete.
+### Remaining phases at the end of Phase 2 (historical snapshot; superseded by current overall status)
+- At that point, the market book, direct arbitrage, swap chains, inventory advice, private price history, Telegram `getUpdates` commands, privacy regression tests, workflow feature flags, and full user documentation were not yet complete. Their later implementation and validation are recorded in the subsequent phases and the current overall status at the end of this report.
 - All new production integrations remain disabled by default. No trading signals are sent by the parser foundation.
 
 
