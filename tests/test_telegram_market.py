@@ -30,6 +30,19 @@ class TelegramMarketTests(IsolatedDataTestCase):
             patch("telegram_market.HISTORY_FILE", self.history),
         )
 
+    def test_public_storage_is_blocked_without_explicit_confirmation(self):
+        called = []
+        with self._paths():
+            count = telegram_market.process_telegram_updates(
+                token="token", chat_id="123", market_enabled=True, inventory_enabled=True,
+                get_updates=lambda token, offset: called.append("poll") or [],
+                send_message=lambda *args: called.append("send"),
+                now=1_800_000_000,
+            )
+        self.assertEqual(count, 0)
+        self.assertEqual(called, [])
+        self.assertFalse(self.offset.exists())
+
     def test_unauthorized_chat_is_ignored_and_offset_is_advanced(self):
         sent = []
         updates = [{"update_id": 10, "message": {
@@ -37,7 +50,7 @@ class TelegramMarketTests(IsolatedDataTestCase):
         }}]
         with self._paths():
             count = telegram_market.process_telegram_updates(
-                token="token", chat_id="123", market_enabled=True, inventory_enabled=True,
+                token="token", chat_id="123", market_enabled=True, inventory_enabled=True, private_state_confirmed=True,
                 get_updates=lambda token, offset: updates,
                 send_message=lambda *args: sent.append(args), now=1_800_000_000,
             )
@@ -56,7 +69,7 @@ class TelegramMarketTests(IsolatedDataTestCase):
             "cache_age": None, "previous": {}, "offers_count": 0,
         }):
             count = telegram_market.process_telegram_updates(
-                token="token", chat_id="123", market_enabled=True, inventory_enabled=False,
+                token="token", chat_id="123", market_enabled=True, inventory_enabled=False, private_state_confirmed=True,
                 get_updates=lambda token, offset: updates,
                 send_message=lambda token, chat, text: sent.append(text),
                 now=1_800_000_000,
@@ -75,7 +88,7 @@ class TelegramMarketTests(IsolatedDataTestCase):
         }}]
         with self._paths():
             count = telegram_market.process_telegram_updates(
-                token="token", chat_id="123", market_enabled=True, inventory_enabled=False,
+                token="token", chat_id="123", market_enabled=True, inventory_enabled=False, private_state_confirmed=True,
                 get_updates=lambda token, offset: updates,
                 send_message=lambda token, chat, text: sent.append(text),
                 now=1_800_000_000,
@@ -100,7 +113,7 @@ class TelegramMarketTests(IsolatedDataTestCase):
             "cache_age": None, "previous": {}, "offers_count": 0,
         }):
             telegram_market.process_telegram_updates(
-                token="token", chat_id="123", market_enabled=True, inventory_enabled=False,
+                token="token", chat_id="123", market_enabled=True, inventory_enabled=False, private_state_confirmed=True,
                 get_updates=lambda token, offset: updates,
                 send_message=lambda token, chat, text: sent.append(text),
                 now=1_800_000_000,
