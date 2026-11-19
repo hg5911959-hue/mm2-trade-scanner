@@ -230,15 +230,35 @@ def ingest_manual_discord_imports(
     return added, rejected
 
 
-def _load_inventory() -> dict[str, Any]:
-    state = _read_object(INVENTORY_FILE, {"schema_version": 1, "items": {}})
-    if state.get("schema_version") != 1 or not isinstance(state.get("items"), dict):
+def _load_inventory_state() -> dict[str, Any]:
+    state = _read_object(
+        INVENTORY_FILE,
+        {"schema_version": 1, "items": {}, "processed_update_ids": []},
+    )
+    processed = state.get("processed_update_ids", [])
+    if (
+        state.get("schema_version") != 1 or not isinstance(state.get("items"), dict)
+        or not isinstance(processed, list)
+        or any(isinstance(value, bool) or not isinstance(value, int) for value in processed)
+    ):
         raise RuntimeError("private inventory has an invalid schema")
-    return state["items"]
+    state["processed_update_ids"] = processed[-1000:]
+    return state
 
 
-def _save_inventory(items: dict[str, Any]) -> None:
-    _atomic_json(INVENTORY_FILE, {"schema_version": 1, "items": items})
+def _load_inventory() -> dict[str, Any]:
+    return _load_inventory_state()["items"]
+
+
+def _save_inventory(
+    items: dict[str, Any], processed_update_ids: list[int] | None = None,
+) -> None:
+    if processed_update_ids is None:
+        processed_update_ids = _load_inventory_state()["processed_update_ids"]
+    _atomic_json(INVENTORY_FILE, {
+        "schema_version": 1, "items": items,
+        "processed_update_ids": processed_update_ids[-1000:],
+    })
 
 
 def _csv_dry_run_fallback(now: float) -> dict[str, dict[str, Any]]:
@@ -392,7 +412,10 @@ def _resolve_command_item(raw: str) -> tuple[str | None, str]:
     return resolve_cash_item(raw, load_aliases())
 
 
-def _command_reply(command: str, snapshot: dict[str, Any], *, inventory_enabled: bool) -> str:
+def _command_reply(
+    command: str, snapshot: dict[str, Any], *, inventory_enabled: bool,
+    update_id: int | None = None,
+) -> str:
     parts = command.strip().split()
     verb = parts[0].casefold() if parts else ""
     book = snapshot["book"]
@@ -457,7 +480,9 @@ def _command_reply(command: str, snapshot: dict[str, Any], *, inventory_enabled:
     if verb in {"/sell", "/inv", "/add", "/remove"}:
         if not inventory_enabled:
             return "إدارة المخزون معطّلة حالياً."
-        items = _load_inventory()
+        inventory_state = _load_inventory_state()
+        items = inventory_state["items"]
+        processed_update_ids = inventory_state["processed_update_ids"]
         if verb == "/inv":
             if not items:
                 return "المخزون فارغ."
@@ -467,6 +492,8 @@ def _command_reply(command: str, snapshot: dict[str, Any], *, inventory_enabled:
                 for key, row in items.items() if isinstance(row, dict)
             )
         if verb == "/add":
+            if update_id is not None and update_id in processed_update_ids:
+                return "تم تنفيذ هذا الطلب مسبقاً؛ لم تتم إضافة كمية ثانية."
             if len(parts) < 3:
                 return "الاستخدام: /add <item> <qty> [cost]"
             cost = None
@@ -490,9 +517,13 @@ def _command_reply(command: str, snapshot: dict[str, Any], *, inventory_enabled:
                     return "التكلفة غير صالحة."
                 prior["cost_usd"] = cost
             items[key] = prior
-            _save_inventory(items)
+            if update_id is not None:
+                processed_update_ids.append(update_id)
+            _save_inventory(items, processed_update_ids)
             return f"تم تحديث {canonical}: ×{prior['quantity']}."
         if verb == "/remove":
+            if update_id is not None and update_id in processed_update_ids:
+                return "تم تنفيذ هذا الطلب مسبقاً؛ لم تتم إزالة الكمية مرة ثانية."
             if len(parts) < 2:
                 return "الاستخدام: /remove <item> [qty]"
             qty = None
@@ -513,7 +544,9 @@ def _command_reply(command: str, snapshot: dict[str, Any], *, inventory_enabled:
                 prior["quantity"] = int(prior["quantity"]) - qty
             else:
                 return "الكمية غير صالحة."
-            _save_inventory(items)
+            if update_id is not None:
+                processed_update_ids.append(update_id)
+            _save_inventory(items, processed_update_ids)
             return f"تم تحديث مخزون {canonical}."
         advice = inventory_advice(
             items, book, previous_snapshot=snapshot["previous"],
@@ -782,7 +815,9 @@ def process_telegram_updates(
             send_message(token, chat_id, "تم وضع الطلب في قائمة الانتظار؛ جارٍ معالجته الآن.")
         if text.startswith("/"):
             snapshot = _load_market(now=current)
-            reply = _command_reply(text, snapshot, inventory_enabled=inventory_enabled)
+            reply = _command_reply(
+                text, snapshot, inventory_enabled=inventory_enabled, update_id=update_id
+            )
         elif text:
             added, rejected, reasons = _save_forwarded_post(message, chat_id)
             reason_text = "، ".join(f"{key}: {value}" for key, value in sorted(reasons.items())) or "لا يوجد"
