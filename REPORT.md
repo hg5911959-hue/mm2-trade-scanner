@@ -243,3 +243,10 @@ Not yet scored at the end of Phase 2. See the evidence-based readiness assessmen
 - Added a dedicated redirect-rejecting opener for maintenance/preflight notices and a regression test proving 302 targets are refused.
 - Source commit: 62e3fe7e14623671d31a5dc5fa3e2c018d4761fa; test commit: 91f20e073483f426760e87e555de0d42d1a45081.
 - Hosted CI status: pending; the redirect-protection changes are not considered validated until the full suite and Ruff pass.
+
+### Phase 17 — Reliable retry of failed daily preflight notices (2026-11-19)
+- A reliability audit found that `send_daily_notice` persisted the daily suppression timestamp before attempting Telegram delivery. A transient network failure or rejected request could therefore suppress all further notice attempts for the rest of the day.
+- Changed the order: the daily timestamp is now persisted only after Telegram returns HTTP 200. Failed requests remain retryable on the next scan. Redirect rejection remains enabled.
+- Added regression tests for both successful delivery (timestamp persisted and duplicate same-day send suppressed) and failed delivery (no timestamp persisted).
+- The latest CI run before this phase exposed a separate test-isolation issue: `WeeklyReportFormattingTests` inherited directly from `unittest.TestCase`, violating the repository's `IsolatedDataTestCase` invariant. Corrected the inheritance and configured the regression workflow to run on pushes to `before-market-book` as well as `main`.
+- Source commit: `50b4966f678209c0ec42a33d64ee842d8667bc7d`; regression-test commit: `3d31b64cbe2720b290523318a0ba620c29921173`. CI for these newest changes is pending and must pass twice plus Ruff before this phase is considered validated.
