@@ -645,6 +645,16 @@ def _discord_link_and_body(text: str) -> tuple[str, str]:
     return link, body.strip()
 
 
+def _extract_pasted_author(body: str) -> tuple[str, str]:
+    """Read an explicit owner-supplied Discord author line without guessing."""
+    match = re.search(r"(?im)^\s*(?:discord\s+)?author\s*:\s*(.*?)\s*$", body)
+    if not match:
+        return "", body
+    author = match.group(1).strip()[:100]
+    cleaned = body[:match.start()] + body[match.end():]
+    return author, cleaned.strip()
+
+
 def _discord_posted_at_from_link(link: str) -> str:
     match = re.search(r"/channels/\d+/\d+/(\d+)", link)
     if not match:
@@ -660,12 +670,20 @@ def _discord_posted_at_from_link(link: str) -> str:
 def _save_forwarded_post(message: dict[str, Any], chat_id: str) -> tuple[int, int, dict[str, int]]:
     raw = _message_text(message)
     link, body = _discord_link_and_body(raw)
+    pasted_author, body = _extract_pasted_author(body)
+    forwarded_author = _forward_author(message)
+    author = forwarded_author or pasted_author
     posted_at = _discord_posted_at_from_link(link)
     message_id = f"telegram:{chat_id}:{message.get('message_id', '')}"
     result = parse_cash_post(
-        body, author=_forward_author(message), message_id=message_id,
+        body, author=author, message_id=message_id,
         url=link, posted_at=posted_at,
     )
+    if pasted_author and not forwarded_author:
+        for offer in result["offers"]:
+            offer["flags"] = sorted(set(offer.get("flags", []) + ["owner_supplied_author"]))
+        for hint in result["demand_hints"]:
+            hint["flags"] = sorted(set(hint.get("flags", []) + ["owner_supplied_author"]))
     if not posted_at:
         result["rejected"].extend(
             {"reason": "timestamp_unknown"} for _ in result["offers"]

@@ -155,6 +155,38 @@ class TelegramMarketTests(IsolatedDataTestCase):
         self.assertEqual(count, 2)
         self.assertEqual(len(stored["offers"]), 2)
 
+    def test_pasted_discord_post_accepts_explicit_author_and_flags_unverified_identity(self):
+        sent = []
+        updates = [{"update_id": 34, "message": {
+            "message_id": 82, "date": 1_800_000_000,
+            "chat": {"id": 123, "type": "private"}, "from": {"id": 123},
+            "text": "Author: seller-alpha\\nSELLING MM2\\n1x Celestial Set 72$\\n"
+                    "https://discord.com/channels/1125462206151143464/1572655277130514472/1573076681072189520",
+        }}]
+        with self._paths():
+            count = telegram_market.process_telegram_updates(
+                token="token", chat_id="123", market_enabled=True,
+                inventory_enabled=False, private_state_confirmed=True,
+                get_updates=lambda token, offset: updates,
+                send_message=lambda token, chat, text: sent.append(text),
+                now=1_800_000_000,
+            )
+            stored = json.loads(self.offers.read_text(encoding="utf-8"))
+        self.assertEqual(count, 1)
+        self.assertEqual(len(stored["offers"]), 1)
+        self.assertEqual(stored["offers"][0]["author"], "seller-alpha")
+        self.assertIn("owner_supplied_author", stored["offers"][0]["flags"])
+        self.assertEqual(stored["offers"][0]["posted_at"], "2026-11-19T20:45:07.119000+00:00")
+        self.assertIn("تم تحليل 1 عرضاً", sent[-1])
+
+    def test_discord_snowflake_timestamp_is_decoded_from_message_permalink(self):
+        self.assertEqual(
+            telegram_market._discord_posted_at_from_link(
+                "https://discord.com/channels/1125462206151143464/1572655277130514472/1573076681072189520"
+            ),
+            "2026-11-19T20:45:07.119000+00:00",
+        )
+
     def test_pasted_offer_without_discord_timestamp_is_rejected(self):
         sent = []
         updates = [{"update_id": 31, "message": {

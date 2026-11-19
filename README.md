@@ -18,9 +18,14 @@ Re-enable cash mode only after reliable fresh verified prices exist:
 The cash-market path is separate from the legacy swap scanner and remains
 opt-in. The owner can forward or paste a Discord post and its permalink to the
 Telegram bot; the bot does not scrape Discord, use a Discord user token, or
-execute trades. A pasted offer without an authoritative Discord timestamp
-(permalink snowflake or collector timestamp) is rejected rather than assigned
-the Telegram receipt time.
+execute trades. Include the original Discord message permalink. When pasting
+plain text rather than forwarding a source with author metadata, prepend
+`Author: exact-discord-username`; that identity is marked
+`owner_supplied_author` because the bot cannot independently verify it.
+Without author metadata, the offer can be displayed but cannot increase the
+independent-author confidence count. A pasted offer without an authoritative
+Discord timestamp (permalink snowflake or collector timestamp) is rejected
+rather than assigned the Telegram receipt time.
 Existing authorized manual imports remain supported. Supreme game values are
 resolved only through the existing RBLXValue `value_source_b` cache; the
 Supreme Values website is never scraped.
