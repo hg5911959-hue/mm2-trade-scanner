@@ -271,6 +271,9 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         scheduler = (ROOT / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
         self.assertIn("default: false", workflow.split("enable_discord:", 1)[1].split("permissions:", 1)[0])
+        dispatch = workflow.split("  workflow_dispatch:", 1)[1].split("permissions:", 1)[0]
+        self.assertIn("enable_discord:", dispatch)
+        self.assertIn("default: false", dispatch)
         self.assertIn("if: env.PRIVATE_STATE_ENABLED == 'true'", workflow)
         self.assertIn('if [ "${#MM2_PRIVATE_STATE_KEY}" -lt 32 ]; then', workflow)
         self.assertIn("inputs.enable_discord", scheduler)
