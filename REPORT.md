@@ -178,3 +178,8 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - Swap-chain rows now retain risk flags from both market legs. `/buy`, `/chains`, and Telegram opportunity alerts display source links and applicable risk flags; direct cash opportunities remain usable without game values.
 - Added regressions for stale-cache cash-only operation, stability risk display, chain risk propagation, and source/risk visibility in commands.
 - Hosted verification for the new phase is pending; the last verified baseline is 451 tests twice on Actions run [#1013](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44620780337). The new code has not yet been counted as passing.
+
+### Hosted verification — Phase 10 test import correction
+- Current implementation head: `cb5ed235419086a7209f2ad634d10d1b88f1b577`.
+- The first Phase 10 test attempt found a missing `datetime`/`timezone` import in the new test itself. Added the missing test-only import; production code was not implicated. The failed attempt is retained and not counted as passing.
+- Re-run the full suite twice, data-tree immutability check, and all Ruff checks.
