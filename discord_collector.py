@@ -1,21 +1,29 @@
-"""Read-only Discord collector for explicitly approved MM2 servers.
+"""Read-only Discord collector using the official REST API and Python stdlib.
 
-The bot discovers readable text channels only inside configured guild IDs. It
-never sends messages, moderates, or uses a personal account token/self-bot.
+Only GET requests are made, only configured guild IDs are visited, and the
+existing Discord bot token is used (never a personal user token/self-bot).
 """
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import os
-import sys
-from datetime import datetime, timedelta, timezone
+import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+API_BASE = "https://discord.com/api/v10"
 MAX_HISTORY_PER_CHANNEL = 100
+MAX_CHANNELS_PER_GUILD = 100
+MAX_THREADS_PER_GUILD = 100
 MAX_STORED_MESSAGES = 10000
+MAX_RESPONSE_BYTES = 2_000_000
+MAX_RATE_LIMIT_WAIT_SECONDS = 10.0
 
 
 def parse_guild_ids(raw: str) -> list[int]:
@@ -33,40 +41,145 @@ def parse_guild_ids(raw: str) -> list[int]:
     return ids
 
 
-def normalize_message(message: Any) -> dict[str, Any]:
-    guild = getattr(message, "guild", None)
-    channel = getattr(message, "channel", None)
-    author = getattr(message, "author", None)
+def _get(value: Any, key: str, default: Any = None) -> Any:
+    if isinstance(value, dict):
+        return value.get(key, default)
+    return getattr(value, key, default)
+
+
+def _iso_timestamp(value: Any) -> str:
+    if value is None or value == "":
+        return ""
+    try:
+        parsed = value if isinstance(value, datetime) else datetime.fromisoformat(
+            str(value).replace("Z", "+00:00")
+        )
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc).isoformat()
+    except (TypeError, ValueError, OverflowError):
+        return ""
+
+
+class _RejectDiscordRedirects(urllib.request.HTTPRedirectHandler):
+    """Never forward the bot Authorization header to a redirect target."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(
+            req.full_url, code, "Discord API redirect refused", headers, fp
+        )
+
+
+def _discord_get_json(
+    path: str, token: str, params: dict[str, Any] | None = None, timeout: int = 20,
+) -> Any:
+    """Make a bounded, read-only Discord REST request with limited 429 retries."""
+    if not path.startswith("/") or ".." in path:
+        raise ValueError("Invalid Discord API path")
+    query = urllib.parse.urlencode(params or {})
+    url = API_BASE + path + (("?" + query) if query else "")
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": "Bot " + token,
+            "Accept": "application/json",
+            "User-Agent": "MM2MarketIntelligence/1.0 (read-only bot API client)",
+        },
+        method="GET",
+    )
+    opener = urllib.request.build_opener(_RejectDiscordRedirects())
+    for attempt in range(3):
+        try:
+            with opener.open(request, timeout=max(3, min(int(timeout), 30))) as response:
+                body = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(body) > MAX_RESPONSE_BYTES:
+                raise RuntimeError("Discord API response exceeded the safety limit")
+            try:
+                return json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                raise RuntimeError("Discord API returned invalid JSON") from None
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429 and attempt < 2:
+                try:
+                    payload = json.loads(exc.read(65536).decode("utf-8"))
+                    delay = float(payload.get("retry_after", 1.0))
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+                    try:
+                        delay = float(exc.headers.get("Retry-After", "1"))
+                    except (AttributeError, TypeError, ValueError):
+                        delay = 1.0
+                if not 0 <= delay <= MAX_RATE_LIMIT_WAIT_SECONDS:
+                    raise RuntimeError("Discord rate limit wait exceeds the bounded retry window") from None
+                time.sleep(max(0.25, delay))
+                continue
+            if exc.code == 403:
+                raise PermissionError("Discord bot lacks permission to read this resource") from None
+            if exc.code == 404:
+                return None
+            if exc.code == 401:
+                raise RuntimeError("Discord bot token was rejected") from None
+            raise RuntimeError(f"Discord API returned HTTP {exc.code}") from None
+        except urllib.error.URLError as exc:
+            raise RuntimeError(
+                f"Discord API network error: {type(exc.reason).__name__}"
+            ) from None
+    raise RuntimeError("Discord API rate limit retry budget exhausted")
+
+
+def normalize_message(
+    message: Any, guild_id: int | str | None = None, channel: Any = None,
+) -> dict[str, Any]:
+    guild = _get(message, "guild")
+    channel_obj = _get(message, "channel") or channel
+    author = _get(message, "author", {}) or {}
+    message_id = str(_get(message, "id", "") or "")
+    actual_guild_id = str(
+        _get(guild, "id", "") or _get(message, "guild_id", "") or guild_id or ""
+    )
+    channel_id = str(
+        _get(channel_obj, "id", "") or _get(message, "channel_id", "") or ""
+    )
     attachments = [
-        str(getattr(item, "url", ""))[:1000]
-        for item in list(getattr(message, "attachments", []) or [])[:10]
-        if getattr(item, "url", None)
+        str(_get(item, "url", ""))[:1000]
+        for item in list(_get(message, "attachments", []) or [])[:10]
+        if _get(item, "url", None)
     ]
     embeds = []
-    for embed in list(getattr(message, "embeds", []) or [])[:5]:
-        parts = [getattr(embed, "title", None), getattr(embed, "description", None)]
+    for embed in list(_get(message, "embeds", []) or [])[:5]:
+        parts = [_get(embed, "title"), _get(embed, "description")]
+        for field in list(_get(embed, "fields", []) or [])[:5]:
+            parts.extend([_get(field, "name"), _get(field, "value")])
         embeds.append(" ".join(str(part) for part in parts if part)[:2000])
-    created = getattr(message, "created_at", None)
-    if created is not None and created.tzinfo is None:
-        created = created.replace(tzinfo=timezone.utc)
+    author_name = (
+        _get(author, "global_name") or _get(author, "display_name")
+        or _get(author, "username") or _get(author, "name") or "unknown"
+    )
+    created = _get(message, "timestamp") or _get(message, "created_at")
+    url = _get(message, "jump_url") or (
+        f"https://discord.com/channels/{actual_guild_id}/{channel_id}/{message_id}"
+        if actual_guild_id and channel_id and message_id else ""
+    )
     return {
         "source": "discord",
-        "message_id": str(getattr(message, "id", "")),
-        "guild_id": str(getattr(guild, "id", "")) if guild else "",
-        "guild_name": str(getattr(guild, "name", ""))[:100] if guild else "",
-        "channel_id": str(getattr(channel, "id", "")) if channel else "",
-        "channel_name": str(getattr(channel, "name", ""))[:100] if channel else "",
-        "author": str(getattr(author, "display_name", getattr(author, "name", "unknown")))[:100],
-        "content": str(getattr(message, "content", "") or "")[:8000],
+        "message_id": message_id,
+        "guild_id": actual_guild_id,
+        "guild_name": str(_get(guild, "name", "") or guild_id or "")[:100],
+        "channel_id": channel_id,
+        "channel_name": str(_get(channel_obj, "name", "") or "")[:100],
+        "author": str(author_name)[:100],
+        "content": str(_get(message, "content", "") or "")[:8000],
         "embeds": embeds,
         "attachments": attachments,
-        "created_at_utc": created.isoformat() if created else "",
-        "url": str(getattr(message, "jump_url", "") or "")[:1000],
+        "created_at_utc": _iso_timestamp(created),
+        "url": str(url or "")[:1000],
     }
 
 
-def merge_messages(existing: list[dict[str, Any]], incoming: list[dict[str, Any]], retention_days: int = 7) -> list[dict[str, Any]]:
-    cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, min(int(retention_days), 30)))
+def merge_messages(
+    existing: list[dict[str, Any]], incoming: list[dict[str, Any]],
+    retention_days: int = 7,
+) -> list[dict[str, Any]]:
+    cutoff = datetime.now(timezone.utc).timestamp() - max(1, min(int(retention_days), 30)) * 86400
     by_id: dict[str, dict[str, Any]] = {}
     for row in list(existing) + list(incoming):
         message_id = str(row.get("message_id", "")).strip()
@@ -77,9 +190,9 @@ def merge_messages(existing: list[dict[str, Any]], incoming: list[dict[str, Any]
             parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=timezone.utc)
-            if parsed < cutoff:
+            if parsed.timestamp() < cutoff:
                 continue
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, OverflowError):
             pass
         by_id[message_id] = row
     return sorted(
@@ -100,7 +213,10 @@ def load_existing(path: Path) -> list[dict[str, Any]]:
         raise RuntimeError(f"Existing Discord state is unreadable: {path}") from None
 
 
-def atomic_save(path: Path, messages: list[dict[str, Any]], guild_ids: list[int], scanned_channels: list[str]) -> None:
+def atomic_save(
+    path: Path, messages: list[dict[str, Any]], guild_ids: list[int],
+    scanned_channels: list[str],
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "schema_version": 2,
@@ -111,18 +227,22 @@ def atomic_save(path: Path, messages: list[dict[str, Any]], guild_ids: list[int]
         "message_count": len(messages),
         "messages": messages,
     }
-    temp = path.with_name(path.name + ".tmp")
-    temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(temp, path)
-
-
-async def collect(guild_ids: list[int], output: Path, limit: int, retention_days: int) -> int:
+    fd, temporary = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
     try:
-        import discord
-    except ImportError:
-        print("discord.py is not installed; install discord.py==2.6.4", file=sys.stderr)
-        return 2
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
+
+def collect(
+    guild_ids: list[int], output: Path, limit: int, retention_days: int,
+) -> int:
     token = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
     if not token:
         print("Discord collection skipped: DISCORD_BOT_TOKEN is not configured.")
@@ -130,81 +250,80 @@ async def collect(guild_ids: list[int], output: Path, limit: int, retention_days
     if not guild_ids:
         print("Discord collection skipped: DISCORD_GUILD_IDS is empty.")
         return 0
+    if not 1 <= limit <= MAX_HISTORY_PER_CHANNEL:
+        raise ValueError("message limit must be between 1 and 100")
 
-    intents = discord.Intents.none()
-    intents.guilds = True
-    intents.messages = True
-    intents.message_content = True
-    client = discord.Client(intents=intents)
-    state = load_existing(output)
+    existing = load_existing(output)
     collected: list[dict[str, Any]] = []
     errors: list[str] = []
     scanned_channels: list[str] = []
-
-    @client.event
-    async def on_ready() -> None:
-        for guild_id in guild_ids:
-            guild = client.get_guild(guild_id)
-            if guild is None:
-                try:
-                    guild = await client.fetch_guild(guild_id)
-                except discord.Forbidden:
-                    errors.append(f"server {guild_id}: bot is not a member or lacks access")
+    for guild_id in guild_ids:
+        try:
+            channels = _discord_get_json(f"/guilds/{guild_id}/channels", token)
+        except (PermissionError, RuntimeError, ValueError) as exc:
+            errors.append(f"server {guild_id}: {str(exc)[:160]}")
+            continue
+        if not isinstance(channels, list):
+            errors.append(f"server {guild_id}: invalid channel-list response")
+            continue
+        guild_channels = [
+            row for row in channels
+            if isinstance(row, dict) and row.get("type") in {0, 5}
+        ][:MAX_CHANNELS_PER_GUILD]
+        try:
+            thread_payload = _discord_get_json(f"/guilds/{guild_id}/threads/active", token)
+            threads = thread_payload.get("threads", []) if isinstance(thread_payload, dict) else []
+        except (PermissionError, RuntimeError, ValueError) as exc:
+            errors.append(f"server {guild_id} active threads: {str(exc)[:160]}")
+            threads = []
+        thread_channels = [
+            row for row in threads
+            if isinstance(row, dict) and row.get("type") in {10, 11, 12}
+        ][:MAX_THREADS_PER_GUILD]
+        seen_channel_ids: set[str] = set()
+        for channel in guild_channels + thread_channels:
+            channel_id = str(channel.get("id") or "")
+            if not channel_id or channel_id in seen_channel_ids:
+                continue
+            seen_channel_ids.add(channel_id)
+            try:
+                messages = _discord_get_json(
+                    f"/channels/{channel_id}/messages", token, params={"limit": limit}
+                )
+            except (PermissionError, RuntimeError, ValueError) as exc:
+                errors.append(f"channel {channel_id}: {str(exc)[:160]}")
+                continue
+            if not isinstance(messages, list):
+                errors.append(f"channel {channel_id}: invalid message-list response")
+                continue
+            scanned_channels.append(channel_id)
+            for message in messages:
+                if not isinstance(message, dict):
                     continue
-                except discord.HTTPException as exc:
-                    errors.append(f"server {guild_id}: Discord HTTP {exc.status}")
+                author = message.get("author") or {}
+                if isinstance(author, dict) and author.get("bot", False):
                     continue
+                row = normalize_message(message, guild_id, channel)
+                if row["content"].strip() or row["embeds"] or row["attachments"]:
+                    collected.append(row)
 
-            me = guild.me
-            channels = list(getattr(guild, "text_channels", []) or [])
-            # Include active public/private threads only when their parent is
-            # in this explicitly allowlisted server and the bot can read them.
-            channels.extend(list(getattr(guild, "threads", []) or []))
-            unique_channels = {int(channel.id): channel for channel in channels if hasattr(channel, "history")}
-
-            for channel_id, channel in unique_channels.items():
-                parent = getattr(channel, "parent", None)
-                permission_target = parent or channel
-                try:
-                    permissions = permission_target.permissions_for(me)
-                    if not permissions.view_channel or not permissions.read_message_history:
-                        continue
-                    async for message in channel.history(limit=limit, oldest_first=False):
-                        if getattr(getattr(message, "author", None), "bot", False):
-                            continue
-                        row = normalize_message(message)
-                        if row["content"].strip() or row["embeds"] or row["attachments"]:
-                            collected.append(row)
-                    scanned_channels.append(str(channel_id))
-                except discord.Forbidden:
-                    errors.append(f"channel {channel_id}: missing View Channel or Read Message History")
-                except discord.HTTPException as exc:
-                    errors.append(f"channel {channel_id}: Discord HTTP {exc.status}")
-                except Exception as exc:
-                    errors.append(f"channel {channel_id}: {type(exc).__name__}")
-
-        if not scanned_channels:
-            errors.append("No readable text channels found; check bot membership and channel permissions.")
-        merged = merge_messages(state, collected, retention_days)
-        atomic_save(output, merged, guild_ids, scanned_channels)
-        print(f"Discord collection complete: {len(collected)} fetched, {len(merged)} retained, {len(scanned_channels)} channels scanned, {len(errors)} warnings.")
-        for error in errors:
-            print(f"Discord warning: {error}")
-        await client.close()
-
-    try:
-        await client.start(token)
-    except discord.LoginFailure:
-        print("Discord collection failed: bot token rejected; verify DISCORD_BOT_TOKEN.", file=sys.stderr)
-        return 1
-    except Exception as exc:
-        print(f"Discord collection failed: {type(exc).__name__}", file=sys.stderr)
-        return 1
+    if not scanned_channels:
+        errors.append("No readable text channels found; check bot membership and permissions.")
+    merged = merge_messages(existing, collected, retention_days)
+    atomic_save(output, merged, guild_ids, scanned_channels)
+    print(
+        f"Discord collection complete: {len(collected)} fetched, {len(merged)} retained, "
+        f"{len(scanned_channels)} channels scanned, {len(errors)} warnings."
+    )
+    for error in errors:
+        print(f"Discord warning: {error}")
     return 1 if errors and not collected else 0
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Collect recent messages from configured MM2 Discord servers.")
+    parser = argparse.ArgumentParser(
+        description="Collect recent messages from configured MM2 Discord servers using read-only REST GETs."
+    )
     parser.add_argument("--output", default="data/discord_messages.json")
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--retention-days", type=int, default=7)
@@ -215,7 +334,7 @@ def main() -> int:
         guilds = parse_guild_ids(os.environ.get("DISCORD_GUILD_IDS", ""))
     except ValueError as exc:
         parser.error(str(exc))
-    return asyncio.run(collect(guilds, Path(args.output), args.limit, args.retention_days))
+    return collect(guilds, Path(args.output), args.limit, args.retention_days)
 
 
 if __name__ == "__main__":

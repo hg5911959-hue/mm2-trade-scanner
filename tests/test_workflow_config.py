@@ -115,6 +115,17 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("git add data/rblxvalue_request_budget.json", workflow)
         self.assertIn("git rm -f --ignore-unmatch data/api_key_blocked.json", workflow)
 
+    def test_discord_collector_uses_stdlib_without_installing_discord_py(self):
+        workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        collector = (ROOT / "discord_collector.py").read_text(encoding="utf-8")
+        self.assertIn("python -u discord_collector.py", workflow)
+        self.assertNotIn("pip install", workflow)
+        self.assertNotIn("discord.py", workflow)
+        self.assertNotIn("import discord", collector)
+        self.assertIn('method="GET"', collector)
+        self.assertIn("Authorization", collector)
+        self.assertIn("class _RejectDiscordRedirects", collector)
+
     def test_manual_scan_dispatch_defaults_to_dry_run(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         scheduler = (ROOT / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")

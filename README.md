@@ -30,7 +30,7 @@ Existing authorized manual imports remain supported. Supreme game values are
 resolved only through the existing RBLXValue `value_source_b` cache; the
 Supreme Values website is never scraped.
 
-Core modules:
+The optional bot collector uses only official Discord REST GET requests and Python's standard library; no `discord.py` package or user token is required.\n\nCore modules:
 - `cash_offer_parser.py` — parses price-list blocks, buyer/seller headers,
   per-unit prices, inverse notation, decimal commas, minimum quantities,
   payment hints, and pipe-separated offers. `QUICK SELL` is a seller header.

@@ -137,12 +137,8 @@ jobs:
           DISCORD_MANUAL_MESSAGES_JSON_2: ${{ secrets.DISCORD_MANUAL_MESSAGES_JSON_2 }}
         run: |
           if [ -n "$DISCORD_BOT_TOKEN" ]; then
-            if python -m pip install --disable-pip-version-check "discord.py==2.6.4"; then
-              if ! python -u discord_collector.py --output data/discord_messages.json --limit 100 --retention-days 7; then
-                echo "Discord collector failed; continuing with BloxSwaps and any manual import."
-              fi
-            else
-              echo "discord.py install failed; continuing with BloxSwaps and any manual import."
+            if ! python -u discord_collector.py --output data/discord_messages.json --limit 100 --retention-days 7; then
+              echo "Discord collector failed; continuing with BloxSwaps and any manual import."
             fi
           else
             echo "Discord bot collection skipped: DISCORD_BOT_TOKEN is not configured."
