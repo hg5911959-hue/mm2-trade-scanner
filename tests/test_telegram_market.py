@@ -127,6 +127,32 @@ class TelegramMarketTests(IsolatedDataTestCase):
             )
         self.assertIn("قائمة الانتظار", sent[0])
 
+    def test_csv_catalogue_is_only_a_dry_run_reference_fallback(self):
+        catalogue = {
+            "items": {
+                "candy": {"name": "Candy", "cash_price_usd": 2.5,
+                          "status": "unverified", "verified_at_utc": ""},
+            }
+        }
+        with self._paths(), patch("telegram_market._load_offers", return_value=([], [])), \
+             patch("tools.cash_market.load_cash_price_catalog", return_value=catalogue) as csv_loader, \
+             patch.dict("os.environ", {"DRY_RUN": "true"}):
+            snapshot = telegram_market._load_market(now=NOW)
+        csv_loader.assert_called_once()
+        self.assertEqual(snapshot["book"]["candy"]["median_market"], 2.5)
+        self.assertIn("dry_run_csv_fallback", snapshot["book"]["candy"]["risk_flags"])
+        self.assertIn("unverified_csv_estimate", snapshot["book"]["candy"]["risk_flags"])
+        self.assertEqual(snapshot["direct"], [])
+        self.assertEqual(snapshot["chains"], [])
+
+    def test_live_market_never_uses_the_legacy_csv_fallback(self):
+        with self._paths(), patch("telegram_market._load_offers", return_value=([], [])), \
+             patch("tools.cash_market.load_cash_price_catalog") as csv_loader, \
+             patch.dict("os.environ", {"DRY_RUN": "false"}):
+            snapshot = telegram_market._load_market(now=NOW)
+        csv_loader.assert_not_called()
+        self.assertEqual(snapshot["book"], [])
+
     def test_market_price_command_reports_acceptance_values(self):
         snapshot = {
             "book": {"celestial set": {
