@@ -100,7 +100,7 @@ jobs:
           if [ -f data/private_state.enc ]; then
             python private_state.py decrypt --input data/private_state.enc --directory data
           else
-            for file in cash_market_offers.json inventory.json telegram_update_state.json telegram_last_run.json market_book_history.json; do
+            for file in cash_market_offers.json inventory.json telegram_update_state.json telegram_last_run.json market_book_history.json market_alert_state.json; do
               if [ -f "data/$file" ]; then
                 echo "Refusing unencrypted private state on the public state branch."
                 exit 1
@@ -217,7 +217,7 @@ jobs:
           if [ "${PRIVATE_STATE_ENABLED}" = "true" ]; then
             python private_state.py encrypt --directory data --output data/private_state.enc
           else
-            rm -f data/cash_market_offers.json data/inventory.json data/telegram_update_state.json data/telegram_last_run.json data/market_book_history.json
+            rm -f data/cash_market_offers.json data/inventory.json data/telegram_update_state.json data/telegram_last_run.json data/market_book_history.json data/market_alert_state.json
           fi
           mkdir -p state-bundle/data
           if [ -d data ]; then cp -a data/. state-bundle/data/; fi
