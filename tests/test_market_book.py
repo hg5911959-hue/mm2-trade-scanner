@@ -150,6 +150,14 @@ class MarketBookTests(IsolatedDataTestCase):
         self.assertEqual(advice[0]["verdict"], "SELL NOW")
         self.assertIn("price_falling", advice[0]["risk_flags"])
 
+    def test_non_finite_thresholds_fail_closed(self):
+        with self.assertRaises(ValueError):
+            build_order_book([], now=NOW, max_age_hours=float("nan"))
+        with self.assertRaises(ValueError):
+            find_swap_chains({}, {}, transfer_fee_usd=float("nan"))
+        with self.assertRaises(ValueError):
+            inventory_advice({}, {}, undercut_usd=float("nan"))
+
     def test_private_price_history_is_atomic_rolling_and_compact(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "private-history.json"
