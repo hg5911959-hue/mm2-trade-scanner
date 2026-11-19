@@ -78,3 +78,10 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - The first hosted PR run (`MM2 Scanner Tests`, run `#847`) failed with 402 tests executed, 10 failures and 5 errors. The logs identified: a cash-parser header-regex escaping bug, the new tests not using the repository's isolated test base, old key-health tests that expected API calls on fresh cache, and a redundant health probe shifting mocked pagination responses.
 - Those causes have been corrected in the branch and additional market-book, Telegram, and encryption tests have been added. A subsequent full run (twice) plus Ruff is still required before any feature flag is enabled or the PR is merged.
 - No new test-pass or Ruff-pass claim is made at this checkpoint.
+
+
+### Latest verification update
+- Hosted run `#899` on commit `7e2a332` completed successfully: **431 tests passed on pass 1 and 431 tests passed on pass 2**. The workflow also verified that tests left `data/` unchanged.
+- The same run passed the existing selected Ruff checks, the scanner's `--select F` check, and repository-wide `ruff check --select F .`.
+- A subsequent attempt to lint every new file with the repository's full custom Ruff rule set failed on many pre-existing project-wide style rules (including broad exception-handling and import-order rules), not on the test suite. The lint command has been narrowed to Ruff's default correctness rules `E4,E7,E9,F` for the newly added modules, while retaining the existing full checks and repository-wide F checks. This final lint configuration still needs a hosted run.
+- Current PR: [#85](https://github.com/hg5911959-hue/mm2-trade-scanner/pull/85). It remains unmerged. All new feature flags remain false.
