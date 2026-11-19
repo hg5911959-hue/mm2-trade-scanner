@@ -46,6 +46,17 @@ jobs:
       TELEGRAM_COMMANDS_ENABLED: "false"
       INVENTORY_ENABLED: "false"
       PRIVATE_STATE_ENABLED: "false"
+      MAX_ALERTS_PER_SCAN: "15"
+      MARKET_ALERT_PROFIT_DELTA_USD: "0.50"
+      MARKET_TRANSFER_FEE_USD: "0.50"
+      MARKET_SAFETY_MARGIN_PERCENT: "5.0"
+      MIN_PROFIT_USD: "0.50"
+      MIN_PROFIT_PERCENT: "5.0"
+      SWAP_VALUE_TOLERANCE_PERCENT: "2.0"
+      MARKET_OFFER_MAX_AGE_HOURS: "48"
+      MARKET_LOW_PRICE_RATIO: "0.40"
+      MARKET_HIGH_PRICE_RATIO: "2.50"
+      MARKET_UNDERCUT_USD: "0.01"
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
