@@ -43,6 +43,80 @@ class NoDataPollutionTests(IsolatedDataTestCase):
                             f"{test_file.name}:{node.name} bypasses the isolated base",
                         )
 
+    def test_private_discord_unknown_items_never_enter_public_logs_or_unmatched_state(self):
+        import io
+        from contextlib import redirect_stdout
+
+        private_listing = {
+            "id": "private-discord-id",
+            "source": "discord",
+            "source_ad_id": "discord:private-message-id",
+            "discord_message_id": "private-message-id",
+            "source_text": "PrivateItem for AnotherPrivateItem",
+            "receive_items": [{"name": "PrivateItem", "quantity": 1}],
+            "give_items": [{"name": "AnotherPrivateItem", "quantity": 1}],
+            "url": "https://discord.com/channels/private/123",
+            "posted_at": "2026-11-19T20:00:00+00:00",
+        }
+        stats = {
+            "pagination_complete": True,
+            "candidate_count": 0,
+            "addition_count": 0,
+            "watch_remaining_ids": [],
+            "watch_search_complete": True,
+            "pending_remaining_ids": [],
+        }
+
+        class FakeHistory:
+            def record_values_snapshot(self, values):
+                return False
+
+            def record_opportunity(self, result):
+                return None
+
+            def record_listings(self, listings):
+                return 0
+
+            def close(self):
+                return None
+
+        output = io.StringIO()
+        with (
+            patch.dict(os.environ, {
+                "DRY_RUN": "true", "PRIVATE_STATE_ENABLED": "true",
+                "MARKET_BOOK_ENABLED": "false", "TELEGRAM_COMMANDS_ENABLED": "false",
+                "INVENTORY_ENABLED": "false",
+            }),
+            patch.object(scanner, "CASH_FILTER", False),
+            patch.object(scanner, "update_metrics"),
+            patch.object(scanner, "load_supreme_values", return_value={}),
+            patch.object(scanner, "load_aliases", return_value={}),
+            patch.object(scanner, "load_seen_ads", return_value=set()),
+            patch.object(scanner, "load_pending_ids", return_value={}),
+            patch.object(scanner, "load_pending_recheck_schedule", return_value={}),
+            patch.object(scanner, "load_watch_state", return_value={}),
+            patch.object(scanner, "load_first_seen_ads", return_value={}),
+            patch.object(scanner, "load_alerted", return_value=[]),
+            patch.object(scanner, "load_uncertain_state", return_value=({}, [])),
+            patch.object(scanner, "load_discord_alert_state", return_value={"alerted": [], "uncertain": {}}),
+            patch.object(scanner, "fetch_bloxswaps_all", return_value=([], stats, [])),
+            patch.object(scanner, "evaluate_listing", return_value=(None, ["PrivateItem"])),
+            patch.object(scanner, "record_unmatched_names", side_effect=AssertionError("private names must not be persisted")),
+            patch.object(scanner, "send_maintenance_alert"),
+            patch.object(scanner, "alert_cash_price_runway"),
+            patch.object(scanner, "record_success_if_complete"),
+            patch.object(scanner, "save_first_seen_ads"),
+            patch.object(discord_parser, "load_discord_listings", return_value=([private_listing], 0)),
+            patch.object(market_history, "MarketHistory", return_value=FakeHistory()),
+            redirect_stdout(output),
+        ):
+            scanner.scan_once(include_backlog_rechecks=False)
+
+        rendered = output.getvalue()
+        self.assertNotIn("PrivateItem", rendered)
+        self.assertNotIn("private-message-id", rendered)
+        self.assertNotIn("private-discord-id", rendered)
+
     def test_mocked_scan_never_changes_repository_data(self):
         before = _hash_data_tree()
 
