@@ -76,6 +76,7 @@ LAST_SUCCESS_FILE = Path("data/last_successful_scan.json")
 WATCH_FILE = Path("data/watch_ads.json")
 ALIASES_FILE = Path("aliases.json")
 UNMATCHED_FILE = Path("data/unmatched_names.json")
+DISCORD_ALERT_STATE_FILE = Path("data/discord_alert_state.json")
 MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
 BLOXSWAPS_PAGE_SIZE = 20
 MAX_FEED_PAGES = max(1, min(1000, int(os.environ.get("MAX_FEED_PAGES", "1000"))))
@@ -3379,6 +3380,38 @@ def save_alerted(alerted):
     atomic_write_text(ALERTED_FILE, json.dumps({"version": 2, "alerted": ordered}, indent=2) + "\n")
 
 
+def load_discord_alert_state():
+    """Load private Discord dedupe state; caller must have decrypted private storage."""
+    if not DISCORD_ALERT_STATE_FILE.exists():
+        return {"alerted": [], "uncertain": {}}
+    try:
+        state = json.loads(DISCORD_ALERT_STATE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("[private-state] Discord alert state is unreadable; refusing duplicate sends.") from exc
+    if not isinstance(state, dict) or not isinstance(state.get("alerted", []), list) or not isinstance(state.get("uncertain", {}), dict):
+        raise RuntimeError("[private-state] Discord alert state has an invalid structure.")
+    alerted = [str(value) for value in state.get("alerted", []) if str(value)]
+    uncertain = {}
+    for key, value in state.get("uncertain", {}).items():
+        try:
+            uncertain[str(key)] = float(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise RuntimeError("[private-state] Discord uncertain-delivery timestamp is invalid.") from exc
+    return {"alerted": alerted[-MAX_ALERTED:], "uncertain": uncertain}
+
+
+def save_discord_alert_state(state):
+    """Persist Discord IDs only in the allowlisted encrypted private-state bundle."""
+    if not isinstance(state, dict):
+        raise RuntimeError("[private-state] Discord alert state is invalid.")
+    payload = {
+        "version": 1,
+        "alerted": list(dict.fromkeys(str(value) for value in state.get("alerted", [])))[-MAX_ALERTED:],
+        "uncertain": {str(key): float(value) for key, value in state.get("uncertain", {}).items()},
+    }
+    atomic_write_text(DISCORD_ALERT_STATE_FILE, json.dumps(payload, indent=2) + "\n")
+
+
 def save_uncertain_state(state):
     normalized = {
         str(ad_id): float(timestamp)
@@ -4030,6 +4063,8 @@ def save_watch_state(ads):
     atomic_write_text(WATCH_FILE, json.dumps({'version': 1, 'ads': active}, ensure_ascii=False, indent=2) + "\n")
 
 def update_watch_entry(watch_state, listing, values, aliases=None, cash_catalog=None):
+    if listing.get("source") == "discord":
+        return False  # Discord fingerprints/IDs belong only in encrypted private state.
     ad_id = str(listing.get('source_ad_id') or '')
     if not ad_id: return False
     content_hash, values_hash = listing_watch_fingerprints(listing, values, aliases, cash_catalog)
@@ -4282,11 +4317,22 @@ def scan_once(include_backlog_rechecks=True):
     # normalized schema, but keep its IDs namespaced away from BloxSwaps cursors.
     from discord_parser import load_discord_listings
 
-    try:
-        discord_listings, discord_rejected = load_discord_listings()
-    except Exception as discord_error:
+    if private_state_enabled:
+        try:
+            discord_listings, discord_rejected = load_discord_listings()
+        except Exception as discord_error:
+            discord_listings, discord_rejected = [], 0
+            print(f"[discord-parser] source skipped safely: {type(discord_error).__name__}; BloxSwaps scan continues")
+        discord_alert_state = load_discord_alert_state()
+        discord_alerted_set = set(discord_alert_state["alerted"])
+        discord_uncertain = discord_alert_state["uncertain"]
+    else:
+        # Do not process private-server offers unless their dedupe state can be
+        # persisted inside the authenticated encrypted private-state bundle.
         discord_listings, discord_rejected = [], 0
-        print(f"[discord-parser] source skipped safely: {type(discord_error).__name__}; BloxSwaps scan continues")
+        discord_alert_state = {"alerted": [], "uncertain": {}}
+        discord_alerted_set = set()
+        discord_uncertain = {}
     if discord_listings:
         existing_ids = {str(row.get("id") or "") for row in listings}
         fresh_discord = [row for row in discord_listings if str(row.get("id") or "") not in existing_ids]
