@@ -1030,7 +1030,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             patch("scanner._LAST_TELEGRAM_SEND_AT", 0.0),
             patch("scanner.time.monotonic", side_effect=lambda: next(monotonic_values)),
             patch("scanner.time.sleep") as sleep,
-            patch("scanner.urllib.request.urlopen", side_effect=lambda req, timeout: BytesIO(b'{"ok": true}')),
+            patch("scanner._TELEGRAM_OPENER.open", side_effect=lambda req, timeout: BytesIO(b'{"ok": true}')),
         ):
             scanner.send_telegram("first")
             scanner.send_telegram("second")
@@ -1057,7 +1057,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             patch("scanner._LAST_TELEGRAM_SEND_AT", 0.0),
             patch("scanner.time.monotonic", side_effect=lambda: next(monotonic_values)),
             patch("scanner.time.sleep") as sleep,
-            patch("scanner.urllib.request.urlopen", side_effect=rate_limited),
+            patch("scanner._TELEGRAM_OPENER.open", side_effect=rate_limited),
         ):
             with self.assertRaisesRegex(RuntimeError, "HTTP 429"):
                 scanner.send_telegram("test")
