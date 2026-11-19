@@ -227,17 +227,30 @@ def _command_reply(command: str, snapshot: dict[str, Any], *, inventory_enabled:
         )
     if verb == "/p":
         if len(parts) < 2:
-            return "الاستخدام: /p <item>"
+            return "الاستخدام: /p <item> [item2 ...]"
         replies = []
-        raw_item = " ".join(parts[1:])
-        canonical, status = _resolve_command_item(raw_item)
-        if status != "resolved" or not canonical:
-            return "الاسم غير محسوم؛ أضفه إلى cash_item_aliases.json بعد التحقق."
-        key = normalize_key(canonical)
-        market = book.get(key)
-        if not market:
-            return f"{canonical}: لا توجد عروض حديثة."
-        replies.append(_format_item({"item": canonical}, market, snapshot["game_values"].get(key)))
+        tokens = parts[1:]
+        index = 0
+        while index < len(tokens):
+            match = None
+            end_match = index
+            for end in range(len(tokens), index, -1):
+                candidate, status = _resolve_command_item(" ".join(tokens[index:end]))
+                if status == "resolved" and candidate:
+                    match = candidate
+                    end_match = end
+                    break
+            if not match:
+                replies.append(f"{tokens[index]}: اسم غير محسوم.")
+                index += 1
+                continue
+            key = normalize_key(match)
+            market = book.get(key)
+            if not market:
+                replies.append(f"{match}: لا توجد عروض حديثة.")
+            else:
+                replies.append(_format_item({"item": match}, market, snapshot["game_values"].get(key)))
+            index = end_match
         return "\n\n".join(replies)
     if verb in {"/buy", "/chains"}:
         rows = snapshot["chains"] if verb == "/chains" else sorted(
@@ -277,7 +290,7 @@ def _command_reply(command: str, snapshot: dict[str, Any], *, inventory_enabled:
             if len(parts) < 3:
                 return "الاستخدام: /add <item> <qty> [cost]"
             cost = None
-            if len(parts) >= 4 and re.fullmatch(r"\d+(?:\.\d+)?", parts[-1]):
+            if len(parts) >= 4 and parts[-2].isdigit() and re.fullmatch(r"\d+(?:\.\d+)?", parts[-1]):
                 cost = float(parts[-1])
                 qty_text = parts[-2]
                 name_text = " ".join(parts[1:-2])
@@ -338,9 +351,13 @@ def _command_reply(command: str, snapshot: dict[str, Any], *, inventory_enabled:
         budget = _read_object(Path("data/rblxvalue_request_budget.json"), {"request_timestamps_epoch": []})
         timestamps = budget.get("request_timestamps_epoch", [])
         now = datetime.now(UTC).timestamp()
-        used = sum(1 for value in timestamps if isinstance(value, (int, float)) and now - value < 86400)
+        used = sum(1 for value in timestamps if not isinstance(value, bool) and isinstance(value, (int, float)) and 0 <= now - value < 86400)
         blocked = _read_object(Path("data/api_key_blocked.json"), {})
-        active = bool(blocked and (blocked.get("permanent") or float(blocked.get("blocked_until_epoch", 0) or 0) > now))
+        try:
+            blocked_until = float(blocked.get("blocked_until_epoch", 0) or 0)
+        except (TypeError, ValueError):
+            blocked_until = now + 1
+        active = bool(blocked and (blocked.get("permanent") or blocked_until > now))
         age = snapshot.get("cache_age")
         age_text = f"{int(age // 3600)} ساعة" if isinstance(age, (int, float)) else "غير متاح"
         return (
@@ -379,7 +396,8 @@ def _discord_link_and_body(text: str) -> tuple[str, str]:
 def _save_forwarded_post(message: dict[str, Any], chat_id: str) -> tuple[int, int, dict[str, int]]:
     raw = _message_text(message)
     link, body = _discord_link_and_body(raw)
-    posted = message.get("date")
+    origin = message.get("forward_origin") if isinstance(message.get("forward_origin"), dict) else {}
+    posted = origin.get("date") or message.get("date")
     try:
         posted_at = datetime.fromtimestamp(int(posted), UTC).isoformat()
     except (TypeError, ValueError, OSError, OverflowError):
