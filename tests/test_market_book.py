@@ -55,6 +55,15 @@ class MarketBookTests(unittest.TestCase):
         ], now=NOW)
         self.assertEqual(find_direct_arbitrage(book), [])
 
+    def test_stale_offers_are_retained_only_as_risk_metadata(self):
+        stale = offer("sell", "Candy", 1, 1, "seller", "old")
+        stale["posted_at"] = NOW - 72 * 3600
+        book = build_order_book([stale], now=NOW)
+        self.assertIn("candy", book)
+        self.assertIsNone(book["candy"]["best_ask"])
+        self.assertIn("stale_offer", book["candy"]["risk_flags"])
+        self.assertEqual(book["candy"]["stale_offer_count"], 1)
+
     def test_stale_offers_are_dropped_and_single_author_is_low_confidence(self):
         stale = offer("sell", "Candy", 1, 1, "seller", "old")
         stale["posted_at"] = NOW - 49 * 3600
