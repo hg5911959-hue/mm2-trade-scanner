@@ -124,3 +124,19 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - The supplied acceptance material still has no seller-side Celestial Set offer at $71/1. The fixture has a buyer offer at $63/1; the $71 ask currently exists only in a synthetic formatting test. Do not invent a seller offer or treat the test fixture as market evidence. A source post with its Discord permalink and timestamp is required for end-to-end acceptance.
 - The requested `before-market-book` safety tag has not been created because the connected GitHub operations expose branch creation but not tag-object/ref creation. The safety branch exists.
 - Live activation remains blocked pending owner-controlled secrets/configuration, confirmation that the Telegram bot is in a private one-to-one chat, and an explicit dry-run review. The suspended RBLXValue key remains a provider-side recovery issue.
+
+
+### Phase 6 — Future-dated cache rejection
+- Fixed the RBLXValue cache-age reader so boolean, non-finite, non-positive, and future `fetched_at` timestamps are rejected instead of clamped to age zero.
+- Fixed the cash-market value resolver to treat future or invalid cache timestamps as unavailable; this leaves `game_values` empty and disables swap chains while preserving cash-only direct-arbitrage evaluation.
+- Added regressions proving a future-dated cache cannot be used while the API breaker is active and cannot enable swap-chain value resolution.
+
+### Phase 7 — Author identity normalization
+- Author identity is now whitespace-trimmed and case-folded before computing independent-author counts for the order book and each side. This prevents `Seller`, `seller`, and whitespace variants from falsely satisfying the two-author confidence threshold.
+- Added a regression proving case-only author variants remain one author, receive low confidence, and cannot qualify a direct-arbitrage signal.
+
+### Latest complete hosted verification
+- Final validation commit: `1fdbda5485b2b98ee37e09c8d935151fbb235be2`; Actions run [#990](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44617469718) completed successfully.
+- **448 tests passed twice** (448/448 on pass 1 and 448/448 on pass 2). The workflow verified the real `data/` tree hash remained unchanged after both passes.
+- Ruff passed for the market/privacy/API modules, scanner correctness checks, and repository-wide undefined/unused-name checks. An intermediate run caught one unused test import; it was removed before the successful final run.
+- All new production features remain disabled by default. This verification establishes test/lint correctness for the branch; it does not establish live market accuracy, live Telegram connectivity, or guaranteed profit.
