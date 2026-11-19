@@ -170,3 +170,7 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - Hardened state persistence when the optional `data/api_key_blocked.json` file is absent: the workflow now stages the budget file unconditionally and stages/removes the breaker file only when appropriate, avoiding a missing-path `git add` failure.
 - Added workflow-config regression assertions for redirect rejection and optional breaker-file persistence.
 - This is a preventive security/operational hardening change. Hosted verification is pending for commit `2ff0f9548d6e459a832ccd6caf0e55fad9512df7`; do not treat the prior 449-test run as verification of this new change.
+
+### Hosted verification — Telegram author provenance phase
+- Current implementation head for this validation: `e71716deac5b00cc749771d031642e7574c541a9`.
+- The Telegram paste path now accepts an explicit `Author:` line and labels it `owner_supplied_author`; forwarded-origin author metadata remains preferred. A regression also checks the supplied Discord snowflake timestamp. Full tests twice, data-tree immutability and Ruff are required before marking this phase complete.
