@@ -305,7 +305,7 @@ def find_swap_chains(
                         (float(bid["unit_price_usd"]) - fees * (1 + pct_ratio))
                         / (ask_price * (1 + pct_ratio))
                     )
-                except (OverflowError, ZeroDivisionError):
+                except (OverflowError, ZeroDivisionError, ValueError):
                     continue
                 maximum_ask_quantity = min(ask_qty, value_limit, usd_limit, percent_limit)
                 if maximum_ask_quantity < minimum_ask_quantity:
