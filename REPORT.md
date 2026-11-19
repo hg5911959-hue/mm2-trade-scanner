@@ -191,4 +191,11 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 ### Phase 12 — Appendix `/p celestial set` acceptance
 - Added an end-to-end Telegram command regression using the appendix's synthetic Celestial Set market fixture: best ask `$71.00`, best bid `$63.00`. The test asserts the actual `/p celestial set` response, not only the lower-level order-book object.
 - This `$71` seller ask is test-fixture data from the prompt's acceptance assertion, not a claim about a currently available real Discord offer. The owner's separately supplied live listing remains `$72` and is tracked with its own permalink/timestamp provenance.
-- Hosted verification is pending for this additional acceptance test.
+- Hosted verification: commit `bbfeca4cc2e2278874c56bd272614a6323d0a3df`, Actions run [#1028](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44622347145): **460 tests passed twice**, data-tree immutability passed, and all Ruff checks passed.
+
+
+### Phase 13 — Display unpriced demand hints without inventing bids
+- The parser already produced private `demand_hints` for unpriced bulk wanted-lists, but the Telegram market snapshot discarded them. The snapshot now carries these hints through to `/p`.
+- `/p` displays the aggregate unpriced wanted quantity separately as informational demand. It is never added to `best_bid`, bid quantity, median, direct arbitrage, or swap-chain calculations. If there are no priced offers, the command still shows the demand hint while clearly stating that it is not a priced buy offer.
+- Added a regression proving an unpriced demand hint is visible but produces no book row, bid, direct opportunity, or chain.
+- Hosted verification is pending for this additional behavior.
