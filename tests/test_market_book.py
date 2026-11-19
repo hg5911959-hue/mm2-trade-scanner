@@ -56,6 +56,17 @@ class MarketBookTests(IsolatedDataTestCase):
         self.assertEqual(book["candy"]["confidence"], "low")
         self.assertEqual(find_direct_arbitrage(book), [])
 
+    def test_author_identity_is_case_insensitive_for_confidence(self):
+        rows = [
+            offer("sell", "Candy", 1.0, 2, "SellerName", "ask"),
+            offer("buy", "Candy", 5.0, 2, " sellername ", "bid"),
+        ]
+        row = build_order_book(rows, now=NOW)["candy"]
+        self.assertEqual(row["author_count"], 1)
+        self.assertEqual(row["confidence"], "low")
+        self.assertIn("single_author", row["risk_flags"])
+        self.assertEqual(find_direct_arbitrage({"candy": row}), [])
+
     def test_no_arbitrage_when_best_bid_is_below_best_ask(self):
         book = build_order_book([
             offer("sell", "Celestial Set", 71, 2, "seller-a", "s1"),
