@@ -160,14 +160,9 @@ def ingest_manual_discord_imports(
     if not isinstance(rows, list):
         raise RuntimeError("authorized Discord import file has an invalid schema")
     offers, hints = _load_offers()
-    known = {
-        (
-            str(row.get("message_id")), str(row.get("side")), str(row.get("item_key")),
-            int(row.get("quantity", 0)), float(row.get("unit_price_usd", 0)),
-        )
-        for row in offers
-    }
     added = rejected = 0
+    changed = False
+    seen_message_ids: set[str] = set()
     for row in rows:
         if not isinstance(row, dict):
             rejected += 1
@@ -190,6 +185,22 @@ def ingest_manual_discord_imports(
         if not message_id:
             rejected += 1
             continue
+        source_id = "discord:" + message_id
+        if source_id in seen_message_ids:
+            continue
+        seen_message_ids.add(source_id)
+        retained_offers = [offer for offer in offers if str(offer.get("message_id")) != source_id]
+        retained_hints = [hint for hint in hints if str(hint.get("message_id")) != source_id]
+        changed = changed or len(retained_offers) != len(offers) or len(retained_hints) != len(hints)
+        offers, hints = retained_offers, retained_hints
+        known = {
+            (
+                str(existing.get("message_id")), str(existing.get("side")),
+                str(existing.get("item_key")), int(existing.get("quantity", 0)),
+                float(existing.get("unit_price_usd", 0)),
+            )
+            for existing in offers
+        }
         parsed = parse_cash_post(
             body, author=str(row.get("author") or ""),
             message_id="discord:" + message_id, url=url, posted_at=posted_at,
@@ -211,7 +222,7 @@ def ingest_manual_discord_imports(
                 known.add(identity)
                 added += 1
         hints.extend(parsed["demand_hints"])
-    if added or hints:
+    if changed or added:
         _save_offers(offers, hints)
     _MANUAL_IMPORTS_INGESTED = True
     return added, rejected
@@ -601,6 +612,9 @@ def _save_forwarded_post(message: dict[str, Any], chat_id: str) -> tuple[int, in
         )
         result["offers"] = []
     offers, hints = _load_offers()
+    if link:
+        offers = [row for row in offers if str(row.get("url") or "") != link]
+        hints = [row for row in hints if str(row.get("url") or "") != link]
     known = {
         (str(row.get("message_id")), str(row.get("side")), str(row.get("item_key")),
          int(row.get("quantity", 0)), float(row.get("unit_price_usd", 0)))
