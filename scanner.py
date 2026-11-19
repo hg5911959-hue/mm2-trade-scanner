@@ -4611,7 +4611,7 @@ def scan_once(include_backlog_rechecks=True):
         # alerted stable ad may be sent again only when its content or value
         # fingerprint changed; uncertain Telegram deliveries remain quarantined.
         watch_id = str(listing.get("source_ad_id") or "")
-        previous_watch = watch_state.get(watch_id, {})
+        previous_watch = {} if is_discord else watch_state.get(watch_id, {})
         current_content_hash, current_values_hash = listing_watch_fingerprints(listing, values, aliases, cash_catalog)
         variant_changed = bool(previous_watch) and (
             previous_watch.get("content_hash") != current_content_hash
@@ -4661,7 +4661,7 @@ def scan_once(include_backlog_rechecks=True):
             )
         ]
         if large_stacks:
-            message += "\nWARNING: quantity 5+ — verify the stack in BloxSwaps."
+            message += "\nWARNING: quantity 5+ — verify the stack in the original source."
         ignored_names = ignored_item_names(listing)
         if ignored_names:
             message += "\nNOTE: not valued (no numeric Supreme value): " + ", ".join(ignored_names)
