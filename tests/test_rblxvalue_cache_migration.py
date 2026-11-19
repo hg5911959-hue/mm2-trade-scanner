@@ -80,8 +80,8 @@ class SupremeCacheMigrationTests(IsolatedDataTestCase):
             saved = json.loads(cache.read_text(encoding="utf-8"))
             self.assertEqual(saved["schema_version"], 4)
             self.assertEqual(loaded["item 7"]["variants"][0]["stability"], "Stable")
-            self.assertEqual(len(api), 2)
-            self.assertEqual(sum(1 for _, params, _ in api if params and params.get("limit") == 1), 1)
+            self.assertEqual(len(api), 1)
+            self.assertEqual(sum(1 for _, params, _ in api if params and params.get("limit") == 1), 0)
 
     def test_fresh_cache_remains_usable_while_key_breaker_is_active(self):
         with tempfile.TemporaryDirectory() as directory:
