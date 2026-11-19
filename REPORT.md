@@ -69,6 +69,7 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 
 ### Phase 4 — Telegram interface foundation
 - Added `telegram_market.py` with owner-chat authorization, `getUpdates` offset persistence, forwarded/pasted-post parsing, Arabic command replies, multi-item `/p`, `/buy`, `/chains`, inventory management commands, status, and queued notice when the previous scan was more than 12 minutes old.
+- Added threshold-qualified automatic alerts capped by `MAX_ALERTS_PER_SCAN`; encrypted private dedup state suppresses repeats unless net profit changes by more than `MARKET_ALERT_PROFIT_DELTA_USD`. Failed sends do not advance alert state.
 - Telegram polling is wired at the start of each `scan_once` cycle (including the 30-second loop ticks), but only when `MARKET_BOOK_ENABLED`, `TELEGRAM_COMMANDS_ENABLED`, and `PRIVATE_STATE_ENABLED` are explicitly true. Inventory commands also require `INVENTORY_ENABLED`. Dry-run skips Telegram polling and sending.
 - Telegram offsets, private offers, inventory, and private price history are allowlisted for encryption; they are not exported to the dashboard or public SQLite/CSV history.
 - This phase does not execute trades. The bot only returns estimates and suggestions.
