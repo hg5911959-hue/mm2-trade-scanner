@@ -72,9 +72,9 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
 
     def test_cash_market_and_telegram_features_are_disabled_and_private_state_is_encrypted(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
-        for flag in ("MARKET_BOOK_ENABLED", "TELEGRAM_COMMANDS_ENABLED",
-                     "INVENTORY_ENABLED"):
+        for flag in ("TELEGRAM_COMMANDS_ENABLED", "INVENTORY_ENABLED"):
             self.assertIn(f'{flag}: "false"', workflow)
+        self.assertIn("MARKET_BOOK_ENABLED: ${{ inputs.enable_discord && 'true' || 'false' }}", workflow)
         self.assertIn("PRIVATE_STATE_ENABLED: ${{ inputs.enable_discord && 'true' || 'false' }}", workflow)
         for trigger in ("  workflow_call:", "  workflow_dispatch:"):
             inputs = workflow.split(trigger, 1)[1].split("\npermissions:", 1)[0]
