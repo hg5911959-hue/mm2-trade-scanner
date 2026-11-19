@@ -677,8 +677,10 @@ def send_market_alerts(
             continue
         if row.get("type") == "direct_arbitrage":
             identity = [
-                "direct", row.get("item_key"), row.get("buy", {}).get("message_id"),
-                row.get("sell", {}).get("message_id"), row.get("quantity"),
+                "direct", row.get("item_key"),
+                row.get("buy", {}).get("url") or row.get("buy", {}).get("message_id"),
+                row.get("sell", {}).get("url") or row.get("sell", {}).get("message_id"),
+                row.get("quantity"),
             ]
             message = (
                 f"فرصة مراجحة نقدية: {row.get('item')} ×{row.get('quantity')}\n"
@@ -690,7 +692,8 @@ def send_market_alerts(
         elif row.get("type") == "swap_chain":
             identity = [
                 "chain", row.get("buy_item"), row.get("swap_item"),
-                row.get("buy", {}).get("message_id"), row.get("sell", {}).get("message_id"),
+                row.get("buy", {}).get("url") or row.get("buy", {}).get("message_id"),
+                row.get("sell", {}).get("url") or row.get("sell", {}).get("message_id"),
                 row.get("quantity_buy"), row.get("quantity_sell"),
             ]
             message = (
