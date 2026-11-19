@@ -109,6 +109,25 @@ class TelegramMarketTests(IsolatedDataTestCase):
         self.assertIn("تم تحليل 2 عرضاً", sent[-1])
         self.assertFalse(self.history.exists())
 
+    def test_pasted_offer_without_discord_timestamp_is_rejected(self):
+        sent = []
+        updates = [{"update_id": 31, "message": {
+            "message_id": 78, "date": 1_800_000_000, "chat": {"id": 123},
+            "text": "Selling\\n1x Candy 2$/1",
+        }}]
+        with self._paths():
+            count = telegram_market.process_telegram_updates(
+                token="token", chat_id="123", market_enabled=True,
+                inventory_enabled=False, private_state_confirmed=True,
+                get_updates=lambda token, offset: updates,
+                send_message=lambda token, chat, text: sent.append(text),
+                now=1_800_000_000,
+            )
+            stored = json.loads(self.offers.read_text(encoding="utf-8"))
+        self.assertEqual(count, 1)
+        self.assertEqual(stored["offers"], [])
+        self.assertIn("timestamp_unknown", sent[-1])
+
     def test_queue_notice_is_sent_after_more_than_twelve_minutes(self):
         sent = []
         self.last_run.write_text(json.dumps({"started_at_epoch": 1_799_999_000}), encoding="utf-8")
