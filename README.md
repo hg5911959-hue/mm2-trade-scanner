@@ -74,6 +74,14 @@ authenticated ciphertext `data/private_state.enc` there. Plaintext private
 files are decrypted only inside the runner and re-encrypted before artifacts
 are uploaded. `tools/validate_state.py` rejects plaintext private files.
 
+Private Discord messages are parsed only when `PRIVATE_STATE_ENABLED=true`.
+Their alert/uncertain-delivery deduplication IDs are held in
+`discord_alert_state.json`, which is part of the authenticated encrypted
+private-state allowlist. Discord offers are excluded from public SQLite
+listings/opportunities, public CSV history, unmatched-name records, public
+watch/alert/quarantine state, and item-level scanner logs. With private-state
+protection disabled, Discord posts are not evaluated or alerted.
+
 Encryption uses AES-256-CTR with HMAC-SHA256 authentication and PBKDF2-HMAC-SHA256
 key derivation. Python code uses the standard library; the GitHub Ubuntu runner
 must provide the OpenSSL command-line executable. The existing
