@@ -294,7 +294,7 @@ Not yet scored at the end of Phase 2. See the evidence-based readiness assessmen
 - Added a Discord-only dry-run mode that performs one parser/evaluation cycle without calling BloxSwaps, sending alerts, or updating the BloxSwaps success checkpoint. This lets Discord ingestion be validated independently while BloxSwaps is rate-limited.
 - Hardened Discord collection: any partial channel-collection failure now discards the partial live message file before manual imports are merged, preventing incomplete channel coverage from being treated as a complete feed.
 - Added regression tests for one-request key verification, Discord-only dry-run safety, opt-in workflow defaults, encrypted-state requirements, and fail-closed partial collection.
-- Latest hosted validation (https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44638328832): **495 tests passed twice**, data-tree immutability passed, and all configured Ruff/correctness checks passed.
+- Latest hosted validation ([495-test CI run](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44638328832)): **495 tests passed twice**, data-tree immutability passed, and all configured Ruff/correctness checks passed.
 - The one-time [discord-dry-run] candidate run completed but stopped before reading any Discord messages because neither `DISCORD_BOT_TOKEN` nor either authorized manual-import secret was configured. No live Discord offer was ingested and no alert was sent.
 - No plugin dedicated to reading private Discord server channels was available in the connected app directory. The project uses Discord's official read-only bot API instead.
 
