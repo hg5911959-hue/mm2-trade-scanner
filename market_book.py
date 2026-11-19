@@ -61,10 +61,18 @@ def _valid_offer(row: dict[str, Any]) -> bool:
         return False
     try:
         price = float(row.get("unit_price_usd"))
-        quantity = int(row.get("quantity"))
+        raw_quantity = row.get("quantity")
+        quantity = int(raw_quantity)
         raw_minimum = row.get("min_quantity")
         minimum = 1 if raw_minimum is None else int(raw_minimum)
-    except (TypeError, ValueError):
+        if (
+            isinstance(raw_quantity, bool) or float(raw_quantity) != quantity
+            or (raw_minimum is not None and (
+                isinstance(raw_minimum, bool) or float(raw_minimum) != minimum
+            ))
+        ):
+            return False
+    except (TypeError, ValueError, OverflowError):
         return False
     return (
         math.isfinite(price) and price > 0 and 1 <= quantity <= 5000
