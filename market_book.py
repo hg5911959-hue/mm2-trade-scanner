@@ -320,6 +320,7 @@ def find_swap_chains(
                         "type": "swap_chain", "buy_item": item_a, "swap_item": item_b,
                         "buy": dict(ask), "swap_value_in": value_a["value"] * qty_a,
                         "swap_value_out": value_b["value"], "sell": dict(bid),
+                        "ask_to_value_ratio": ask_price / value_a["value"],
                         "buy_price_per_value": ask_price / value_a["value"],
                         "sell_price_per_value": bid_price / value_b["value"],
                         "quantity_buy": qty_a, "quantity_sell": 1,
