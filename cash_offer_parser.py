@@ -139,7 +139,10 @@ def _parse_segment(segment: str, side: str, metadata: dict[str, Any],
                           "message_id": metadata.get("message_id", ""),
                           "url": metadata.get("url", ""), "posted_at": metadata.get("posted_at", "")}, None
         return None, None, "no_price" if status == "resolved" else "unresolved_name"
-    if price <= 0 or quantity <= 0 or quantity > MAX_QUANTITY:
+    if (
+        price <= 0 or quantity <= 0 or quantity > MAX_QUANTITY
+        or (min_quantity is not None and (min_quantity <= 0 or min_quantity > quantity))
+    ):
         return None, None, "invalid_price_or_quantity"
     if quantity > 1 and not per_unit:
         return None, None, "ambiguous_quantity_price"
