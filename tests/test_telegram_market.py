@@ -91,7 +91,7 @@ class TelegramMarketTests(IsolatedDataTestCase):
             "message_id": 77, "date": 1_800_000_000, "chat": {"id": 123},
             "forward_origin": {"type": "user", "date": 1_799_999_000,
                                "sender_user": {"username": "market-seller"}},
-            "text": "QUICK SELL\n1x Candy 2$/1\n2x Sweet 3$/1\nhttps://discord.com/channels/1/2/1593540240998400000",
+            "text": "QUICK SELL\n1x Candy 2$/1\n2x Sweet 3$/1\nhttps://discord.com/channels/1/2/1593536046694400000",
         }}]
         with self._paths():
             count = telegram_market.process_telegram_updates(
