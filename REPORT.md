@@ -170,3 +170,8 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - Hardened state persistence when the optional `data/api_key_blocked.json` file is absent: the workflow now stages the budget file unconditionally and stages/removes the breaker file only when appropriate, avoiding a missing-path `git add` failure.
 - Added workflow-config regression assertions for redirect rejection and optional breaker-file persistence.
 - This is a preventive security/operational hardening change. Hosted verification is pending for commit `2ff0f9548d6e459a832ccd6caf0e55fad9512df7`; do not treat the prior 449-test run as verification of this new change.
+
+### Hosted verification — Telegram author provenance regression correction
+- Current implementation head for this validation: `01b289e01e33dee55cf092eec2ab3c47c05c1d99`.
+- The first 451-test attempt exposed a mismatch in the new test fixture's offer syntax (`1x Item 72$`), not a parser or ingestion defect. The fixture now matches the actual supplied listing format (`ITEM - 72$`). The failed run is retained in history and is not counted as a pass.
+- Re-run the full suite twice, data-tree immutability check and Ruff before marking this phase complete.
