@@ -185,4 +185,10 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - Replaced the collector with a standard-library `urllib` client using only official Discord REST `GET` endpoints for explicitly allowlisted guilds, text channels, and active threads. It uses the existing bot token only; no user token, self-bot, write endpoint, or scraping mechanism is used.
 - Added bounded response sizes, bounded 429 retries, 403 permission handling, message-count/channel caps, and redirect rejection so the bot Authorization header cannot be forwarded to another host.
 - Removed the `pip install discord.py` workflow step and added tests for channel filtering, read-only request paths, redirect rejection, and absence of the third-party dependency.
-- Hosted verification is pending for the current implementation head after this phase. The last verified complete suite is 455 tests twice on Actions run #1018; it does not include this collector refactor.
+- The first collector validation attempt found only a test-file indentation/import defect; it was corrected before final validation. Final hosted verification: commit `757a7e14ceceb97d02e784b0257c2c1f4cd2820e`, Actions run [#1025](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44622077260): **459 tests passed twice**, the `data/` tree remained unchanged, and all Ruff checks passed. The test-only failure was not counted as a pass.
+
+
+### Phase 12 — Appendix `/p celestial set` acceptance
+- Added an end-to-end Telegram command regression using the appendix's synthetic Celestial Set market fixture: best ask `$71.00`, best bid `$63.00`. The test asserts the actual `/p celestial set` response, not only the lower-level order-book object.
+- This `$71` seller ask is test-fixture data from the prompt's acceptance assertion, not a claim about a currently available real Discord offer. The owner's separately supplied live listing remains `$72` and is tracked with its own permalink/timestamp provenance.
+- Hosted verification is pending for this additional acceptance test.
