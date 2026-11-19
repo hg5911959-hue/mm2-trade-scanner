@@ -209,5 +209,30 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         full_scan.assert_not_called()
 
 
+    def test_discord_only_cash_dry_run_skips_supreme_and_bloxswaps(self):
+        from unittest.mock import patch
+
+        with (
+            patch.dict("os.environ", {
+                "DRY_RUN": "true",
+                "DISCORD_ONLY": "true",
+                "MARKET_BOOK_ENABLED": "true",
+                "PRIVATE_STATE_ENABLED": "true",
+                "TELEGRAM_COMMANDS_ENABLED": "false",
+                "INVENTORY_ENABLED": "false",
+            }),
+            patch.object(scanner, "update_metrics"),
+            patch.object(scanner, "write_step_summary"),
+            patch.object(scanner, "load_supreme_values") as load_values,
+            patch.object(scanner, "fetch_bloxswaps_all") as fetch_bloxswaps,
+            patch("telegram_market.ingest_manual_discord_imports", return_value=(1, 0)),
+            patch("telegram_market._load_market", return_value={"book": {}, "direct": [], "chains": []}),
+        ):
+            scanner.scan_once()
+
+        load_values.assert_not_called()
+        fetch_bloxswaps.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
