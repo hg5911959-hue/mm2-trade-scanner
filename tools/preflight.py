@@ -164,6 +164,12 @@ def send_daily_notice(checks, *, data_dir="data", env=None, now=None):
         with _TELEGRAM_OPENER.open(request, timeout=15) as response:
             if response.status != 200:
                 return False
+            try:
+                result = json.loads(response.read(65536).decode("utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                return False
+            if not isinstance(result, dict) or result.get("ok") is not True:
+                return False
         # Record the daily notice only after Telegram confirms delivery. A failed
         # request must remain retryable on the next scan.
         state["preflight-daily"] = current.timestamp()
