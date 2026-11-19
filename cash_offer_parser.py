@@ -112,6 +112,7 @@ def _parse_segment(segment: str, side: str, metadata: dict[str, Any],
     if inverse:
         price = float(inverse.group(1).replace(",", "."))
         per_unit = True
+        no_currency = not bool(inverse.group(2))
         line = line[:inverse.start()] + " " + line[inverse.end():]
     else:
         price_match = PRICE_RE.search(line)
