@@ -68,6 +68,24 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertNotIn("enable-schedules:", scheduler)
 
 
+    def test_cash_market_and_telegram_features_are_disabled_and_private_state_is_encrypted(self):
+        workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        for flag in ("MARKET_BOOK_ENABLED", "TELEGRAM_COMMANDS_ENABLED",
+                     "INVENTORY_ENABLED", "PRIVATE_STATE_ENABLED"):
+            self.assertIn(f'{flag}: "false"', workflow)
+        self.assertIn("Decrypt private market state", workflow)
+        self.assertIn("private_state.py decrypt", workflow)
+        self.assertIn("private_state.py encrypt", workflow)
+        self.assertIn("MM2_PRIVATE_STATE_KEY: ${{ secrets.TELEGRAM_BOT_TOKEN }}", workflow)
+        decrypt_pos = workflow.index("Decrypt private market state")
+        scan_pos = workflow.index("Run BloxSwaps scanner")
+        encrypt_pos = workflow.index("private_state.py encrypt")
+        artifact_pos = workflow.index("mkdir -p state-bundle/data")
+        self.assertLess(decrypt_pos, scan_pos)
+        self.assertLess(encrypt_pos, artifact_pos)
+        self.assertIn("private_state.enc", workflow)
+        self.assertIn("private Telegram/market state", (ROOT / "tools/validate_state.py").read_text(encoding="utf-8"))
+
     def test_rblxvalue_metadata_polling_is_bounded_to_six_hours(self):
         scanner = (ROOT / "scanner.py").read_text(encoding="utf-8")
         self.assertIn("RBLXVALUE_META_POLL_INTERVAL_SECONDS = 6 * 60 * 60", scanner)
