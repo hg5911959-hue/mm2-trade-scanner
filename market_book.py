@@ -185,7 +185,7 @@ def find_direct_arbitrage(
     opportunities = []
     for item_key, row in book.items():
         ask, bid = row.get("best_ask"), row.get("best_bid")
-        if not ask or not bid:
+        if not ask or not bid or row.get("confidence") not in {"medium", "high"}:
             continue
         ask_price, bid_price = float(ask["unit_price_usd"]), float(bid["unit_price_usd"])
         quantity = min(int(ask["quantity"]), int(bid["quantity"]))
