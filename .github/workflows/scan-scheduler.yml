@@ -34,5 +34,5 @@ jobs:
     uses: ./.github/workflows/scan.yml
     with:
       dry_run: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run) || false }}
-      verify_rblxvalue_key: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_rblxvalue_key || false }}
+      verify_rblxvalue_key: ${{ (github.event_name == 'push' && contains(github.event.head_commit.message, '[rblxvalue-key-check]')) || (github.event_name == 'workflow_dispatch' && inputs.verify_rblxvalue_key) || false }}
     secrets: inherit
