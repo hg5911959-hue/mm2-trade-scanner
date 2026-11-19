@@ -821,8 +821,17 @@ def process_telegram_updates(
             _atomic_json(UPDATES_FILE, {"schema_version": 1, "offset": offset})
             continue
         chat = message.get("chat") if isinstance(message.get("chat"), dict) else {}
+        sender = message.get("from") if isinstance(message.get("from"), dict) else {}
         sender_chat_id = str(chat.get("id") or "")
-        if sender_chat_id != str(chat_id):
+        sender_user_id = str(sender.get("id") or "")
+        # Owner authorization is deliberately restricted to the owner's private
+        # Telegram chat. A group chat can contain other members even when the
+        # configured chat ID is accidentally set to that group's ID.
+        if (
+            str(chat.get("type") or "").casefold() != "private"
+            or sender_chat_id != str(chat_id)
+            or sender_user_id != str(chat_id)
+        ):
             offset = update_id + 1
             _atomic_json(UPDATES_FILE, {"schema_version": 1, "offset": offset})
             continue
