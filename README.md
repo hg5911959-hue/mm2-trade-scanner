@@ -67,7 +67,9 @@ print or expose the token.
 
 With `DRY_RUN=true`, the engine evaluates opportunities and logs scan-local
 IDs and estimated profits, but does not poll Telegram, send alerts, write alert
-state, or append price-history snapshots. Direct cash signals can operate
+state, or append price-history snapshots. The legacy `data/cash_prices.csv`
+may appear only as a clearly labelled reference fallback in dry-run; it never
+creates synthetic bids/asks or qualifies a live opportunity. Direct cash signals can operate
 without fresh game values; swap chains require a value snapshot no older than
 `RBLXVALUE_MAX_CACHE_AGE_SECONDS` (default 24 hours). Offers older than 48
 hours are excluded. GitHub cron can be delayed, and estimated profit is not a
