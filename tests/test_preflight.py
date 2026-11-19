@@ -1,7 +1,7 @@
 import json
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from test_support import IsolatedDataTestCase
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -51,10 +51,19 @@ class PreflightTests(IsolatedDataTestCase):
         self.assertIsNone(redirected)
 
     def test_daily_notice_is_recorded_only_after_telegram_delivery(self):
-        response = MagicMock()
-        response.__enter__.return_value.status = 200
-        response.__enter__.return_value.read.return_value = b'{"ok":true}'
-        with patch("tools.preflight._TELEGRAM_OPENER.open", return_value=response) as opened:
+        class Response:
+            status = 200
+
+            def read(self, limit):
+                return b'{"ok":true}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        with patch("tools.preflight._TELEGRAM_OPENER.open", return_value=Response()) as opened:
             self.assertTrue(send_daily_notice(
                 ["API key is blocked"], data_dir=self.root, env=self.env, now=self.now
             ))
@@ -66,10 +75,19 @@ class PreflightTests(IsolatedDataTestCase):
             self.assertEqual(opened.call_count, 1)
 
     def test_telegram_http_200_with_api_error_is_not_recorded(self):
-        response = MagicMock()
-        response.__enter__.return_value.status = 200
-        response.__enter__.return_value.read.return_value = b'{"ok":false,"description":"chat not found"}'
-        with patch("tools.preflight._TELEGRAM_OPENER.open", return_value=response):
+        class Response:
+            status = 200
+
+            def read(self, limit):
+                return b'{"ok":false,"description":"chat not found"}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        with patch("tools.preflight._TELEGRAM_OPENER.open", return_value=Response()):
             self.assertFalse(send_daily_notice(
                 ["API key is blocked"], data_dir=self.root, env=self.env, now=self.now
             ))
