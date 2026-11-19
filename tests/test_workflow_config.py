@@ -44,7 +44,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("env.CASH_FILTER == '1' || env.CASH_FILTER == 'true'", weekly)
         self.assertIn('          RBLXVALUE_META_POLL_ENABLED: "true"\n', workflow)
         self.assertIn('          RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY: "6"\n', workflow)
-        self.assertIn('          MM2_SCAN_DURATION_SECONDS: "540"\n', workflow)
+        self.assertIn("MM2_SCAN_DURATION_SECONDS: ${{ inputs.discord_only && '0' || '540' }}", workflow)
         self.assertIn('          MM2_SCAN_INTERVAL_SECONDS: "30"\n', workflow)
         self.assertIn('          MAX_BACKLOG_RECHECK_PAGES: "25"\n', workflow)
         self.assertIn('          BACKLOG_RECHECK_EVERY_CYCLES: "4"\n', workflow)
@@ -279,6 +279,12 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("if: env.PRIVATE_STATE_ENABLED == 'true'", workflow)
         self.assertIn('if [ "${#MM2_PRIVATE_STATE_KEY}" -lt 32 ]; then', workflow)
         self.assertIn("inputs.enable_discord", scheduler)
+        self.assertIn("discord_only:", workflow)
+        self.assertIn("discord_only:", scheduler)
+        self.assertIn("contains(github.event.head_commit.message, '[discord-dry-run]')", scheduler)
+        self.assertIn("DISCORD_ONLY: ${{ inputs.discord_only && 'true' || 'false' }}", workflow)
+        self.assertIn("if discord_only and not dry_run", (ROOT / "scanner.py").read_text(encoding="utf-8"))
+        self.assertIn("if not discord_only and not listings", (ROOT / "scanner.py").read_text(encoding="utf-8"))
         self.assertIn("DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}", workflow)
 
 
