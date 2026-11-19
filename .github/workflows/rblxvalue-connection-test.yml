@@ -2,19 +2,12 @@ name: RBLXValue API Connection Test
 
 on:
   workflow_dispatch:
-  # Run one non-secret-leaking live credential check when this workflow is
-  # intentionally updated on main. This lets maintainers verify the stored
-  # Actions secret without exposing it or requiring a manual UI dispatch.
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/rblxvalue-connection-test.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: rblxvalue-api-connection-test
+  group: mm2-trade-scanner
   cancel-in-progress: false
 
 jobs:
@@ -23,8 +16,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
-      contents: read
+      contents: write
     steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Restore shared API safety ledger
+        run: |
+          set -euo pipefail
+          git fetch origin refs/heads/state:refs/remotes/origin/state
+          mkdir -p data
+          git archive origin/state data | tar -x
+          python tools/validate_state.py --directory data --api-safety-only
       - name: Test API authentication without exposing secrets
         env:
           RBLXVALUE_API_KEY: ${{ secrets.RBLXVALUE_API_KEY }}
@@ -36,12 +42,15 @@ jobs:
           import sys
           import urllib.error
           import urllib.request
+          import rblxvalue_guard
 
           key = os.environ.get("RBLXVALUE_API_KEY", "").strip()
           if not key:
               print("FAIL: GitHub Actions secret RBLXVALUE_API_KEY is missing or empty.")
               sys.exit(1)
 
+          # Reserve against the same durable rolling budget used by every scanner run.
+          rblxvalue_guard.reserve_request(key=key, workflow=os.environ.get("GITHUB_WORKFLOW"))
           request = urllib.request.Request(
               "https://api.rblxvalue.com/v2/items?limit=1&offset=0",
               headers={
@@ -65,12 +74,14 @@ jobs:
                   if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
                       print("FAIL: RBLXValue returned HTTP 200 but unexpected response structure.")
                       sys.exit(1)
+                  rblxvalue_guard.mark_key_success(key=key)
                   print(f"PASS: RBLXValue API authentication succeeded (HTTP 200; {len(payload['items'])} sample row(s)).")
           except urllib.error.HTTPError as exc:
               detail = exc.read(1200).decode("utf-8", errors="replace").strip()
               detail = detail.replace(key, "[REDACTED]")
               detail = re.sub(r"rbx_[A-Za-z0-9_-]+", "rbx_[REDACTED]", detail)
               detail = re.sub(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s]+", r"\1[REDACTED]", detail)
+              rblxvalue_guard.raise_for_key_error(exc.code, detail, key=key)
               if exc.code == 403 and str(exc.headers.get("cf-mitigated", "")).casefold() == "challenge":
                   reason = "Cloudflare challenge"
               elif exc.code == 403:
@@ -89,3 +100,30 @@ jobs:
               print(f"FAIL: connection test error: {type(exc).__name__}: {str(exc)[:200]}")
               sys.exit(1)
           PY
+
+      - name: Persist shared API safety ledger
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -f data/rblxvalue_request_budget.json || exit 1
+          git fetch origin refs/heads/state:refs/remotes/origin/state
+          git worktree add /tmp/mm2-api-state origin/state
+          mkdir -p /tmp/mm2-api-state/data
+          cp data/rblxvalue_request_budget.json /tmp/mm2-api-state/data/
+          if [ -f data/api_key_blocked.json ]; then
+            cp data/api_key_blocked.json /tmp/mm2-api-state/data/
+          else
+            rm -f /tmp/mm2-api-state/data/api_key_blocked.json
+          fi
+          cd /tmp/mm2-api-state
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/rblxvalue_request_budget.json data/api_key_blocked.json
+          if git diff --cached --quiet; then
+            echo "Shared API safety ledger unchanged."
+          else
+            git commit -m "Persist RBLXValue API safety ledger"
+            git push origin HEAD:state
+          fi
