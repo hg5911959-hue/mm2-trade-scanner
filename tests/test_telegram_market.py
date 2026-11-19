@@ -150,7 +150,7 @@ class TelegramMarketTests(IsolatedDataTestCase):
             "message_id": "123456", "author": "discord-seller",
             "url": "https://discord.com/channels/1/2/123456",
             "created_at_utc": "2026-11-19T10:00:00+00:00",
-            "content": "Selling\\n1x Candy 2$/1",
+            "content": "Selling\n1x Candy 2$/1",
         }]}), encoding="utf-8")
         with self._paths():
             telegram_market._MANUAL_IMPORTS_INGESTED = False
