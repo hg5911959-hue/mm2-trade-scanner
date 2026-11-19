@@ -45,7 +45,7 @@ class NoDataPollutionTests(IsolatedDataTestCase):
 
     def test_private_discord_unknown_items_never_enter_public_logs_or_unmatched_state(self):
         import io
-        from contextlib import redirect_stdout
+        from contextlib import ExitStack, redirect_stdout
 
         private_listing = {
             "id": "private-discord-id",
@@ -81,37 +81,44 @@ class NoDataPollutionTests(IsolatedDataTestCase):
                 return None
 
         output = io.StringIO()
-        with (
-            patch.dict(os.environ, {
+        with ExitStack() as stack:
+            stack.enter_context(patch.dict(os.environ, {
                 "DRY_RUN": "true", "PRIVATE_STATE_ENABLED": "true",
                 "MARKET_BOOK_ENABLED": "false", "TELEGRAM_COMMANDS_ENABLED": "false",
                 "INVENTORY_ENABLED": "false",
-            }),
-            patch.object(scanner, "CASH_FILTER", False),
-            patch.object(scanner, "update_metrics"),
-            patch.object(scanner, "load_supreme_values", return_value={}),
-            patch.object(scanner, "load_aliases", return_value={}),
-            patch.object(scanner, "load_seen_ads", return_value=set()),
-            patch.object(scanner, "load_pending_ids", return_value={}),
-            patch.object(scanner, "load_pending_recheck_schedule", return_value={}),
-            patch.object(scanner, "load_watch_state", return_value={}),
-            patch.object(scanner, "load_first_seen_ads", return_value={}),
-            patch.object(scanner, "load_alerted", return_value=[]),
-            patch.object(scanner, "load_uncertain_state", return_value=({}, [])),
-            patch.object(scanner, "load_discord_alert_state", return_value={"alerted": [], "uncertain": {}}),
-            patch.object(scanner, "fetch_bloxswaps_all", return_value=([], stats, [])),
-            patch.object(scanner, "evaluate_listing", return_value=(None, ["PrivateItem"])),
-            patch.object(scanner, "record_unmatched_names", side_effect=AssertionError("private names must not be persisted")),
-            patch.object(scanner, "send_maintenance_alert"),
-            patch.object(scanner, "alert_cash_price_runway"),
-            patch.object(scanner, "record_success_if_complete"),
-            patch.object(scanner, "save_first_seen_ads"),
-            patch.object(discord_parser, "load_discord_listings", return_value=([private_listing], 0)),
-            patch.object(market_history, "MarketHistory", return_value=FakeHistory()),
-            redirect_stdout(output),
-        ):
+            }))
+            stack.enter_context(patch.object(scanner, "CASH_FILTER", False))
+            stack.enter_context(patch.object(scanner, "update_metrics"))
+            stack.enter_context(patch.object(scanner, "load_supreme_values", return_value={}))
+            stack.enter_context(patch.object(scanner, "load_aliases", return_value={}))
+            stack.enter_context(patch.object(scanner, "load_seen_ads", return_value=set()))
+            stack.enter_context(patch.object(scanner, "load_pending_ids", return_value={}))
+            stack.enter_context(patch.object(scanner, "load_pending_recheck_schedule", return_value={}))
+            stack.enter_context(patch.object(scanner, "load_watch_state", return_value={}))
+            stack.enter_context(patch.object(scanner, "load_first_seen_ads", return_value={}))
+            stack.enter_context(patch.object(scanner, "load_alerted", return_value=[]))
+            stack.enter_context(patch.object(scanner, "load_uncertain_state", return_value=({}, [])))
+            stack.enter_context(patch.object(scanner, "load_discord_alert_state", return_value={"alerted": [], "uncertain": {}}))
+            stack.enter_context(patch.object(scanner, "fetch_bloxswaps_all", return_value=([], stats, [])))
+            stack.enter_context(patch.object(scanner, "evaluate_listing", return_value=(None, ["PrivateItem"])))
+            unmatched = stack.enter_context(patch.object(
+                scanner, "record_unmatched_names",
+                side_effect=AssertionError("private names must not be persisted"),
+            ))
+            stack.enter_context(patch.object(scanner, "send_maintenance_alert"))
+            stack.enter_context(patch.object(scanner, "alert_cash_price_runway"))
+            stack.enter_context(patch.object(scanner, "record_success_if_complete"))
+            stack.enter_context(patch.object(scanner, "save_first_seen_ads"))
+            stack.enter_context(patch.object(
+                discord_parser, "load_discord_listings", return_value=([private_listing], 0),
+            ))
+            stack.enter_context(patch.object(
+                market_history, "MarketHistory", return_value=FakeHistory(),
+            ))
+            stack.enter_context(redirect_stdout(output))
             scanner.scan_once(include_backlog_rechecks=False)
 
+        unmatched.assert_not_called()
         rendered = output.getvalue()
         self.assertNotIn("PrivateItem", rendered)
         self.assertNotIn("private-message-id", rendered)
