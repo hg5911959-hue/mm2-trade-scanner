@@ -121,6 +121,97 @@ def _save_offers(offers: list[dict[str, Any]], hints: list[dict[str, Any]]) -> N
     })
 
 
+_MANUAL_IMPORTS_INGESTED = False
+
+
+def _manual_message_body(row: dict[str, Any]) -> str:
+    parts = [str(row.get("content") or "")]
+    embeds = row.get("embeds") or []
+    if isinstance(embeds, list):
+        for embed in embeds:
+            if isinstance(embed, dict):
+                parts.extend(str(embed.get(key) or "") for key in ("title", "description"))
+                fields = embed.get("fields") or []
+                if isinstance(fields, list):
+                    for field in fields:
+                        if isinstance(field, dict):
+                            parts.extend(str(field.get(key) or "") for key in ("name", "value"))
+            elif embed:
+                parts.append(str(embed))
+    return "\n".join(part for part in parts if part.strip())
+
+
+def ingest_manual_discord_imports(
+    path: str | Path = "data/discord_messages.json",
+) -> tuple[int, int]:
+    """Parse authorized collector/manual-secret rows once per scan process."""
+    global _MANUAL_IMPORTS_INGESTED
+    if _MANUAL_IMPORTS_INGESTED:
+        return 0, 0
+    source = Path(path)
+    if not source.exists():
+        _MANUAL_IMPORTS_INGESTED = True
+        return 0, 0
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("authorized Discord import file is unreadable") from exc
+    rows = payload.get("messages") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        raise RuntimeError("authorized Discord import file has an invalid schema")
+    offers, hints = _load_offers()
+    known = {
+        (
+            str(row.get("message_id")), str(row.get("side")), str(row.get("item_key")),
+            int(row.get("quantity", 0)), float(row.get("unit_price_usd", 0)),
+        )
+        for row in offers
+    }
+    added = rejected = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            rejected += 1
+            continue
+        body = _manual_message_body(row)
+        if not body:
+            continue
+        created = str(row.get("created_at_utc") or "")
+        try:
+            stamp = datetime.fromisoformat(created.replace("Z", "+00:00"))
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=UTC)
+            posted_at = stamp.astimezone(UTC).isoformat()
+        except (TypeError, ValueError, OverflowError):
+            posted_at = ""
+        url = str(row.get("url") or "")
+        if not url.startswith("https://discord.com/channels/"):
+            url = ""
+        message_id = str(row.get("message_id") or "")
+        if not message_id:
+            rejected += 1
+            continue
+        parsed = parse_cash_post(
+            body, author=str(row.get("author") or ""),
+            message_id="discord:" + message_id, url=url, posted_at=posted_at,
+        )
+        rejected += len(parsed["rejected"])
+        for offer in parsed["offers"]:
+            identity = (
+                str(offer.get("message_id")), str(offer.get("side")),
+                str(offer.get("item_key")), int(offer.get("quantity", 0)),
+                float(offer.get("unit_price_usd", 0)),
+            )
+            if identity not in known:
+                offers.append(offer)
+                known.add(identity)
+                added += 1
+        hints.extend(parsed["demand_hints"])
+    if added or hints:
+        _save_offers(offers, hints)
+    _MANUAL_IMPORTS_INGESTED = True
+    return added, rejected
+
+
 def _load_inventory() -> dict[str, Any]:
     state = _read_object(INVENTORY_FILE, {"schema_version": 1, "items": {}})
     if state.get("schema_version") != 1 or not isinstance(state.get("items"), dict):
