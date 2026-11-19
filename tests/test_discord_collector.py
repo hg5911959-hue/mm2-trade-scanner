@@ -160,5 +160,35 @@ class DiscordCollectorTests(IsolatedDataTestCase):
         self.assertEqual(saved["messages"][0]["content"], "Selling Candy 2$")
 
 
+    def test_channel_history_paginates_until_a_short_page(self):
+        from unittest.mock import patch
+        from discord_collector import _fetch_channel_history
+
+        first = [{"id": "300000000000000002"}, {"id": "300000000000000001"}]
+        second = [{"id": "299999999999999999"}]
+        with patch("discord_collector._discord_get_json", side_effect=[first, second]) as get_page:
+            messages, truncated = _fetch_channel_history("200000000000000001", "bot-token", 2)
+
+        self.assertFalse(truncated)
+        self.assertEqual(len(messages), 3)
+        self.assertEqual(get_page.call_args_list[0].kwargs["params"], {"limit": 2})
+        self.assertEqual(
+            get_page.call_args_list[1].kwargs["params"],
+            {"limit": 2, "before": "300000000000000001"},
+        )
+
+    def test_channel_history_fails_closed_at_bounded_page_cap(self):
+        from unittest.mock import patch
+        from discord_collector import MAX_HISTORY_PAGES_PER_CHANNEL, _fetch_channel_history
+
+        pages = [[{"id": str(300000000000000000 - index)}] for index in range(MAX_HISTORY_PAGES_PER_CHANNEL)]
+        with patch("discord_collector._discord_get_json", side_effect=pages) as get_page:
+            messages, truncated = _fetch_channel_history("200000000000000001", "bot-token", 1)
+
+        self.assertTrue(truncated)
+        self.assertEqual(len(messages), MAX_HISTORY_PAGES_PER_CHANNEL)
+        self.assertEqual(get_page.call_count, MAX_HISTORY_PAGES_PER_CHANNEL)
+
+
 if __name__ == "__main__":
     unittest.main()
