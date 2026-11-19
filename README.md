@@ -13,19 +13,63 @@ Re-enable cash mode only after reliable fresh verified prices exist:
 3. Run the scheduler with `dry_run=true` to preview the results without sending live alerts.
 4. Check the preview alerts and catalogue coverage carefully before enabling live mode.
 
-## Owner-supplied cash-offer parser (foundation)
+## Cash-market intelligence (opt-in; disabled by default)
 
-The new `cash_offer_parser.py` module parses text that the owner forwards or
-pastes from Discord. It does not connect to Discord, scrape servers, or use a
-Discord user token. Canonical names and explicitly ambiguous names are kept in
-the owner-editable `cash_item_aliases.json` file. Unknown or ambiguous item
-names and multi-quantity prices without a per-unit marker are rejected rather
-than guessed. `QUICK SELL` is treated as a seller header.
+The cash-market path is separate from the legacy swap scanner and remains
+opt-in. The owner can forward or paste a Discord post to the Telegram bot; the
+bot does not scrape Discord, use a Discord user token, or execute trades.
+Existing authorized manual imports remain supported. Supreme game values are
+resolved only through the existing RBLXValue `value_source_b` cache; the
+Supreme Values website is never scraped.
 
-The parser is currently a tested ingestion foundation; it is not yet wired to
-the production scanner or Telegram commands. Do not enable cash-market trading
-signals until the order book, private storage boundary, and Telegram workflow
-phases are complete and validated.
+Core modules:
+- `cash_offer_parser.py` — parses price-list blocks, buyer/seller headers,
+  per-unit prices, inverse notation, decimal commas, minimum quantities,
+  payment hints, and pipe-separated offers. `QUICK SELL` is a seller header.
+- `cash_item_aliases.json` — owner-editable exact aliases and explicit
+  ambiguous-name list. Unknown names are rejected, never fuzzy-guessed.
+- `market_book.py` — 48-hour order book, recency-weighted medians, direct
+  arbitrage after fees/margin, conservative 1:1 and N:1 swap chains, inventory
+  verdicts, and rolling 14-day compact price history.
+- `telegram_market.py` — owner-chat-only `getUpdates` interface:
+  `/p`, `/buy`, `/chains`, `/sell`, `/inv`, `/add`, `/remove`,
+  `/status`, and `/help`.
+- `private_state.py` — authenticated encryption for private offers, inventory,
+  Telegram offsets, and private price history before state artifacts or the
+  public state branch are written.
+
+All four activation flags are false in `.github/workflows/scan.yml`:
+`MARKET_BOOK_ENABLED`, `TELEGRAM_COMMANDS_ENABLED`, `INVENTORY_ENABLED`,
+and `PRIVATE_STATE_ENABLED`. The owner must explicitly enable them after the
+dry-run and tests are green. Telegram commands require both market-book and
+private-state activation; inventory commands additionally require
+`INVENTORY_ENABLED`.
+
+### Protecting private state in this public repository
+
+The repository visibility is public, so the `state` branch and Actions
+artifacts are not private storage. The workflow therefore stores only the
+authenticated ciphertext `data/private_state.enc` there. Plaintext private
+files are decrypted only inside the runner and re-encrypted before artifacts
+are uploaded. `tools/validate_state.py` rejects plaintext private files.
+
+Encryption uses AES-256-CTR with HMAC-SHA256 authentication and PBKDF2-HMAC-SHA256
+key derivation. Python code uses the standard library; the GitHub Ubuntu runner
+must provide the OpenSSL command-line executable. The existing
+`TELEGRAM_BOT_TOKEN` secret is the encryption-key input, so no new secret is
+required. Keep that token stable: rotating it without first decrypting and
+re-encrypting the private bundle makes the previous bundle unreadable. Never
+print or expose the token.
+
+### Dry-run and limitations
+
+With `DRY_RUN=true`, the engine evaluates opportunities and logs scan-local
+IDs and estimated profits, but does not poll Telegram, send alerts, write alert
+state, or append price-history snapshots. Direct cash signals can operate
+without fresh game values; swap chains require a value snapshot no older than
+`RBLXVALUE_MAX_CACHE_AGE_SECONDS` (default 24 hours). Offers older than 48
+hours are excluded. GitHub cron can be delayed, and estimated profit is not a
+guarantee; the bot never executes a trade.
 
 ## Trade evaluation
 
