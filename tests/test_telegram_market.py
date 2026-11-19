@@ -199,19 +199,24 @@ class TelegramMarketTests(IsolatedDataTestCase):
                 "item": "Celestial Set",
                 "best_ask": {"unit_price_usd": 71},
                 "best_bid": {"unit_price_usd": 63},
-                "median_market": 67,
-                "spread_percent": 11.94,
+                "median_ask": 70, "median_bid": 64,
+                "median_market": 67, "spread_percent": 11.94,
                 "ask_quantity": 2, "bid_quantity": 2,
                 "data_age_seconds": 60, "confidence": "medium",
                 "risk_flags": [],
             }},
-            "game_values": {}, "direct": [], "chains": [],
+            "game_values": {"celestial set": {"value": 200, "data_age_seconds": 3600}},
+            "direct": [], "chains": [],
             "cache_age": None, "previous": {}, "offers_count": 4,
         }
         reply = telegram_market._command_reply("/p celestial set", snapshot,
                                                inventory_enabled=False)
         self.assertIn("أفضل بيع: $71.00", reply)
         self.assertIn("أفضل شراء: $63.00", reply)
+        self.assertIn("وسيط البيع: $70.00", reply)
+        self.assertIn("وسيط الشراء: $64.00", reply)
+        self.assertIn("عمر RBLXValue: 1 ساعة", reply)
+        self.assertIn("$/Value: 0.3550", reply)
 
     def test_authorized_manual_discord_imports_are_normalized_and_not_rawly_persisted(self):
         source = Path(self.temp.name) / "discord_messages.json"
