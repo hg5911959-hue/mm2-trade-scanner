@@ -62,7 +62,8 @@ def _valid_offer(row: dict[str, Any]) -> bool:
     try:
         price = float(row.get("unit_price_usd"))
         quantity = int(row.get("quantity"))
-        minimum = int(row.get("min_quantity") or 1)
+        raw_minimum = row.get("min_quantity")
+        minimum = 1 if raw_minimum is None else int(raw_minimum)
     except (TypeError, ValueError):
         return False
     return (
