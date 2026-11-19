@@ -224,6 +224,78 @@ class TelegramMarketTests(IsolatedDataTestCase):
             )
         self.assertIn("قائمة الانتظار", sent[0])
 
+    def test_stale_game_values_disable_chains_but_keep_direct_cash_signals(self):
+        stamp = datetime.fromtimestamp(NOW - 60, timezone.utc).isoformat()
+        offers = [
+            {"side": "sell", "item": "Candy", "item_key": "candy", "unit_price_usd": 1.0,
+             "quantity": 2, "min_quantity": 1, "author": "seller-a", "message_id": "s1",
+             "url": "https://discord.com/channels/1/2/101", "posted_at": stamp, "flags": []},
+            {"side": "sell", "item": "Candy", "item_key": "candy", "unit_price_usd": 1.2,
+             "quantity": 2, "min_quantity": 1, "author": "seller-b", "message_id": "s2",
+             "url": "https://discord.com/channels/1/2/102", "posted_at": stamp, "flags": []},
+            {"side": "buy", "item": "Candy", "item_key": "candy", "unit_price_usd": 4.0,
+             "quantity": 2, "min_quantity": 1, "author": "buyer-a", "message_id": "b1",
+             "url": "https://discord.com/channels/1/2/103", "posted_at": stamp, "flags": []},
+            {"side": "buy", "item": "Candy", "item_key": "candy", "unit_price_usd": 3.8,
+             "quantity": 2, "min_quantity": 1, "author": "buyer-b", "message_id": "b2",
+             "url": "https://discord.com/channels/1/2/104", "posted_at": stamp, "flags": []},
+        ]
+        stale_cache = {"schema_version": 4, "fetched_at": NOW - 25 * 3600, "values": {}}
+        with self._paths():
+            with patch("telegram_market._load_offers", return_value=(offers, [])):
+                with patch("scanner._read_values_cache_document", return_value=stale_cache):
+                    snapshot = telegram_market._load_market(now=NOW)
+        self.assertEqual(snapshot["game_values_status"], "stale")
+        self.assertEqual(snapshot["game_values"], {})
+        self.assertEqual(snapshot["chains"], [])
+        self.assertEqual(len(snapshot["direct"]), 1)
+
+    def test_price_command_exposes_stale_missing_and_blocked_game_value_risks(self):
+        market = {
+            "best_ask": {"unit_price_usd": 2}, "best_bid": {"unit_price_usd": 1},
+            "median_market": 1.5, "median_ask": 2, "median_bid": 1,
+            "spread_percent": 66.7, "ask_quantity": 1, "bid_quantity": 1,
+            "data_age_seconds": 60, "confidence": "medium", "risk_flags": [],
+        }
+        stale = telegram_market._format_item({"item": "Candy"}, market, None, "stale")
+        missing = telegram_market._format_item(
+            {"item": "Candy"}, market,
+            {"value": 10, "stability": "", "data_age_seconds": 60}, "fresh",
+        )
+        blocked = telegram_market._format_item(
+            {"item": "Candy"}, market,
+            {"value": 10, "stability": "Untradeable", "data_age_seconds": 60}, "fresh",
+        )
+        self.assertIn("stale_game_values", stale)
+        self.assertIn("missing_stability", missing)
+        self.assertIn("untradeable", blocked)
+
+    def test_buy_and_chain_commands_include_sources_and_risk_flags(self):
+        snapshot = {
+            "book": {}, "game_values": {}, "game_values_status": "fresh",
+            "direct": [{
+                "type": "direct_arbitrage", "item": "Candy", "item_key": "candy",
+                "buy": {"unit_price_usd": 1, "url": "https://example.com/sell"},
+                "sell": {"unit_price_usd": 4, "url": "https://example.com/buy"},
+                "quantity": 1, "profit_usd": 2, "profit_percent": 50,
+                "confidence": "high", "risk_flags": ["price_far_from_median"],
+            }],
+            "chains": [{
+                "type": "swap_chain", "buy_item": "A", "swap_item": "B",
+                "buy": {"unit_price_usd": 1}, "sell": {"unit_price_usd": 4},
+                "quantity_buy": 2, "quantity_sell": 1, "profit_usd": 2,
+                "profit_percent": 50, "confidence": "medium",
+                "source_links": ["https://example.com/ask", "https://example.com/bid"],
+                "risk_flags": ["owner_supplied_author"],
+            }],
+        }
+        buy = telegram_market._command_reply("/buy", snapshot, inventory_enabled=False)
+        chains = telegram_market._command_reply("/chains", snapshot, inventory_enabled=False)
+        self.assertIn("https://example.com/sell", buy)
+        self.assertIn("price_far_from_median", buy)
+        self.assertIn("https://example.com/ask", chains)
+        self.assertIn("owner_supplied_author", chains)
+
     def test_csv_catalogue_is_only_a_dry_run_reference_fallback(self):
         catalogue = {
             "items": {

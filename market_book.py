@@ -343,6 +343,9 @@ def find_swap_chains(
                             row_a["confidence"], row_b["confidence"],
                             value_a["confidence"], value_b["confidence"],
                         } else "high",
+                        "risk_flags": sorted(set(
+                            list(row_a.get("risk_flags", [])) + list(row_b.get("risk_flags", []))
+                        )),
                     })
     unique: dict[tuple[Any, ...], dict[str, Any]] = {}
     for chain in chains:

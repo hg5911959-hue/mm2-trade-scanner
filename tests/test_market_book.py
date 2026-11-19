@@ -103,6 +103,24 @@ class MarketBookTests(IsolatedDataTestCase):
         book = build_order_book([ask, bid], now=NOW)
         self.assertEqual(find_direct_arbitrage(book), [])
 
+    def test_swap_chain_propagates_market_risk_flags(self):
+        offers = [
+            offer("sell", "A", 2.0, 2, "seller-a", "a1"),
+            offer("sell", "A", 2.2, 2, "seller-b", "a2"),
+            offer("buy", "B", 10.0, 1, "buyer-a", "b1"),
+            offer("buy", "B", 9.5, 1, "buyer-b", "b2"),
+        ]
+        offers[0]["flags"] = ["owner_supplied_author"]
+        book = build_order_book(offers, now=NOW)
+        values = {
+            "a": {"value": 100, "stability": "Stable", "confidence": "high", "data_age_seconds": 60},
+            "b": {"value": 100, "stability": "Stable", "confidence": "high", "data_age_seconds": 60},
+        }
+        chains = find_swap_chains(book, values, transfer_fee_usd=0.1,
+                                  min_profit_usd=0, min_profit_percent=0)
+        self.assertTrue(chains)
+        self.assertIn("owner_supplied_author", chains[0]["risk_flags"])
+
     def test_swap_chain_rejects_received_bid_with_minimum_above_one(self):
         ask = offer("sell", "A", 5, 2, "seller-a", "ask")
         ask_other = offer("sell", "A", 5.2, 2, "seller-b", "ask-other")

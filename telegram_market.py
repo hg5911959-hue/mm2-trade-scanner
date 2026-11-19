@@ -19,7 +19,8 @@ from typing import Any, Callable
 
 from cash_offer_parser import load_aliases, parse_cash_post, resolve_cash_item, normalize_key
 from market_book import (
-    build_order_book, find_direct_arbitrage, find_swap_chains, inventory_advice,
+    BLOCKED_STABILITY, build_order_book, find_direct_arbitrage, find_swap_chains,
+    inventory_advice,
 )
 
 DATA_DIR = Path("data")
@@ -349,11 +350,16 @@ def _load_market(now: float | None = None) -> dict[str, Any]:
             cache_age = current - fetched_at
         except (TypeError, ValueError, OverflowError):
             cache_age = None
+    game_values_status = "unavailable"
+    if isinstance(cache_document, dict):
+        if cache_age is None:
+            game_values_status = "invalid"
+        elif cache_age > GAME_VALUES_MAX_AGE_SECONDS:
+            game_values_status = "stale"
+        else:
+            game_values_status = "fresh"
     game_values: dict[str, dict[str, Any]] = {}
-    if (
-        isinstance(cache_document, dict) and cache_age is not None
-        and cache_age <= GAME_VALUES_MAX_AGE_SECONDS
-    ):
+    if game_values_status == "fresh":
         values = cache_document.get("values", {})
         aliases = scanner.load_aliases()
         if isinstance(values, dict):
@@ -392,11 +398,15 @@ def _load_market(now: float | None = None) -> dict[str, Any]:
             previous = last["items"]
     return {
         "book": book, "direct": direct, "chains": chains, "game_values": game_values,
+        "game_values_status": game_values_status,
         "cache_age": cache_age, "previous": previous, "offers_count": len(offers),
     }
 
 
-def _format_item(item: dict[str, Any], market: dict[str, Any], game: dict[str, Any] | None) -> str:
+def _format_item(
+    item: dict[str, Any], market: dict[str, Any], game: dict[str, Any] | None,
+    game_values_status: str = "unavailable",
+) -> str:
     ask, bid = market.get("best_ask"), market.get("best_bid")
     ask_text = _format_usd(ask.get("unit_price_usd")) if ask else "غير متاح"
     bid_text = _format_usd(bid.get("unit_price_usd")) if bid else "غير متاح"
@@ -417,9 +427,26 @@ def _format_item(item: dict[str, Any], market: dict[str, Any], game: dict[str, A
             game_age_text = f"{int(game_age // 3600)} ساعة"
         if ask:
             ratio_text = f"{float(ask['unit_price_usd']) / game['value']:.4f}"
+    elif game_values_status == "stale":
+        value_text = "قديم (stale)"
+        game_age_text = "قديم (stale)"
+    elif game_values_status == "invalid":
+        value_text = "غير موثوق"
+        game_age_text = "غير موثوق"
+
     risk_flags = list(market.get("risk_flags", []))
     if not game:
         risk_flags.append("no_value_data")
+        if game_values_status == "stale":
+            risk_flags.append("stale_game_values")
+        elif game_values_status == "invalid":
+            risk_flags.append("invalid_game_values")
+    else:
+        stability = str(game.get("stability") or "").strip().casefold()
+        if not stability:
+            risk_flags.append("missing_stability")
+        elif stability in BLOCKED_STABILITY:
+            risk_flags.append("untradeable")
     risks = "، ".join(sorted(set(risk_flags))) or "لا توجد"
     return (
         f"{item.get('item') or market.get('item')}\n"
@@ -431,6 +458,7 @@ def _format_item(item: dict[str, Any], market: dict[str, Any], game: dict[str, A
         f"قيمة اللعبة: {value_text} | $/Value: {ratio_text}\n"
         f"الثقة: {market.get('confidence')} | المخاطر: {risks}"
     )
+
 
 
 def _resolve_command_item(raw: str) -> tuple[str | None, str]:
@@ -475,7 +503,10 @@ def _command_reply(
             if not market:
                 replies.append(f"{match}: لا توجد عروض حديثة.")
             else:
-                replies.append(_format_item({"item": match}, market, snapshot["game_values"].get(key)))
+                replies.append(_format_item(
+                    {"item": match}, market, snapshot["game_values"].get(key),
+                    snapshot.get("game_values_status", "unavailable"),
+                ))
             index = end_match
         return "\n\n".join(replies)
     if verb in {"/buy", "/chains"}:
@@ -484,6 +515,8 @@ def _command_reply(
             key=lambda row: float(row.get("profit_usd", 0)), reverse=True,
         )
         if not rows:
+            if verb == "/chains" and snapshot.get("game_values_status") == "stale":
+                return "قيم اللعبة قديمة (stale)؛ سلاسل التبادل معطّلة حتى تحديث البيانات."
             return "لا توجد فرصة مؤكدة تتجاوز حدود الربح والمخاطر الحالية."
         output = []
         for row in rows[:8]:
@@ -492,7 +525,9 @@ def _command_reply(
                     f"مراجحة مباشرة: {row['item']} ×{row['quantity']}\n"
                     f"شراء { _format_usd(row['buy']['unit_price_usd']) } ← بيع { _format_usd(row['sell']['unit_price_usd']) }\n"
                     f"الربح الصافي: {_format_usd(row['profit_usd'])} ({row['profit_percent']:.1f}%)\n"
-                    f"الثقة: {row.get('confidence', 'low')}"
+                    f"الثقة: {row.get('confidence', 'low')}\n"
+                    f"المصادر: {row.get('buy', {}).get('url') or 'غير متاح'} | {row.get('sell', {}).get('url') or 'غير متاح'}"
+                    + (f"\nالمخاطر: {', '.join(row.get('risk_flags', []))}" if row.get("risk_flags") else "")
                 )
             else:
                 output.append(
@@ -500,6 +535,7 @@ def _command_reply(
                     f"الربح الصافي: {_format_usd(row['profit_usd'])} ({row['profit_percent']:.1f}%)\n"
                     f"الثقة: {row.get('confidence', 'low')}\n"
                     f"المصادر: {row['source_links'][0] or 'غير متاح'} | {row['source_links'][1] or 'غير متاح'}"
+                    + (f"\nالمخاطر: {', '.join(row.get('risk_flags', []))}" if row.get("risk_flags") else "")
                 )
         return "\n\n".join(output)
     if verb in {"/sell", "/inv", "/add", "/remove"}:
@@ -601,6 +637,10 @@ def _command_reply(
         active = bool(blocked and (blocked.get("permanent") or blocked_until > now))
         age = snapshot.get("cache_age")
         age_text = f"{int(age // 3600)} ساعة" if isinstance(age, (int, float)) else "غير متاح"
+        if snapshot.get("game_values_status") == "stale":
+            age_text += " — قديم (stale)"
+        elif snapshot.get("game_values_status") == "invalid":
+            age_text += " — غير موثوق"
         offer_stamps = []
         for offer in offers:
             try:
@@ -764,6 +804,7 @@ def send_market_alerts(
                 f"بيع {_format_usd(row['sell'].get('unit_price_usd'))}\n"
                 f"الربح الصافي: {_format_usd(profit)} ({float(row.get('profit_percent', 0)):.1f}%) | "
                 f"الثقة: {row.get('confidence', 'low')}"
+                + (f"\nالمخاطر: {', '.join(row.get('risk_flags', []))}" if row.get("risk_flags") else "")
             )
         elif row.get("type") == "swap_chain":
             identity = [
@@ -777,6 +818,7 @@ def send_market_alerts(
                 f"→ {row.get('swap_item')} → بيع ×{row.get('quantity_sell')}\n"
                 f"الربح الصافي: {_format_usd(profit)} ({float(row.get('profit_percent', 0)):.1f}%) | "
                 f"الثقة: {row.get('confidence', 'low')}"
+                + (f"\nالمخاطر: {', '.join(row.get('risk_flags', []))}" if row.get("risk_flags") else "")
             )
         else:
             continue
