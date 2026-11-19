@@ -254,7 +254,7 @@ def find_swap_chains(
                 # 1→1 and N→1 only; the received item must be worth the
                 # offered aggregate game value within the configured tolerance.
                 for qty_a in range(1, ask_qty + 1):
-                    if value_b < value_a["value"] * qty_a * (1 - tolerance / 100):
+                    if value_b["value"] < value_a["value"] * qty_a * (1 - tolerance / 100):
                         continue
                     qty_b = 1
                     gross = bid_price * qty_b - ask_price * qty_a
