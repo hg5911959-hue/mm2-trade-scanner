@@ -203,8 +203,8 @@ Not yet scored at the end of Phase 2. See the evidence-based readiness assessmen
 
 ## Current overall status — 2026-11-19
 
-- Current implementation branch: `before-market-book`; latest validated head: `6aef6dc9bfe70fd3da9422fca96c3f26f2d634ea`. Implementation PR [#85](https://github.com/hg5911959-hue/mm2-trade-scanner/pull/85) remains open and unmerged.
-- Latest complete hosted validation: **472/472 tests passed twice** on Python 3.12; the `data/` tree hash was unchanged after both runs; targeted Ruff checks, scanner correctness lint, and repository-wide undefined/unused-name checks all passed. Validation run [#1079](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44628695461) validates the latest branch head.
+- Current implementation branch: `before-market-book`; latest validated PR head before this report-only update: `143523b5cbb092e817f5d6d77688b3bf4dbc1412`. Implementation PR [#85](https://github.com/hg5911959-hue/mm2-trade-scanner/pull/85) remains open and unmerged.
+- Latest complete hosted validation: **472/472 tests passed twice** on Python 3.12; the `data/` tree hash was unchanged after both runs; targeted Ruff checks, scanner correctness lint, and repository-wide undefined/unused-name checks all passed. Validation run [#1090](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44629202062) validates the latest code and documentation head before this report-only update.
 - This is strong code/test evidence for the implemented scope, not a guarantee of zero undiscovered defects, live data accuracy, or profitable trades.
 - The requested safety branch exists. The requested Git tag `before-market-book` is still **not created** because the available GitHub integration has no tag-object/ref creation operation.
 - All runtime feature flags remain OFF by default: `MARKET_BOOK_ENABLED`, `TELEGRAM_COMMANDS_ENABLED`, `INVENTORY_ENABLED`, and `PRIVATE_STATE_ENABLED`. No live Telegram messages, trades, or market alerts were sent by this work.
@@ -218,7 +218,7 @@ Not yet scored at the end of Phase 2. See the evidence-based readiness assessmen
 6. **Private-state key rotation:** encrypted private state derives its keys from the existing Telegram bot token to avoid introducing a new secret. Rotating that token without first decrypting/re-encrypting the private-state bundle will make the old bundle unreadable; the workflow now verifies its authentication before publishing it.
 
 ### Readiness assessment
-- Code and test readiness for the implemented, feature-flagged scope: **472 tests twice and all configured Ruff checks clean** on the latest head.
+- Code and test readiness for the implemented, feature-flagged scope: **472 tests twice and all configured Ruff checks clean** on the latest validated PR head.
 - Live operational readiness: **not yet verified** because of the suspended RBLXValue key, unverified Telegram/Discord credentials and permissions, missing tag operation, source-author metadata, and bounded GitHub Actions polling model.
 - The project is therefore **not honestly certifiable as 10/10 or 100% operational yet**. No automatic trading is enabled; the system remains advisory and profit is not guaranteed.
 
@@ -262,3 +262,14 @@ Not yet scored at the end of Phase 2. See the evidence-based readiness assessmen
 - Added transport regression tests and updated existing tests to patch the new redirect-safe opener.
 - Relevant commits: Telegram test workflow `267e40775662670cdae2ac397dfbc9128e6dce8d`; scanner sender `30e219dbb212a8d148ee7106274c06fb201c032f`; weekly report sender `30a5a975e021bb9be5193de010aecd708391df00`; transport tests `c20b0d9943f55c4c7bb4e230ef884bd81b00d563`; test-mock follow-ups `29ff1b8f218fe2f720dd0defe9abcb5867bd58c9`, `929c018d41431455e4457dd096bde12bee4cabc6`, `f6323600c7f71c877b2cb5cfa4e136a206643d91`, `59a392b743c961818faf9b606ff5fd9bcb0e96ec`, and `6aef6dc9bfe70fd3da9422fca96c3f26f2d634ea`.
 - Latest hosted verification [#1079](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44628695461): **472 tests passed twice**, data-tree immutability passed, targeted Ruff checks passed, scanner correctness lint passed, and repository-wide undefined/unused-name lint passed.
+
+### Phase 20 — Correct operational documentation
+- Audited `README.md` against the actual workflow files and corrected stale instructions that could lead to unsupported operation:
+  - Updated the scanner cadence from 15 minutes to the actual 10-minute GitHub Actions schedule.
+  - Updated the scan duration from the obsolete 780-second/15-minute description to 540 seconds/9 minutes and the 20-minute job timeout.
+  - Removed unsupported `repository_dispatch` and cron-job.org instructions; the scheduler supports GitHub cron, manual `workflow_dispatch`, and reusable `workflow_call`.
+  - Corrected the manual dry-run default to `true` and noted that scheduled runs intentionally use `false`.
+  - Corrected the ownership of the schedule re-enable check to `watchdog-scheduler.yml`.
+  - Documented the actual CI push branches, including `before-market-book`.
+- Documentation commits: `4b957443f6fc5599fdbefd8d40a1c8e55c23bd7f`, `e0c471874d8a16bd8d93b10b59056fde151cf6b0`, `66c95cc972f2be4ad627426a29607e9600ff3e00`, and `143523b5cbb092e817f5d6d77688b3bf4dbc1412`.
+- Hosted verification [#1090](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44629202062): **472 tests passed twice**, data immutability passed, and all configured Ruff checks passed.
