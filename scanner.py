@@ -4094,6 +4094,49 @@ def scan_once(include_backlog_rechecks=True):
         raise RuntimeError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in GitHub Actions secrets.")
     update_metrics(increments={"scans": 1})
 
+    market_book_enabled = cash_filter_enabled(os.environ.get("MARKET_BOOK_ENABLED", "false"))
+    telegram_commands_enabled = cash_filter_enabled(os.environ.get("TELEGRAM_COMMANDS_ENABLED", "false"))
+    inventory_enabled = cash_filter_enabled(os.environ.get("INVENTORY_ENABLED", "false"))
+    private_state_enabled = cash_filter_enabled(os.environ.get("PRIVATE_STATE_ENABLED", "false"))
+    if market_book_enabled and private_state_enabled:
+        if telegram_commands_enabled and not dry_run:
+            try:
+                from telegram_market import process_telegram_updates
+                processed = process_telegram_updates(
+                    token=BOT_TOKEN, chat_id=CHAT_ID, market_enabled=True,
+                    inventory_enabled=inventory_enabled, private_state_confirmed=True,
+                )
+                if processed:
+                    print(f"[telegram-market] processed_updates={processed}")
+            except Exception as telegram_error:
+                print(f"[telegram-market] polling skipped safely: {type(telegram_error).__name__}")
+        try:
+            import telegram_market
+            from market_book import save_private_price_history
+            market_snapshot = telegram_market._load_market()
+            opportunities = market_snapshot["direct"] + market_snapshot["chains"]
+            print(
+                f"[market-book] items={len(market_snapshot['book'])} "
+                f"direct_opportunities={len(market_snapshot['direct'])} "
+                f"swap_chains={len(market_snapshot['chains'])}"
+            )
+            if dry_run:
+                for index, opportunity in enumerate(opportunities[:MAX_ALERTS_PER_RUN], 1):
+                    print(
+                        f"[dry-run-market] opportunity_index={index} "
+                        f"type={opportunity.get('type')} "
+                        f"profit_usd={float(opportunity.get('profit_usd', 0)):.2f} "
+                        f"profit_percent={float(opportunity.get('profit_percent', 0)):.2f}"
+                    )
+            elif market_snapshot["book"]:
+                save_private_price_history(
+                    telegram_market.HISTORY_FILE, market_snapshot["book"]
+                )
+        except Exception as market_error:
+            print(f"[market-book] evaluation skipped safely: {type(market_error).__name__}")
+    elif market_book_enabled:
+        print("[market-book] disabled safely: PRIVATE_STATE_ENABLED must be true to protect owner data")
+
     print("[stage] Checking RBLXValue API credential")
     if not RBLXVALUE_API_KEY:
         print("[supreme] API key missing; only a fresh schema-v4 Supreme cache can be used")
