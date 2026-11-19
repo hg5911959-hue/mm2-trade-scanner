@@ -442,34 +442,41 @@ def validate_rblxvalue_cache_state(
     if isinstance(pages, dict) and pages and type(source_total) is int and source_total > 0:
         offsets: list[int] = []
         item_ids: list[str] = []
+        page_structure_valid = True
         for key, page in pages.items():
             try:
                 offset = int(key)
             except (TypeError, ValueError):
                 errors.append("RBLXValue cache contains a non-numeric page offset")
+                page_structure_valid = False
                 break
             if offset < 0:
                 errors.append("RBLXValue cache contains a negative page offset")
+                page_structure_valid = False
                 break
             offsets.append(offset)
             if not isinstance(page, dict) or not isinstance(page.get("items"), list) or not page["items"]:
                 errors.append("RBLXValue cache contains an empty or invalid source page")
+                page_structure_valid = False
                 break
             page_total = page.get("total")
             if page_total is not None and page_total != source_total:
                 errors.append("RBLXValue source pages disagree on the catalogue total")
+                page_structure_valid = False
                 break
             if len(page["items"]) > 100:
                 errors.append("RBLXValue source page exceeds the 100-item page limit")
+                page_structure_valid = False
                 break
             for item in page["items"]:
                 if not isinstance(item, dict) or item.get("id") is None or not str(item.get("id")).strip():
                     errors.append("RBLXValue source page contains an item without an ID")
+                    page_structure_valid = False
                     break
                 item_ids.append(str(item["id"]))
-            if errors:
+            if not page_structure_valid:
                 break
-        if not errors:
+        if page_structure_valid:
             expected_offset = 0
             for offset in sorted(offsets):
                 if offset != expected_offset:
