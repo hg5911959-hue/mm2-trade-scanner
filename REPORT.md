@@ -162,3 +162,11 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - The first hosted test attempt found the missing Spirit alias and failed on that new regression; the defect was fixed before final verification.
 - Final validation commit `c867dcaee032de93532f9fd8ab6cfa1b04589e8d`, Actions run [#1000](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44619126582): **449 tests passed twice** (449/449 on both passes). Ruff passed for all targeted market/privacy/API modules, scanner correctness checks, and repository-wide undefined/unused-name checks. The workflow's data-tree hash guard passed.
 - The new feature flags remain disabled. This validates parser and regression behavior only; it does not prove the offer is still available or independently verify the Discord author's identity.
+
+
+### Phase 9 — Standalone RBLXValue credential-check hardening
+- Audit found the manual-only `.github/workflows/rblxvalue-connection-test.yml` used `urllib.request.urlopen` directly with the `X-Api-Key` header. Unlike the scanner's protected request path, that standalone call did not explicitly reject redirects before they could forward a credential-bearing request.
+- Added a dedicated standard-library `HTTPRedirectHandler` that rejects redirects and switched the connection check to an opener using that handler. The same workflow remains manual-dispatch-only and reserves against the shared persistent request budget before its one request.
+- Hardened state persistence when the optional `data/api_key_blocked.json` file is absent: the workflow now stages the budget file unconditionally and stages/removes the breaker file only when appropriate, avoiding a missing-path `git add` failure.
+- Added workflow-config regression assertions for redirect rejection and optional breaker-file persistence.
+- This is a preventive security/operational hardening change. Hosted verification is pending for commit `2ff0f9548d6e459a832ccd6caf0e55fad9512df7`; do not treat the prior 449-test run as verification of this new change.
