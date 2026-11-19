@@ -2,6 +2,7 @@ import unittest
 from pathlib import Path
 
 from cash_offer_parser import parse_cash_post
+from market_book import build_order_book, find_direct_arbitrage
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +27,23 @@ class CashOfferParserTests(unittest.TestCase):
         self.assertEqual(result["demand_hints"][0]["item"], "Embersickle")
         reasons = {row["reason"] for row in result["rejected"]}
         self.assertIn("unresolved_name", reasons)
+
+    def test_appendix_sample_has_no_direct_arbitrage(self):
+        fixture = ROOT / "tests" / "fixtures" / "discord_cash_posts_sample.txt"
+        result = parse_cash_post(fixture.read_text(encoding="utf-8"), author="sample", message_id="sample")
+        now = 1_800_000_000
+        for index, row in enumerate(result["offers"]):
+            row["posted_at"] = now - index
+            row["author"] = f"author-{index}"
+        book = build_order_book(result["offers"], now=now)
+        self.assertEqual(find_direct_arbitrage(book), [])
+
+    def test_buyer_warning_is_preserved_as_risk_flag(self):
+        result = parse_cash_post(
+            "Buying\n10x Candy 2$/1\nSell before it drops",
+            author="buyer", message_id="warning",
+        )
+        self.assertIn("sell_before_drop", result["offers"][0]["flags"])
 
     def test_quick_sell_is_a_seller(self):
         result = parse_cash_post("QUICK SELL\n1x Candy 2$/1", message_id="q")
