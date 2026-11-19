@@ -1,7 +1,6 @@
 import unittest
 from test_support import IsolatedDataTestCase
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 
 from discord_collector import merge_messages, normalize_message, parse_guild_ids
 
