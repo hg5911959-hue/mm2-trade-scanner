@@ -747,7 +747,11 @@ def process_telegram_updates(
         return 0
     current = datetime.now(UTC).timestamp() if now is None else float(now)
     state = _read_object(UPDATES_FILE, {"schema_version": 1, "offset": 0})
-    if state.get("schema_version") != 1 or type(state.get("offset")) is not int:
+    if (
+        state.get("schema_version") != 1
+        or not isinstance(state.get("offset"), int)
+        or isinstance(state.get("offset"), bool)
+    ):
         raise RuntimeError("Telegram update offset state is invalid")
     offset = state["offset"]
     updates = get_updates(token, offset)
