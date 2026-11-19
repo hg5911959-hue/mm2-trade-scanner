@@ -54,8 +54,11 @@ class ValueModeEvaluationTests(IsolatedDataTestCase):
 class WeeklyReportValueModeTests(IsolatedDataTestCase):
     def test_weekly_report_does_not_load_cash_catalogue_when_disabled(self):
         with tempfile.TemporaryDirectory() as directory:
-            response = type("Response", (), {"status": 200, "__enter__": lambda self: self,
-                                              "__exit__": lambda self, *args: None})()
+            response = type("Response", (), {
+                "status": 200, "__enter__": lambda self: self,
+                "__exit__": lambda self, *args: None,
+                "read": lambda self, limit: b'{"ok":true}',
+            })()
             output = io.StringIO()
             with (
                 patch.object(weekly_report, "DATA_DIR", Path(directory)),
@@ -69,7 +72,7 @@ class WeeklyReportValueModeTests(IsolatedDataTestCase):
                              side_effect=AssertionError("cash blockers must not load")),
                 patch.object(weekly_report, "collect_preflight_checks",
                              return_value={"checks": []}),
-                patch.object(weekly_report.urllib.request, "urlopen", return_value=response),
+                patch.object(weekly_report._TELEGRAM_OPENER, "open", return_value=response),
                 contextlib.redirect_stdout(output),
             ):
                 weekly_report.main()
