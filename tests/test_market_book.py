@@ -76,6 +76,33 @@ class MarketBookTests(IsolatedDataTestCase):
         self.assertEqual(row["confidence"], "low")
         self.assertIn("single_author", row["risk_flags"])
 
+    def test_direct_arbitrage_respects_buyer_and_seller_minimum_quantities(self):
+        ask = offer("sell", "Candy", 1, 2, "seller", "ask")
+        bid = offer("buy", "Candy", 10, 5, "buyer", "bid")
+        ask["min_quantity"] = 8
+        book = build_order_book([ask, bid], now=NOW)
+        self.assertEqual(find_direct_arbitrage(book), [])
+
+    def test_swap_chain_rejects_received_bid_with_minimum_above_one(self):
+        ask = offer("sell", "A", 5, 2, "seller", "ask")
+        bid = offer("buy", "B", 1, 10, "buyer", "bid")
+        bid["min_quantity"] = 2
+        book = build_order_book([ask, bid], now=NOW)
+        values = {
+            "a": {"value": 100, "stability": "Stable", "confidence": "high", "data_age_seconds": 60},
+            "b": {"value": 200, "stability": "Stable", "confidence": "high", "data_age_seconds": 60},
+        }
+        self.assertEqual(find_swap_chains(book, values), [])
+
+    def test_inventory_does_not_claim_sellability_below_buyers_minimum(self):
+        ask = offer("sell", "Candy", 50, 1, "seller", "ask")
+        bid = offer("buy", "Candy", 50, 2, "buyer", "bid")
+        bid["min_quantity"] = 20
+        book = build_order_book([ask, bid], now=NOW)
+        advice = inventory_advice({"candy": {"item": "Candy", "quantity": 5}}, book)
+        self.assertEqual(advice[0]["verdict"], "HOLD")
+        self.assertIn("below_buyer_minimum", advice[0]["risk_flags"])
+
     def test_swap_chain_supports_n_to_one_and_rejects_stale_or_unsafe_values(self):
         offers = [
             offer("sell", "A", 2.0, 2, "seller-a", "a1"),
