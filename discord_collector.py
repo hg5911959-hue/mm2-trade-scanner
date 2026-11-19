@@ -19,6 +19,7 @@ from typing import Any
 
 API_BASE = "https://discord.com/api/v10"
 MAX_HISTORY_PER_CHANNEL = 100
+MAX_HISTORY_PAGES_PER_CHANNEL = 6
 MAX_CHANNELS_PER_GUILD = 100
 MAX_THREADS_PER_GUILD = 100
 MAX_STORED_MESSAGES = 10000
@@ -124,6 +125,30 @@ def _discord_get_json(
                 f"Discord API network error: {type(exc.reason).__name__}"
             ) from None
     raise RuntimeError("Discord API rate limit retry budget exhausted")
+
+
+def _fetch_channel_history(channel_id: str, token: str, limit: int):
+    """Fetch a bounded sequence of newest messages, paging with Discord's before cursor."""
+    page_limit = max(1, min(int(limit), MAX_HISTORY_PER_CHANNEL))
+    collected: list[dict[str, Any]] = []
+    before = None
+    for _ in range(MAX_HISTORY_PAGES_PER_CHANNEL):
+        params: dict[str, Any] = {"limit": page_limit}
+        if before is not None:
+            params["before"] = before
+        page = _discord_get_json(f"/channels/{channel_id}/messages", token, params=params)
+        if not isinstance(page, list):
+            raise RuntimeError("Discord API returned an invalid channel history page")
+        if not page:
+            return collected, False
+        collected.extend(row for row in page if isinstance(row, dict))
+        if len(page) < page_limit:
+            return collected, False
+        next_before = str(page[-1].get("id") or "") if isinstance(page[-1], dict) else ""
+        if not next_before or next_before == before:
+            raise RuntimeError("Discord message history pagination did not advance")
+        before = next_before
+    return collected, True
 
 
 def normalize_message(
@@ -266,20 +291,26 @@ def collect(
         if not isinstance(channels, list):
             errors.append(f"server {guild_id}: invalid channel-list response")
             continue
-        guild_channels = [
+        supported_channels = [
             row for row in channels
             if isinstance(row, dict) and row.get("type") in {0, 5}
-        ][:MAX_CHANNELS_PER_GUILD]
+        ]
+        if len(supported_channels) > MAX_CHANNELS_PER_GUILD:
+            errors.append(f"server {guild_id}: readable channel limit exceeded")
+        guild_channels = supported_channels[:MAX_CHANNELS_PER_GUILD]
         try:
             thread_payload = _discord_get_json(f"/guilds/{guild_id}/threads/active", token)
             threads = thread_payload.get("threads", []) if isinstance(thread_payload, dict) else []
         except (PermissionError, RuntimeError, ValueError) as exc:
             errors.append(f"server {guild_id} active threads: {str(exc)[:160]}")
             threads = []
-        thread_channels = [
+        supported_threads = [
             row for row in threads
             if isinstance(row, dict) and row.get("type") in {10, 11, 12}
-        ][:MAX_THREADS_PER_GUILD]
+        ]
+        if len(supported_threads) >= MAX_THREADS_PER_GUILD:
+            errors.append(f"server {guild_id}: active thread limit reached; coverage may be incomplete")
+        thread_channels = supported_threads[:MAX_THREADS_PER_GUILD]
         seen_channel_ids: set[str] = set()
         for channel in guild_channels + thread_channels:
             channel_id = str(channel.get("id") or "")
@@ -287,9 +318,9 @@ def collect(
                 continue
             seen_channel_ids.add(channel_id)
             try:
-                messages = _discord_get_json(
-                    f"/channels/{channel_id}/messages", token, params={"limit": limit}
-                )
+                messages, history_truncated = _fetch_channel_history(channel_id, token, limit)
+                if history_truncated:
+                    errors.append(f"channel {channel_id}: bounded history page limit reached")
             except (PermissionError, RuntimeError, ValueError) as exc:
                 errors.append(f"channel {channel_id}: {str(exc)[:160]}")
                 continue
