@@ -33,9 +33,11 @@ Core modules:
   verdicts, and rolling 14-day compact price history.
 - `telegram_market.py` — owner-chat-only `getUpdates` interface:
   `/p`, `/buy`, `/chains`, `/sell`, `/inv`, `/add`, `/remove`,
-  `/status`, and `/help`.
+  `/status`, and `/help`; threshold-qualified alerts are deduplicated and
+  repeated only when net profit changes by more than
+  `MARKET_ALERT_PROFIT_DELTA_USD`.
 - `private_state.py` — authenticated encryption for private offers, inventory,
-  Telegram offsets, and private price history before state artifacts or the
+  Telegram offsets, private alert-dedup state, and private price history before state artifacts or the
   public state branch are written.
 
 All four activation flags are false in `.github/workflows/scan.yml`:
