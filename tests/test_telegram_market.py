@@ -211,7 +211,6 @@ class TelegramMarketTests(IsolatedDataTestCase):
         self.assertEqual(snapshot["chains"], [])
 
     def test_future_dated_rblxvalue_cache_disables_swap_value_resolution(self):
-        import scanner
         offer = {
             "side": "sell", "item": "Candy", "item_key": "candy",
             "quantity": 1, "unit_price_usd": 1.0, "min_quantity": 1,
