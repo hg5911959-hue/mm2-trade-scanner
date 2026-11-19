@@ -18,7 +18,6 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any
 
 MAGIC = b"MM2PSTATE1"
 SALT_BYTES = 16
