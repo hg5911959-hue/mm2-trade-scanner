@@ -4505,8 +4505,10 @@ def scan_once(include_backlog_rechecks=True):
             "Newer posts may remain unscanned; inspect the latest GitHub Actions logs.",
             cooldown_seconds=1800,
         )
-    # Runtime visibility for real-feed quantity validation: log only explicit stacks.
+    # Never print private Discord item names, message IDs or stack quantities.
     for listing in listings:
+        if listing.get("source") == "discord":
+            continue
         for side_label, field in (("Propose/receive", "receive_items"), ("Recherche/give", "give_items")):
             for item in listing.get(field, []):
                 quantity = item.get("quantity")
@@ -4615,7 +4617,7 @@ def scan_once(include_backlog_rechecks=True):
             previous_watch.get("content_hash") != current_content_hash
             or previous_watch.get("values_hash") != current_values_hash
         )
-        if (trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids:
+        if not is_discord and ((trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids):
             print(f"[dedupe] Skipping unchanged or uncertain listing {trade_id} before Telegram send.")
             return
         if os.environ.get("DRY_RUN", "").strip().casefold() == "true":
@@ -4696,10 +4698,13 @@ def scan_once(include_backlog_rechecks=True):
         try:
             send_telegram(message)
         except TelegramDeliveryUncertain:
-            print(
-                f"[telegram] Delivery uncertain for listing {trade_id}; "
-                "quarantined, skipping this message and continuing the batch."
-            )
+            if is_discord:
+                print("[telegram] Private Discord delivery uncertain; encrypted quarantine retained; identifiers suppressed.")
+            else:
+                print(
+                    f"[telegram] Delivery uncertain for listing {trade_id}; "
+                    "quarantined, skipping this message and continuing the batch."
+                )
             # The pre-send guard remains in uncertain_ids; persist the feed ID too.
             mark_seen_ad(listing)
             return
@@ -4712,10 +4717,13 @@ def scan_once(include_backlog_rechecks=True):
                 uncertain_ids.discard(trade_id)
                 save_uncertain_ids(uncertain_ids)
             mark_pending(listing, reason="telegram_failure")
-            print(
-                f"[telegram] Definite send failure for listing {trade_id}: "
-                f"{type(exc).__name__}; queued for a later scan and continuing the batch."
-            )
+            if is_discord:
+                print(f"[telegram] Private Discord delivery failed: {type(exc).__name__}; identifiers suppressed.")
+            else:
+                print(
+                    f"[telegram] Definite send failure for listing {trade_id}: "
+                    f"{type(exc).__name__}; queued for a later scan and continuing the batch."
+                )
             return
         if is_discord:
             discord_uncertain.pop(trade_id, None)
