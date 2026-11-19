@@ -159,6 +159,8 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         collector = (ROOT / "discord_collector.py").read_text(encoding="utf-8")
         self.assertIn("python -u discord_collector.py", workflow)
+        self.assertIn("discarding partial live messages", workflow)
+        self.assertIn("rm -f data/discord_messages.json data/discord_messages.json.tmp", workflow)
         self.assertNotIn("pip install", workflow)
         self.assertNotIn("discord.py", workflow)
         self.assertNotIn("import discord", collector)
