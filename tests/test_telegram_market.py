@@ -151,7 +151,7 @@ class TelegramMarketTests(IsolatedDataTestCase):
              patch.dict("os.environ", {"DRY_RUN": "false"}):
             snapshot = telegram_market._load_market(now=NOW)
         csv_loader.assert_not_called()
-        self.assertEqual(snapshot["book"], [])
+        self.assertEqual(snapshot["book"], {})
 
     def test_market_price_command_reports_acceptance_values(self):
         snapshot = {
