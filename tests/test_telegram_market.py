@@ -210,6 +210,32 @@ class TelegramMarketTests(IsolatedDataTestCase):
         self.assertEqual(snapshot["direct"], [])
         self.assertEqual(snapshot["chains"], [])
 
+    def test_future_dated_rblxvalue_cache_disables_swap_value_resolution(self):
+        import scanner
+        offer = {
+            "side": "sell", "item": "Candy", "item_key": "candy",
+            "quantity": 1, "unit_price_usd": 1.0, "min_quantity": 1,
+            "author": "seller", "posted_at": "2027-01-15T08:00:00+00:00",
+        }
+        future_cache = {
+            "schema_version": 4, "fetched_at": NOW + 60,
+            "values": {"candy": {"name": "Candy", "variants": [{
+                "value": 10, "stability": "Stable",
+            }]}},
+        }
+        with (
+            self._paths(),
+            patch("telegram_market._load_offers", return_value=([offer], [])),
+            patch("scanner._read_values_cache_document", return_value=future_cache),
+            patch("scanner.resolve_value_record") as resolve,
+            patch.dict("os.environ", {"DRY_RUN": "false"}),
+        ):
+            snapshot = telegram_market._load_market(now=NOW)
+        resolve.assert_not_called()
+        self.assertIsNone(snapshot["cache_age"])
+        self.assertEqual(snapshot["game_values"], {})
+        self.assertEqual(snapshot["chains"], [])
+
     def test_live_market_never_uses_the_legacy_csv_fallback(self):
         with self._paths(), patch("telegram_market._load_offers", return_value=([], [])), \
              patch("tools.cash_market.load_cash_price_catalog") as csv_loader, \
