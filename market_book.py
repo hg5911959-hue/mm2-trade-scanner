@@ -204,7 +204,6 @@ def find_swap_chains(
     max_value_age_hours: float = 24,
 ) -> list[dict[str, Any]]:
     """Find 1:1 and N:1 buy→swap→sell chains; stale or unsafe values fail closed."""
-    now = datetime.now(UTC).timestamp()
     tolerance = float(tolerance_percent)
     fee = float(transfer_fee_usd)
     if not 0 <= tolerance < 100 or fee < 0 or max_value_age_hours <= 0:
@@ -224,7 +223,7 @@ def find_swap_chains(
             not math.isfinite(value) or value <= 0 or not math.isfinite(age)
             or age < 0 or age > max_value_age_hours * 3600
             or confidence not in {"medium", "high"}
-            or not stability or stability in BLOCKED_STABILITY
+            or stability in BLOCKED_STABILITY
         ):
             continue
         eligible[key] = {**item, "value": value, "confidence": confidence, "data_age_seconds": age}
@@ -238,7 +237,11 @@ def find_swap_chains(
             ask_price, ask_qty = float(ask["unit_price_usd"]), int(ask["quantity"])
             for item_b, row_b in book.items():
                 value_b = eligible.get(item_b)
-                if item_a == item_b or not value_b or row_b.get("confidence") not in {"medium", "high"}:
+                if (
+                    item_a == item_b or not value_b
+                    or row_b.get("confidence") not in {"medium", "high"}
+                    or not value_b["stability"]
+                ):
                     continue
                 bid = row_b.get("best_bid")
                 if not bid:
