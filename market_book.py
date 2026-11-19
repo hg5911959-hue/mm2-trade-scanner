@@ -77,18 +77,24 @@ def build_order_book(
     if not math.isfinite(current) or max_age_hours <= 0:
         raise ValueError("invalid market-book time window")
     grouped: dict[str, list[dict[str, Any]]] = {}
+    stale_rows: dict[str, dict[str, Any]] = {}
+    stale_counts: dict[str, int] = {}
     for raw in offers or []:
         if not _valid_offer(raw):
             continue
+        item_key = str(raw["item_key"])
         stamp = _timestamp(raw.get("posted_at"))
         if stamp is None or stamp > current or current - stamp > max_age_hours * 3600:
+            stale_counts[item_key] = stale_counts.get(item_key, 0) + 1
+            stale_rows[item_key] = dict(raw)
             continue
         row = dict(raw)
         row["_timestamp"] = stamp
-        grouped.setdefault(str(row["item_key"]), []).append(row)
+        grouped.setdefault(item_key, []).append(row)
 
     result: dict[str, dict[str, Any]] = {}
-    for item_key, rows in grouped.items():
+    for item_key in sorted(set(grouped) | set(stale_counts)):
+        rows = grouped.get(item_key, [])
         asks = [row for row in rows if row["side"] == "sell"]
         bids = [row for row in rows if row["side"] == "buy"]
         ask_prices = [float(row["unit_price_usd"]) for row in asks]
@@ -96,9 +102,12 @@ def build_order_book(
         median_all = statistics.median(ask_prices + bid_prices) if asks or bids else None
         authors = {str(row.get("author") or "").strip() for row in rows if str(row.get("author") or "").strip()}
         flags: set[str] = set()
+        if stale_counts.get(item_key):
+            flags.add("stale_offer")
         if len(authors) < 2:
             flags.add("single_author")
         for row in rows:
+            flags.update(str(value) for value in row.get("flags", []) if value)
             price = float(row["unit_price_usd"])
             if median_all and (price < median_all * low_price_ratio or price > median_all * high_price_ratio):
                 row.setdefault("flags", []).append("price_far_from_median")
@@ -137,8 +146,9 @@ def build_order_book(
             "bid_author_count": len(bid_authors),
             "author_count": author_count,
             "confidence": confidence,
-            "newest_timestamp": max(row["_timestamp"] for row in rows),
-            "data_age_seconds": max(0.0, current - max(row["_timestamp"] for row in rows)),
+            "newest_timestamp": max((row["_timestamp"] for row in rows), default=None),
+            "data_age_seconds": max(0.0, current - max(row["_timestamp"] for row in rows)) if rows else None,
+            "stale_offer_count": stale_counts.get(item_key, 0),
             "risk_flags": sorted(flags),
             "asks": asks,
             "bids": bids,
