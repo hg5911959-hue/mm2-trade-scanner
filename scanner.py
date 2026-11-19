@@ -4598,6 +4598,13 @@ def scan_once(include_backlog_rechecks=True):
         global _SESSION_ALERTS_SENT
         listing = op["listing"]
         trade_id = listing["id"]
+        is_discord = listing.get("source") == "discord"
+        if is_discord and (trade_id in discord_alerted_set or trade_id in discord_uncertain):
+            if trade_id in discord_uncertain:
+                uncertain_skipped += 1
+            else:
+                already_alerted_skipped += 1
+            return
         # Re-check immediately before every non-idempotent send. A previously
         # alerted stable ad may be sent again only when its content or value
         # fingerprint changed; uncertain Telegram deliveries remain quarantined.
@@ -4612,7 +4619,10 @@ def scan_once(include_backlog_rechecks=True):
             print(f"[dedupe] Skipping unchanged or uncertain listing {trade_id} before Telegram send.")
             return
         if os.environ.get("DRY_RUN", "").strip().casefold() == "true":
-            print(f"[dry-run] would send: {trade_id} profit={op['difference']:g}")
+            if is_discord:
+                print(f"[dry-run] would send private Discord offer; profit={op['difference']:g}; identifiers suppressed")
+            else:
+                print(f"[dry-run] would send: {trade_id} profit={op['difference']:g}")
             return
         listing["alert_attempted_at_utc"] = datetime.now(timezone.utc).isoformat()
         message = format_trade_message(
@@ -4665,11 +4675,19 @@ def scan_once(include_backlog_rechecks=True):
                 f"cash_profit_usd={op['cash_profit_worst']:g}"
             )
         else:
+            if is_discord:
+            print(f"[telegram] Sending ranked private Discord offer; profit={op['difference']:g}; identifiers suppressed")
+        else:
             print(f"[telegram] Sending ranked value trade id={trade_id}; profit={op['difference']:g}")
-        # Persist a delivery guard before the non-idempotent Telegram request.
-        # It is cleared only after a definite success or definite API rejection.
-        uncertain_ids.add(trade_id)
-        save_uncertain_ids(uncertain_ids)
+        # Persist the delivery guard before the non-idempotent request. Discord
+        # IDs must remain inside the authenticated encrypted private-state file.
+        if is_discord:
+            discord_uncertain[trade_id] = time.time()
+            discord_alert_state["uncertain"] = discord_uncertain
+            save_discord_alert_state(discord_alert_state)
+        else:
+            uncertain_ids.add(trade_id)
+            save_uncertain_ids(uncertain_ids)
         _SESSION_ALERTS_SENT += 1
         try:
             send_telegram(message)
@@ -4682,18 +4700,30 @@ def scan_once(include_backlog_rechecks=True):
             mark_seen_ad(listing)
             return
         except Exception as exc:
-            uncertain_ids.discard(trade_id)
-            save_uncertain_ids(uncertain_ids)
+            if is_discord:
+                discord_uncertain.pop(trade_id, None)
+                discord_alert_state["uncertain"] = discord_uncertain
+                save_discord_alert_state(discord_alert_state)
+            else:
+                uncertain_ids.discard(trade_id)
+                save_uncertain_ids(uncertain_ids)
             mark_pending(listing, reason="telegram_failure")
             print(
                 f"[telegram] Definite send failure for listing {trade_id}: "
                 f"{type(exc).__name__}; queued for a later scan and continuing the batch."
             )
             return
-        mark_alerted(trade_id)
-        update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
-        uncertain_ids.discard(trade_id)
-        save_uncertain_ids(uncertain_ids)
+        if is_discord:
+            discord_uncertain.pop(trade_id, None)
+            discord_alerted_set.add(trade_id)
+            discord_alert_state["alerted"] = sorted(discord_alerted_set)[-MAX_ALERTED:]
+            discord_alert_state["uncertain"] = discord_uncertain
+            save_discord_alert_state(discord_alert_state)
+        else:
+            mark_alerted(trade_id)
+            update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
+            uncertain_ids.discard(trade_id)
+            save_uncertain_ids(uncertain_ids)
         mark_seen_ad(listing)
         listing["alerted_at_utc"] = datetime.now(timezone.utc).isoformat()
         if listing.get("source") != "discord":
@@ -4705,12 +4735,15 @@ def scan_once(include_backlog_rechecks=True):
             if first_seen_ts is not None and alerted_ts is not None else None
         )
         latency_label = f"{detection_latency:.2f}s" if detection_latency is not None else "unknown"
-        print(
-            f"[timing] listing={listing.get('source_ad_id') or trade_id} "
-            f"first_seen={listing.get('first_seen_at_utc', 'unknown')} "
-            f"alerted={listing['alerted_at_utc']} "
-            f"first_seen_to_alert={latency_label}"
-        )
+        if is_discord:
+            print(f"[timing] private Discord offer delivered; first_seen_to_alert={latency_label}; identifiers suppressed")
+        else:
+            print(
+                f"[timing] listing={listing.get('source_ad_id') or trade_id} "
+                f"first_seen={listing.get('first_seen_at_utc', 'unknown')} "
+                f"alerted={listing['alerted_at_utc']} "
+                f"first_seen_to_alert={latency_label}"
+            )
         sent += 1
         update_metrics(increments={"alerts_sent": 1})
 
@@ -4718,7 +4751,17 @@ def scan_once(include_backlog_rechecks=True):
     cash_blocker_groups = {}
     for listing in listings:
         trade_id = listing["id"]
-        legacy_state = legacy_alert_state(listing, alerted_set, uncertain_ids)
+        is_discord = listing.get("source") == "discord"
+        if is_discord:
+            if trade_id in discord_alerted_set:
+                already_alerted_skipped += 1
+                continue
+            if trade_id in discord_uncertain:
+                uncertain_skipped += 1
+                continue
+            legacy_state = None
+        else:
+            legacy_state = legacy_alert_state(listing, alerted_set, uncertain_ids)
         # One-time migration: old quantity-sensitive hashes may still exist in
         # alerted/history/quarantine state. Promote their new stable ad ID
         # before any Telegram send so the upgrade cannot replay old alerts.
@@ -4736,7 +4779,7 @@ def scan_once(include_backlog_rechecks=True):
             uncertain_skipped += 1
             continue
         watch_id = str(listing.get("source_ad_id") or "")
-        previous_watch = watch_state.get(watch_id, {})
+        previous_watch = {} if is_discord else watch_state.get(watch_id, {})
         content_hash, values_hash = listing_watch_fingerprints(listing, values, aliases, cash_catalog)
         fingerprint_changed = bool(previous_watch) and (
             previous_watch.get("content_hash") != content_hash
@@ -4768,15 +4811,19 @@ def scan_once(include_backlog_rechecks=True):
         if result is None:
             skipped_unknown += 1
             if CASH_FILTER and missing and all("cash price" in str(value).casefold() for value in missing):
-                accumulate_cash_blockers(missing, cash_blocker_counts, cash_blocker_groups)
-                print("[cash] Listing held from alerts: one or more manual USD prices are missing/unverified.")
+                if not is_discord:
+                    accumulate_cash_blockers(missing, cash_blocker_counts, cash_blocker_groups)
+                print("[cash] Private Discord offer held; item details suppressed." if is_discord else "[cash] Listing held from alerts: one or more manual USD prices are missing/unverified.")
                 update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
                 mark_seen_ad(listing, clear_pending=False)
                 continue
-            print(
-                f"[skip-unknown] Listing retained for recheck; missing/unvalued items: "
-                f"{', '.join(missing)}"
-            )
+            if is_discord:
+                print("[skip-unknown] Private Discord offer has unresolved items; names suppressed.")
+            else:
+                print(
+                    f"[skip-unknown] Listing retained for recheck; missing/unvalued items: "
+                    f"{', '.join(missing)}"
+                )
             pending_reason = pending_reason_from_missing(missing)
             mark_pending(listing, reason=pending_reason)
             unknown_names = [
@@ -4788,7 +4835,7 @@ def scan_once(include_backlog_rechecks=True):
                 and "quantity uncertain" not in str(value).casefold()
                 and "stability" not in str(value).casefold()
             ]
-            if unknown_names:
+            if unknown_names and not is_discord:
                 record_unmatched_names(unknown_names)
             update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
             # Low-priority missing values/stability remain queued but leave the
@@ -4802,10 +4849,13 @@ def scan_once(include_backlog_rechecks=True):
                 f"estimated_cash_profit_range=${result['cash_profit_worst']:.2f}.."
                 f"${result['cash_profit_best']:.2f}; NOT TRADE-ELIGIBLE"
             )
-            for line in result.get("give_lines", []):
-                print(f"[dry-run-estimate] GIVE {line}")
-            for line in result.get("receive_lines", []):
-                print(f"[dry-run-estimate] RECEIVE {line}")
+            if is_discord:
+                print("[dry-run-estimate] Private Discord item lines suppressed from public logs.")
+            else:
+                for line in result.get("give_lines", []):
+                    print(f"[dry-run-estimate] GIVE {line}")
+                for line in result.get("receive_lines", []):
+                    print(f"[dry-run-estimate] RECEIVE {line}")
             continue
         if not (qualifies_cash(result) if CASH_FILTER else qualifies(result)):
             if result.get("uncertain_items"):
