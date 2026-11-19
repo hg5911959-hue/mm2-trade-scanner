@@ -77,7 +77,6 @@ def build_order_book(
     if not math.isfinite(current) or max_age_hours <= 0:
         raise ValueError("invalid market-book time window")
     grouped: dict[str, list[dict[str, Any]]] = {}
-    stale_rows: dict[str, dict[str, Any]] = {}
     stale_counts: dict[str, int] = {}
     for raw in offers or []:
         if not _valid_offer(raw):
@@ -86,7 +85,6 @@ def build_order_book(
         stamp = _timestamp(raw.get("posted_at"))
         if stamp is None or stamp > current or current - stamp > max_age_hours * 3600:
             stale_counts[item_key] = stale_counts.get(item_key, 0) + 1
-            stale_rows[item_key] = dict(raw)
             continue
         row = dict(raw)
         row["_timestamp"] = stamp
@@ -176,6 +174,10 @@ def find_direct_arbitrage(
         quantity = min(int(ask["quantity"]), int(bid["quantity"]))
         if quantity <= 0 or ask_price >= bid_price:
             continue
+        ask_author = str(ask.get("author") or "").strip().casefold()
+        bid_author = str(bid.get("author") or "").strip().casefold()
+        if ask_author and bid_author and ask_author == bid_author:
+            continue
         gross = (bid_price - ask_price) * quantity
         fees = 2 * fee
         safety = gross * margin / 100
@@ -222,7 +224,7 @@ def find_swap_chains(
             not math.isfinite(value) or value <= 0 or not math.isfinite(age)
             or age < 0 or age > max_value_age_hours * 3600
             or confidence not in {"medium", "high"}
-            or stability in BLOCKED_STABILITY
+            or not stability or stability in BLOCKED_STABILITY
         ):
             continue
         eligible[key] = {**item, "value": value, "confidence": confidence, "data_age_seconds": age}
@@ -261,6 +263,8 @@ def find_swap_chains(
                         "type": "swap_chain", "buy_item": item_a, "swap_item": item_b,
                         "buy": dict(ask), "swap_value_in": value_a["value"] * qty_a,
                         "swap_value_out": value_b["value"], "sell": dict(bid),
+                        "buy_price_per_value": ask_price / value_a["value"],
+                        "sell_price_per_value": bid_price / value_b["value"],
                         "quantity_buy": qty_a, "quantity_sell": qty_b,
                         "profit_usd": profit, "profit_percent": profit_pct,
                         "fees_usd": fees,
