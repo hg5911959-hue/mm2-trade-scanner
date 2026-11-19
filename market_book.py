@@ -77,6 +77,7 @@ def build_order_book(
     if not math.isfinite(current) or max_age_hours <= 0:
         raise ValueError("invalid market-book time window")
     grouped: dict[str, list[dict[str, Any]]] = {}
+    stale_rows: dict[str, dict[str, Any]] = {}
     stale_counts: dict[str, int] = {}
     for raw in offers or []:
         if not _valid_offer(raw):
@@ -85,6 +86,7 @@ def build_order_book(
         stamp = _timestamp(raw.get("posted_at"))
         if stamp is None or stamp > current or current - stamp > max_age_hours * 3600:
             stale_counts[item_key] = stale_counts.get(item_key, 0) + 1
+            stale_rows[item_key] = dict(raw)
             continue
         row = dict(raw)
         row["_timestamp"] = stamp
@@ -131,7 +133,7 @@ def build_order_book(
             spread = ((float(best_ask["unit_price_usd"]) - float(best_bid["unit_price_usd"])) / midpoint * 100) if midpoint else None
         result[item_key] = {
             "item_key": item_key,
-            "item": str(rows[0].get("item") or item_key),
+            "item": str((rows[0] if rows else stale_rows[item_key]).get("item") or item_key),
             "best_ask": dict(best_ask) if best_ask else None,
             "best_bid": dict(best_bid) if best_bid else None,
             "median_ask": median_ask,
