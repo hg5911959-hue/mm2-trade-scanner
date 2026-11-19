@@ -229,15 +229,13 @@ Never commit or share these secrets. The scanner does not print API keys or Tele
 - **Test isolation:** `tests.yml` runs `python -m unittest discover -s tests` on pushes to `main` and on pull requests. The production scan job no longer runs tests, so a test failure cannot prevent a scheduled scan. The old `source-diagnostics.yml` workflow has been removed.
 - **Global log redaction:** `scanner.py` redacts the exact configured Telegram bot token, Telegram chat ID, and RBLXValue API key (only when at least six characters), plus Telegram bot URLs, `rbx_` keys, and Bearer credentials. Both stdout and stderr are filtered before output reaches `scanner.log` or the public Actions artifact.
 - **Durable state replacement:** when scanner data changes, `persist-state` compares staged `data/` with `origin/state` and skips an unchanged tree. Otherwise it creates `state-new` as an orphan branch and force-pushes it to `state`, leaving a single-commit state history. Empty or missing state artifacts are ignored so they cannot erase durable data. The workflow-level concurrency group covers both scan and persistence jobs, preventing overlapping state writes.
-- **Faster coverage:** the scanner cron runs every 15 minutes; each job polls for 780 seconds at 30-second intervals and has a 15-minute timeout. Fast new-feed scans run every cycle, while the bounded backlog pass runs once every four cycles. The watchdog default stale threshold is 20 minutes.
-- **Optional cron-job.org trigger:** configure a scheduled HTTP POST to `https://api.github.com/repos/hg5911959-hue/mm2-trade-scanner/dispatches` with JSON body `{"event_type":"mm2-scan"}` and GitHub's JSON accept/content headers. Use a fine-grained personal access token limited to this repository with the minimum `Contents: read and write` permission required for repository dispatch. Store the token only in cron-job.org's secret configuration; never put it in the repository, workflow YAML, URL, or logs. GitHub Actions cron remains the primary schedule.
+- **Faster coverage:** `.github/workflows/scan-scheduler.yml` runs every 10 minutes. Each scan polls at 30-second intervals for up to 540 seconds (9 minutes), with a 20-minute job timeout. Fast new-feed scans run every cycle, while the bounded backlog pass runs once every four cycles. The watchdog runs on a separate five-minute schedule and after each completed scanner-scheduler workflow.
 
 ## Logs and manual operations
 
 - Manual run: **Actions → MM2 Trade Scanner → Run workflow**.
 - Telegram connection test: **Actions → Telegram Connection Test → Run workflow**. This sends one explicit test message without changing scanner state or triggering a trade scan.
 - Logs: open the workflow run and download the `mm2-scanner-diagnostics` artifact.
-- External scheduler fallback: cron-job.org can call GitHub's repository-dispatch API with `{"event_type":"mm2-scan"}` to trigger the existing `repository_dispatch` workflow. Create a fine-grained personal access token limited to this repository, grant the minimum repository permission required for dispatch (`Contents: read and write`), and store it only in cron-job.org's secret configuration. Never put it in the repository, workflow YAML, URL, logs, or chat. GitHub cron remains the primary schedule.
 - `history.csv` records detected opportunities and calculated values; it cannot confirm that a Roblox trade was accepted or completed.
 
 ## Limitations and safety
@@ -310,7 +308,7 @@ The secret is merged into the temporary collector file for that run; its content
 
 - RBLXValue credential rejections are tracked by the SHA-256 key fingerprint only. Consecutive 401/credential-specific 403 responses escalate the lockout (6h, 12h, then permanent after the third consecutive rejection); a successful API response or key rotation resets the counter. Cloudflare/CAPTCHA challenge 403 responses are not classified as invalid credentials. After three rejections, the breaker is permanent for that fingerprint. For a suspended key, contact RBLXValue to reactivate the existing key; do not create another account or key. The scanner makes no more requests using that fingerprint.
 - `MAX_ALERTS_PER_SCAN` defaults to 15 in production. In the legacy value/cash scanner, `0` means no per-scan cap. The separate cash-market alert sender has a hard maximum of 100 per scan and interprets `0` as disabled; use 100 for its maximum batch. In both paths, qualifying opportunities are ranked by estimated profit and deferred items remain eligible for later scans. Keep the default of 15 unless you have reviewed the Telegram volume and rate-limit implications.
-- Use **Actions → MM2 Trade Scanner → Run workflow → dry_run=true** to evaluate offers without sending Telegram messages or writing alerted/delivery state. The log prints only listing IDs and the profit for the active mode (game value or cash USD). The default is false. Dry-run suppresses maintenance and failure notifications too.
+- Use **Actions → MM2 Trade Scanner → Run workflow → dry_run=true** to evaluate offers without sending Telegram messages or writing alerted/delivery state. The log prints only listing IDs and the profit for the active mode (game value or cash USD). Manual dispatch defaults to `dry_run=true`; scheduled runs intentionally use `dry_run=false`. Dry-run suppresses maintenance and failure notifications too.
 - Global log redaction includes Discord bot credentials and both manual-import secrets. Never paste a Discord bot token or raw message JSON into an issue, commit, or log.
 
 ## Manual Discord import: two-secret workflow
@@ -342,8 +340,6 @@ The checker validates the schema and row cap and reports the file size. It warns
 ## Dashboard publication
 
 The dashboard workflow checks GitHub Pages before deployment. If the Pages site does not exist, it attempts to initialize a workflow-based Pages site using the job-scoped `pages: write` token permission. If GitHub rejects site initialization because repository-administrator access is required, the build artifact is still retained and deployment is safely skipped with a warning.
-
-- The scanner scheduler also starts a scan after a successful `MM2 Scanner Tests` run on `main`. Failed test runs are ignored. This provides a post-deployment verification scan in addition to the 15-minute cron and manual dispatch.
 
 - The watchdog also runs after every completed `MM2 Scanner Scheduler` workflow, regardless of success or failure, so a finished scan is checked immediately as well as by the five-minute cron.
 
