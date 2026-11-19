@@ -3,9 +3,10 @@ from datetime import datetime, timezone
 import unittest
 
 from tools.weekly_report import build_report
+from test_support import IsolatedDataTestCase
 
 
-class WeeklyReportFormattingTests(unittest.TestCase):
+class WeeklyReportFormattingTests(IsolatedDataTestCase):
     def setUp(self):
         self.now = datetime(2026, 11, 19, 12, 0, tzinfo=timezone.utc)
 
