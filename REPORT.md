@@ -220,3 +220,11 @@ Not yet scored at the end of Phase 2. See the evidence-based readiness assessmen
 - Code and test readiness for the implemented, feature-flagged scope: **strong; 461 tests twice and Ruff clean**.
 - Live operational readiness: **not yet verified** because of the suspended RBLXValue key, unverified Telegram/Discord credentials, missing tag operation, and source-author metadata still needed for the supplied Celestial listing.
 - The project is therefore **not honestly certifiable as 10/10 or 100% operational yet**. No automatic trading is enabled; the system remains advisory and profit is not guaranteed.
+
+
+### Phase 14 — Weekly report formatting regression (2026-11-19)
+- Audit of `tools/weekly_report.py` found that optional blocker and preflight sections used double-escaped newline sequences, causing literal backslash-n text to appear in the generated Telegram report instead of blank-line separators.
+- Replaced the double-escaped sequences with real Python newline escapes.
+- Added `tests/test_weekly_report.py` covering blocker/preflight line separation and the default PASS line, including an assertion that literal escaped newline text is absent.
+- Changes are committed on `before-market-book` (source commit `87e12e6f3761edccb6f0875aa366e10d243084f4`; test commit `15e847af1f4ba4371d874e4feb6c5eb4b2fc1888`).
+- Hosted CI status: **pending / not yet observed**. The available workflow-run lookup returned no run for the latest commit at the time of this report update. Do not count this phase as validated until the PR Actions run confirms both full-suite passes and Ruff.
