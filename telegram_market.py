@@ -227,7 +227,7 @@ def _csv_dry_run_fallback(now: float) -> dict[str, dict[str, Any]]:
     """Expose the legacy CSV as a clearly labelled reference only in dry-run."""
     if os.environ.get("DRY_RUN", "").strip().casefold() not in {"1", "true", "yes", "on"}:
         return {}
-    from tools.cash_market import load_cash_price_catalog
+    from tools.cash_market import cash_price_is_fresh, load_cash_price_catalog
 
     current = datetime.fromtimestamp(now, UTC)
     catalog = load_cash_price_catalog(max_age_days=14, now=current)
@@ -235,6 +235,8 @@ def _csv_dry_run_fallback(now: float) -> dict[str, dict[str, Any]]:
     for row in catalog["items"].values():
         status = row.get("status")
         if status not in {"verified", "unverified"}:
+            continue
+        if status == "verified" and not cash_price_is_fresh(row, max_age_days=14, now=current):
             continue
         name = str(row.get("name") or "").strip()
         key = normalize_key(name)
