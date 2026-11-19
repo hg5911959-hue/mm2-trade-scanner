@@ -86,6 +86,14 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("private_state.enc", workflow)
         self.assertIn("private Telegram/market state", (ROOT / "tools/validate_state.py").read_text(encoding="utf-8"))
 
+    def test_encrypted_private_state_survives_failed_scans_without_plaintext(self):
+        workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        self.assertIn("Persist encrypted private state after failed scan", workflow)
+        self.assertIn("needs.scan.result != 'success'", workflow)
+        self.assertIn("state-artifact/data/private_state.enc", workflow)
+        self.assertIn("Persisted encrypted private state only", workflow)
+        self.assertIn("data/private_state.enc", workflow)
+
     def test_rblxvalue_metadata_polling_is_bounded_to_six_hours(self):
         scanner = (ROOT / "scanner.py").read_text(encoding="utf-8")
         self.assertIn("RBLXVALUE_META_POLL_INTERVAL_SECONDS = 6 * 60 * 60", scanner)
