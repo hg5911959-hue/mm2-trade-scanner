@@ -250,6 +250,8 @@ class TelegramMarketTests(IsolatedDataTestCase):
                 token="token", chat_id="123", snapshot=snapshot,
                 send_message=lambda token, chat, text: sent.append(text), now=NOW,
             )
+            snapshot["direct"][0]["buy"]["message_id"] = "new-telegram-forward-buy"
+            snapshot["direct"][0]["sell"]["message_id"] = "new-telegram-forward-sell"
             second = telegram_market.send_market_alerts(
                 token="token", chat_id="123", snapshot=snapshot,
                 send_message=lambda token, chat, text: sent.append(text), now=NOW + 60,
