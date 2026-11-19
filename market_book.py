@@ -62,9 +62,13 @@ def _valid_offer(row: dict[str, Any]) -> bool:
     try:
         price = float(row.get("unit_price_usd"))
         quantity = int(row.get("quantity"))
+        minimum = int(row.get("min_quantity") or 1)
     except (TypeError, ValueError):
         return False
-    return math.isfinite(price) and price > 0 and 1 <= quantity <= 5000 and bool(row.get("item_key"))
+    return (
+        math.isfinite(price) and price > 0 and 1 <= quantity <= 5000
+        and 1 <= minimum <= quantity and bool(row.get("item_key"))
+    )
 
 
 def build_order_book(
@@ -74,8 +78,16 @@ def build_order_book(
 ) -> dict[str, dict[str, Any]]:
     """Build per-item asks/bids from recent, timestamped offers only."""
     current = datetime.now(UTC).timestamp() if now is None else float(now)
-    if not math.isfinite(current) or max_age_hours <= 0:
-        raise ValueError("invalid market-book time window")
+    max_age_hours = float(max_age_hours)
+    low_price_ratio = float(low_price_ratio)
+    high_price_ratio = float(high_price_ratio)
+    if (
+        not all(math.isfinite(value) for value in (current, max_age_hours, low_price_ratio, high_price_ratio))
+        or current <= 0 or max_age_hours <= 0
+        or not 0 < low_price_ratio < 1 or high_price_ratio <= 1
+    ):
+        raise ValueError("invalid order-book age or outlier thresholds")
+    max_age_seconds = max_age_hours * 3600
     grouped: dict[str, list[dict[str, Any]]] = {}
     stale_rows: dict[str, dict[str, Any]] = {}
     stale_counts: dict[str, int] = {}
@@ -84,7 +96,7 @@ def build_order_book(
             continue
         item_key = str(raw["item_key"])
         stamp = _timestamp(raw.get("posted_at"))
-        if stamp is None or stamp > current or current - stamp > max_age_hours * 3600:
+        if stamp is None or stamp > current or current - stamp > max_age_seconds:
             stale_counts[item_key] = stale_counts.get(item_key, 0) + 1
             stale_rows[item_key] = dict(raw)
             continue
