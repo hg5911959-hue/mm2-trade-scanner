@@ -94,7 +94,7 @@ class MarketBookTests(IsolatedDataTestCase):
 
     def test_swap_chain_rejects_received_bid_with_minimum_above_one(self):
         ask = offer("sell", "A", 5, 2, "seller", "ask")
-        bid = offer("buy", "B", 1, 10, "buyer", "bid")
+        bid = offer("buy", "B", 10, 10, "buyer", "bid")
         bid["min_quantity"] = 2
         book = build_order_book([ask, bid], now=NOW)
         values = {
@@ -127,6 +127,7 @@ class MarketBookTests(IsolatedDataTestCase):
         chains = find_swap_chains(book, values, transfer_fee_usd=0.5,
                                   min_profit_usd=0.5, min_profit_percent=1)
         self.assertTrue(any(row["quantity_buy"] == 2 and row["quantity_sell"] == 1 for row in chains))
+        self.assertAlmostEqual(chains[0]["ask_to_value_ratio"], 0.02)
         stale_values = {**values, "b": {**values["b"], "data_age_seconds": 25 * 3600}}
         self.assertEqual(find_swap_chains(book, stale_values), [])
         unsafe_values = {**values, "b": {**values["b"], "stability": "Volatile"}}
