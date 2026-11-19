@@ -399,9 +399,13 @@ def _format_item(item: dict[str, Any], market: dict[str, Any], game: dict[str, A
     age = market.get("data_age_seconds")
     age_text = f"{int(age // 60)} دقيقة" if isinstance(age, (int, float)) else "قديم/غير متاح"
     value_text = "قديم/غير متاح"
+    game_age_text = "قديم/غير متاح"
     ratio_text = "—"
     if game:
         value_text = f"{game['value']:g}"
+        game_age = game.get("data_age_seconds")
+        if isinstance(game_age, (int, float)) and math.isfinite(float(game_age)):
+            game_age_text = f"{int(game_age // 3600)} ساعة"
         if ask:
             ratio_text = f"{float(ask['unit_price_usd']) / game['value']:.4f}"
     risk_flags = list(market.get("risk_flags", []))
@@ -414,7 +418,8 @@ def _format_item(item: dict[str, Any], market: dict[str, Any], game: dict[str, A
         f"وسيط البيع: {median_ask} | وسيط الشراء: {median_bid}\n"
         f"الوسيط العام: {median} | الفارق: {spread_text}\n"
         f"الكميات: بيع {market.get('ask_quantity', 0)} / شراء {market.get('bid_quantity', 0)}\n"
-        f"العمر: {age_text} | قيمة اللعبة: {value_text} | $/Value: {ratio_text}\n"
+        f"عمر عروض Discord: {age_text} | عمر RBLXValue: {game_age_text}\n"
+        f"قيمة اللعبة: {value_text} | $/Value: {ratio_text}\n"
         f"الثقة: {market.get('confidence')} | المخاطر: {risks}"
     )
 
