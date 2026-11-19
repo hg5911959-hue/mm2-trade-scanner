@@ -79,13 +79,16 @@ def _clean_line(value: str) -> str:
 
 
 def _detect_header(line: str) -> tuple[str | None, str]:
+    # A buyer warning is context, not a new SELL block.
+    if re.match(r"(?i)^\s*sell\s+before\s+it\s+drops\b", line):
+        return None, line
     # QUICK SELL is deliberately a sell-side header.
-    match = re.match(r"(?i)^\\s*(quick\\s+sell|selling|sell|wts|buying|buy|wtb|looking\\s+for)\\b\\s*[:：-]?\\s*(.*)$", line)
+    match = re.match(r"(?i)^\s*(quick\s+sell|selling|sell|wts|buying|buy|wtb|looking\s+for)\b\s*[:：-]?\s*(.*)$", line)
     if not match:
         return None, line
     token, remainder = match.group(1).casefold(), match.group(2).strip()
     side = "sell" if token in {"quick sell", "selling", "sell", "wts"} else "buy"
-    if re.fullmatch(r"(?i)(?:mm2|for\\s+usdt\\s*bep20|usdt\\s*bep20)?", remainder):
+    if re.fullmatch(r"(?i)(?:mm2|for\s+usdt\s*bep20|usdt\s*bep20)?", remainder):
         return side, "usdt bep20" if "usdt" in remainder.casefold() else ""
     return side, remainder
 
@@ -194,7 +197,7 @@ def parse_cash_post(text: str, *, author: str = "", message_id: str = "",
                 continue
             offer, hint, reason = _parse_segment(segment, side, metadata, alias_data)
             if offer:
-                if offer["side"] == "buy" and re.search(r"(?i)\\bsell\\s+before\\s+it\\s+drops\\b", body):
+                if offer["side"] == "buy" and re.search(r"(?i)\bsell\s+before\s+it\s+drops\b", body):
                     offer["flags"].append("sell_before_drop")
                 fingerprint = (offer["side"], offer["item_key"], offer["quantity"],
                                offer["unit_price_usd"], offer["min_quantity"])
