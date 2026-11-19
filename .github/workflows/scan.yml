@@ -237,7 +237,7 @@ jobs:
           python -u scanner.py 2>&1 | tee scanner.log
 
       - name: Send external uptime heartbeat
-        if: always() && env.HEALTHCHECKS_PING_URL != ''
+        if: always() && inputs.discord_only != true && env.HEALTHCHECKS_PING_URL != ''
         run: |
           if [ "${{ steps.scan.outcome }}" = "success" ]; then
             curl --fail --silent --show-error "$HEALTHCHECKS_PING_URL"
