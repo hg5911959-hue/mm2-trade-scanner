@@ -298,6 +298,15 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("if discord_only and not dry_run", scanner_source)
         self.assertIn("DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}", workflow)
 
+    def test_cache_recovery_job_only_persists_validated_public_values(self):
+        scheduler = (ROOT / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
+        self.assertIn("[recover-rblx-cache:44635098506]", scheduler)
+        self.assertIn("name: Recover validated RBLXValue cache", scheduler)
+        self.assertIn("validate_state.py --directory state-artifact/data --rblxvalue-cache-only", scheduler)
+        self.assertIn("cp state-artifact/data/supreme_values.json data/supreme_values.json", scheduler)
+        self.assertIn("cp state-artifact/data/rblxvalue_meta.json data/rblxvalue_meta.json", scheduler)
+        self.assertNotIn("cp state-artifact/data/rblxvalue_request_budget.json", scheduler)
+
 
 if __name__ == "__main__":
     unittest.main()
