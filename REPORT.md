@@ -186,3 +186,7 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - Added bounded response sizes, bounded 429 retries, 403 permission handling, message-count/channel caps, and redirect rejection so the bot Authorization header cannot be forwarded to another host.
 - Removed the `pip install discord.py` workflow step and added tests for channel filtering, read-only request paths, redirect rejection, and absence of the third-party dependency.
 - Hosted verification is pending for the current implementation head after this phase. The last verified complete suite is 455 tests twice on Actions run #1018; it does not include this collector refactor.
+
+### Hosted verification — Phase 11 standard-library Discord collector
+- Current implementation head: `5147f27e739392c519f0b5e870af523b5319d0af`.
+- Validate the complete test suite twice, `data/` immutability, and all Ruff checks after removing `discord.py` and switching the optional read-only collector to standard-library Discord REST GETs.
