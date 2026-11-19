@@ -5,6 +5,7 @@ import argparse
 import json
 import math
 import sqlite3
+import time
 from pathlib import Path
 from typing import Any
 
@@ -357,15 +358,145 @@ def validate_api_safety_state(directory: str | Path) -> list[str]:
     return errors
 
 
+
+def validate_rblxvalue_cache_state(
+    directory: str | Path,
+    *,
+    now_epoch: float | None = None,
+    max_age_seconds: int = 12 * 60 * 60,
+) -> list[str]:
+    """Validate a fresh public RBLXValue snapshot before recovering it independently."""
+    root = Path(directory)
+    cache_path = root / "supreme_values.json"
+    meta_path = root / "rblxvalue_meta.json"
+    errors: list[str] = []
+    if not root.exists():
+        return ["RBLXValue cache directory is missing"]
+
+    documents: dict[str, Any] = {}
+    for path in (cache_path, meta_path):
+        try:
+            documents[path.name] = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            errors.append(f"RBLXValue cache artifact is missing {path.name}")
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            errors.append(f"RBLXValue cache artifact contains invalid JSON: {path.name}")
+
+    cache = documents.get("supreme_values.json")
+    meta = documents.get("rblxvalue_meta.json")
+    if not isinstance(cache, dict):
+        if cache_path.exists():
+            errors.append("RBLXValue cache root must be an object")
+        return errors
+    if not isinstance(meta, dict):
+        if meta_path.exists():
+            errors.append("RBLXValue metadata root must be an object")
+        return errors
+
+    schema = cache.get("schema_version")
+    values = cache.get("values")
+    pages = cache.get("pages")
+    fetched_at = cache.get("fetched_at")
+    source_total = cache.get("source_items_total")
+    source_updated = cache.get("source_last_updated")
+    if type(schema) is not int or schema not in (3, 4):
+        errors.append("RBLXValue cache schema version is unsupported")
+    if not isinstance(values, dict) or not values:
+        errors.append("RBLXValue cache has no normalized item values")
+    elif any(
+        not isinstance(row, dict)
+        or not isinstance(row.get("name"), str)
+        or not row["name"].strip()
+        for row in values.values()
+    ):
+        errors.append("RBLXValue cache contains an invalid normalized value row")
+    if not isinstance(pages, dict) or not pages:
+        errors.append("RBLXValue cache has no source pages")
+    if not _finite_positive(fetched_at):
+        errors.append("RBLXValue cache fetched_at timestamp is invalid")
+    else:
+        now = time.time() if now_epoch is None else float(now_epoch)
+        if fetched_at > now + 300:
+            errors.append("RBLXValue cache fetched_at timestamp is in the future")
+        elif now - fetched_at > max_age_seconds:
+            errors.append("RBLXValue cache is older than the permitted recovery age")
+    if type(source_total) is not int or source_total < 1:
+        errors.append("RBLXValue cache source item total is invalid")
+    if not isinstance(source_updated, str) or not source_updated.strip():
+        errors.append("RBLXValue cache source update timestamp is missing")
+
+    if type(meta.get("schema_version")) is not int or meta.get("schema_version") != 1:
+        errors.append("RBLXValue metadata schema version is unsupported")
+    if type(meta.get("items_total")) is not int or meta.get("items_total") < 1:
+        errors.append("RBLXValue metadata item total is invalid")
+    if not isinstance(meta.get("last_updated"), str) or not meta.get("last_updated", "").strip():
+        errors.append("RBLXValue metadata update timestamp is missing")
+    if not _finite_positive(meta.get("checked_at_epoch")):
+        errors.append("RBLXValue metadata checked_at timestamp is invalid")
+    if type(source_total) is int and type(meta.get("items_total")) is int:
+        if source_total != meta["items_total"]:
+            errors.append("RBLXValue cache and metadata item totals do not match")
+    if isinstance(source_updated, str) and meta.get("last_updated") != source_updated:
+        errors.append("RBLXValue cache and metadata source versions do not match")
+
+    if isinstance(pages, dict) and pages and type(source_total) is int and source_total > 0:
+        offsets: list[int] = []
+        item_ids: list[str] = []
+        for key, page in pages.items():
+            try:
+                offset = int(key)
+            except (TypeError, ValueError):
+                errors.append("RBLXValue cache contains a non-numeric page offset")
+                break
+            if offset < 0:
+                errors.append("RBLXValue cache contains a negative page offset")
+                break
+            offsets.append(offset)
+            if not isinstance(page, dict) or not isinstance(page.get("items"), list) or not page["items"]:
+                errors.append("RBLXValue cache contains an empty or invalid source page")
+                break
+            page_total = page.get("total")
+            if page_total is not None and page_total != source_total:
+                errors.append("RBLXValue source pages disagree on the catalogue total")
+                break
+            if len(page["items"]) > 100:
+                errors.append("RBLXValue source page exceeds the 100-item page limit")
+                break
+            for item in page["items"]:
+                if not isinstance(item, dict) or item.get("id") is None or not str(item.get("id")).strip():
+                    errors.append("RBLXValue source page contains an item without an ID")
+                    break
+                item_ids.append(str(item["id"]))
+            if errors:
+                break
+        if not errors:
+            expected_offset = 0
+            for offset in sorted(offsets):
+                if offset != expected_offset:
+                    errors.append("RBLXValue source pages are not contiguous")
+                    break
+                expected_offset += len(pages[str(offset)]["items"])
+            if expected_offset != source_total:
+                errors.append("RBLXValue source page rows do not match the catalogue total")
+            if len(item_ids) != len(set(item_ids)):
+                errors.append("RBLXValue source pages contain duplicate item IDs")
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--directory", default="state-artifact/data")
     parser.add_argument("--require-cache", action="store_true")
     parser.add_argument("--api-safety-only", action="store_true")
+    parser.add_argument("--rblxvalue-cache-only", action="store_true")
     args = parser.parse_args()
+    if args.api_safety_only and args.rblxvalue_cache_only:
+        parser.error("--api-safety-only and --rblxvalue-cache-only cannot be combined")
     errors = (
         validate_api_safety_state(args.directory)
         if args.api_safety_only
+        else validate_rblxvalue_cache_state(args.directory)
+        if args.rblxvalue_cache_only
         else validate_state(args.directory, require_cache=args.require_cache)
     )
     if errors:
