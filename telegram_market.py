@@ -379,12 +379,14 @@ def _command_reply(command: str, snapshot: dict[str, Any], *, inventory_enabled:
                 output.append(
                     f"مراجحة مباشرة: {row['item']} ×{row['quantity']}\n"
                     f"شراء { _format_usd(row['buy']['unit_price_usd']) } ← بيع { _format_usd(row['sell']['unit_price_usd']) }\n"
-                    f"الربح الصافي: {_format_usd(row['profit_usd'])} ({row['profit_percent']:.1f}%)"
+                    f"الربح الصافي: {_format_usd(row['profit_usd'])} ({row['profit_percent']:.1f}%)\n"
+                    f"الثقة: {row.get('confidence', 'low')}"
                 )
             else:
                 output.append(
                     f"شراء {row['buy_item']} ×{row['quantity_buy']} → مبادلة {row['swap_item']} → بيع ×1\n"
                     f"الربح الصافي: {_format_usd(row['profit_usd'])} ({row['profit_percent']:.1f}%)\n"
+                    f"الثقة: {row.get('confidence', 'low')}\n"
                     f"المصادر: {row['source_links'][0] or 'غير متاح'} | {row['source_links'][1] or 'غير متاح'}"
                 )
         return "\n\n".join(output)
@@ -601,7 +603,8 @@ def send_market_alerts(
                 f"فرصة مراجحة نقدية: {row.get('item')} ×{row.get('quantity')}\n"
                 f"شراء {_format_usd(row['buy'].get('unit_price_usd'))} ← "
                 f"بيع {_format_usd(row['sell'].get('unit_price_usd'))}\n"
-                f"الربح الصافي: {_format_usd(profit)} ({float(row.get('profit_percent', 0)):.1f}%)"
+                f"الربح الصافي: {_format_usd(profit)} ({float(row.get('profit_percent', 0)):.1f}%) | "
+                f"الثقة: {row.get('confidence', 'low')}"
             )
         elif row.get("type") == "swap_chain":
             identity = [
@@ -612,7 +615,8 @@ def send_market_alerts(
             message = (
                 f"فرصة سلسلة تبادل: {row.get('buy_item')} ×{row.get('quantity_buy')} "
                 f"→ {row.get('swap_item')} → بيع ×{row.get('quantity_sell')}\n"
-                f"الربح الصافي: {_format_usd(profit)} ({float(row.get('profit_percent', 0)):.1f}%)"
+                f"الربح الصافي: {_format_usd(profit)} ({float(row.get('profit_percent', 0)):.1f}%) | "
+                f"الثقة: {row.get('confidence', 'low')}"
             )
         else:
             continue
