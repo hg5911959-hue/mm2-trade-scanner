@@ -9,6 +9,7 @@ from unittest.mock import patch
 from test_support import IsolatedDataTestCase
 
 import telegram_market
+from market_book import build_order_book
 
 
 NOW = 1_800_000_000.0
@@ -250,6 +251,36 @@ class TelegramMarketTests(IsolatedDataTestCase):
         self.assertEqual(snapshot["game_values"], {})
         self.assertEqual(snapshot["chains"], [])
         self.assertEqual(len(snapshot["direct"]), 1)
+
+    def test_appendix_acceptance_price_command_shows_celestial_71_ask_and_63_bid(self):
+        key = telegram_market.normalize_key("Celestial Set")
+        offers = [
+            {"side": "sell", "item": "Celestial Set", "item_key": key,
+             "unit_price_usd": 71.0, "quantity": 2, "min_quantity": 1,
+             "author": "seller-a", "message_id": "sample-sell-1",
+             "url": "https://discord.com/channels/1/2/101", "posted_at": NOW - 60, "flags": []},
+            {"side": "sell", "item": "Celestial Set", "item_key": key,
+             "unit_price_usd": 73.0, "quantity": 1, "min_quantity": 1,
+             "author": "seller-b", "message_id": "sample-sell-2",
+             "url": "https://discord.com/channels/1/2/102", "posted_at": NOW - 60, "flags": []},
+            {"side": "buy", "item": "Celestial Set", "item_key": key,
+             "unit_price_usd": 63.0, "quantity": 2, "min_quantity": 1,
+             "author": "buyer-a", "message_id": "sample-buy-1",
+             "url": "https://discord.com/channels/1/2/103", "posted_at": NOW - 60, "flags": []},
+            {"side": "buy", "item": "Celestial Set", "item_key": key,
+             "unit_price_usd": 61.0, "quantity": 1, "min_quantity": 1,
+             "author": "buyer-b", "message_id": "sample-buy-2",
+             "url": "https://discord.com/channels/1/2/104", "posted_at": NOW - 60, "flags": []},
+        ]
+        snapshot = {
+            "book": build_order_book(offers, now=NOW),
+            "game_values": {}, "game_values_status": "fresh",
+        }
+        reply = telegram_market._command_reply(
+            "/p celestial set", snapshot, inventory_enabled=False
+        )
+        self.assertIn("أفضل بيع: $71.00", reply)
+        self.assertIn("أفضل شراء: $63.00", reply)
 
     def test_price_command_exposes_stale_missing_and_blocked_game_value_risks(self):
         market = {
