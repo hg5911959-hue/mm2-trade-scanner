@@ -97,6 +97,19 @@ class StateValidationTests(IsolatedDataTestCase):
         self.assertTrue(any("budget timestamps" in error for error in errors))
         self.assertTrue(any("breaker timing" in error for error in errors))
 
+    def test_api_safety_ledger_rejects_inconsistent_per_workflow_counts(self):
+        from tools.validate_state import validate_api_safety_state
+        (self.root / "rblxvalue_request_budget.json").write_text(json.dumps({
+            "schema_version": 1,
+            "window": "rolling_24_hours",
+            "limit": 60,
+            "request_timestamps_epoch": [1_800_000_000, 1_800_000_001],
+            "request_workflows": ["scanner", "scanner"],
+            "request_counts_by_workflow": {"scanner": 1},
+        }), encoding="utf-8")
+        errors = validate_api_safety_state(self.root)
+        self.assertTrue(any("per-workflow request counts" in error for error in errors))
+
     def test_invalid_api_key_breaker_blocks_full_state_persistence(self):
         from tools.validate_state import validate_state
         self._write_valid_state()
