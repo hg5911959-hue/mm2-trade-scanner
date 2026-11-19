@@ -94,6 +94,28 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("Persisted encrypted private state only", workflow)
         self.assertIn("data/private_state.enc", workflow)
 
+    def test_encrypted_private_state_is_authenticated_before_persistence(self):
+        workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        self.assertIn("id: verify-private-state", workflow)
+        self.assertIn("private_state.py decrypt --input state-artifact/data/private_state.enc", workflow)
+        failed_scan = workflow.split("Persist encrypted private state after failed scan", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("steps.verify-private-state.outcome == 'success'", failed_scan)
+        persist = workflow.split("Persist state branch", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("steps.verify-private-state.outcome == 'success'", persist)
+        self.assertIn("steps.verify-private-state.outcome == 'skipped'", persist)
+
+    def test_every_telegram_send_path_rejects_redirects(self):
+        scanner = (ROOT / "scanner.py").read_text(encoding="utf-8")
+        weekly = (ROOT / "tools/weekly_report.py").read_text(encoding="utf-8")
+        telegram_test = (ROOT / ".github/workflows/telegram-test.yml").read_text(encoding="utf-8")
+        self.assertIn("class _RejectTelegramRedirects", scanner)
+        self.assertIn("_TELEGRAM_OPENER.open(req, timeout=20)", scanner)
+        self.assertIn("class _RejectTelegramRedirects", weekly)
+        self.assertIn("_TELEGRAM_OPENER.open(request, timeout=20)", weekly)
+        self.assertIn("class RejectTelegramRedirects", telegram_test)
+        self.assertIn("opener.open(request, timeout=20)", telegram_test)
+        self.assertNotIn("urllib.request.urlopen(request", telegram_test)
+
     def test_rblxvalue_metadata_polling_is_bounded_to_six_hours(self):
         scanner = (ROOT / "scanner.py").read_text(encoding="utf-8")
         self.assertIn("RBLXVALUE_META_POLL_INTERVAL_SECONDS = 6 * 60 * 60", scanner)
