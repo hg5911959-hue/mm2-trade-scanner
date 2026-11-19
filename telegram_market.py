@@ -223,6 +223,48 @@ def _save_inventory(items: dict[str, Any]) -> None:
     _atomic_json(INVENTORY_FILE, {"schema_version": 1, "items": items})
 
 
+def _csv_dry_run_fallback(now: float) -> dict[str, dict[str, Any]]:
+    """Expose the legacy CSV as a clearly labelled reference only in dry-run."""
+    if os.environ.get("DRY_RUN", "").strip().casefold() not in {"1", "true", "yes", "on"}:
+        return {}
+    from tools.cash_market import load_cash_price_catalog
+
+    current = datetime.fromtimestamp(now, UTC)
+    catalog = load_cash_price_catalog(max_age_days=14, now=current)
+    fallback: dict[str, dict[str, Any]] = {}
+    for row in catalog["items"].values():
+        status = row.get("status")
+        if status not in {"verified", "unverified"}:
+            continue
+        name = str(row.get("name") or "").strip()
+        key = normalize_key(name)
+        if not key:
+            continue
+        price = float(row["cash_price_usd"])
+        verified_at = str(row.get("verified_at_utc") or "")
+        age = None
+        if status == "verified":
+            try:
+                verified = datetime.fromisoformat(verified_at)
+                age = max(0.0, now - verified.timestamp())
+            except (TypeError, ValueError, OverflowError):
+                continue
+        fallback[key] = {
+            "item": name, "best_ask": None, "best_bid": None,
+            "median_ask": None, "median_bid": None, "median_market": price,
+            "ask_quantity": 0, "bid_quantity": 0, "ask_authors": 0,
+            "bid_authors": 0, "author_count": 0, "confidence": "low_confidence",
+            "spread_percent": None, "newest_timestamp": verified_at or None,
+            "data_age_seconds": age,
+            "risk_flags": ["dry_run_csv_fallback"] + (
+                ["unverified_csv_estimate"] if status == "unverified"
+                else ["csv_reference_only"]
+            ),
+            "stale_offer_count": 0,
+        }
+    return fallback
+
+
 def _load_market(now: float | None = None) -> dict[str, Any]:
     import scanner
 
@@ -234,6 +276,8 @@ def _load_market(now: float | None = None) -> dict[str, Any]:
         low_price_ratio=float(os.environ.get("MARKET_LOW_PRICE_RATIO", "0.40")),
         high_price_ratio=float(os.environ.get("MARKET_HIGH_PRICE_RATIO", "2.50")),
     )
+    if not offers and os.environ.get("DRY_RUN", "").strip().casefold() in {"1", "true", "yes", "on"}:
+        book = _csv_dry_run_fallback(current)
     transfer_fee = float(os.environ.get("MARKET_TRANSFER_FEE_USD", "0.50"))
     direct = find_direct_arbitrage(
         book, transfer_fee_usd=transfer_fee,
