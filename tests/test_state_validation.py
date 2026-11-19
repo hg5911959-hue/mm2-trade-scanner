@@ -142,6 +142,13 @@ class StateValidationTests(IsolatedDataTestCase):
         errors = validate_state(self.root)
         self.assertTrue(any("private Telegram/market state" in error for error in errors))
 
+    def test_plaintext_discord_alert_state_is_rejected_from_public_branch(self):
+        (self.root / "discord_alert_state.json").write_text(
+            '{"alerted":["private-message-id"]}', encoding="utf-8"
+        )
+        errors = validate_state(self.root)
+        self.assertTrue(any("private Telegram/market state" in error for error in errors))
+
     def test_encrypted_private_state_blob_is_allowed_but_header_is_checked(self):
         (self.root / "private_state.enc").write_bytes(b"MM2PSTATE1" + b"\x00" * 64)
         self.assertEqual(validate_state(self.root), [])
