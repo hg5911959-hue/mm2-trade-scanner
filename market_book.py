@@ -223,7 +223,7 @@ def find_swap_chains(
     min_profit_percent: float = DEFAULT_MIN_PROFIT_PERCENT,
     max_value_age_hours: float = 24,
 ) -> list[dict[str, Any]]:
-    """Find 1:1 and N:1 buy→swap→sell chains; stale or unsafe values fail closed."""
+    """Find conservative 1:1 and N:1 buy→swap→sell chains."""
     tolerance = float(tolerance_percent)
     fee = float(transfer_fee_usd)
     min_profit = float(min_profit_usd)
@@ -238,7 +238,8 @@ def find_swap_chains(
     max_value_age_seconds = max_value_age * 3600
     if not math.isfinite(max_value_age_seconds):
         raise ValueError("swap-chain maximum value age is too large")
-    eligible = {}
+
+    eligible: dict[str, dict[str, Any]] = {}
     for key, item in game_values.items():
         if not isinstance(item, dict):
             continue
@@ -253,44 +254,64 @@ def find_swap_chains(
             not math.isfinite(value) or value <= 0 or not math.isfinite(age)
             or age < 0 or age > max_value_age_seconds
             or confidence not in {"medium", "high"}
-            or stability in BLOCKED_STABILITY
+            or stability in BLOCKED_STABILITY or not stability
         ):
             continue
-        eligible[key] = {**item, "value": value, "confidence": confidence, "data_age_seconds": age}
+        eligible[key] = {
+            **item, "value": value, "confidence": confidence, "data_age_seconds": age,
+        }
 
-    chains = []
+    chains: list[dict[str, Any]] = []
+    fees = 2 * fee
     for item_a, row_a in book.items():
         value_a = eligible.get(item_a)
         if not value_a or row_a.get("confidence") not in {"medium", "high"}:
             continue
         for ask in row_a.get("asks", []):
-            ask_price, ask_qty = float(ask["unit_price_usd"]), int(ask["quantity"])
+            ask_price = float(ask["unit_price_usd"])
+            ask_qty = int(ask["quantity"])
+            minimum_ask_quantity = max(1, int(ask.get("min_quantity") or 1))
+            if ask_qty < minimum_ask_quantity:
+                continue
             for item_b, row_b in book.items():
                 value_b = eligible.get(item_b)
                 if (
                     item_a == item_b or not value_b
                     or row_b.get("confidence") not in {"medium", "high"}
-                    or not value_b["stability"]
                 ):
                     continue
                 bid = row_b.get("best_bid")
-                if not bid:
+                if not bid or int(bid.get("quantity", 0)) < 1:
                     continue
-                bid_price, bid_qty = float(bid["unit_price_usd"]), int(bid["quantity"])
-                if bid_qty < 1:
+                # The sell leg is one received item. A buyer demanding 2+ units
+                # cannot fill that leg, so the chain is rejected.
+                if int(bid.get("min_quantity") or 1) > 1:
                     continue
-                # 1→1 and N→1 only; the received item must be worth the
-                # offered aggregate game value within the configured tolerance.
-                minimum_ask_quantity = max(1, int(ask.get("min_quantity") or 1))
-            if int(bid.get("min_quantity") or 1) > 1:
-                continue
-            for qty_a in range(minimum_ask_quantity, ask_qty + 1):
-                    if value_b["value"] < value_a["value"] * qty_a * (1 - tolerance / 100):
-                        continue
-                    qty_b = 1
-                    gross = bid_price * qty_b - ask_price * qty_a
-                    fees = 2 * fee
-                    profit = gross - fees
+                try:
+                    value_limit = math.floor(
+                        value_b["value"] / (value_a["value"] * (1 - tolerance / 100))
+                    )
+                    usd_limit = math.floor((float(bid["unit_price_usd"]) - fees - min_profit) / ask_price)
+                    pct_ratio = min_profit_pct / 100
+                    percent_limit = math.floor(
+                        (float(bid["unit_price_usd"]) - fees * (1 + pct_ratio))
+                        / (ask_price * (1 + pct_ratio))
+                    )
+                except (OverflowError, ZeroDivisionError):
+                    continue
+                maximum_ask_quantity = min(ask_qty, value_limit, usd_limit, percent_limit)
+                if maximum_ask_quantity < minimum_ask_quantity:
+                    continue
+
+                # Keep the highest-profit minimum lot and, when different, the
+                # largest still-profitable lot. This preserves N:1 discovery
+                # without an O(5,000) quantity loop for every item pair.
+                quantities = [minimum_ask_quantity]
+                if maximum_ask_quantity != minimum_ask_quantity:
+                    quantities.append(maximum_ask_quantity)
+                bid_price = float(bid["unit_price_usd"])
+                for qty_a in quantities:
+                    profit = bid_price - ask_price * qty_a - fees
                     cost = ask_price * qty_a + fees
                     profit_pct = profit / cost * 100 if cost > 0 else 0.0
                     if profit < min_profit or profit_pct < min_profit_pct:
@@ -301,7 +322,7 @@ def find_swap_chains(
                         "swap_value_out": value_b["value"], "sell": dict(bid),
                         "buy_price_per_value": ask_price / value_a["value"],
                         "sell_price_per_value": bid_price / value_b["value"],
-                        "quantity_buy": qty_a, "quantity_sell": qty_b,
+                        "quantity_buy": qty_a, "quantity_sell": 1,
                         "profit_usd": profit, "profit_percent": profit_pct,
                         "fees_usd": fees,
                         "source_links": [str(ask.get("url") or ""), str(bid.get("url") or "")],
@@ -309,12 +330,17 @@ def find_swap_chains(
                             float(row_a["data_age_seconds"]), float(row_b["data_age_seconds"]),
                             float(value_a["data_age_seconds"]), float(value_b["data_age_seconds"]),
                         ),
-                        "confidence": "medium" if "medium" in {row_a["confidence"], row_b["confidence"], value_a["confidence"], value_b["confidence"]} else "high",
+                        "confidence": "medium" if "medium" in {
+                            row_a["confidence"], row_b["confidence"],
+                            value_a["confidence"], value_b["confidence"],
+                        } else "high",
                     })
-    unique = {}
+    unique: dict[tuple[Any, ...], dict[str, Any]] = {}
     for chain in chains:
-        key = (chain["buy_item"], chain["swap_item"], chain["quantity_buy"],
-               chain["buy"].get("message_id"), chain["sell"].get("message_id"))
+        key = (
+            chain["buy_item"], chain["swap_item"], chain["quantity_buy"],
+            chain["buy"].get("message_id"), chain["sell"].get("message_id"),
+        )
         previous = unique.get(key)
         if previous is None or chain["profit_usd"] > previous["profit_usd"]:
             unique[key] = chain
