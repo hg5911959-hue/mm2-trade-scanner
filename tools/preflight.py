@@ -128,6 +128,16 @@ def _atomic_json(path, data):
     os.replace(temp, target)
 
 
+class _RejectTelegramRedirects(urllib.request.HTTPRedirectHandler):
+    """Do not forward bot-token-bearing requests to redirect targets."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_TELEGRAM_OPENER = urllib.request.build_opener(_RejectTelegramRedirects())
+
+
 def send_daily_notice(checks, *, data_dir="data", env=None, now=None):
     if not checks:
         return False
@@ -153,7 +163,7 @@ def send_daily_notice(checks, *, data_dir="data", env=None, now=None):
         "https://api.telegram.org/bot" + token + "/sendMessage", data=body
     )
     try:
-        with urllib.request.urlopen(request, timeout=15) as response:
+        with _TELEGRAM_OPENER.open(request, timeout=15) as response:
             return response.status == 200
     except Exception as exc:
         print("[preflight] Telegram notice failed: " + type(exc).__name__)
