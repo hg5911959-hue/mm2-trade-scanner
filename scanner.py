@@ -2575,9 +2575,8 @@ def load_supreme_values():
     source_meta = None
     if not RBLXVALUE_API_KEY:
         raise RuntimeError("[supreme] API key missing and no fresh cached source_b snapshot; refusing stale values.")
-    # Health and metadata checks are deliberately confined to an expired-cache
-    # refresh, never to each 30-second scan-loop tick.
-    verify_rblxvalue_key_if_due()
+    # Metadata polling is confined to an expired-cache refresh, never to each
+    # 30-second scan-loop tick. The catalogue request itself verifies the key.
     if RBLXVALUE_META_POLL_ENABLED:
         try:
             source_meta = _fetch_rblxvalue_meta(force=True)
