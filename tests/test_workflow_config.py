@@ -244,5 +244,14 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("Repository administrator permission may be required", workflow)
 
 
+    def test_scanner_step_environment_has_no_duplicate_keys(self):
+        workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        scanner_step = workflow.split("      - name: Run BloxSwaps scanner", 1)[1].split("      - name:", 1)[0]
+        env_block = scanner_step.split("        env:\\n", 1)[1].split("        run:", 1)[0]
+        keys = [line.strip().split(":", 1)[0] for line in env_block.splitlines() if line.startswith("          ")]
+        duplicates = sorted({key for key in keys if keys.count(key) > 1})
+        self.assertEqual(duplicates, [])
+
+
 if __name__ == "__main__":
     unittest.main()
