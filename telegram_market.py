@@ -392,6 +392,8 @@ def _format_item(item: dict[str, Any], market: dict[str, Any], game: dict[str, A
     ask_text = _format_usd(ask.get("unit_price_usd")) if ask else "غير متاح"
     bid_text = _format_usd(bid.get("unit_price_usd")) if bid else "غير متاح"
     median = _format_usd(market.get("median_market"))
+    median_ask = _format_usd(market.get("median_ask"))
+    median_bid = _format_usd(market.get("median_bid"))
     spread = market.get("spread_percent")
     spread_text = f"{spread:.1f}%" if isinstance(spread, (int, float)) else "—"
     age = market.get("data_age_seconds")
@@ -409,7 +411,8 @@ def _format_item(item: dict[str, Any], market: dict[str, Any], game: dict[str, A
     return (
         f"{item.get('item') or market.get('item')}\n"
         f"أفضل بيع: {ask_text} | أفضل شراء: {bid_text}\n"
-        f"الوسيط: {median} | الفارق: {spread_text}\n"
+        f"وسيط البيع: {median_ask} | وسيط الشراء: {median_bid}\n"
+        f"الوسيط العام: {median} | الفارق: {spread_text}\n"
         f"الكميات: بيع {market.get('ask_quantity', 0)} / شراء {market.get('bid_quantity', 0)}\n"
         f"العمر: {age_text} | قيمة اللعبة: {value_text} | $/Value: {ratio_text}\n"
         f"الثقة: {market.get('confidence')} | المخاطر: {risks}"
