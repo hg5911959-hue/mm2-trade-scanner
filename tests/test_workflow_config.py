@@ -165,7 +165,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         dispatch = workflow.split("  workflow_dispatch:", 1)[1].split("permissions:", 1)[0]
         self.assertIn("default: true", dispatch)
         self.assertIn("default: true", scheduler)
-        self.assertIn("dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}", scheduler)
+        self.assertIn("dry_run: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run) || false }}", scheduler)
         self.assertIn("verify_rblxvalue_key: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_rblxvalue_key || false }}", scheduler)
 
     def test_api_safety_ledger_is_persisted_when_scan_fails_without_replacing_cache(self):
