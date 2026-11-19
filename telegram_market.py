@@ -62,12 +62,22 @@ def _read_object(path: Path, default: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+class _RejectRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Never forward a Telegram bot token through an HTTP redirect."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_TELEGRAM_OPENER = urllib.request.build_opener(_RejectRedirectHandler())
+
+
 def _request_json(url: str, *, data: bytes | None = None, timeout: int = 20) -> dict[str, Any]:
     request = urllib.request.Request(
         url, data=data,
         headers={"User-Agent": "MM2MarketIntelligence/1.0", "Accept": "application/json"},
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with _TELEGRAM_OPENER.open(request, timeout=timeout) as response:
         payload = json.loads(response.read(2_000_000).decode("utf-8"))
     if not isinstance(payload, dict) or payload.get("ok") is not True:
         raise RuntimeError("Telegram API returned an invalid response")
