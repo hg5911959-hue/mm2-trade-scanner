@@ -5,9 +5,10 @@ from unittest.mock import patch
 from urllib.request import Request
 
 import scanner
+from test_support import IsolatedDataTestCase
 
 
-class BloxSwapsRateLimitTests(unittest.TestCase):
+class BloxSwapsRateLimitTests(IsolatedDataTestCase):
     def test_http_429_stops_without_retries_and_reports_retry_after(self):
         calls = []
 
