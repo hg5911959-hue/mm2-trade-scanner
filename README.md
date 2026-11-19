@@ -16,8 +16,11 @@ Re-enable cash mode only after reliable fresh verified prices exist:
 ## Cash-market intelligence (opt-in; disabled by default)
 
 The cash-market path is separate from the legacy swap scanner and remains
-opt-in. The owner can forward or paste a Discord post to the Telegram bot; the
-bot does not scrape Discord, use a Discord user token, or execute trades.
+opt-in. The owner can forward or paste a Discord post and its permalink to the
+Telegram bot; the bot does not scrape Discord, use a Discord user token, or
+execute trades. A pasted offer without an authoritative Discord timestamp
+(permalink snowflake or collector timestamp) is rejected rather than assigned
+the Telegram receipt time.
 Existing authorized manual imports remain supported. Supreme game values are
 resolved only through the existing RBLXValue `value_source_b` cache; the
 Supreme Values website is never scraped.
