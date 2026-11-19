@@ -155,7 +155,8 @@ jobs:
         run: |
           if [ -n "$DISCORD_BOT_TOKEN" ]; then
             if ! python -u discord_collector.py --output data/discord_messages.json --limit 100 --retention-days 7; then
-              echo "Discord collector failed; continuing with BloxSwaps and any manual import."
+              echo "::warning::Discord collection was incomplete; discarding partial live messages. Manual imports remain available."
+              rm -f data/discord_messages.json data/discord_messages.json.tmp
             fi
           else
             echo "Discord bot collection skipped: DISCORD_BOT_TOKEN is not configured."
