@@ -160,7 +160,7 @@ class TelegramMarketTests(IsolatedDataTestCase):
         updates = [{"update_id": 34, "message": {
             "message_id": 82, "date": 1_800_000_000,
             "chat": {"id": 123, "type": "private"}, "from": {"id": 123},
-            "text": "Author: seller-alpha\\nSELLING MM2\\n1x Celestial Set 72$\\n"
+            "text": "Author: seller-alpha\\nSELLING MM2\\nCELESTIAL SET - 72$\\n"
                     "https://discord.com/channels/1125462206151143464/1572655277130514472/1573076681072189520",
         }}]
         with self._paths():
