@@ -27,6 +27,7 @@ INVENTORY_FILE = DATA_DIR / "inventory.json"
 UPDATES_FILE = DATA_DIR / "telegram_update_state.json"
 LAST_RUN_FILE = DATA_DIR / "telegram_last_run.json"
 HISTORY_FILE = DATA_DIR / "market_book_history.json"
+MARKET_ALERTS_FILE = DATA_DIR / "market_alert_state.json"
 GAME_VALUES_MAX_AGE_SECONDS = max(3600, int(os.environ.get("RBLXVALUE_MAX_CACHE_AGE_SECONDS", "86400")))
 MAX_STORED_OFFERS = 20000
 MAX_TELEGRAM_TEXT = 4096
@@ -430,6 +431,91 @@ def _save_forwarded_post(message: dict[str, Any], chat_id: str) -> tuple[int, in
         reason = str(row.get("reason") or "rejected")
         reasons[reason] = reasons.get(reason, 0) + 1
     return added, len(result["rejected"]), reasons
+
+
+def send_market_alerts(
+    *, token: str, chat_id: str, snapshot: dict[str, Any], max_alerts: int = 15,
+    profit_delta_usd: float = 0.50,
+    send_message: Callable[[str, str, str], None] = telegram_send,
+    now: float | None = None,
+) -> int:
+    """Send threshold-qualified opportunities and deduplicate by stable ID."""
+    if not token or not chat_id:
+        return 0
+    limit = max(0, min(100, int(max_alerts)))
+    delta = float(profit_delta_usd)
+    if not math.isfinite(delta) or delta < 0:
+        raise ValueError("profit-change threshold must be finite and non-negative")
+    if limit == 0:
+        return 0
+    current = datetime.now(UTC).timestamp() if now is None else float(now)
+    state = _read_object(MARKET_ALERTS_FILE, {"schema_version": 1, "opportunities": {}})
+    if state.get("schema_version") != 1 or not isinstance(state.get("opportunities"), dict):
+        raise RuntimeError("private market-alert state has an invalid schema")
+    previous = state["opportunities"]
+    rows = sorted(
+        snapshot.get("direct", []) + snapshot.get("chains", []),
+        key=lambda row: float(row.get("profit_usd", 0)), reverse=True,
+    )
+    sent = 0
+    for row in rows:
+        try:
+            profit = float(row.get("profit_usd"))
+            if not math.isfinite(profit) or profit <= 0:
+                continue
+        except (TypeError, ValueError):
+            continue
+        if row.get("type") == "direct_arbitrage":
+            identity = [
+                "direct", row.get("item_key"), row.get("buy", {}).get("message_id"),
+                row.get("sell", {}).get("message_id"), row.get("quantity"),
+            ]
+            message = (
+                f"فرصة مراجحة نقدية: {row.get('item')} ×{row.get('quantity')}\n"
+                f"شراء {_format_usd(row['buy'].get('unit_price_usd'))} ← "
+                f"بيع {_format_usd(row['sell'].get('unit_price_usd'))}\n"
+                f"الربح الصافي: {_format_usd(profit)} ({float(row.get('profit_percent', 0)):.1f}%)"
+            )
+        elif row.get("type") == "swap_chain":
+            identity = [
+                "chain", row.get("buy_item"), row.get("swap_item"),
+                row.get("buy", {}).get("message_id"), row.get("sell", {}).get("message_id"),
+                row.get("quantity_buy"), row.get("quantity_sell"),
+            ]
+            message = (
+                f"فرصة سلسلة تبادل: {row.get('buy_item')} ×{row.get('quantity_buy')} "
+                f"→ {row.get('swap_item')} → بيع ×{row.get('quantity_sell')}\n"
+                f"الربح الصافي: {_format_usd(profit)} ({float(row.get('profit_percent', 0)):.1f}%)"
+            )
+        else:
+            continue
+        identifier = hashlib.sha256(
+            json.dumps(identity, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        old = previous.get(identifier)
+        try:
+            old_profit = float(old.get("profit_usd")) if isinstance(old, dict) else None
+        except (TypeError, ValueError):
+            old_profit = None
+        if old_profit is not None and abs(profit - old_profit) <= delta:
+            continue
+        sources = row.get("source_links", []) if row.get("type") == "swap_chain" else [
+            row.get("buy", {}).get("url", ""), row.get("sell", {}).get("url", ""),
+        ]
+        source_text = "\nالمصادر: " + " | ".join(str(value) for value in sources if value) if any(sources) else ""
+        send_message(token, chat_id, message + source_text)
+        previous[identifier] = {"profit_usd": profit, "last_sent_at_epoch": current}
+        previous = {
+            key: value for key, value in previous.items()
+            if isinstance(value, dict) and isinstance(value.get("last_sent_at_epoch"), (int, float))
+            and 0 <= current - float(value["last_sent_at_epoch"]) <= 14 * 86400
+        }
+        state["opportunities"] = previous
+        _atomic_json(MARKET_ALERTS_FILE, state)
+        sent += 1
+        if sent >= limit:
+            break
+    return sent
 
 
 def process_telegram_updates(
