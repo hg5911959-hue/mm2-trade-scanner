@@ -234,5 +234,23 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         fetch_bloxswaps.assert_not_called()
 
 
+    def test_scan_loop_stops_immediately_when_rblx_budget_is_exhausted(self):
+        from unittest.mock import patch
+
+        budget_error = RuntimeError("[rblxvalue-budget-exhausted] rolling 24-hour budget reached")
+        with (
+            patch.object(scanner, "scan_once", side_effect=budget_error) as scan_once,
+            patch.object(scanner, "record_failure") as record_failure,
+            patch.object(scanner.rblxvalue_guard, "log_request_count") as log_count,
+            patch.object(scanner, "update_metrics"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "budget-exhausted"):
+                scanner.run_scan_loop(duration_seconds=600, interval_seconds=30)
+
+        scan_once.assert_called_once()
+        record_failure.assert_called_once_with(budget_error)
+        log_count.assert_called_once_with()
+
+
 if __name__ == "__main__":
     unittest.main()
