@@ -198,4 +198,25 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - The parser already produced private `demand_hints` for unpriced bulk wanted-lists, but the Telegram market snapshot discarded them. The snapshot now carries these hints through to `/p`.
 - `/p` displays the aggregate unpriced wanted quantity separately as informational demand. It is never added to `best_bid`, bid quantity, median, direct arbitrage, or swap-chain calculations. If there are no priced offers, the command still shows the demand hint while clearly stating that it is not a priced buy offer.
 - Added a regression proving an unpriced demand hint is visible but produces no book row, bid, direct opportunity, or chain.
-- Hosted verification is pending for this additional behavior.
+- Hosted verification: validation branch commit `eaafd041fec32da69f863d0d0169d11d465b5f61`, Actions run [#1031](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44622668975): **461 tests passed twice**, data-tree immutability passed, and all Ruff checks passed.
+
+
+## Current overall status — 2026-11-19
+
+- Current implementation branch: `before-market-book`; head at this report update: `d1a4a0b69969207124404a7c49811fc9dae42714`. Implementation PR [#85](https://github.com/hg5911959-hue/mm2-trade-scanner/pull/85) remains open and unmerged.
+- Latest complete hosted validation: **461/461 tests passed twice** on Python 3.12; the `data/` tree hash was unchanged after both runs; all configured Ruff checks passed. Validation run [#1031](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44622668975) covers the same implementation code as the current branch; only report text is added afterward.
+- No known failing tests or Ruff findings remain in the validated code. This is not a guarantee of zero undiscovered defects or profitable trades.
+- The requested safety branch exists. The requested Git tag `before-market-book` is still **not created** because the available GitHub integration has no tag-object/ref creation operation.
+- All runtime feature flags remain OFF by default: `MARKET_BOOK_ENABLED`, `TELEGRAM_COMMANDS_ENABLED`, `INVENTORY_ENABLED`, and `PRIVATE_STATE_ENABLED`. No live Telegram messages, trades, or market alerts were sent by this work.
+
+### External / operational blockers
+1. **RBLXValue credential:** the previously configured key was rejected/suspended with HTTP 403. The code now blocks safely and avoids retries, but only the provider can reactivate the existing key. No replacement account/key was created.
+2. **Celestial Set source identity:** the owner supplied the listing and exact Discord permalink. Its snowflake timestamp is `2026-11-19T20:45:07.119Z`; the anonymous browser was redirected to Discord login, so the author could not be independently read. The owner-supplied listing remains outside private live state until it is ingested through the authorized bot/import route with an author identity. For a plain-text Telegram paste, use an `Author: exact-discord-username` line; it is explicitly flagged `owner_supplied_author` because the bot cannot independently verify it.
+3. **Live integration verification:** Telegram/Discord credentials and bot permissions were not exposed to this workflow and were not tested. The user-owned secrets must already be configured correctly before enabling the flags. No secrets should be pasted into chat.
+4. **Telegram responsiveness:** the bot polls at scan start and each 30-second tick while a GitHub Actions scan job is active. It is not an always-on hosted process; commands sent outside an active job wait until the next run. The prompt's bounded GitHub Actions architecture does not guarantee continuous 30-second responsiveness between jobs.
+5. **Appendix $71 ask:** `/p celestial set` is now tested end-to-end with the appendix's synthetic $71 ask / $63 bid fixture. The actual owner-supplied listing is $72; the synthetic fixture is not represented as live market evidence.
+
+### Readiness assessment
+- Code and test readiness for the implemented, feature-flagged scope: **strong; 461 tests twice and Ruff clean**.
+- Live operational readiness: **not yet verified** because of the suspended RBLXValue key, unverified Telegram/Discord credentials, missing tag operation, and source-author metadata still needed for the supplied Celestial listing.
+- The project is therefore **not honestly certifiable as 10/10 or 100% operational yet**. No automatic trading is enabled; the system remains advisory and profit is not guaranteed.
