@@ -140,3 +140,11 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - **448 tests passed twice** (448/448 on pass 1 and 448/448 on pass 2). The workflow verified the real `data/` tree hash remained unchanged after both passes.
 - Ruff passed for the market/privacy/API modules, scanner correctness checks, and repository-wide undefined/unused-name checks. An intermediate run caught one unused test import; it was removed before the successful final run.
 - All new production features remain disabled by default. This verification establishes test/lint correctness for the branch; it does not establish live market accuracy, live Telegram connectivity, or guaranteed profit.
+
+
+### Owner-supplied market evidence — Celestial Set listing (2026-11-19)
+- The owner supplied a Discord post headed `SELLING MM2` with individual seller prices: Celestial Set `$72`, Snowcannon `$14.50`, and Spirit `$8.50`; it also states `ALL FOR $92`.
+- The individual prices total `$95`, so the bundle is `$3` below the sum of the listed individual prices. The `$92` bundle amount is not allocated across individual items and must not be treated as a per-item price or as three independent cash offers.
+- The owner reports the post was published 37 minutes before sharing it. No Discord permalink, message ID, author identity, or original absolute timestamp was supplied. Under the ingestion provenance rule, this post is recorded as pending evidence only and is **not** inserted into the live/private order book; a pasted post without a verifiable original permalink/timestamp remains `timestamp_unknown`.
+- This is a `$72` Celestial Set ask, not the `$71` ask required by the original appendix acceptance assertion. It does not change that assertion or justify modifying its expected value. End-to-end acceptance remains open until a verifiable seller post at `$71` is supplied, or the owner explicitly approves revising the acceptance case to a different real offer.
+
