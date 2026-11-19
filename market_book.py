@@ -123,7 +123,7 @@ def build_order_book(
         ask_prices = [float(row["unit_price_usd"]) for row in asks]
         bid_prices = [float(row["unit_price_usd"]) for row in bids]
         median_all = statistics.median(ask_prices + bid_prices) if asks or bids else None
-        authors = {str(row.get("author") or "").strip() for row in rows if str(row.get("author") or "").strip()}
+        authors = {str(row.get("author") or "").strip().casefold() for row in rows if str(row.get("author") or "").strip()}
         flags: set[str] = set()
         if stale_counts.get(item_key):
             flags.add("stale_offer")
@@ -142,8 +142,8 @@ def build_order_book(
             if row["side"] == "buy" and "sell before it drops" in text:
                 row.setdefault("flags", []).append("sell_before_drop")
                 flags.add("sell_before_drop")
-        ask_authors = {str(row.get("author") or "").strip() for row in asks if str(row.get("author") or "").strip()}
-        bid_authors = {str(row.get("author") or "").strip() for row in bids if str(row.get("author") or "").strip()}
+        ask_authors = {str(row.get("author") or "").strip().casefold() for row in asks if str(row.get("author") or "").strip()}
+        bid_authors = {str(row.get("author") or "").strip().casefold() for row in bids if str(row.get("author") or "").strip()}
         author_count = len(authors)
         confidence = "high" if author_count >= 3 else "medium" if author_count >= 2 else "low"
         best_ask = min(asks, key=lambda row: (float(row["unit_price_usd"]), -row["_timestamp"])) if asks else None
