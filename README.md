@@ -38,12 +38,16 @@ Core modules:
   ambiguous-name list. Unknown names are rejected, never fuzzy-guessed.
 - `market_book.py` — 48-hour order book, recency-weighted medians, direct
   arbitrage after fees/margin, conservative 1:1 and N:1 swap chains, inventory
-  verdicts, and rolling 14-day compact price history.
+  verdicts, and rolling 14-day compact price history. Swap-chain risk flags are
+  propagated from both market legs.
 - `telegram_market.py` — owner-private-chat-only `getUpdates` interface:
   `/p`, `/buy`, `/chains`, `/sell`, `/inv`, `/add`, `/remove`,
-  `/status`, and `/help`; threshold-qualified alerts are deduplicated and
-  repeated only when net profit changes by more than
-  `MARKET_ALERT_PROFIT_DELTA_USD`.
+  `/status`, and `/help`; `/buy` and `/chains` show source links and risk flags.
+  RBLXValue cache age is explicitly labelled `stale` when older than the
+  configured maximum; this disables swap chains without suppressing direct
+  cash-only signals. Missing or blocked stability is surfaced as a risk flag.
+  Threshold-qualified alerts are deduplicated and repeated only when net profit
+  changes by more than `MARKET_ALERT_PROFIT_DELTA_USD`.
 
 Telegram authorization accepts only a private one-to-one chat where both
 `chat.id` and `from.id` match `TELEGRAM_CHAT_ID`. Group/supergroup messages
