@@ -54,6 +54,11 @@ class SupremeCacheMigrationTests(IsolatedDataTestCase):
             api = []
 
             def unchanged(path, params=None, etag=None):
+                # Simulate the real request wrapper: every fake network request
+                # must reserve from the same persistent rolling budget first.
+                rblxvalue_guard.reserve_request(
+                    now=now[0], key="rbx_test_cache_key",
+                )
                 api.append((path, params, etag))
                 if params and params.get("limit") == 1:
                     return {"items": [{"id": 1, "name": "Health Check"}]}, None, False
@@ -82,6 +87,9 @@ class SupremeCacheMigrationTests(IsolatedDataTestCase):
             self.assertEqual(loaded["item 7"]["variants"][0]["stability"], "Stable")
             self.assertEqual(len(api), 1)
             self.assertEqual(sum(1 for _, params, _ in api if params and params.get("limit") == 1), 0)
+            budget = json.loads((root / "budget.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(budget["request_timestamps_epoch"]), 1)
+            self.assertLessEqual(len(budget["request_timestamps_epoch"]), rblxvalue_guard.HARD_DAILY_REQUEST_LIMIT)
 
     def test_fresh_cache_remains_usable_while_key_breaker_is_active(self):
         with tempfile.TemporaryDirectory() as directory:
