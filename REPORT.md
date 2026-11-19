@@ -192,3 +192,7 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - Added an end-to-end Telegram command regression using the appendix's synthetic Celestial Set market fixture: best ask `$71.00`, best bid `$63.00`. The test asserts the actual `/p celestial set` response, not only the lower-level order-book object.
 - This `$71` seller ask is test-fixture data from the prompt's acceptance assertion, not a claim about a currently available real Discord offer. The owner's separately supplied live listing remains `$72` and is tracked with its own permalink/timestamp provenance.
 - Hosted verification is pending for this additional acceptance test.
+
+### Hosted verification — Appendix Telegram price acceptance
+- Current implementation head: `98089689c381d3f9a70ecf83679710c14e3396a8`.
+- Validate the full suite twice, data-tree immutability, and all Ruff checks after adding the end-to-end `/p celestial set` assertion for the synthetic `$71` ask / `$63` bid appendix fixture.
