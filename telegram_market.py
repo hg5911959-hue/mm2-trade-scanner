@@ -5,6 +5,7 @@ connects to Discord, executes trades, or logs message bodies or credentials.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
