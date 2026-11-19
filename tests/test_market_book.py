@@ -162,7 +162,9 @@ class MarketBookTests(IsolatedDataTestCase):
     def test_malformed_offer_minimum_is_ignored(self):
         malformed = offer("buy", "Candy", 2, 5, "buyer", "bad-min")
         malformed["min_quantity"] = 0
-        self.assertEqual(build_order_book([malformed], now=NOW), {})
+        fractional = offer("buy", "Candy", 2, 5, "buyer", "fractional")
+        fractional["quantity"] = 1.5
+        self.assertEqual(build_order_book([malformed, fractional], now=NOW), {})
 
     def test_non_finite_thresholds_fail_closed(self):
         with self.assertRaises(ValueError):
