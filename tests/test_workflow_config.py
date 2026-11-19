@@ -62,6 +62,8 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("workflow_dispatch:", scheduler)
         self.assertIn("uses: ./.github/workflows/scan.yml", scheduler)
         self.assertIn("secrets: inherit", scheduler)
+        self.assertIn("enable_discord:", scheduler)
+        self.assertIn("contains(github.event.head_commit.message, '[discord-dry-run]')", scheduler)
         self.assertIn("contents: write", scheduler)
         self.assertIn("actions: read", scheduler)
         self.assertNotIn("workflow_run:", scheduler)
@@ -71,8 +73,13 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
     def test_cash_market_and_telegram_features_are_disabled_and_private_state_is_encrypted(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         for flag in ("MARKET_BOOK_ENABLED", "TELEGRAM_COMMANDS_ENABLED",
-                     "INVENTORY_ENABLED", "PRIVATE_STATE_ENABLED"):
+                     "INVENTORY_ENABLED"):
             self.assertIn(f'{flag}: "false"', workflow)
+        self.assertIn("PRIVATE_STATE_ENABLED: ${{ inputs.enable_discord && 'true' || 'false' }}", workflow)
+        for trigger in ("  workflow_call:", "  workflow_dispatch:"):
+            inputs = workflow.split(trigger, 1)[1].split("\npermissions:", 1)[0]
+            self.assertIn("enable_discord:", inputs)
+            self.assertIn("default: false", inputs)
         self.assertIn("Decrypt private market state", workflow)
         self.assertIn("private_state.py decrypt", workflow)
         self.assertIn("private_state.py encrypt", workflow)
@@ -258,6 +265,16 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         self.assertIn("run: python -m tools.preflight --warn", workflow)
         self.assertNotIn("run: python tools/preflight.py --warn", workflow)
+
+
+    def test_discord_enablement_requires_explicit_opt_in_and_private_state_key(self):
+        workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        scheduler = (ROOT / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
+        self.assertIn("default: false", workflow.split("enable_discord:", 1)[1].split("permissions:", 1)[0])
+        self.assertIn("if: env.PRIVATE_STATE_ENABLED == 'true'", workflow)
+        self.assertIn('if [ "${#MM2_PRIVATE_STATE_KEY}" -lt 32 ]; then', workflow)
+        self.assertIn("inputs.enable_discord", scheduler)
+        self.assertIn("DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}", workflow)
 
 
 if __name__ == "__main__":
