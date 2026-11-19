@@ -2560,11 +2560,6 @@ def load_supreme_values():
     # A fresh persisted catalogue is authoritative for this scan tick.
     # In particular, a 30-second loop tick must never call RBLXValue while the
     # cache is fresh (including metadata, health checks, and detail enrichment).
-    if RBLXVALUE_API_KEY and rblxvalue_guard.is_key_blocked(key=RBLXVALUE_API_KEY):
-        raise RuntimeError(
-            "[supreme] API key circuit breaker active; refusing stale-cache calculations "
-            "[rblxvalue-key-blocked] no request sent"
-        )
     cached_document = _read_values_cache_document()
     cached_values, cached_age = _read_values_cache()
     if cached_values is not None and cached_age is not None and cached_age <= VALUES_TTL_SECONDS:
@@ -2572,6 +2567,11 @@ def load_supreme_values():
         _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
         return cached_values
 
+    if RBLXVALUE_API_KEY and rblxvalue_guard.is_key_blocked(key=RBLXVALUE_API_KEY):
+        raise RuntimeError(
+            "[supreme] API key circuit breaker active; refusing expired-cache calculations "
+            "[rblxvalue-key-blocked] no request sent"
+        )
     source_meta = None
     if not RBLXVALUE_API_KEY:
         raise RuntimeError("[supreme] API key missing and no fresh cached source_b snapshot; refusing stale values.")
