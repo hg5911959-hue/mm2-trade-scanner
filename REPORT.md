@@ -283,3 +283,5 @@ Not yet scored at the end of Phase 2. See the evidence-based readiness assessmen
 - Added regression coverage for encrypted-state round trips, malformed-state fail-closed behavior, plaintext-state rejection, disabled-feature ingestion, and full-scan log/unmatched-state privacy.
 - The first test run exposed a Python static nesting limit in the integration test; refactored the test to use `ExitStack`. Final validation: [#1132](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44631204718), **477 tests passed twice**, data-tree immutability passed, and all configured Ruff checks passed.
 - No live Discord or Telegram data was collected or sent during this validation.
+
+- A one-time dry-run workflow push marked `[rblxvalue-key-check]` is reserved to verify the configured RBLXValue credential using the shared request budget; no secret value is stored in this report.
