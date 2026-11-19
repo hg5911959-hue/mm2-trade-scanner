@@ -545,5 +545,19 @@ class TelegramMarketTests(IsolatedDataTestCase):
         }), "Seller Server")
 
 
+    def test_missing_optional_csv_does_not_break_empty_discord_market_dry_run(self):
+        with (
+            self._paths(),
+            patch("telegram_market._load_offers", return_value=([], [])),
+            patch("tools.cash_market.load_cash_price_catalog", side_effect=FileNotFoundError("optional CSV missing")),
+            patch.dict("os.environ", {"DRY_RUN": "true"}),
+        ):
+            snapshot = telegram_market._load_market(now=NOW)
+
+        self.assertEqual(snapshot["book"], {})
+        self.assertEqual(snapshot["direct"], [])
+        self.assertEqual(snapshot["chains"], [])
+
+
 if __name__ == "__main__":
     unittest.main()
