@@ -137,8 +137,19 @@ def _load_market(now: float | None = None) -> dict[str, Any]:
 
     offers, _hints = _load_offers()
     current = datetime.now(UTC).timestamp() if now is None else float(now)
-    book = build_order_book(offers, now=current)
-    direct = find_direct_arbitrage(book)
+    book = build_order_book(
+        offers, now=current,
+        max_age_hours=float(os.environ.get("MARKET_OFFER_MAX_AGE_HOURS", "48")),
+        low_price_ratio=float(os.environ.get("MARKET_LOW_PRICE_RATIO", "0.40")),
+        high_price_ratio=float(os.environ.get("MARKET_HIGH_PRICE_RATIO", "2.50")),
+    )
+    transfer_fee = float(os.environ.get("MARKET_TRANSFER_FEE_USD", "0.50"))
+    direct = find_direct_arbitrage(
+        book, transfer_fee_usd=transfer_fee,
+        safety_margin_percent=float(os.environ.get("MARKET_SAFETY_MARGIN_PERCENT", "5.0")),
+        min_profit_usd=float(os.environ.get("MIN_PROFIT_USD", "0.50")),
+        min_profit_percent=float(os.environ.get("MIN_PROFIT_PERCENT", "5.0")),
+    )
     cache_document = scanner._read_values_cache_document()
     cache_age = None
     if isinstance(cache_document, dict):
@@ -172,7 +183,14 @@ def _load_market(now: float | None = None) -> dict[str, Any]:
                     "confidence": "medium" if source in {"exact", "alias", "slug"} else "low",
                     "data_age_seconds": cache_age,
                 }
-    chains = find_swap_chains(book, game_values)
+    chains = find_swap_chains(
+        book, game_values,
+        tolerance_percent=float(os.environ.get("SWAP_VALUE_TOLERANCE_PERCENT", "2.0")),
+        transfer_fee_usd=transfer_fee,
+        min_profit_usd=float(os.environ.get("MIN_PROFIT_USD", "0.50")),
+        min_profit_percent=float(os.environ.get("MIN_PROFIT_PERCENT", "5.0")),
+        max_value_age_hours=GAME_VALUES_MAX_AGE_SECONDS / 3600,
+    )
     history = _read_object(HISTORY_FILE, {"schema_version": 1, "snapshots": []})
     previous = {}
     snapshots = history.get("snapshots", [])
@@ -337,8 +355,11 @@ def _command_reply(command: str, snapshot: dict[str, Any], *, inventory_enabled:
                 return "الكمية غير صالحة."
             _save_inventory(items)
             return f"تم تحديث مخزون {canonical}."
-        advice = inventory_advice(items, book, previous_snapshot=snapshot["previous"],
-                                  swap_opportunities=snapshot["chains"])
+        advice = inventory_advice(
+            items, book, previous_snapshot=snapshot["previous"],
+            swap_opportunities=snapshot["chains"],
+            undercut_usd=float(os.environ.get("MARKET_UNDERCUT_USD", "0.01")),
+        )
         if not advice:
             return "المخزون فارغ."
         return "\n\n".join(
