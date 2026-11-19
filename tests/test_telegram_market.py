@@ -85,7 +85,7 @@ class TelegramMarketTests(IsolatedDataTestCase):
         self.assertEqual(len(stored["offers"]), 2)
         self.assertEqual(stored["offers"][0]["side"], "sell")
         self.assertEqual(stored["offers"][0]["author"], "market-seller")
-        self.assertEqual(stored["offers"][0]["posted_at"], "2026-12-09T15:43:20+00:00")
+        self.assertEqual(stored["offers"][0]["posted_at"], "2027-01-15T07:43:20+00:00")
         self.assertIn("تم تحليل 2 عرضاً", sent[-1])
         self.assertFalse(self.history.exists())
 
