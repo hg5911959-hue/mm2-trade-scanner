@@ -113,7 +113,7 @@ class TelegramMarketTests(IsolatedDataTestCase):
         sent = []
         updates = [{"update_id": 31, "message": {
             "message_id": 78, "date": 1_800_000_000, "chat": {"id": 123},
-            "text": "Selling\\n1x Candy 2$/1",
+            "text": "Selling\n1x Candy 2$/1",
         }}]
         with self._paths():
             count = telegram_market.process_telegram_updates(
