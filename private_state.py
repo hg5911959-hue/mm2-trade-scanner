@@ -54,7 +54,7 @@ def _openssl_crypt(data: bytes, *, key: bytes, iv: bytes, decrypt: bool) -> byte
     if not executable:
         raise PrivateStateError("OpenSSL executable is unavailable on this runner")
     command = [
-        executable, "enc", "-aes-256-ctr", "-K", key.hex(), "-iv", iv.hex(),
+        executable, "enc", "-aes-256-ctr", "-nosalt", "-K", key.hex(), "-iv", iv.hex(),
     ]
     if decrypt:
         command.insert(2, "-d")
