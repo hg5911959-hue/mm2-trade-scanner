@@ -68,6 +68,11 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertNotIn("enable-schedules:", scheduler)
 
 
+    def test_rblxvalue_metadata_polling_is_bounded_to_six_hours(self):
+        scanner = (ROOT / "scanner.py").read_text(encoding="utf-8")
+        self.assertIn("RBLXVALUE_META_POLL_INTERVAL_SECONDS = 6 * 60 * 60", scanner)
+        self.assertIn("VALUES_REVALIDATION_INTERVAL_SECONDS = 12 * 60 * 60", scanner)
+
     def test_rblxvalue_connection_check_is_manual_and_uses_shared_budget(self):
         workflow = (ROOT / ".github/workflows/rblxvalue-connection-test.yml").read_text(encoding="utf-8")
         self.assertIn("  workflow_dispatch:", workflow)
