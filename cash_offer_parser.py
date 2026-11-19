@@ -12,7 +12,7 @@ import unicodedata
 from pathlib import Path
 from typing import Any
 
-ALIASES_FILE = Path("cash_item_aliases.json")
+ALIASES_FILE = Path(__file__).resolve().parent / "cash_item_aliases.json"
 MAX_QUANTITY = 5000
 SELL_HEADERS = ("selling", "sell", "wts", "quick sell")
 BUY_HEADERS = ("buying", "buy", "wtb", "looking for")
