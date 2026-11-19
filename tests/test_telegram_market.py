@@ -16,6 +16,9 @@ NOW = 1_800_000_000.0
 class TelegramMarketTests(IsolatedDataTestCase):
     def setUp(self):
         super().setUp()
+        previous_manual_flag = telegram_market._MANUAL_IMPORTS_INGESTED
+        telegram_market._MANUAL_IMPORTS_INGESTED = False
+        self.addCleanup(setattr, telegram_market, "_MANUAL_IMPORTS_INGESTED", previous_manual_flag)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         root = Path(self.temp.name)
