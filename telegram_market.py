@@ -194,6 +194,11 @@ def ingest_manual_discord_imports(
             body, author=str(row.get("author") or ""),
             message_id="discord:" + message_id, url=url, posted_at=posted_at,
         )
+        if not posted_at:
+            parsed["rejected"].extend(
+                {"reason": "timestamp_unknown"} for _ in parsed["offers"]
+            )
+            parsed["offers"] = []
         rejected += len(parsed["rejected"])
         for offer in parsed["offers"]:
             identity = (
@@ -569,20 +574,32 @@ def _discord_link_and_body(text: str) -> tuple[str, str]:
     return link, body.strip()
 
 
+def _discord_posted_at_from_link(link: str) -> str:
+    match = re.search(r"/channels/\\d+/\\d+/(\\d+)", link)
+    if not match:
+        return ""
+    try:
+        snowflake = int(match.group(1))
+        timestamp_ms = (snowflake >> 22) + 1_420_070_400_000
+        return datetime.fromtimestamp(timestamp_ms / 1000, UTC).isoformat()
+    except (TypeError, ValueError, OSError, OverflowError):
+        return ""
+
+
 def _save_forwarded_post(message: dict[str, Any], chat_id: str) -> tuple[int, int, dict[str, int]]:
     raw = _message_text(message)
     link, body = _discord_link_and_body(raw)
-    origin = message.get("forward_origin") if isinstance(message.get("forward_origin"), dict) else {}
-    posted = origin.get("date") or message.get("date")
-    try:
-        posted_at = datetime.fromtimestamp(int(posted), UTC).isoformat()
-    except (TypeError, ValueError, OSError, OverflowError):
-        posted_at = datetime.now(UTC).isoformat()
+    posted_at = _discord_posted_at_from_link(link)
     message_id = f"telegram:{chat_id}:{message.get('message_id', '')}"
     result = parse_cash_post(
         body, author=_forward_author(message), message_id=message_id,
         url=link, posted_at=posted_at,
     )
+    if not posted_at:
+        result["rejected"].extend(
+            {"reason": "timestamp_unknown"} for _ in result["offers"]
+        )
+        result["offers"] = []
     offers, hints = _load_offers()
     known = {
         (str(row.get("message_id")), str(row.get("side")), str(row.get("item_key")),
