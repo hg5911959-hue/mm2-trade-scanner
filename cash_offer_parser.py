@@ -62,6 +62,10 @@ def resolve_cash_item(raw: str, alias_data: dict[str, Any] | None = None) -> tup
         canonical_base = aliases.get(base)
         if canonical_base:
             return "Chroma " + canonical_base, "resolved"
+    if key.startswith("c "):
+        chroma_alias = aliases.get("chroma " + key[2:])
+        if chroma_alias:
+            return chroma_alias, "resolved"
     return None, "unresolved"
 
 
