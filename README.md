@@ -13,6 +13,20 @@ Re-enable cash mode only after reliable fresh verified prices exist:
 3. Run the scheduler with `dry_run=true` to preview the results without sending live alerts.
 4. Check the preview alerts and catalogue coverage carefully before enabling live mode.
 
+## Owner-supplied cash-offer parser (foundation)
+
+The new `cash_offer_parser.py` module parses text that the owner forwards or
+pastes from Discord. It does not connect to Discord, scrape servers, or use a
+Discord user token. Canonical names and explicitly ambiguous names are kept in
+the owner-editable `cash_item_aliases.json` file. Unknown or ambiguous item
+names and multi-quantity prices without a per-unit marker are rejected rather
+than guessed. `QUICK SELL` is treated as a seller header.
+
+The parser is currently a tested ingestion foundation; it is not yet wired to
+the production scanner or Telegram commands. Do not enable cash-market trading
+signals until the order book, private storage boundary, and Telegram workflow
+phases are complete and validated.
+
 ## Trade evaluation
 
 From the scanner user's perspective:
