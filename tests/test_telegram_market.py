@@ -16,6 +16,16 @@ NOW = 1_800_000_000.0
 
 
 class TelegramMarketTests(IsolatedDataTestCase):
+    def test_telegram_redirects_are_rejected_before_token_forwarding(self):
+        handler = telegram_market._RejectRedirectHandler()
+        request = telegram_market.urllib.request.Request(
+            "https://api.telegram.org/botplaceholder/getUpdates"
+        )
+        redirected = handler.redirect_request(
+            request, None, 302, "Found", {}, "https://attacker.example/collect"
+        )
+        self.assertIsNone(redirected)
+
     def setUp(self):
         super().setUp()
         previous_manual_flag = telegram_market._MANUAL_IMPORTS_INGESTED
