@@ -189,8 +189,16 @@ def ingest_manual_discord_imports(
         if source_id in seen_message_ids:
             continue
         seen_message_ids.add(source_id)
-        retained_offers = [offer for offer in offers if str(offer.get("message_id")) != source_id]
-        retained_hints = [hint for hint in hints if str(hint.get("message_id")) != source_id]
+        retained_offers = [
+            offer for offer in offers
+            if str(offer.get("message_id")) != source_id
+            and not (url and str(offer.get("url") or "") == url)
+        ]
+        retained_hints = [
+            hint for hint in hints
+            if str(hint.get("message_id")) != source_id
+            and not (url and str(hint.get("url") or "") == url)
+        ]
         changed = changed or len(retained_offers) != len(offers) or len(retained_hints) != len(hints)
         offers, hints = retained_offers, retained_hints
         known = {
