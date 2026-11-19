@@ -146,7 +146,13 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
                     prefix = text[:match.start()]
                     job_match = list(re.finditer(r"(?m)^  ([a-zA-Z0-9_-]+):\s*$", prefix))
                     job_name = job_match[-1].group(1) if job_match else ""
-                    self.assertEqual((path.name, job_name), ("watchdog-scheduler.yml", "enable-schedules"))
+                    self.assertIn(
+                        (path.name, job_name),
+                        {
+                            ("watchdog-scheduler.yml", "enable-schedules"),
+                            ("rblxvalue-connection-test.yml", "connection-test"),
+                        },
+                    )
 
     def test_dashboard_skips_deploy_when_pages_is_not_enabled(self):
         workflow = (ROOT / ".github/workflows/dashboard-pages.yml").read_text(encoding="utf-8")
