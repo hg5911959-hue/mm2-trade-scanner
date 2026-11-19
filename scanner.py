@@ -4121,9 +4121,10 @@ def scan_once(include_backlog_rechecks=True):
                 f"swap_chains={len(market_snapshot['chains'])}"
             )
             if dry_run:
-                for index, opportunity in enumerate(opportunities[:MAX_ALERTS_PER_RUN], 1):
+                dry_run_limit = max(1, min(100, int(os.environ.get("MAX_ALERTS_PER_SCAN", "15"))))
+                for index, opportunity in enumerate(opportunities[:dry_run_limit], 1):
                     print(
-                        f"[dry-run-market] opportunity_index={index} "
+                        f"[dry-run-market] opportunity_id=scan-local-{index:03d} "
                         f"type={opportunity.get('type')} "
                         f"profit_usd={float(opportunity.get('profit_usd', 0)):.2f} "
                         f"profit_percent={float(opportunity.get('profit_percent', 0)):.2f}"
