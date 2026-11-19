@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from test_support import IsolatedDataTestCase
 from pathlib import Path
 
 from market_book import (
@@ -24,7 +25,7 @@ def offer(side, item, price, quantity, author, message_id):
     }
 
 
-class MarketBookTests(unittest.TestCase):
+class MarketBookTests(IsolatedDataTestCase):
     def test_order_book_and_direct_arbitrage_respect_quantity_fees_and_margin(self):
         offers = [
             offer("sell", "Candy", 5.0, 3, "seller-a", "s1"),
