@@ -109,6 +109,11 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("Restore shared API safety ledger", workflow)
         self.assertIn("Persist shared API safety ledger", workflow)
         self.assertIn("git push origin HEAD:state", workflow)
+        self.assertIn("class RejectRblxValueRedirects", workflow)
+        self.assertIn("urllib.request.build_opener(RejectRblxValueRedirects())", workflow)
+        self.assertIn("with opener.open(request, timeout=20)", workflow)
+        self.assertIn("git add data/rblxvalue_request_budget.json", workflow)
+        self.assertIn("git rm -f --ignore-unmatch data/api_key_blocked.json", workflow)
 
     def test_manual_scan_dispatch_defaults_to_dry_run(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
