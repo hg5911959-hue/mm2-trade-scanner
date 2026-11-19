@@ -3390,7 +3390,7 @@ class WorkflowSecurityTests(IsolatedDataTestCase):
         self.assertIn('cron: "*/10 * * * *"', scheduler)
         self.assertIn("uses: ./.github/workflows/scan.yml", scheduler)
         self.assertIn("cancel-in-progress: false", workflow)
-        self.assertIn('MM2_SCAN_DURATION_SECONDS: "540"', scan_job)
+        self.assertIn("MM2_SCAN_DURATION_SECONDS: ${{ inputs.discord_only && '0' || '540' }}", scan_job)
         self.assertIn("timeout-minutes: 20", scan_job)
         self.assertGreater(20 * 60, 540 + 5 * 60)
         self.assertNotIn("Test parser and value calculations", scan_job)
