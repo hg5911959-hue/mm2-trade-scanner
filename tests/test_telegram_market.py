@@ -144,6 +144,27 @@ class TelegramMarketTests(IsolatedDataTestCase):
         self.assertIn("أفضل بيع: $71.00", reply)
         self.assertIn("أفضل شراء: $63.00", reply)
 
+    def test_authorized_manual_discord_imports_are_normalized_and_not_rawly_persisted(self):
+        source = Path(self.temp.name) / "discord_messages.json"
+        source.write_text(json.dumps({"messages": [{
+            "message_id": "123456", "author": "discord-seller",
+            "url": "https://discord.com/channels/1/2/123456",
+            "created_at_utc": "2026-11-19T10:00:00+00:00",
+            "content": "Selling\\n1x Candy 2$/1",
+        }]}), encoding="utf-8")
+        with self._paths():
+            telegram_market._MANUAL_IMPORTS_INGESTED = False
+            first = telegram_market.ingest_manual_discord_imports(source)
+            second = telegram_market.ingest_manual_discord_imports(source)
+            stored = json.loads(self.offers.read_text(encoding="utf-8"))
+        self.assertEqual(first, (1, 0))
+        self.assertEqual(second, (0, 0))
+        self.assertEqual(len(stored["offers"]), 1)
+        self.assertEqual(stored["offers"][0]["message_id"], "discord:123456")
+        self.assertEqual(stored["offers"][0]["side"], "sell")
+        self.assertNotIn("Selling", self.offers.read_text(encoding="utf-8"))
+        self.assertNotIn("source_text", stored["offers"][0])
+
     def test_market_alerts_deduplicate_until_profit_changes_over_threshold(self):
         sent = []
         snapshot = {
