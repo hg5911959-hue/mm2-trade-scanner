@@ -33,6 +33,7 @@ PRIVATE_FILENAMES = frozenset({
     "telegram_last_run.json",
     "market_book_history.json",
     "market_alert_state.json",
+    "discord_alert_state.json",
 })
 
 
