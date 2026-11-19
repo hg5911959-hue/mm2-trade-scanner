@@ -575,7 +575,7 @@ def _discord_link_and_body(text: str) -> tuple[str, str]:
 
 
 def _discord_posted_at_from_link(link: str) -> str:
-    match = re.search(r"/channels/\\d+/\\d+/(\\d+)", link)
+    match = re.search(r"/channels/\d+/\d+/(\d+)", link)
     if not match:
         return ""
     try:
