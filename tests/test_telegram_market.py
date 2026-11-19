@@ -109,6 +109,27 @@ class TelegramMarketTests(IsolatedDataTestCase):
         self.assertIn("تم تحليل 2 عرضاً", sent[-1])
         self.assertFalse(self.history.exists())
 
+    def test_repeated_forward_of_same_discord_permalink_does_not_duplicate_liquidity(self):
+        sent = []
+        permalink = "https://discord.com/channels/1/2/1593540240998400000"
+        updates = []
+        for update_id, message_id in ((32, 80), (33, 81)):
+            updates.append({"update_id": update_id, "message": {
+                "message_id": message_id, "date": 1_800_000_000, "chat": {"id": 123},
+                "text": f"QUICK SELL\\n1x Candy 2$/1\\n2x Sweet 3$/1\\n{permalink}",
+            }})
+        with self._paths():
+            count = telegram_market.process_telegram_updates(
+                token="token", chat_id="123", market_enabled=True,
+                inventory_enabled=False, private_state_confirmed=True,
+                get_updates=lambda token, offset: updates,
+                send_message=lambda token, chat, text: sent.append(text),
+                now=1_800_000_000,
+            )
+            stored = json.loads(self.offers.read_text(encoding="utf-8"))
+        self.assertEqual(count, 2)
+        self.assertEqual(len(stored["offers"]), 2)
+
     def test_pasted_offer_without_discord_timestamp_is_rejected(self):
         sent = []
         updates = [{"update_id": 31, "message": {
