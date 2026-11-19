@@ -170,3 +170,7 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - Hardened state persistence when the optional `data/api_key_blocked.json` file is absent: the workflow now stages the budget file unconditionally and stages/removes the breaker file only when appropriate, avoiding a missing-path `git add` failure.
 - Added workflow-config regression assertions for redirect rejection and optional breaker-file persistence.
 - This is a preventive security/operational hardening change. Hosted verification is pending for commit `2ff0f9548d6e459a832ccd6caf0e55fad9512df7`; do not treat the prior 449-test run as verification of this new change.
+
+### Hosted verification — Phase 9
+- Current implementation head for this validation: `db1c1a41e13654573b78d2e71d6ccc9b85301932`.
+- CI must pass the full unittest suite twice, verify `data/` remains unchanged, and complete all configured Ruff checks before Phase 9 is marked complete.
