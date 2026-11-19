@@ -4176,6 +4176,11 @@ def scan_once(include_backlog_rechecks=True):
     discord_only = os.environ.get("DISCORD_ONLY", "").strip().casefold() == "true"
     if discord_only and not dry_run:
         raise RuntimeError("DISCORD_ONLY is permitted only with DRY_RUN=true.")
+    if discord_only and not (
+        cash_filter_enabled(os.environ.get("MARKET_BOOK_ENABLED", "false"))
+        and cash_filter_enabled(os.environ.get("PRIVATE_STATE_ENABLED", "false"))
+    ):
+        raise RuntimeError("DISCORD_ONLY requires encrypted private state and the market book parser.")
     if not dry_run and (not BOT_TOKEN or not CHAT_ID):
         raise RuntimeError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in GitHub Actions secrets.")
     update_metrics(increments={"scans": 1})
@@ -4242,6 +4247,13 @@ def scan_once(include_backlog_rechecks=True):
             print(f"[market-book] evaluation skipped safely: {type(market_error).__name__}")
     elif market_book_enabled:
         print("[market-book] disabled safely: PRIVATE_STATE_ENABLED must be true to protect owner data")
+
+    if discord_only:
+        write_step_summary(
+            "Discord-only cash-market dry-run completed; RBLXValue and BloxSwaps were not called, and no alerts were sent."
+        )
+        print("[health] Discord-only cash-market dry run complete; external value/feed sources were not requested.")
+        return
 
     print("[stage] Checking RBLXValue API credential")
     if not RBLXVALUE_API_KEY:
@@ -4330,33 +4342,18 @@ def scan_once(include_backlog_rechecks=True):
         if run_backlog_rechecks else []
     )
     scan_mode = (
-        "discord-only-dry-run" if discord_only
-        else "values-refresh-backlog" if values_snapshot_changed
+        "values-refresh-backlog" if values_snapshot_changed
         else "cash-price-refresh-backlog" if cash_prices_changed
         else "backlog-recheck" if include_backlog_rechecks
         else "fast-new-feed"
     )
     print(f"[scan-mode] {scan_mode}; backlog_recheck_cap={MAX_PENDING_RECHECK_PER_SCAN}; page_lookahead={MAX_BACKLOG_RECHECK_PAGES}")
-    if discord_only:
-        listings, discovered_ids = [], []
-        stats = {
-            "cold_start": False, "unparsed_ad_ids": [], "addition_ids": [],
-            "watch_remaining_ids": [], "watch_search_complete": False,
-            "pending_remaining_ids": [], "backlog_page_limit_reached": False,
-            "candidate_count": 0, "addition_count": 0, "seen_boundary_reached": False,
-            "owner_link_count": 0, "pagination_pages": 0, "pagination_api_posts": 0,
-            "pagination_complete": True, "malformed_count": 0,
-            "html_malformed_count": 0, "html_parse_warning_count": 0,
-            "html_parse_warning_ids": [], "malformed_samples": [],
-        }
-        print("[bloxswaps] skipped: isolated Discord-only dry run")
-    else:
-        listings, stats, discovered_ids = fetch_bloxswaps_all(
-            seen_ads, due_pending_ids.keys(), bloxswaps_watch_ids
-        )
-        pending_schedule = record_pending_recheck_attempts(
-            due_pending_ids, pending_ids, pending_schedule
-        )
+    listings, stats, discovered_ids = fetch_bloxswaps_all(
+        seen_ads, due_pending_ids.keys(), bloxswaps_watch_ids
+    )
+    pending_schedule = record_pending_recheck_attempts(
+        due_pending_ids, pending_ids, pending_schedule
+    )
     # The collector writes a bounded local JSON file; parse it into the same
     # normalized schema, but keep its IDs namespaced away from BloxSwaps cursors.
     from discord_parser import load_discord_listings
@@ -4476,7 +4473,7 @@ def scan_once(include_backlog_rechecks=True):
             f"[pending] Backlog page lookahead capped at {MAX_BACKLOG_RECHECK_PAGES}; "
             "unresolved IDs remain queued without blocking the new-feed boundary."
         )
-    if not discord_only and not listings:
+    if not listings:
         update_metrics(increments={"parse_empty": 1})
         html_issue_count = max(
             int(stats.get("html_malformed_count", 0)),
@@ -4541,7 +4538,7 @@ def scan_once(include_backlog_rechecks=True):
                 f"({ratio:.1%}). Samples: {samples[:700]}",
                 cooldown_seconds=3600,
             )
-    if not discord_only and not stats.get("pagination_complete", False):
+    if not stats.get("pagination_complete", False):
         print("[maintenance] Feed pagination is incomplete; more recent posts may remain beyond the scan limit.")
         send_maintenance_alert(
             "pagination-incomplete",
@@ -4960,10 +4957,7 @@ def scan_once(include_backlog_rechecks=True):
     )
     print(f"[summary] {summary}")
     write_step_summary(summary)
-    if discord_only:
-        print("[health] Discord-only dry run; BloxSwaps success checkpoint was left unchanged.")
-    else:
-        record_success_if_complete(stats)
+    record_success_if_complete(stats)
     if CASH_FILTER:
         save_cash_catalog_snapshot(cash_catalog["sha256"])
 
