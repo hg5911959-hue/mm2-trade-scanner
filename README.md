@@ -34,11 +34,16 @@ Core modules:
 - `market_book.py` — 48-hour order book, recency-weighted medians, direct
   arbitrage after fees/margin, conservative 1:1 and N:1 swap chains, inventory
   verdicts, and rolling 14-day compact price history.
-- `telegram_market.py` — owner-chat-only `getUpdates` interface:
+- `telegram_market.py` — owner-private-chat-only `getUpdates` interface:
   `/p`, `/buy`, `/chains`, `/sell`, `/inv`, `/add`, `/remove`,
   `/status`, and `/help`; threshold-qualified alerts are deduplicated and
   repeated only when net profit changes by more than
   `MARKET_ALERT_PROFIT_DELTA_USD`.
+
+Telegram authorization accepts only a private one-to-one chat where both
+`chat.id` and `from.id` match `TELEGRAM_CHAT_ID`. Group/supergroup messages
+and messages from any other sender are ignored, even if a group ID is
+mistakenly configured. The bot is not intended for shared group use.
 - `private_state.py` — authenticated encryption for private offers, inventory,
   Telegram offsets, private alert-dedup state, and private price history before state artifacts or the
   public state branch are written.
