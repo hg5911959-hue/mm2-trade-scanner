@@ -68,7 +68,7 @@ class NoDataPollutionTests(IsolatedDataTestCase):
             "pending_remaining_ids": [],
         }
         with (
-            patch.dict(os.environ, {"DRY_RUN": "true"}),
+            patch.dict(os.environ, {"DRY_RUN": "true", "PRIVATE_STATE_ENABLED": "false"}),
             patch.object(scanner, "CASH_FILTER", False),
             patch.object(scanner, "update_metrics"),
             patch.object(scanner, "load_supreme_values", return_value={}),
@@ -86,7 +86,7 @@ class NoDataPollutionTests(IsolatedDataTestCase):
             patch.object(scanner, "record_success_if_complete"),
             patch.object(scanner, "save_cash_catalog_snapshot", side_effect=AssertionError("cash snapshot must not be written")),
             patch.object(scanner, "save_first_seen_ads"),
-            patch.object(discord_parser, "load_discord_listings", return_value=([], 0)),
+            patch.object(discord_parser, "load_discord_listings", side_effect=AssertionError("private Discord offers must not be parsed without encrypted private state")),
             patch.object(market_history, "MarketHistory", return_value=FakeHistory()),
         ):
             scanner.scan_once(include_backlog_rechecks=False)
