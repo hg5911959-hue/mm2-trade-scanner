@@ -59,6 +59,19 @@ class CashOfferParserTests(IsolatedDataTestCase):
         result = parse_cash_post("Selling\nBarrel Axe 1/0.5", message_id="q")
         self.assertEqual(result["offers"][0]["flags"], ["no_currency_symbol"])
 
+    def test_non_finite_price_and_invalid_minimum_quantity_are_rejected(self):
+        huge_price = "9" * 400
+        result = parse_cash_post(
+            f"Selling\\n1x Candy {huge_price}$", author="seller", message_id="huge-price"
+        )
+        self.assertEqual(result["offers"], [])
+        self.assertEqual(result["rejected"][0]["reason"], "invalid_price_or_quantity")
+        minimum = parse_cash_post(
+            "Buying\\n2x Candy 2$/1 min 3", author="buyer", message_id="bad-min"
+        )
+        self.assertEqual(minimum["offers"], [])
+        self.assertEqual(minimum["rejected"][0]["reason"], "invalid_price_or_quantity")
+
     def test_unknown_and_ambiguous_names_fail_closed(self):
         result = parse_cash_post("Buying\nbuying c scyth 39$ each\nEvergun 5$", message_id="q")
         self.assertEqual(result["offers"], [])
