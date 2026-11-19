@@ -287,7 +287,11 @@ def _csv_dry_run_fallback(now: float) -> dict[str, dict[str, Any]]:
     from tools.cash_market import cash_price_is_fresh, load_cash_price_catalog
 
     current = datetime.fromtimestamp(now, UTC)
-    catalog = load_cash_price_catalog(max_age_days=14, now=current)
+    try:
+        catalog = load_cash_price_catalog(max_age_days=14, now=current)
+    except (OSError, ValueError, RuntimeError, TypeError):
+        # Missing optional CSV references must not disable live Discord cash offers.
+        return {}
     fallback: dict[str, dict[str, Any]] = {}
     for row in catalog["items"].values():
         status = row.get("status")
