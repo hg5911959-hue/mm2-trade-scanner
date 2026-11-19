@@ -89,6 +89,8 @@ def build_order_book(
     ):
         raise ValueError("invalid order-book age or outlier thresholds")
     max_age_seconds = max_age_hours * 3600
+    if not math.isfinite(max_age_seconds):
+        raise ValueError("order-book maximum age is too large")
     grouped: dict[str, list[dict[str, Any]]] = {}
     stale_rows: dict[str, dict[str, Any]] = {}
     stale_counts: dict[str, int] = {}
@@ -233,6 +235,9 @@ def find_swap_chains(
         or min_profit_pct < 0 or max_value_age <= 0
     ):
         raise ValueError("invalid swap-chain thresholds")
+    max_value_age_seconds = max_value_age * 3600
+    if not math.isfinite(max_value_age_seconds):
+        raise ValueError("swap-chain maximum value age is too large")
     eligible = {}
     for key, item in game_values.items():
         if not isinstance(item, dict):
@@ -246,7 +251,7 @@ def find_swap_chains(
         stability = str(item.get("stability") or "").casefold()
         if (
             not math.isfinite(value) or value <= 0 or not math.isfinite(age)
-            or age < 0 or age > max_value_age * 3600
+            or age < 0 or age > max_value_age_seconds
             or confidence not in {"medium", "high"}
             or stability in BLOCKED_STABILITY
         ):
@@ -401,6 +406,8 @@ def save_private_price_history(
     """Atomically save a compact rolling history; caller must keep path private."""
     current = datetime.now(UTC).timestamp() if now is None else float(now)
     target = Path(path)
+    if not math.isfinite(current) or current <= 0:
+        raise ValueError("history timestamp must be finite and positive")
     if retention_days < 1:
         raise ValueError("retention_days must be positive")
     existing = {"schema_version": 1, "snapshots": []}
