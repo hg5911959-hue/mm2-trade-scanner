@@ -166,7 +166,8 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("default: true", dispatch)
         self.assertIn("default: true", scheduler)
         self.assertIn("dry_run: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run) || false }}", scheduler)
-        self.assertIn("verify_rblxvalue_key: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_rblxvalue_key || false }}", scheduler)
+        self.assertIn("contains(github.event.head_commit.message, '[rblxvalue-key-check]')", scheduler)
+        self.assertIn("verify_rblxvalue_key: ${{ (github.event_name == 'push' && contains(github.event.head_commit.message, '[rblxvalue-key-check]')) || (github.event_name == 'workflow_dispatch' && inputs.verify_rblxvalue_key) || false }}", scheduler)
 
     def test_api_safety_ledger_is_persisted_when_scan_fails_without_replacing_cache(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
