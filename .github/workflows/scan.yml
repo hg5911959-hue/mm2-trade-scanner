@@ -164,14 +164,17 @@ jobs:
           DISCORD_MANUAL_MESSAGES_JSON: ${{ secrets.DISCORD_MANUAL_MESSAGES_JSON }}
           DISCORD_MANUAL_MESSAGES_JSON_2: ${{ secrets.DISCORD_MANUAL_MESSAGES_JSON_2 }}
         run: |
-          if [ -z "$DISCORD_BOT_TOKEN" ]; then
-            echo "::error::Discord opt-in requires the DISCORD_BOT_TOKEN repository secret."
+          if [ -n "$DISCORD_BOT_TOKEN" ]; then
+            if ! python -u discord_collector.py --output data/discord_messages.json --limit 100 --retention-days 7; then
+              echo "::error::Discord channel collection was incomplete; refusing to process partial live messages."
+              rm -f data/discord_messages.json data/discord_messages.json.tmp
+              exit 1
+            fi
+          elif [ -z "$DISCORD_MANUAL_MESSAGES_JSON" ] && [ -z "$DISCORD_MANUAL_MESSAGES_JSON_2" ]; then
+            echo "::error::Discord opt-in requires DISCORD_BOT_TOKEN or at least one authorized manual-import secret."
             exit 1
-          fi
-          if ! python -u discord_collector.py --output data/discord_messages.json --limit 100 --retention-days 7; then
-            echo "::error::Discord channel collection was incomplete; refusing to process partial live messages."
-            rm -f data/discord_messages.json data/discord_messages.json.tmp
-            exit 1
+          else
+            echo "::notice::No Discord bot token configured; processing only owner-supplied manual imports."
           fi
           # message contents are not logged or persisted to public state
           python tools/merge_discord_imports.py
