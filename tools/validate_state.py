@@ -48,6 +48,29 @@ def _finite_positive(value: Any) -> bool:
         return False
 
 
+def _validate_request_workflow_accounting(budget: dict[str, Any]) -> list[str]:
+    workflows = budget.get("request_workflows")
+    counts = budget.get("request_counts_by_workflow")
+    if workflows is None and counts is None:
+        return []
+    timestamps = budget.get("request_timestamps_epoch")
+    if (
+        not isinstance(workflows, list) or not isinstance(timestamps, list)
+        or len(workflows) != len(timestamps)
+        or any(
+            not isinstance(name, str) or not name or len(name) > 100
+            or any(ord(char) < 32 for char in name)
+            for name in workflows
+        )
+        or not isinstance(counts, dict)
+    ):
+        return ["RBLXValue per-workflow request accounting is invalid"]
+    expected = {name: workflows.count(name) for name in sorted(set(workflows))}
+    if counts != expected or any(type(value) is not int or value < 1 for value in counts.values()):
+        return ["RBLXValue per-workflow request counts do not match request timestamps"]
+    return []
+
+
 def _validate_api_key_block_document(block: Any) -> list[str]:
     errors: list[str] = []
     if not isinstance(block, dict):
@@ -228,6 +251,7 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
         limit = budget.get("limit")
         if type(limit) is not int or not 1 <= limit <= 60:
             errors.append("RBLXValue request budget limit is invalid")
+        errors.extend(_validate_request_workflow_accounting(budget))
 
     health = documents.get("rblxvalue_key_health.json")
     health_path = root / "rblxvalue_key_health.json"
@@ -319,6 +343,7 @@ def validate_api_safety_state(directory: str | Path) -> list[str]:
                 or any(not _finite_positive(value) for value in timestamps)
             ):
                 errors.append("RBLXValue request budget timestamps are invalid")
+            errors.extend(_validate_request_workflow_accounting(budget))
 
     block_path = root / "api_key_blocked.json"
     if block_path.exists():
