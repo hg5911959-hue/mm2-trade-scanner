@@ -4129,10 +4129,19 @@ def scan_once(include_backlog_rechecks=True):
                         f"profit_usd={float(opportunity.get('profit_usd', 0)):.2f} "
                         f"profit_percent={float(opportunity.get('profit_percent', 0)):.2f}"
                     )
-            elif market_snapshot["book"]:
-                save_private_price_history(
-                    telegram_market.HISTORY_FILE, market_snapshot["book"]
-                )
+            else:
+                if telegram_commands_enabled:
+                    alerts_sent = telegram_market.send_market_alerts(
+                        token=BOT_TOKEN, chat_id=CHAT_ID, snapshot=market_snapshot,
+                        max_alerts=int(os.environ.get("MAX_ALERTS_PER_SCAN", "15")),
+                        profit_delta_usd=float(os.environ.get("MARKET_ALERT_PROFIT_DELTA_USD", "0.50")),
+                    )
+                    if alerts_sent:
+                        print(f"[market-book] alerts_sent={alerts_sent}")
+                if market_snapshot["book"]:
+                    save_private_price_history(
+                        telegram_market.HISTORY_FILE, market_snapshot["book"]
+                    )
         except Exception as market_error:
             print(f"[market-book] evaluation skipped safely: {type(market_error).__name__}")
     elif market_book_enabled:
