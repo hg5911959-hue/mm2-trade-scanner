@@ -27,6 +27,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
         self.assertIn("secret-scan:", workflow)
         self.assertIn("fetch-depth: 0", workflow)
+        self.assertIn("GITLEAKS_LOG_OPTS: --all", workflow)
         self.assertIn("gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7", workflow)
     def test_ci_hashes_every_data_file_around_both_suite_runs(self):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
