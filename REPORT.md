@@ -203,9 +203,9 @@ Not yet scored at the end of Phase 2. See the evidence-based readiness assessmen
 
 ## Current overall status — 2026-11-19
 
-- Current implementation branch: `before-market-book`; head at this report update: `d1a4a0b69969207124404a7c49811fc9dae42714`. Implementation PR [#85](https://github.com/hg5911959-hue/mm2-trade-scanner/pull/85) remains open and unmerged.
-- Latest complete hosted validation: **461/461 tests passed twice** on Python 3.12; the `data/` tree hash was unchanged after both runs; all configured Ruff checks passed. Validation run [#1031](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44622668975) covers the same implementation code as the current branch; only report text is added afterward.
-- No known failing tests or Ruff findings remain in the validated code. This is not a guarantee of zero undiscovered defects or profitable trades.
+- Current implementation branch: `before-market-book`; latest validated head: `6aef6dc9bfe70fd3da9422fca96c3f26f2d634ea`. Implementation PR [#85](https://github.com/hg5911959-hue/mm2-trade-scanner/pull/85) remains open and unmerged.
+- Latest complete hosted validation: **472/472 tests passed twice** on Python 3.12; the `data/` tree hash was unchanged after both runs; targeted Ruff checks, scanner correctness lint, and repository-wide undefined/unused-name checks all passed. Validation run [#1079](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44628695461) validates the latest branch head.
+- This is strong code/test evidence for the implemented scope, not a guarantee of zero undiscovered defects, live data accuracy, or profitable trades.
 - The requested safety branch exists. The requested Git tag `before-market-book` is still **not created** because the available GitHub integration has no tag-object/ref creation operation.
 - All runtime feature flags remain OFF by default: `MARKET_BOOK_ENABLED`, `TELEGRAM_COMMANDS_ENABLED`, `INVENTORY_ENABLED`, and `PRIVATE_STATE_ENABLED`. No live Telegram messages, trades, or market alerts were sent by this work.
 
@@ -214,39 +214,51 @@ Not yet scored at the end of Phase 2. See the evidence-based readiness assessmen
 2. **Celestial Set source identity:** the owner supplied the listing and exact Discord permalink. Its snowflake timestamp is `2026-11-19T20:45:07.119Z`; the anonymous browser was redirected to Discord login, so the author could not be independently read. The owner-supplied listing remains outside private live state until it is ingested through the authorized bot/import route with its owner-supplied author identity (`fragelsil`); this identity remains unverified by Discord. For a plain-text Telegram paste, use an `Author: exact-discord-username` line; it is explicitly flagged `owner_supplied_author` because the bot cannot independently verify it.
 3. **Live integration verification:** Telegram/Discord credentials and bot permissions were not exposed to this workflow and were not tested. The user-owned secrets must already be configured correctly before enabling the flags. No secrets should be pasted into chat.
 4. **Telegram responsiveness:** the bot polls at scan start and each 30-second tick while a GitHub Actions scan job is active. It is not an always-on hosted process; commands sent outside an active job wait until the next run. The prompt's bounded GitHub Actions architecture does not guarantee continuous 30-second responsiveness between jobs.
-5. **Appendix $71 ask:** `/p celestial set` is now tested end-to-end with the appendix's synthetic $71 ask / $63 bid fixture. The actual owner-supplied listing is $72; the synthetic fixture is not represented as live market evidence.
+5. **Appendix $71 ask:** `/p celestial set` is tested end-to-end with the appendix's synthetic $71 ask / $63 bid fixture. The actual owner-supplied listing is $72; the synthetic fixture is not represented as live market evidence.
+6. **Private-state key rotation:** encrypted private state derives its keys from the existing Telegram bot token to avoid introducing a new secret. Rotating that token without first decrypting/re-encrypting the private-state bundle will make the old bundle unreadable; the workflow now verifies its authentication before publishing it.
 
 ### Readiness assessment
-- Code and test readiness for the implemented, feature-flagged scope: **strong; 461 tests twice and Ruff clean**.
-- Live operational readiness: **not yet verified** because of the suspended RBLXValue key, unverified Telegram/Discord credentials, missing tag operation, and source-author metadata still needed for the supplied Celestial listing.
+- Code and test readiness for the implemented, feature-flagged scope: **472 tests twice and all configured Ruff checks clean** on the latest head.
+- Live operational readiness: **not yet verified** because of the suspended RBLXValue key, unverified Telegram/Discord credentials and permissions, missing tag operation, source-author metadata, and bounded GitHub Actions polling model.
 - The project is therefore **not honestly certifiable as 10/10 or 100% operational yet**. No automatic trading is enabled; the system remains advisory and profit is not guaranteed.
 
 
-### Phase 14 — Weekly report formatting regression (2026-11-19)
-- Audit of `tools/weekly_report.py` found that optional blocker and preflight sections used double-escaped newline sequences, causing literal backslash-n text to appear in the generated Telegram report instead of blank-line separators.
-- Replaced the double-escaped sequences with real Python newline escapes.
-- Added `tests/test_weekly_report.py` covering blocker/preflight line separation and the default PASS line, including an assertion that literal escaped newline text is absent.
-- Changes are committed on `before-market-book` (source commit `87e12e6f3761edccb6f0875aa366e10d243084f4`; test commit `15e847af1f4ba4371d874e4feb6c5eb4b2fc1888`).
-- Hosted CI status: **pending / not yet observed**. The available workflow-run lookup returned no run for the latest commit at the time of this report update. Do not count this phase as validated until the PR Actions run confirms both full-suite passes and Ruff.
+### Phase 14 — Weekly report formatting regression
+- Corrected double-escaped newline sequences in `tools/weekly_report.py` so blocker and preflight sections render on separate lines.
+- Added regression tests for optional blocker/preflight formatting and the default PASS line.
+- Source commit: `87e12e6f3761edccb6f0875aa366e10d243084f4`; tests: `15e847af1f4ba4371d874e4feb6c5eb4b2fc1888`.
+- Validated by latest hosted run [#1079](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44628695461): 472 tests passed twice and all configured Ruff checks passed.
 
+### Phase 15 — Telegram redirect protection in market commands
+- Replaced default redirect-following behavior in `telegram_market.py` with a redirect-rejecting opener for both `getUpdates` and `sendMessage`, preventing bot-token-bearing requests from being forwarded to a redirect target.
+- Added regression coverage for redirect rejection.
+- Source commit: `fbfc1afb090698a277b06b2306153cbf0c98cb8a`; test commit: `9fa2fc3e33d48daa5071fb527f5c98dad1246386`.
+- Validated as part of the latest full hosted run [#1079](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44628695461).
 
-### Phase 15 — Telegram API redirect protection (2026-11-19)
-- Security review found that telegram_market._request_json used the default urllib.request.urlopen, which follows HTTP redirects. Since the Telegram bot token is embedded in the API URL path, a redirect could risk forwarding credential-bearing requests.
-- Added a dedicated HTTPRedirectHandler that refuses redirects and routed all Telegram API requests through the protected opener.
-- Added a regression test asserting a 302 redirect target is not followed.
-- Source commit: fbfc1afb090698a277b06b2306153cbf0c98cb8a; test commit: 9fa2fc3e33d48daa5071fb527f5c98dad1246386.
-- Hosted CI status: PENDING / not yet observed. This security fix is not considered validated until the full PR workflow and Ruff checks pass.
+### Phase 16 — Preflight Telegram redirect protection
+- Hardened the maintenance/preflight notification route so it refuses redirects rather than using urllib's default redirect-following opener.
+- Added a regression test proving the redirect target is refused.
+- Source commit: `62e3fe7e14623671d31a5dc5fa3e2c018d4761fa`; test commit: `91f20e073483f426760e87e555de0d42d1a45081`.
+- Validated as part of the latest full hosted run [#1079](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44628695461).
 
+### Phase 17 — Retry-safe daily preflight notices
+- Fixed a reliability defect where the daily suppression timestamp was written before attempting delivery, which could suppress all retries after a transient network failure.
+- The timestamp is now stored only after Telegram returns HTTP 200; failed network requests remain retryable.
+- Source commit: `50b4966f678209c0ec42a33d64ee842d8667bc7d`; tests commit: `3d31b64cbe2720b290523318a0ba620c29921173`.
+- Follow-up tests also verify Telegram's JSON `ok: true` response; an HTTP 200 response containing `ok: false` is not recorded as delivered. This was added in source commit `de409977886b836c880997cc06e1d8a05b0bd891`, with tests `dbcbbdbfa2dc34a064b606aa837deda2d4b4003b`.
+- Validated by run [#1079](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44628695461).
 
-### Phase 16 — Preflight Telegram redirect protection (2026-11-19)
-- A repository-wide audit found a second Telegram send path in tools/preflight.py that still used urllib.request.urlopen with default redirect following.
-- Added a dedicated redirect-rejecting opener for maintenance/preflight notices and a regression test proving 302 targets are refused.
-- Source commit: 62e3fe7e14623671d31a5dc5fa3e2c018d4761fa; test commit: 91f20e073483f426760e87e555de0d42d1a45081.
-- Hosted CI status: pending; the redirect-protection changes are not considered validated until the full suite and Ruff pass.
+### Phase 18 — Authenticate private state before durable persistence
+- The state-persistence job previously checked only the encrypted bundle's magic header and minimum length when persisting encrypted private state after a failed scan.
+- Added a verification step that decrypts/authenticates the bundle into a temporary runner directory before it can be published to the durable `state` branch. Temporary plaintext is removed by a shell trap; a bad key, modified ciphertext, or invalid HMAC blocks publication.
+- Normal successful state persistence is also guarded by this verification when an encrypted bundle is present.
+- Workflow commit: `aff56fd9595de153eb35120c353dbb3a0a38b95e`; workflow regression assertions: `61fe9def16aa18f3f93fd579929608fa7c0dc5ab`.
+- Validated by run [#1079](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44628695461).
 
-### Phase 17 — Reliable retry of failed daily preflight notices (2026-11-19)
-- A reliability audit found that `send_daily_notice` persisted the daily suppression timestamp before attempting Telegram delivery. A transient network failure or rejected request could therefore suppress all further notice attempts for the rest of the day.
-- Changed the order: the daily timestamp is now persisted only after Telegram returns HTTP 200. Failed requests remain retryable on the next scan. Redirect rejection remains enabled.
-- Added regression tests for both successful delivery (timestamp persisted and duplicate same-day send suppressed) and failed delivery (no timestamp persisted).
-- The latest CI run before this phase exposed a separate test-isolation issue: `WeeklyReportFormattingTests` inherited directly from `unittest.TestCase`, violating the repository's `IsolatedDataTestCase` invariant. Corrected the inheritance and configured the regression workflow to run on pushes to `before-market-book` as well as `main`.
-- Source commit: `50b4966f678209c0ec42a33d64ee842d8667bc7d`; regression-test commit: `3d31b64cbe2720b290523318a0ba620c29921173`. CI for these newest changes is pending and must pass twice plus Ruff before this phase is considered validated.
+### Phase 19 — Complete Telegram redirect-path audit
+- A repository-wide call-path review found two additional token-bearing Telegram paths that were still using default redirect behavior: the main scanner alert sender and weekly report sender. Both now use redirect-rejecting openers.
+- The weekly report now also requires Telegram's JSON `ok: true` response rather than treating HTTP 200 alone as proof of delivery.
+- The manual Telegram connection-test workflow now refuses redirects as well. Together with the earlier market-command and preflight fixes, every identified Telegram send/getUpdates route now rejects redirects.
+- Added transport regression tests and updated existing tests to patch the new redirect-safe opener.
+- Relevant commits: Telegram test workflow `267e40775662670cdae2ac397dfbc9128e6dce8d`; scanner sender `30e219dbb212a8d148ee7106274c06fb201c032f`; weekly report sender `30a5a975e021bb9be5193de010aecd708391df00`; transport tests `c20b0d9943f55c4c7bb4e230ef884bd81b00d563`; test-mock follow-ups `29ff1b8f218fe2f720dd0defe9abcb5867bd58c9`, `929c018d41431455e4457dd096bde12bee4cabc6`, `f6323600c7f71c877b2cb5cfa4e136a206643d91`, `59a392b743c961818faf9b606ff5fd9bcb0e96ec`, and `6aef6dc9bfe70fd3da9422fca96c3f26f2d634ea`.
+- Latest hosted verification [#1079](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44628695461): **472 tests passed twice**, data-tree immutability passed, targeted Ruff checks passed, scanner correctness lint passed, and repository-wide undefined/unused-name lint passed.
