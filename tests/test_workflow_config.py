@@ -68,6 +68,17 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertNotIn("enable-schedules:", scheduler)
 
 
+    def test_rblxvalue_connection_check_is_manual_and_uses_shared_budget(self):
+        workflow = (ROOT / ".github/workflows/rblxvalue-connection-test.yml").read_text(encoding="utf-8")
+        self.assertIn("  workflow_dispatch:", workflow)
+        self.assertNotIn("  schedule:", workflow)
+        self.assertNotIn("  push:", workflow)
+        self.assertIn("group: mm2-trade-scanner", workflow)
+        self.assertIn("reserve_request(key=key", workflow)
+        self.assertIn("Restore shared API safety ledger", workflow)
+        self.assertIn("Persist shared API safety ledger", workflow)
+        self.assertIn("git push origin HEAD:state", workflow)
+
     def test_manual_scan_dispatch_defaults_to_dry_run(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         scheduler = (ROOT / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
