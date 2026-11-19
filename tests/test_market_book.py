@@ -65,11 +65,12 @@ class MarketBookTests(IsolatedDataTestCase):
         self.assertIn("stale_offer", book["candy"]["risk_flags"])
         self.assertEqual(book["candy"]["stale_offer_count"], 1)
 
-    def test_stale_offers_are_dropped_and_single_author_is_low_confidence(self):
+    def test_stale_offers_are_excluded_from_prices_and_single_author_is_low_confidence(self):
         stale = offer("sell", "Candy", 1, 1, "seller", "old")
         stale["posted_at"] = NOW - 49 * 3600
         book = build_order_book([stale], now=NOW)
-        self.assertEqual(book, {})
+        self.assertIsNone(book["candy"]["best_ask"])
+        self.assertIn("stale_offer", book["candy"]["risk_flags"])
         fresh = offer("sell", "Candy", 1, 1, "seller", "fresh")
         row = build_order_book([fresh], now=NOW)["candy"]
         self.assertEqual(row["confidence"], "low")
