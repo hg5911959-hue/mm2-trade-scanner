@@ -234,6 +234,29 @@ class TelegramMarketTests(IsolatedDataTestCase):
         self.assertNotIn("Selling", self.offers.read_text(encoding="utf-8"))
         self.assertNotIn("source_text", stored["offers"][0])
 
+    def test_inventory_add_and_remove_are_idempotent_for_replayed_update_ids(self):
+        snapshot = {"book": {}, "previous": {}, "chains": [], "game_values": {}}
+        with self._paths():
+            first_add = telegram_market._command_reply(
+                "/add Candy 2", snapshot, inventory_enabled=True, update_id=55
+            )
+            replay_add = telegram_market._command_reply(
+                "/add Candy 2", snapshot, inventory_enabled=True, update_id=55
+            )
+            first_remove = telegram_market._command_reply(
+                "/remove Candy 1", snapshot, inventory_enabled=True, update_id=56
+            )
+            replay_remove = telegram_market._command_reply(
+                "/remove Candy 1", snapshot, inventory_enabled=True, update_id=56
+            )
+            stored = json.loads(self.inventory.read_text(encoding="utf-8"))
+        self.assertIn("×2", first_add)
+        self.assertIn("مسبقاً", replay_add)
+        self.assertIn("مسبقاً", replay_remove)
+        self.assertIn("تم تحديث مخزون", first_remove)
+        self.assertEqual(stored["items"]["candy"]["quantity"], 1)
+        self.assertEqual(stored["processed_update_ids"], [55, 56])
+
     def test_market_alerts_deduplicate_until_profit_changes_over_threshold(self):
         sent = []
         snapshot = {
