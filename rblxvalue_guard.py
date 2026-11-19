@@ -248,7 +248,7 @@ def mark_block_alert_sent(*, now: float | None = None, key: str | None = None,
 
 def reserve_request(*, now: float | None = None, key: str | None = None,
                     budget_path: Path | None = None, block_path: Path | None = None,
-                    limit: int | None = None) -> int:
+                    limit: int | None = None, workflow: str | None = None) -> int:
     """Persist one attempted HTTP request before network I/O; retries count too."""
     global REQUESTS_THIS_RUN
     current = time.time() if now is None else float(now)
@@ -262,12 +262,21 @@ def reserve_request(*, now: float | None = None, key: str | None = None,
     state = _read_json(path)
     cutoff = current - 86400
     raw_timestamps = state.get("request_timestamps_epoch", [])
-    if not isinstance(raw_timestamps, list):
+    raw_workflows = state.get("request_workflows", [])
+    if not isinstance(raw_timestamps, list) or (
+        raw_workflows and (not isinstance(raw_workflows, list) or len(raw_workflows) != len(raw_timestamps))
+    ):
         raise RblxValueGuardError(
-            "[rblxvalue-state] request budget timestamps are not a list; refusing API request"
+            "[rblxvalue-state] request budget timestamps/workflows are invalid; refusing API request"
         )
+    if not raw_workflows:
+        raw_workflows = ["legacy/unknown"] * len(raw_timestamps)
+    current_workflow = str(workflow or os.environ.get("GITHUB_WORKFLOW") or "local").strip()
+    if not current_workflow or len(current_workflow) > 100 or any(ord(char) < 32 for char in current_workflow):
+        raise RblxValueGuardError("[rblxvalue-state] workflow identifier is invalid; refusing API request")
     timestamps = []
-    for value in raw_timestamps:
+    workflows = []
+    for value, workflow_name in zip(raw_timestamps, raw_workflows):
         if isinstance(value, bool):
             raise RblxValueGuardError(
                 "[rblxvalue-state] request budget contains a boolean timestamp; refusing API request"
@@ -285,7 +294,12 @@ def reserve_request(*, now: float | None = None, key: str | None = None,
         # Keep future timestamps too: a clock-skewed ledger must consume budget,
         # not silently grant extra requests until wall-clock time catches up.
         if stamp > cutoff:
+            if not isinstance(workflow_name, str) or not workflow_name or len(workflow_name) > 100:
+                raise RblxValueGuardError(
+                    "[rblxvalue-state] request budget workflow identifier is invalid; refusing API request"
+                )
             timestamps.append(stamp)
+            workflows.append(workflow_name)
     if limit is None:
         cap = DAILY_REQUEST_LIMIT
     else:
@@ -300,17 +314,26 @@ def reserve_request(*, now: float | None = None, key: str | None = None,
             "window": "rolling_24_hours",
             "limit": cap,
             "request_timestamps_epoch": timestamps,
+            "request_workflows": workflows,
+            "request_counts_by_workflow": {
+                name: workflows.count(name) for name in sorted(set(workflows))
+            },
             "updated_at_utc": _now_iso(current),
         })
         raise RblxValueBudgetExceeded(
             f"[rblxvalue-budget-exhausted] rolling 24-hour request budget reached ({len(timestamps)}/{cap}); refusing API call"
         )
     timestamps.append(current)
+    workflows.append(current_workflow)
     _atomic_json(path, {
         "schema_version": 1,
         "window": "rolling_24_hours",
         "limit": cap,
         "request_timestamps_epoch": timestamps,
+        "request_workflows": workflows,
+        "request_counts_by_workflow": {
+            name: workflows.count(name) for name in sorted(set(workflows))
+        },
         "updated_at_utc": _now_iso(current),
     })
     REQUESTS_THIS_RUN += 1
