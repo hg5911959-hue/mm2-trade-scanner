@@ -337,8 +337,17 @@ def _load_market(now: float | None = None) -> dict[str, Any]:
     cache_age = None
     if isinstance(cache_document, dict):
         try:
-            cache_age = max(0.0, current - float(cache_document.get("fetched_at", 0)))
-        except (TypeError, ValueError):
+            fetched_raw = cache_document.get("fetched_at")
+            if isinstance(fetched_raw, bool):
+                raise ValueError("boolean cache timestamp")
+            fetched_at = float(fetched_raw)
+            if (
+                not math.isfinite(current) or not math.isfinite(fetched_at)
+                or current <= 0 or fetched_at <= 0 or fetched_at > current
+            ):
+                raise ValueError("invalid or future cache timestamp")
+            cache_age = current - fetched_at
+        except (TypeError, ValueError, OverflowError):
             cache_age = None
     game_values: dict[str, dict[str, Any]] = {}
     if (
