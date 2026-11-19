@@ -140,6 +140,59 @@ class TelegramMarketTests(IsolatedDataTestCase):
         self.assertIn("أفضل بيع: $71.00", reply)
         self.assertIn("أفضل شراء: $63.00", reply)
 
+    def test_market_alerts_deduplicate_until_profit_changes_over_threshold(self):
+        sent = []
+        snapshot = {
+            "direct": [{
+                "type": "direct_arbitrage", "item_key": "candy", "item": "Candy",
+                "buy": {"message_id": "private-buy-id", "unit_price_usd": 2, "url": "https://example.com/buy"},
+                "sell": {"message_id": "private-sell-id", "unit_price_usd": 4, "url": "https://example.com/sell"},
+                "quantity": 2, "profit_usd": 2.0, "profit_percent": 30.0,
+            }],
+            "chains": [],
+        }
+        with patch("telegram_market.MARKET_ALERTS_FILE", self.history):
+            first = telegram_market.send_market_alerts(
+                token="token", chat_id="123", snapshot=snapshot,
+                send_message=lambda token, chat, text: sent.append(text), now=NOW,
+            )
+            second = telegram_market.send_market_alerts(
+                token="token", chat_id="123", snapshot=snapshot,
+                send_message=lambda token, chat, text: sent.append(text), now=NOW + 60,
+            )
+            snapshot["direct"][0]["profit_usd"] = 2.6
+            third = telegram_market.send_market_alerts(
+                token="token", chat_id="123", snapshot=snapshot,
+                send_message=lambda token, chat, text: sent.append(text), now=NOW + 120,
+            )
+        self.assertEqual((first, second, third), (1, 0, 1))
+        self.assertEqual(len(sent), 2)
+        state = json.loads(self.history.read_text(encoding="utf-8"))
+        self.assertNotIn("private-buy-id", self.history.read_text(encoding="utf-8"))
+        self.assertEqual(len(state["opportunities"]), 1)
+
+    def test_market_alert_limit_and_empty_credentials_fail_closed(self):
+        sent = []
+        rows = []
+        for index in range(3):
+            rows.append({
+                "type": "direct_arbitrage", "item_key": f"item-{index}", "item": f"Item {index}",
+                "buy": {"message_id": f"buy-{index}", "unit_price_usd": 1},
+                "sell": {"message_id": f"sell-{index}", "unit_price_usd": 3},
+                "quantity": 1, "profit_usd": 1 + index, "profit_percent": 50,
+            })
+        snapshot = {"direct": rows, "chains": []}
+        with patch("telegram_market.MARKET_ALERTS_FILE", self.history):
+            self.assertEqual(telegram_market.send_market_alerts(
+                token="", chat_id="123", snapshot=snapshot,
+                send_message=lambda *args: sent.append(args), now=NOW,
+            ), 0)
+            self.assertEqual(telegram_market.send_market_alerts(
+                token="token", chat_id="123", snapshot=snapshot, max_alerts=1,
+                send_message=lambda token, chat, text: sent.append(text), now=NOW,
+            ), 1)
+        self.assertEqual(len(sent), 1)
+
     def test_inventory_commands_are_disabled_by_default(self):
         snapshot = {"book": {}, "direct": [], "chains": [], "game_values": {},
                     "cache_age": None, "previous": {}, "offers_count": 0}
