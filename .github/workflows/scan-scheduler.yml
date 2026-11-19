@@ -2,6 +2,7 @@ name: MM2 Scanner Scheduler
 
 on:
   # Candidate-only smoke run; never sends alerts on feature-branch pushes.
+  # A single push whose commit title contains [rblxvalue-key-check] performs one bounded key check.
   push:
     branches: [before-market-book]
   schedule:
