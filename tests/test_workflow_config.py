@@ -31,11 +31,10 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("go install github.com/zricethezav/gitleaks/v8@v8.24.3", workflow)
         self.assertIn('gitleaks" git --redact --verbose --no-banner --exit-code 1 --log-opts="--all"', workflow)
         self.assertIn("repo: https://github.com/gitleaks/gitleaks", (ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
-    def test_gitleaks_allowlist_is_limited_to_known_synthetic_test_fingerprints(self):
-        config = (ROOT / ".gitleaks.toml").read_text(encoding="utf-8")
-        self.assertIn("Synthetic test-only credential-shaped placeholders", config)
-        self.assertEqual(config.count("769fe46ceb5f184efa8bc222e5911683dcb24a89:tests/test_redaction.py"), 3)
-        self.assertNotIn("allowlist.regexes", config)
+    def test_gitleaks_ignore_is_limited_to_known_synthetic_test_fingerprints(self):
+        ignore = (ROOT / ".gitleaksignore").read_text(encoding="utf-8")
+        self.assertEqual(ignore.count("769fe46ceb5f184efa8bc222e5911683dcb24a89:tests/test_redaction.py"), 3)
+        self.assertNotIn("tests/", ignore.replace("769fe46ceb5f184efa8bc222e5911683dcb24a89:tests/test_redaction.py", ""))
 
     def test_ci_hashes_every_data_file_around_both_suite_runs(self):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
