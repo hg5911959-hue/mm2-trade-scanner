@@ -303,8 +303,8 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("[recover-rblx-cache:44635098506]", scheduler)
         self.assertIn("name: Recover validated RBLXValue cache", scheduler)
         self.assertIn("validate_state.py --directory state-artifact/data --rblxvalue-cache-only", scheduler)
-        self.assertIn("cp state-artifact/data/supreme_values.json data/supreme_values.json", scheduler)
-        self.assertIn("cp state-artifact/data/rblxvalue_meta.json data/rblxvalue_meta.json", scheduler)
+        self.assertIn('cp "$GITHUB_WORKSPACE/state-artifact/data/supreme_values.json" data/supreme_values.json', scheduler)
+        self.assertIn('cp "$GITHUB_WORKSPACE/state-artifact/data/rblxvalue_meta.json" data/rblxvalue_meta.json', scheduler)
         self.assertNotIn("cp state-artifact/data/rblxvalue_request_budget.json", scheduler)
 
 
