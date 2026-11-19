@@ -116,7 +116,7 @@ class TelegramMarketTests(IsolatedDataTestCase):
         for update_id, message_id in ((32, 80), (33, 81)):
             updates.append({"update_id": update_id, "message": {
                 "message_id": message_id, "date": 1_800_000_000, "chat": {"id": 123},
-                "text": f"QUICK SELL\\n1x Candy 2$/1\\n2x Sweet 3$/1\\n{permalink}",
+                "text": f"QUICK SELL\n1x Candy 2$/1\n2x Sweet 3$/1\n{permalink}",
             }})
         with self._paths():
             count = telegram_market.process_telegram_updates(
