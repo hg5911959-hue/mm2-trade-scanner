@@ -279,8 +279,11 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("if: env.PRIVATE_STATE_ENABLED == 'true'", workflow)
         self.assertIn('if [ "${#MM2_PRIVATE_STATE_KEY}" -lt 32 ]; then', workflow)
         self.assertIn("inputs.enable_discord", scheduler)
-        self.assertIn("discord_only:", workflow)
         self.assertIn("discord_only:", scheduler)
+        for trigger in ("  workflow_call:", "  workflow_dispatch:"):
+            trigger_inputs = workflow.split(trigger, 1)[1].split("\npermissions:", 1)[0]
+            self.assertIn("discord_only:", trigger_inputs)
+            self.assertIn("default: false", trigger_inputs)
         self.assertIn("contains(github.event.head_commit.message, '[discord-dry-run]')", scheduler)
         self.assertIn("DISCORD_ONLY: ${{ inputs.discord_only && 'true' || 'false' }}", workflow)
         self.assertIn("if discord_only and not dry_run", (ROOT / "scanner.py").read_text(encoding="utf-8"))
