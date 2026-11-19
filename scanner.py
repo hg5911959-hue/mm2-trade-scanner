@@ -4099,6 +4099,16 @@ def scan_once(include_backlog_rechecks=True):
     inventory_enabled = cash_filter_enabled(os.environ.get("INVENTORY_ENABLED", "false"))
     private_state_enabled = cash_filter_enabled(os.environ.get("PRIVATE_STATE_ENABLED", "false"))
     if market_book_enabled and private_state_enabled:
+        try:
+            import telegram_market
+            manual_added, manual_rejected = telegram_market.ingest_manual_discord_imports()
+            if manual_added or manual_rejected:
+                print(
+                    f"[market-book] authorized_manual_import_offers={manual_added} "
+                    f"rejected_lines={manual_rejected}"
+                )
+        except Exception as import_error:
+            print(f"[market-book] authorized import skipped safely: {type(import_error).__name__}")
         if telegram_commands_enabled and not dry_run:
             try:
                 from telegram_market import process_telegram_updates
