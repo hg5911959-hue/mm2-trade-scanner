@@ -48,8 +48,10 @@ are authenticated-encrypted into `data/private_state.enc` before public
 state persistence. The repository is public, so the state branch is not
 treated as private.
 
-The market engine calculates direct ask-to-bid arbitrage after fees and a
-safety margin, and 1:1 / N:1 buy→swap→sell chains only with fresh RBLXValue
+The legacy `data/cash_prices.csv` is permitted only as a labelled reference
+fallback during `DRY_RUN=true`; it never fabricates bid/ask offers or qualifies
+live signals. The market engine calculates direct ask-to-bid arbitrage after
+fees and a safety margin, and 1:1 / N:1 buy→swap→sell chains only with fresh RBLXValue
 data. RBLXValue is the only game-value source; no Supreme Values site data is
 copied or scraped. Stale game values disable swap chains while cash-only
 direct opportunities remain available. Inventory guidance is advisory.
