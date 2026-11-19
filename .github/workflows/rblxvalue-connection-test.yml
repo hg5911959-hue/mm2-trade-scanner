@@ -85,7 +85,7 @@ jobs:
               if exc.code == 403 and str(exc.headers.get("cf-mitigated", "")).casefold() == "challenge":
                   reason = "Cloudflare challenge"
               elif exc.code == 403:
-                  reason = "upstream access denied (check whether the repository secret contains the current active key)"
+                  reason = "key rejected or suspended; contact RBLXValue on its official Discord to reactivate the same key; do not create another account or key"
               elif exc.code == 401:
                   reason = "unauthorized (the key sent by GitHub is missing, incorrect, or rotated)"
               elif exc.code == 429:
