@@ -303,7 +303,16 @@ def inventory_advice(
 ) -> list[dict[str, Any]]:
     """Return conservative sell/list/hold guidance for a private owner inventory."""
     advice = []
-    upgrade_items = {str(row.get("buy_item")) for row in (swap_opportunities or []) if isinstance(row, dict)}
+    upgrade_quantities: dict[str, int] = {}
+    for row in swap_opportunities or []:
+        if not isinstance(row, dict) or not row.get("buy_item"):
+            continue
+        try:
+            required = max(1, int(row.get("quantity_buy", 1)))
+        except (TypeError, ValueError):
+            continue
+        key = str(row["buy_item"])
+        upgrade_quantities[key] = min(upgrade_quantities.get(key, required), required)
     entries = inventory.items() if isinstance(inventory, dict) else []
     for key, raw in entries:
         if not isinstance(raw, dict):
@@ -342,7 +351,8 @@ def inventory_advice(
         below_bid_minimum = bool(bid and quantity < bid_minimum)
         if below_bid_minimum:
             risk.append("below_buyer_minimum")
-        if item_key in upgrade_items:
+        can_upgrade = item_key in upgrade_quantities and quantity >= upgrade_quantities[item_key]
+        if can_upgrade:
             verdict = "UPGRADE VIA SWAP"
         elif not bid or below_bid_minimum or market["confidence"] == "low":
             verdict = "HOLD"
