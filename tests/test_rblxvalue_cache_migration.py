@@ -42,7 +42,7 @@ class SupremeCacheMigrationTests(IsolatedDataTestCase):
             "values": values,
         }
 
-    def test_fresh_schema3_cache_migrates_and_reuses_without_api_calls(self):
+    def test_144_scan_ticks_make_no_calls_until_cache_expires(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             cache = root / "supreme_values.json"
@@ -64,6 +64,7 @@ class SupremeCacheMigrationTests(IsolatedDataTestCase):
                 patch("scanner.VALUES_AUDIT_FILE", audit),
                 patch("scanner.RBLXVALUE_KEY_HEALTH_FILE", health),
                 patch("scanner.VALUES_TTL_SECONDS", 43200),
+                patch("scanner.RBLXVALUE_META_POLL_ENABLED", False),
                 patch("scanner.time.time", side_effect=lambda: now[0]),
                 patch("scanner.RBLXVALUE_API_KEY", "rbx_test_cache_key"),
                 patch("rblxvalue_guard.BUDGET_FILE", root / "budget.json"),
@@ -79,7 +80,32 @@ class SupremeCacheMigrationTests(IsolatedDataTestCase):
             saved = json.loads(cache.read_text(encoding="utf-8"))
             self.assertEqual(saved["schema_version"], 4)
             self.assertEqual(loaded["item 7"]["variants"][0]["stability"], "Stable")
-            self.assertEqual(len(api), 5)
+            self.assertEqual(len(api), 2)
+            self.assertEqual(sum(1 for _, params, _ in api if params and params.get("limit") == 1), 1)
+
+    def test_fresh_cache_remains_usable_while_key_breaker_is_active(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = root / "supreme_values.json"
+            audit = root / "audit.json"
+            blocked = root / "blocked.json"
+            base = 1_800_000_000.0
+            cache.write_text(json.dumps(self._schema3_cache(base)), encoding="utf-8")
+            with (
+                patch("scanner.VALUES_FILE", cache),
+                patch("scanner.VALUES_AUDIT_FILE", audit),
+                patch("scanner.VALUES_TTL_SECONDS", 43200),
+                patch("scanner.time.time", return_value=base + 60),
+                patch("scanner.RBLXVALUE_API_KEY", "rbx_blocked_key"),
+                patch("rblxvalue_guard.BLOCK_FILE", blocked),
+                patch("rblxvalue_guard.BUDGET_FILE", root / "budget.json"),
+                patch("scanner.api_get_json_conditional") as api,
+            ):
+                rblxvalue_guard.mark_key_blocked("HTTP 403", now=base - 10,
+                                                  key="rbx_blocked_key", block_path=blocked)
+                loaded = scanner.load_supreme_values()
+                self.assertIn("item 7", loaded)
+                api.assert_not_called()
 
     def test_expired_cache_and_blocked_key_fail_closed_without_network(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -101,7 +127,7 @@ class SupremeCacheMigrationTests(IsolatedDataTestCase):
             ):
                 rblxvalue_guard.mark_key_blocked("HTTP 403", now=base - 10,
                                                   key="rbx_blocked_key", block_path=blocked)
-                with self.assertRaisesRegex(RuntimeError, "refusing stale-cache calculations"):
+                with self.assertRaisesRegex(RuntimeError, "refusing expired-cache calculations"):
                     scanner.load_supreme_values()
                 api.assert_not_called()
 
