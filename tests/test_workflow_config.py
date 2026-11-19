@@ -290,6 +290,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
             self.assertIn("default: false", trigger_inputs)
         self.assertIn("contains(github.event.head_commit.message, '[discord-dry-run]')", scheduler)
         self.assertIn("DISCORD_ONLY: ${{ inputs.discord_only && 'true' || 'false' }}", workflow)
+        self.assertIn("always() && inputs.discord_only != true && env.HEALTHCHECKS_PING_URL != ''", workflow)
         self.assertIn("if discord_only and not dry_run", (ROOT / "scanner.py").read_text(encoding="utf-8"))
         scanner_source = (ROOT / "scanner.py").read_text(encoding="utf-8")
         self.assertIn("Discord-only cash-market dry-run completed", scanner_source)
