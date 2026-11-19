@@ -3415,7 +3415,7 @@ class WorkflowSecurityTests(IsolatedDataTestCase):
         self.assertNotIn("MM2_SCAN_DURATION_SECONDS", job_defaults)
         self.assertNotIn("MM2_SCAN_INTERVAL_SECONDS", job_defaults)
         self.assertIn("contents: read", scan_job)
-        scan_permissions = scan_job.split("  scan:\\n", 1)[1].split("    env:", 1)[0]
+        scan_permissions = scan_job.split("  scan:", 1)[1].split("    env:", 1)[0]
         self.assertIn("      contents: read", scan_permissions)
         self.assertIn("contents: write", state_job)
         self.assertNotIn("actions/cache/restore", workflow)
