@@ -123,5 +123,42 @@ class DiscordCollectorTests(IsolatedDataTestCase):
         self.assertEqual(next(row for row in rows if row["message_id"] == "1")["content"], "updated")
 
 
+    def test_partial_collection_reports_degraded_exit_status(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from discord_collector import collect
+
+        def fake_get(path, token, params=None, timeout=20):
+            if path == "/guilds/1125462206151143464/channels":
+                return [
+                    {"id": "200000000000000001", "type": 0, "name": "readable"},
+                    {"id": "200000000000000002", "type": 0, "name": "restricted"},
+                ]
+            if path == "/guilds/1125462206151143464/threads/active":
+                return {"threads": []}
+            if path == "/channels/200000000000000001/messages":
+                return [{
+                    "id": "300000000000000001", "channel_id": "200000000000000001",
+                    "author": {"username": "seller", "bot": False},
+                    "content": "Selling Candy 2$", "timestamp": "2026-11-19T20:00:00+00:00",
+                }]
+            if path == "/channels/200000000000000002/messages":
+                raise PermissionError("Discord bot lacks permission to read this resource")
+            raise AssertionError(f"Unexpected Discord API path: {path}")
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "discord_messages.json"
+            with patch.dict("os.environ", {"DISCORD_BOT_TOKEN": "bot-token"}):
+                with patch("discord_collector._discord_get_json", side_effect=fake_get):
+                    result = collect([1125462206151143464], output, 100, 7)
+            saved = json.loads(output.read_text(encoding="utf-8"))
+
+        self.assertEqual(result, 1)
+        self.assertEqual(saved["message_count"], 1)
+        self.assertEqual(saved["messages"][0]["content"], "Selling Candy 2$")
+
+
 if __name__ == "__main__":
     unittest.main()
