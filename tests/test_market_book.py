@@ -47,6 +47,15 @@ class MarketBookTests(IsolatedDataTestCase):
         self.assertEqual(result[0]["quantity"], 2)
         self.assertAlmostEqual(result[0]["profit_usd"], 4.7)
 
+    def test_direct_arbitrage_requires_independent_author_confidence(self):
+        ask = offer("sell", "Candy", 1, 5, "", "ask")
+        bid = offer("buy", "Candy", 5, 5, "", "bid")
+        ask["author"] = ""
+        bid["author"] = ""
+        book = build_order_book([ask, bid], now=NOW)
+        self.assertEqual(book["candy"]["confidence"], "low")
+        self.assertEqual(find_direct_arbitrage(book), [])
+
     def test_no_arbitrage_when_best_bid_is_below_best_ask(self):
         book = build_order_book([
             offer("sell", "Celestial Set", 71, 2, "seller-a", "s1"),
