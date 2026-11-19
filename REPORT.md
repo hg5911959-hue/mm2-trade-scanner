@@ -151,3 +151,4 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - The supplied Celestial Set ask is `$72`, not the `$71` required by the original appendix acceptance assertion. The old assertion is intentionally unchanged. The real listing is not inserted into private live state from this chat; it must enter through the authorized owner-forward/import path. The source author is currently unknown, so it cannot increase independent-author confidence.
 - The browser could not independently verify the Discord page without a signed-in profile. No sign-in, message interaction, or server modification was attempted.
 
+- The first hosted run of the new 449-test suite exposed that `Spirit` was missing from `cash_item_aliases.json`; this is a real parser-resolution defect, not a market-data issue. Added the canonical `spirit -> Spirit` alias. Validation of the corrected commit is in progress; the initial failed run is not counted as a pass.
