@@ -152,3 +152,13 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - The browser could not independently verify the Discord page without a signed-in profile. No sign-in, message interaction, or server modification was attempted.
 
 - The first hosted run of the new 449-test suite exposed that `Spirit` was missing from `cash_item_aliases.json`; this is a real parser-resolution defect, not a market-data issue. Added the canonical `spirit -> Spirit` alias. Validation of the corrected commit is in progress; the initial failed run is not counted as a pass.
+
+
+### Phase 8 — Seller bundle listing parser and provenance
+- Added explicit rejection reason `bundle_total_not_item_price` for `ALL FOR ...` bundle-summary lines. Individual line-item offers remain separate; the bundle total is never divided or assigned to an item.
+- Added the missing canonical alias `spirit -> Spirit`, discovered by the new end-to-end parser regression based on the owner-supplied listing structure.
+- Regression coverage verifies the three seller-side individual prices (Celestial Set `$72`, Snowcannon `$14.50`, Spirit `$8.50`), preserves the Discord permalink and snowflake-derived timestamp, and rejects the `$92` bundle line as a standalone item offer.
+- The exact owner-supplied message snowflake resolves to `2026-11-19T20:45:07.119Z`. Anonymous browser inspection redirects to Discord login, so the original author remains unverified. The message was not inserted into private live market state from this chat; authorized owner-forward/import ingestion is still required.
+- The first hosted test attempt found the missing Spirit alias and failed on that new regression; the defect was fixed before final verification.
+- Final validation commit `c867dcaee032de93532f9fd8ab6cfa1b04589e8d`, Actions run [#1000](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44619126582): **449 tests passed twice** (449/449 on both passes). Ruff passed for all targeted market/privacy/API modules, scanner correctness checks, and repository-wide undefined/unused-name checks. The workflow's data-tree hash guard passed.
+- The new feature flags remain disabled. This validates parser and regression behavior only; it does not prove the offer is still available or independently verify the Discord author's identity.
