@@ -66,10 +66,35 @@ class TelegramMarketTests(IsolatedDataTestCase):
         self.assertEqual(sent, [])
         self.assertEqual(saved["offset"], 11)
 
+    def test_group_chat_and_other_private_sender_are_rejected(self):
+        sent = []
+        updates = [
+            {"update_id": 11, "message": {
+                "message_id": 10, "chat": {"id": -100123, "type": "supergroup"},
+                "from": {"id": 123}, "text": "/help",
+            }},
+            {"update_id": 12, "message": {
+                "message_id": 11, "chat": {"id": 123, "type": "private"},
+                "from": {"id": 456}, "text": "/help",
+            }},
+        ]
+        with self._paths():
+            count = telegram_market.process_telegram_updates(
+                token="token", chat_id="123", market_enabled=True,
+                inventory_enabled=True, private_state_confirmed=True,
+                get_updates=lambda token, offset: updates,
+                send_message=lambda *args: sent.append(args),
+                now=1_800_000_000,
+            )
+            saved = json.loads(self.offset.read_text(encoding="utf-8"))
+        self.assertEqual(count, 0)
+        self.assertEqual(sent, [])
+        self.assertEqual(saved["offset"], 13)
+
     def test_authorized_commands_receive_reply_and_persist_offset(self):
         sent = []
         updates = [{"update_id": 20, "message": {
-            "message_id": 2, "chat": {"id": 123}, "text": "/help"
+            "message_id": 2, "chat": {"id": 123, "type": "private"}, "from": {"id": 123}, "text": "/help"
         }}]
         with self._paths(), patch("telegram_market._load_market", return_value={
             "book": {}, "direct": [], "chains": [], "game_values": {},
@@ -88,7 +113,7 @@ class TelegramMarketTests(IsolatedDataTestCase):
     def test_forwarded_discord_post_is_parsed_and_stored_privately(self):
         sent = []
         updates = [{"update_id": 30, "message": {
-            "message_id": 77, "date": 1_800_000_000, "chat": {"id": 123},
+            "message_id": 77, "date": 1_800_000_000, "chat": {"id": 123, "type": "private"}, "from": {"id": 123},
             "forward_origin": {"type": "user", "date": 1_799_999_000,
                                "sender_user": {"username": "market-seller"}},
             "text": "QUICK SELL\n1x Candy 2$/1\n2x Sweet 3$/1\nhttps://discord.com/channels/1/2/1593536046694400000",
@@ -115,7 +140,7 @@ class TelegramMarketTests(IsolatedDataTestCase):
         updates = []
         for update_id, message_id in ((32, 80), (33, 81)):
             updates.append({"update_id": update_id, "message": {
-                "message_id": message_id, "date": 1_800_000_000, "chat": {"id": 123},
+                "message_id": message_id, "date": 1_800_000_000, "chat": {"id": 123, "type": "private"}, "from": {"id": 123},
                 "text": f"QUICK SELL\n1x Candy 2$/1\n2x Sweet 3$/1\n{permalink}",
             }})
         with self._paths():
@@ -133,7 +158,7 @@ class TelegramMarketTests(IsolatedDataTestCase):
     def test_pasted_offer_without_discord_timestamp_is_rejected(self):
         sent = []
         updates = [{"update_id": 31, "message": {
-            "message_id": 78, "date": 1_800_000_000, "chat": {"id": 123},
+            "message_id": 78, "date": 1_800_000_000, "chat": {"id": 123, "type": "private"}, "from": {"id": 123},
             "text": "Selling\n1x Candy 2$/1",
         }}]
         with self._paths():
@@ -153,7 +178,7 @@ class TelegramMarketTests(IsolatedDataTestCase):
         sent = []
         self.last_run.write_text(json.dumps({"started_at_epoch": 1_799_999_000}), encoding="utf-8")
         updates = [{"update_id": 40, "message": {
-            "message_id": 3, "chat": {"id": 123}, "text": "/help"
+            "message_id": 3, "chat": {"id": 123, "type": "private"}, "from": {"id": 123}, "text": "/help"
         }}]
         with self._paths(), patch("telegram_market._load_market", return_value={
             "book": {}, "direct": [], "chains": [], "game_values": {},
