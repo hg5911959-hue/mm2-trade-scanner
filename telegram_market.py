@@ -394,7 +394,7 @@ def _command_reply(command: str, snapshot: dict[str, Any], *, inventory_enabled:
                     offer_stamps.append(parsed.timestamp())
             except (TypeError, ValueError, OverflowError):
                 continue
-        cash_age = max(0.0, now - max(offer_stamps)) if offer_stamps else None
+        cash_age = max(0.0, datetime.now(UTC).timestamp() - max(offer_stamps)) if offer_stamps else None
         cash_age_text = f"{int(cash_age // 60)} دقيقة" if cash_age is not None else "غير متاح"
         return (
             f"العروض المحفوظة: {len(offers)}\n"
