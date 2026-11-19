@@ -317,7 +317,9 @@ def collect(
     )
     for error in errors:
         print(f"Discord warning: {error}")
-    return 1 if errors and not collected else 0
+    # Partial collection must never report healthy: missing channel permissions,
+    # rate limits, or API errors can hide offers even when some messages arrived.
+    return 1 if errors else 0
 
 
 def main() -> int:
