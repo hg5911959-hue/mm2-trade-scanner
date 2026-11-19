@@ -142,9 +142,12 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 - All new production features remain disabled by default. This verification establishes test/lint correctness for the branch; it does not establish live market accuracy, live Telegram connectivity, or guaranteed profit.
 
 
-### Owner-supplied market evidence — Celestial Set listing (2026-11-19)
-- The owner supplied a Discord post headed `SELLING MM2` with individual seller prices: Celestial Set `$72`, Snowcannon `$14.50`, and Spirit `$8.50`; it also states `ALL FOR $92`.
-- The individual prices total `$95`, so the bundle is `$3` below the sum of the listed individual prices. The `$92` bundle amount is not allocated across individual items and must not be treated as a per-item price or as three independent cash offers.
-- The owner reports the post was published 37 minutes before sharing it. No Discord permalink, message ID, author identity, or original absolute timestamp was supplied. Under the ingestion provenance rule, this post is recorded as pending evidence only and is **not** inserted into the live/private order book; a pasted post without a verifiable original permalink/timestamp remains `timestamp_unknown`.
-- This is a `$72` Celestial Set ask, not the `$71` ask required by the original appendix acceptance assertion. It does not change that assertion or justify modifying its expected value. End-to-end acceptance remains open until a verifiable seller post at `$71` is supplied, or the owner explicitly approves revising the acceptance case to a different real offer.
+### Owner-supplied market evidence — Celestial Set bundle listing (2026-11-19)
+- The owner supplied the exact Discord message permalink and the message text. The permalink identifies channel `1572655277130514472` and message snowflake `1573076681072189520`.
+- The Discord page redirects to login in an anonymous browser, so the original author and rendered message could not be independently inspected. The post content below is therefore owner-supplied, not independently page-verified.
+- The message snowflake yields the original UTC timestamp `2026-11-19T20:45:07.119Z` using Discord's timestamp encoding. This replaces the earlier relative-only “37 minutes ago” note and provides a stable timestamp for provenance.
+- Individual seller prices supplied by the owner: Celestial Set `$72`, Snowcannon `$14.50`, and Spirit `$8.50`; the same post states `ALL FOR $92`. The individual prices total `$95`, so the bundle is `$3` below their sum. The `$92` bundle total is not allocated across items and must never be treated as an individual item price.
+- Added parser handling so `ALL FOR $92` is explicitly rejected as `bundle_total_not_item_price`, while the three individual sell prices are retained with the supplied permalink and snowflake-derived timestamp. A regression test covers this exact listing structure using a synthetic test permalink.
+- The supplied Celestial Set ask is `$72`, not the `$71` required by the original appendix acceptance assertion. The old assertion is intentionally unchanged. The real listing is not inserted into private live state from this chat; it must enter through the authorized owner-forward/import path. The source author is currently unknown, so it cannot increase independent-author confidence.
+- The browser could not independently verify the Discord page without a signed-in profile. No sign-in, message interaction, or server modification was attempted.
 
