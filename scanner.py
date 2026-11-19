@@ -2370,9 +2370,19 @@ def _read_values_cache():
     if cached is None:
         return None, None
     try:
-        age = max(0, int(time.time() - float(cached.get("fetched_at", 0))))
+        fetched_raw = cached.get("fetched_at")
+        if isinstance(fetched_raw, bool):
+            return None, None
+        fetched_at = float(fetched_raw)
+        current = float(time.time())
+        if (
+            not math.isfinite(fetched_at) or not math.isfinite(current)
+            or fetched_at <= 0 or current <= 0 or fetched_at > current
+        ):
+            return None, None
+        age = int(current - fetched_at)
         return cached["values"], age
-    except (TypeError, ValueError, KeyError):
+    except (TypeError, ValueError, KeyError, OverflowError):
         return None, None
 
 
