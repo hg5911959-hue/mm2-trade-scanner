@@ -236,3 +236,10 @@ Not yet scored at the end of Phase 2. See the evidence-based readiness assessmen
 - Added a regression test asserting a 302 redirect target is not followed.
 - Source commit: fbfc1afb090698a277b06b2306153cbf0c98cb8a; test commit: 9fa2fc3e33d48daa5071fb527f5c98dad1246386.
 - Hosted CI status: PENDING / not yet observed. This security fix is not considered validated until the full PR workflow and Ruff checks pass.
+
+
+### Phase 16 — Preflight Telegram redirect protection (2026-11-19)
+- A repository-wide audit found a second Telegram send path in tools/preflight.py that still used urllib.request.urlopen with default redirect following.
+- Added a dedicated redirect-rejecting opener for maintenance/preflight notices and a regression test proving 302 targets are refused.
+- Source commit: 62e3fe7e14623671d31a5dc5fa3e2c018d4761fa; test commit: 91f20e073483f426760e87e555de0d42d1a45081.
+- Hosted CI status: pending; the redirect-protection changes are not considered validated until the full suite and Ruff pass.
