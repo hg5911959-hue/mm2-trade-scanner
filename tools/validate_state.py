@@ -97,6 +97,21 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
     errors: list[str] = []
     if any(path.name == "discord_messages.json" for path in files):
         errors.append("private Discord message file must not enter durable public state")
+    private_plaintext = {
+        "cash_market_offers.json", "inventory.json", "telegram_update_state.json",
+        "telegram_last_run.json", "market_book_history.json",
+    }
+    leaked = [path.name for path in files if path.name in private_plaintext]
+    if leaked:
+        errors.append("private Telegram/market state must be encrypted before public persistence")
+    encrypted_private = root / "private_state.enc"
+    if encrypted_private.exists():
+        try:
+            header = encrypted_private.read_bytes()[:10]
+        except OSError:
+            header = b""
+        if header != b"MM2PSTATE1":
+            errors.append("encrypted private-state bundle header is invalid")
     temporary = [path for path in files if path.name.endswith(".tmp")]
     if temporary:
         errors.append(f"unfinished atomic-write temporary file found: {temporary[0].name}")
