@@ -1076,6 +1076,11 @@ RBLXVALUE_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_RETRY_AFTER_SECONDS = 120
 
 
+class BloxSwapsRateLimitError(RuntimeError):
+    """A 429 response requires the current scan to stop without retrying."""
+
+
+
 class _RejectTelegramRedirects(urllib.request.HTTPRedirectHandler):
     """Never forward the bot token embedded in a Telegram URL to a redirect."""
 
@@ -1171,6 +1176,27 @@ def request_with_retry(req, timeout, label, attempts=4, return_headers=False, al
                     safe_detail = "empty response body"
                 raise RuntimeError(
                     f"[http] {label}: HTTP 403 Forbidden; upstream response: {safe_detail[:240]}"
+                ) from exc
+            if exc.code == 429 and not is_rblxvalue:
+                retry_after = (exc.headers or {}).get("Retry-After", "")
+                delay = None
+                if retry_after:
+                    try:
+                        delay = max(0, int(retry_after))
+                    except ValueError:
+                        try:
+                            delay = max(0, (parsedate_to_datetime(retry_after) -
+                                datetime.now(timezone.utc)).total_seconds())
+                        except Exception:
+                            delay = None
+                if delay is not None and delay > MAX_RETRY_AFTER_SECONDS:
+                    raise BloxSwapsRateLimitError(
+                        f"{label}: HTTP 429; Retry-After exceeds the safe wait "
+                        f"({int(delay)}s > {MAX_RETRY_AFTER_SECONDS}s); aborting this scan without retry"
+                    ) from exc
+                suffix = f"; Retry-After={int(delay)}s" if delay is not None else "; no Retry-After header"
+                raise BloxSwapsRateLimitError(
+                    f"{label}: HTTP 429 rate limited{suffix}; aborting this scan without retry"
                 ) from exc
             retryable = exc.code == 429 or 500 <= exc.code <= 599
             if not retryable or attempt == attempts - 1:
@@ -5107,6 +5133,11 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
                 include_backlog = should_run_backlog_recheck(cycles)
                 scan_once(include_backlog_rechecks=include_backlog)
                 successful_cycles += 1
+            except BloxSwapsRateLimitError as exc:
+                last_failure = exc
+                print(f"[loop] Upstream rate limit received; stopping scan loop without further BloxSwaps requests: {redact(exc)[:240]}")
+                record_failure(exc)
+                break
             except Exception as exc:
                 last_failure = exc
                 print(f"[loop] Scan cycle {cycles} failed safely: {type(exc).__name__}; reason={redact(exc)[:240]}")
@@ -5133,6 +5164,8 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
     update_metrics(increments={"rblxvalue_requests": rblxvalue_guard.requests_this_run()})
     print(f"[loop] Finished: cycles={cycles}, successful={successful_cycles}, elapsed={elapsed:.1f}s")
     if successful_cycles == 0:
+        if isinstance(last_failure, BloxSwapsRateLimitError):
+            raise RuntimeError(str(last_failure))
         if last_failure and (
             "[rblxvalue-key-blocked]" in str(last_failure)
             or "[rblxvalue-budget-exhausted]" in str(last_failure)
