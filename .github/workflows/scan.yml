@@ -157,19 +157,21 @@ jobs:
         run: python -m tools.preflight --warn
 
       - name: Collect authorized Discord trade channels
+        if: env.PRIVATE_STATE_ENABLED == 'true'
         env:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           DISCORD_GUILD_IDS: "1125462206151143464,482699890741477376"
           DISCORD_MANUAL_MESSAGES_JSON: ${{ secrets.DISCORD_MANUAL_MESSAGES_JSON }}
           DISCORD_MANUAL_MESSAGES_JSON_2: ${{ secrets.DISCORD_MANUAL_MESSAGES_JSON_2 }}
         run: |
-          if [ -n "$DISCORD_BOT_TOKEN" ]; then
-            if ! python -u discord_collector.py --output data/discord_messages.json --limit 100 --retention-days 7; then
-              echo "::warning::Discord collection was incomplete; discarding partial live messages. Manual imports remain available."
-              rm -f data/discord_messages.json data/discord_messages.json.tmp
-            fi
-          else
-            echo "Discord bot collection skipped: DISCORD_BOT_TOKEN is not configured."
+          if [ -z "$DISCORD_BOT_TOKEN" ]; then
+            echo "::error::Discord opt-in requires the DISCORD_BOT_TOKEN repository secret."
+            exit 1
+          fi
+          if ! python -u discord_collector.py --output data/discord_messages.json --limit 100 --retention-days 7; then
+            echo "::error::Discord channel collection was incomplete; refusing to process partial live messages."
+            rm -f data/discord_messages.json data/discord_messages.json.tmp
+            exit 1
           fi
           # message contents are not logged or persisted to public state
           python tools/merge_discord_imports.py
