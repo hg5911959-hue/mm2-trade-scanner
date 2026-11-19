@@ -1,6 +1,9 @@
 name: MM2 Scanner Scheduler
 
 on:
+  # Candidate-only smoke run; never sends alerts on feature-branch pushes.
+  push:
+    branches: [before-market-book]
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
@@ -30,6 +33,6 @@ jobs:
       contents: write
     uses: ./.github/workflows/scan.yml
     with:
-      dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+      dry_run: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run) || false }}
       verify_rblxvalue_key: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_rblxvalue_key || false }}
     secrets: inherit
