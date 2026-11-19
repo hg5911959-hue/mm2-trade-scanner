@@ -253,5 +253,11 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertEqual(duplicates, [])
 
 
+    def test_preflight_runs_as_module_to_resolve_repository_imports(self):
+        workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        self.assertIn("run: python -m tools.preflight --warn", workflow)
+        self.assertNotIn("run: python tools/preflight.py --warn", workflow)
+
+
 if __name__ == "__main__":
     unittest.main()
