@@ -58,3 +58,22 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 ### Remaining phases
 - Market book, direct arbitrage, swap chains, inventory advice, private price history, Telegram `getUpdates` commands, privacy regression tests, workflow feature flags, and full user documentation are not yet complete.
 - All new production integrations remain disabled by default. No trading signals are sent by the parser foundation.
+
+
+### Phase 3 — Order book and private-state boundary
+- Added `market_book.py`: 48-hour timestamp filtering, recency-weighted ask/bid medians, author confidence, spread/liquidity, outlier/flooding/single-author/stale-offer flags, direct arbitrage after two transfer fees and safety margin, 1:1 and N:1 swap-chain evaluation, inventory verdicts, and compact 14-day price history.
+- Game-value chains require non-stale value data, medium-or-better confidence, and an explicit non-blocked stability label on the received item. Direct cash arbitrage does not depend on game values.
+- Added tests for best ask/bid, overlapping quantities, fees, no-arbitrage acceptance sample, stale offers, N:1 chains, unsafe/stale values, inventory verdicts, and private history.
+- The repository is confirmed **public**. A branch named `state` is therefore not private. Added `private_state.py` using standard-library key derivation/HMAC and the runner's OpenSSL executable (AES-256-CTR) to encrypt allowlisted private files with the existing `TELEGRAM_BOT_TOKEN` as key input. No new secret is introduced. The workflow decrypts only inside the runner and re-encrypts before artifacts/state persistence; the public-state validator rejects plaintext private files. OpenSSL CLI availability is an explicit system prerequisite.
+- Added an additional opt-in `PRIVATE_STATE_ENABLED` flag. All market, Telegram, inventory, and private-state flags are false by default. No private offers, inventory, Telegram offset, or chat data have been written to the public state branch by this work.
+
+### Phase 4 — Telegram interface foundation
+- Added `telegram_market.py` with owner-chat authorization, `getUpdates` offset persistence, forwarded/pasted-post parsing, Arabic command replies, multi-item `/p`, `/buy`, `/chains`, inventory management commands, status, and queued notice when the previous scan was more than 12 minutes old.
+- Telegram polling is wired at the start of each `scan_once` cycle (including the 30-second loop ticks), but only when `MARKET_BOOK_ENABLED`, `TELEGRAM_COMMANDS_ENABLED`, and `PRIVATE_STATE_ENABLED` are explicitly true. Inventory commands also require `INVENTORY_ENABLED`. Dry-run skips Telegram polling and sending.
+- Telegram offsets, private offers, inventory, and private price history are allowlisted for encryption; they are not exported to the dashboard or public SQLite/CSV history.
+- This phase does not execute trades. The bot only returns estimates and suggestions.
+
+### Verification status at this checkpoint
+- The first hosted PR run (`MM2 Scanner Tests`, run `#847`) failed with 402 tests executed, 10 failures and 5 errors. The logs identified: a cash-parser header-regex escaping bug, the new tests not using the repository's isolated test base, old key-health tests that expected API calls on fresh cache, and a redundant health probe shifting mocked pagination responses.
+- Those causes have been corrected in the branch and additional market-book, Telegram, and encryption tests have been added. A subsequent full run (twice) plus Ruff is still required before any feature flag is enabled or the PR is merged.
+- No new test-pass or Ruff-pass claim is made at this checkpoint.
