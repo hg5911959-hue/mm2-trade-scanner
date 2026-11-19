@@ -219,7 +219,10 @@ def _format_item(item: dict[str, Any], market: dict[str, Any], game: dict[str, A
         value_text = f"{game['value']:g}"
         if ask:
             ratio_text = f"{float(ask['unit_price_usd']) / game['value']:.4f}"
-    risks = "، ".join(market.get("risk_flags", [])) or "لا توجد"
+    risk_flags = list(market.get("risk_flags", []))
+    if not game:
+        risk_flags.append("no_value_data")
+    risks = "، ".join(sorted(set(risk_flags))) or "لا توجد"
     return (
         f"{item.get('item') or market.get('item')}\n"
         f"أفضل بيع: {ask_text} | أفضل شراء: {bid_text}\n"
@@ -383,8 +386,19 @@ def _command_reply(command: str, snapshot: dict[str, Any], *, inventory_enabled:
         active = bool(blocked and (blocked.get("permanent") or blocked_until > now))
         age = snapshot.get("cache_age")
         age_text = f"{int(age // 3600)} ساعة" if isinstance(age, (int, float)) else "غير متاح"
+        offer_stamps = []
+        for offer in offers:
+            try:
+                parsed = datetime.fromisoformat(str(offer.get("posted_at", "")).replace("Z", "+00:00"))
+                if parsed.tzinfo is not None:
+                    offer_stamps.append(parsed.timestamp())
+            except (TypeError, ValueError, OverflowError):
+                continue
+        cash_age = max(0.0, now - max(offer_stamps)) if offer_stamps else None
+        cash_age_text = f"{int(cash_age // 60)} دقيقة" if cash_age is not None else "غير متاح"
         return (
             f"العروض المحفوظة: {len(offers)}\n"
+            f"عمر عروض النقد: {cash_age_text}\n"
             f"عمر قيم RBLXValue: {age_text}\n"
             f"ميزانية API: {used}/60 (المتبقي {max(0, 60-used)})\n"
             f"حالة المفتاح: {'محظور' if active else 'غير محظور'}"
