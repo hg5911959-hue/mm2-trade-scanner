@@ -85,6 +85,9 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertLess(encrypt_pos, artifact_pos)
         self.assertIn("private_state.enc", workflow)
         self.assertIn("discord_alert_state.json", workflow)
+        cleanup = workflow.split("else", 1)[1].split("mkdir -p state-bundle/data", 1)[0]
+        self.assertIn("rm -f data/cash_market_offers.json", cleanup)
+        self.assertIn("data/discord_alert_state.json", cleanup)
         validator = (ROOT / "tools/validate_state.py").read_text(encoding="utf-8")
         self.assertIn("private Telegram/market state", validator)
         self.assertIn("discord_alert_state.json", validator)
