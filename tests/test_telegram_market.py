@@ -9,6 +9,9 @@ from test_support import IsolatedDataTestCase
 import telegram_market
 
 
+NOW = 1_800_000_000.0
+
+
 class TelegramMarketTests(IsolatedDataTestCase):
     def setUp(self):
         super().setUp()
