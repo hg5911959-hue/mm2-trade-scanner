@@ -4594,7 +4594,7 @@ def scan_once(include_backlog_rechecks=True):
     evaluated = 0
     opportunities = []
     def deliver_opportunity(op):
-        nonlocal sent
+        nonlocal sent, already_alerted_skipped, uncertain_skipped
         global _SESSION_ALERTS_SENT
         listing = op["listing"]
         trade_id = listing["id"]
@@ -4669,14 +4669,18 @@ def scan_once(include_backlog_rechecks=True):
         if secondary_note:
             message += "\nSECOND-SOURCE CHECK (MM2Values): " + secondary_note
         trade_id = listing["id"]
-        if listing.get("valuation_mode") == "cash":
+        if is_discord:
+            profit_label = (
+                f"cash_profit_usd={op['cash_profit_worst']:g}"
+                if listing.get("valuation_mode") == "cash"
+                else f"profit={op['difference']:g}"
+            )
+            print(f"[telegram] Sending ranked private Discord offer; {profit_label}; identifiers suppressed")
+        elif listing.get("valuation_mode") == "cash":
             print(
                 f"[telegram] Sending ranked cash trade id={trade_id}; "
                 f"cash_profit_usd={op['cash_profit_worst']:g}"
             )
-        else:
-            if is_discord:
-            print(f"[telegram] Sending ranked private Discord offer; profit={op['difference']:g}; identifiers suppressed")
         else:
             print(f"[telegram] Sending ranked value trade id={trade_id}; profit={op['difference']:g}")
         # Persist the delivery guard before the non-idempotent request. Discord
@@ -4785,7 +4789,7 @@ def scan_once(include_backlog_rechecks=True):
             previous_watch.get("content_hash") != content_hash
             or previous_watch.get("values_hash") != values_hash
         )
-        if trade_id in alerted_set and not fingerprint_changed:
+        if not is_discord and trade_id in alerted_set and not fingerprint_changed:
             if not previous_watch:
                 update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
             already_alerted_skipped += 1
@@ -4795,7 +4799,7 @@ def scan_once(include_backlog_rechecks=True):
             watch_unchanged_skipped += 1
             mark_seen_ad(listing)
             continue
-        if trade_id in uncertain_ids:
+        if not is_discord and trade_id in uncertain_ids:
             uncertain_skipped += 1
             mark_seen_ad(listing)
             continue
