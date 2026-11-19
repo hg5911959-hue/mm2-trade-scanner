@@ -10,7 +10,7 @@ import math
 import os
 import statistics
 import tempfile
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -273,10 +273,12 @@ def find_swap_chains(
 
 def inventory_advice(
     inventory: dict[str, Any], book: dict[str, dict[str, Any]], *,
-    previous_snapshot: dict[str, Any] | None = None, undercut_usd: float = 0.01,
+    previous_snapshot: dict[str, Any] | None = None, swap_opportunities: list[dict[str, Any]] | None = None,
+    undercut_usd: float = 0.01,
 ) -> list[dict[str, Any]]:
     """Return conservative sell/list/hold guidance for a private owner inventory."""
     advice = []
+    upgrade_items = {str(row.get("buy_item")) for row in (swap_opportunities or []) if isinstance(row, dict)}
     entries = inventory.items() if isinstance(inventory, dict) else []
     for key, raw in entries:
         if not isinstance(raw, dict):
@@ -311,7 +313,9 @@ def inventory_advice(
             risk.append("thin_market")
         if falling:
             risk.append("price_falling")
-        if not bid or market["confidence"] == "low":
+        if item_key in upgrade_items:
+            verdict = "UPGRADE VIA SWAP"
+        elif not bid or market["confidence"] == "low":
             verdict = "HOLD"
         elif falling and market["bid_quantity"] >= quantity:
             verdict = "SELL NOW"
@@ -347,7 +351,7 @@ def save_private_price_history(
         raise RuntimeError("private market history schema is invalid; refusing overwrite")
     snapshots = [row for row in existing["snapshots"] if isinstance(row, dict)
                  and _timestamp(row.get("timestamp")) is not None
-                 and current - float(_timestamp(row["timestamp"])) <= retention_days * 86400]
+                 and 0 <= current - float(_timestamp(row["timestamp"])) <= retention_days * 86400]
     compact = {
         str(key): {
             "best_ask": value.get("best_ask", {}).get("unit_price_usd") if value.get("best_ask") else None,
