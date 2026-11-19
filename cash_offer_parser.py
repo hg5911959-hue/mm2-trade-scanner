@@ -7,6 +7,7 @@ reported, never guessed.
 from __future__ import annotations
 
 import json
+import math
 import re
 import unicodedata
 from pathlib import Path
@@ -140,7 +141,7 @@ def _parse_segment(segment: str, side: str, metadata: dict[str, Any],
                           "url": metadata.get("url", ""), "posted_at": metadata.get("posted_at", "")}, None
         return None, None, "no_price" if status == "resolved" else "unresolved_name"
     if (
-        price <= 0 or quantity <= 0 or quantity > MAX_QUANTITY
+        not math.isfinite(price) or price <= 0 or quantity <= 0 or quantity > MAX_QUANTITY
         or (min_quantity is not None and (min_quantity <= 0 or min_quantity > quantity))
     ):
         return None, None, "invalid_price_or_quantity"
