@@ -105,3 +105,5 @@ Not yet scored. Scores will be evidence-based after the corresponding phases and
 
 ### Open acceptance ambiguity — Celestial Set ask
 - The supplied appendix fixture contains a buyer offer for `Celestial Set` at `$63/1`, but contains no seller-side `Celestial Set` offer at `$71/1`. The `/p` formatting test uses a synthetic book row to verify that a real ask of 71 and bid of 63 would be displayed correctly; it does not fabricate or inject that ask into the fixture. End-to-end acceptance for best ask 71 therefore requires the owner to provide the seller post (or clarify which existing source contains it). Until then, the engine correctly reports no ask from the supplied sample.
+
+- Additional fail-closed hardening: parsed minimum quantities now constrain direct arbitrage, N:1 chain legs, and inventory sellability; non-finite prices and non-finite market thresholds are rejected. The legacy CSV fallback is freshness-checked and reference-only in dry-run, never a synthetic live bid/ask.
