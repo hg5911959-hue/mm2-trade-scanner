@@ -35,7 +35,7 @@ def discord_message(index, body, *, author_id=None, author_id_source="discord_ap
 class DiscordCashIngestTests(IsolatedDataTestCase):
     def test_valid_collector_rows_preserve_identity_and_provenance(self):
         payload = {"messages": [
-            discord_message(1, "Selling\\n1x Candy 4$/1", author_id="423456789012345")
+            discord_message(1, "Selling\n1x Candy 4$/1", author_id="423456789012345")
         ]}
 
         result = parse_discord_messages(payload)
@@ -51,7 +51,7 @@ class DiscordCashIngestTests(IsolatedDataTestCase):
     def test_owner_supplied_author_id_is_discarded_and_offer_is_non_actionable(self):
         payload = {"messages": [
             discord_message(
-                1, "Selling\\n1x Candy 4$/1",
+                1, "Selling\n1x Candy 4$/1",
                 author_id="423456789012345", author_id_source="owner_supplied",
             )
         ]}
@@ -66,9 +66,9 @@ class DiscordCashIngestTests(IsolatedDataTestCase):
         self.assertIsNone(book["candy"]["best_ask"])
 
     def test_permalink_mismatch_and_missing_timestamp_fail_closed(self):
-        wrong_url = discord_message(1, "Selling\\n1x Candy 4$/1", author_id="423456789012345")
+        wrong_url = discord_message(1, "Selling\n1x Candy 4$/1", author_id="423456789012345")
         wrong_url["url"] = "https://discord.com/channels/1/2/3"
-        no_time = discord_message(2, "Selling\\n1x Candy 4$/1", author_id="423456789012346")
+        no_time = discord_message(2, "Selling\n1x Candy 4$/1", author_id="423456789012346")
         no_time["created_at_utc"] = ""
 
         result = parse_discord_messages({"messages": [wrong_url, no_time]})
@@ -80,8 +80,8 @@ class DiscordCashIngestTests(IsolatedDataTestCase):
         )
 
     def test_duplicate_message_ids_are_processed_once(self):
-        row = discord_message(1, "Selling\\n1x Candy 4$/1", author_id="423456789012345")
-        duplicate = {**row, "content": "Selling\\n1x Candy 9$/1"}
+        row = discord_message(1, "Selling\n1x Candy 4$/1", author_id="423456789012345")
+        duplicate = {**row, "content": "Selling\n1x Candy 9$/1"}
 
         result = parse_discord_messages({"messages": [row, duplicate]})
 
@@ -91,7 +91,7 @@ class DiscordCashIngestTests(IsolatedDataTestCase):
 
     def test_demand_hints_never_become_buy_offers(self):
         result = parse_discord_messages({
-            "messages": [discord_message(1, "Buying\\nEmbersickle", author_id="423456789012345")]
+            "messages": [discord_message(1, "Buying\nEmbersickle", author_id="423456789012345")]
         })
 
         self.assertEqual(result["offers"], [])
@@ -100,10 +100,10 @@ class DiscordCashIngestTests(IsolatedDataTestCase):
 
     def test_end_to_end_verified_independent_offers_create_arbitrage(self):
         rows = [
-            discord_message(1, "Selling\\n5x Candy 4$/1", author_id="423456789012345"),
-            discord_message(2, "Selling\\n5x Candy 4.2$/1", author_id="423456789012346"),
-            discord_message(3, "Buying\\n5x Candy 5$/1", author_id="423456789012347"),
-            discord_message(4, "Buying\\n5x Candy 4.8$/1", author_id="423456789012348"),
+            discord_message(1, "Selling\n5x Candy 4$/1", author_id="423456789012345"),
+            discord_message(2, "Selling\n5x Candy 4.2$/1", author_id="423456789012346"),
+            discord_message(3, "Buying\n5x Candy 5$/1", author_id="423456789012347"),
+            discord_message(4, "Buying\n5x Candy 4.8$/1", author_id="423456789012348"),
         ]
 
         parsed = parse_discord_messages({"messages": rows})
