@@ -226,13 +226,13 @@ class RblxValueGuardTests(IsolatedDataTestCase):
         self.assertEqual(self.budget.stat().st_size, MAX_GUARD_STATE_BYTES + 1)
 
     def test_non_utf8_guard_ledger_fails_closed(self):
-        self.budget.write_bytes(b"\\xff\\xfe")
+        self.budget.write_bytes(b"\xff\xfe")
         with self.assertRaisesRegex(guard.RblxValueGuardError, "not valid UTF-8"):
             guard.reserve_request(
                 now=1_800_000_000, key="rbx_test_key",
                 budget_path=self.budget, block_path=self.block,
             )
-        self.assertEqual(self.budget.read_bytes(), b"\\xff\\xfe")
+        self.assertEqual(self.budget.read_bytes(), b"\xff\xfe")
 
     def test_invalid_workflow_identifier_fails_closed_before_writing(self):
         for workflow in ("   ", "bad\nworkflow", "x" * 101):
