@@ -54,11 +54,18 @@ def _read_json(path: Path) -> dict[str, Any]:
             raise RblxValueGuardError(
                 f"[rblxvalue-state] safety state file {path.name} exceeds the size limit; refusing API request"
             )
-        raw = path.read_text(encoding="utf-8")
-        if len(raw.encode("utf-8")) > MAX_GUARD_STATE_BYTES:
+        with path.open("rb") as handle:
+            raw_bytes = handle.read(MAX_GUARD_STATE_BYTES + 1)
+        if len(raw_bytes) > MAX_GUARD_STATE_BYTES:
             raise RblxValueGuardError(
                 f"[rblxvalue-state] safety state file {path.name} exceeds the size limit; refusing API request"
             )
+        try:
+            raw = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise RblxValueGuardError(
+                f"[rblxvalue-state] safety state file {path.name} is not valid UTF-8; refusing API request"
+            ) from exc
     except FileNotFoundError:
         return {}
     except RblxValueGuardError:
