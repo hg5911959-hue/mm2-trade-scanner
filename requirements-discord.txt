@@ -1,0 +1,2 @@
+# Optional dependency used only by the authorized read-only Discord collector.
+discord.py==2.6.4
