@@ -28,6 +28,15 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         config = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('target-version = "py312"', config)
 
+    def test_operations_docs_match_live_scheduler_and_discord_scope(self):
+        operations = (ROOT / "docs/OPERATIONS.md").read_text(encoding="utf-8")
+        architecture = (ROOT / "MARKET_INTELLIGENCE.md").read_text(encoding="utf-8")
+        self.assertIn("every 10 minutes", operations)
+        self.assertNotIn("every 15 minutes", operations)
+        self.assertIn("two explicitly allowlisted trading channels", operations)
+        self.assertIn("two explicitly allowlisted trading channels", architecture)
+        self.assertNotIn("two configured MM2 Discord servers", operations)
+
     def test_ci_runs_repository_wide_correctness_lint(self):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
         self.assertIn("ruff check --select F .", workflow)
