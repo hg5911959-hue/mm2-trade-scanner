@@ -340,6 +340,11 @@ def find_direct_arbitrage(
                     "safety_margin_usd": safety, "profit_usd": net,
                     "profit_percent": profit_percent,
                     "confidence": row["confidence"], "risk_flags": list(row["risk_flags"]),
+                    "execution_status": "unconfirmed_listing_pair",
+                    "requires_manual_confirmation": True,
+                    "source_links": [
+                        str(ask.get("url") or ""), str(bid.get("url") or ""),
+                    ],
                 }
                 if (
                     best_candidate is None
@@ -501,6 +506,9 @@ def find_swap_chains(
                                 row_a["confidence"], row_b["confidence"],
                                 value_a["confidence"], value_b["confidence"],
                             } else "high",
+                            "execution_status": "hypothetical_value_based_route",
+                            "requires_manual_confirmation": True,
+                            "missing_execution_leg": "actual_swap_offer",
                             "risk_flags": sorted(set(
                                 list(row_a.get("risk_flags", [])) + list(row_b.get("risk_flags", []))
                             )),
