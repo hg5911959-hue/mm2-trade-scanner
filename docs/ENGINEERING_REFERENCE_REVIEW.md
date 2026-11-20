@@ -125,7 +125,7 @@ Validation:
 - The full suite ran **394 tests twice**; both runs passed. Data immutability checks and every configured Ruff/lint step passed.
 - PR #99 remains open as Draft and has not been merged.
 
-### Phase 1 — PR #85 reconciliation (in progress)
+### Phase 1 — PR #85 reconciliation (selective migration underway)
 
 Current PR metadata:
 - PR #85 remains open and unmerged; head `98f922cb7c51eb204dbbb681033b6c920dc5dfb7`, base `main`.
@@ -137,10 +137,27 @@ Preliminary file-level findings:
 - Existing files modified by PR #85 include `scanner.py`, `discord_collector.py`, `rblxvalue_guard.py`, `tools/preflight.py`, `tools/validate_state.py`, `tools/weekly_report.py`, tests, and GitHub Actions workflows. These require three-way review against current main.
 - The PR changes workflow triggers and permissions, including a push trigger on `before-market-book`, inherited secrets, and write permissions for state persistence. The workflow changes are a security-sensitive blocker and must not be imported as a bundle.
 - The Discord collector supports an explicit `DISCORD_CHANNEL_IDS` allowlist, but its history is deliberately bounded to at most six pages of 100 messages per channel and reports truncation. It must not be described as a complete-history exporter.
-- The cash-market core needs additional correctness review before migration: unverified owner-supplied author metadata is propagated as a risk flag, but the current order-book confidence calculation still counts those author names; outlier/flooding flags are recorded but the opportunity functions do not consistently exclude flagged offers. These are potential false-positive paths and require regression tests/fixes.
-- No PR #85 commits or workflow changes have been merged or copied into main. PR #85 remains preserved as-is.
+- The reviewed market-book core had concrete false-positive paths: owner-supplied author labels could inflate independence confidence, flagged outliers/flooding/sell-before-drop offers could remain actionable, and missing author identities could appear in candidate legs.
+- These paths were hardened in a separate branch and PR #100; the original PR #85 branch remains unchanged.
+- PR #100 contains only `market_book.py` and `tests/test_market_book.py`; it does not wire the module into the live scanner or change workflows, secrets, defaults, or price data.
+- Workflow changes in PR #85 remain a security-sensitive blocker. No PR #85 workflow changes or commits have been merged into `main`.
+
+### Selective market-book hardening — PR #100
+
+Implemented on `fix/market-book-trust-and-risk-gates`, based directly on current `main`:
+- Ignore owner-supplied and unidentified author labels when computing independent-author confidence and actionable depth.
+- Exclude `price_far_from_median`, `market_flooding`, and `sell_before_drop` offers from actionable price discovery and opportunity legs.
+- Require a verified, distinct author on both sides of direct arbitrage and swap-chain candidates.
+- Normalize malformed optional risk-flag containers defensively.
+- Add regression tests for all the above cases.
+
+Validation:
+- PR #100 GitHub Actions run [44816256334](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44816256334) succeeded.
+- **413 tests passed twice**, data immutability passed, and all configured Ruff/lint checks passed.
+- PR #100 is open as Draft; no code has been merged into `main`.
 
 Next acceptance work:
-1. Finish the 42-file reconciliation and inspect all workflow changes.
-2. Harden market-book author provenance and risk-flag gating with regression tests before migrating the cash-market core.
-3. Move only reviewed, isolated slices onto a fresh branch from current main; run the full test suite twice and all required lint/data checks after each slice.
+1. Complete the remaining 42-file PR #85 overlap/security review; keep its workflow changes excluded until separately redesigned and reviewed.
+2. Review parser identity, quantity certainty, provenance, and duplicate-message handling before wiring the market book into the scanner.
+3. Add an integration boundary that consumes only normalized, authorized observations and remains disabled by default.
+4. Run the full suite twice, data immutability, Ruff, and relevant workflow checks after each isolated integration slice.
