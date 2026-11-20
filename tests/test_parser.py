@@ -973,7 +973,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             return BytesIO(b'{"ok": true}')
         original = "weapon-value-line-" * 300
         with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
-            "scanner.urllib.request.urlopen", side_effect=fake_open
+            "scanner._TELEGRAM_OPENER.open", side_effect=fake_open
         ):
             scanner.send_telegram(original)
         self.assertGreater(len(captured), 1)
@@ -992,7 +992,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             captured.append(json.loads(req.data.decode())["text"])
             return BytesIO(b'{"ok": true}')
         with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
-            "scanner.urllib.request.urlopen", side_effect=fake_open
+            "scanner._TELEGRAM_OPENER.open", side_effect=fake_open
         ):
             scanner.send_telegram("A short scanner status.")
         self.assertEqual(len(captured), 1)
@@ -1013,7 +1013,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             )
 
         with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
-            "scanner.urllib.request.urlopen", side_effect=fake_open
+            "scanner._TELEGRAM_OPENER.open", side_effect=fake_open
         ):
             with self.assertRaisesRegex(scanner.TelegramDeliveryUncertain, "partially delivered"):
                 scanner.send_telegram("X" * 5000)
@@ -1030,7 +1030,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             patch("scanner._LAST_TELEGRAM_SEND_AT", 0.0),
             patch("scanner.time.monotonic", side_effect=lambda: next(monotonic_values)),
             patch("scanner.time.sleep") as sleep,
-            patch("scanner.urllib.request.urlopen", side_effect=lambda req, timeout: BytesIO(b'{"ok": true}')),
+            patch("scanner._TELEGRAM_OPENER.open", side_effect=lambda req, timeout: BytesIO(b'{"ok": true}')),
         ):
             scanner.send_telegram("first")
             scanner.send_telegram("second")
@@ -1057,7 +1057,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             patch("scanner._LAST_TELEGRAM_SEND_AT", 0.0),
             patch("scanner.time.monotonic", side_effect=lambda: next(monotonic_values)),
             patch("scanner.time.sleep") as sleep,
-            patch("scanner.urllib.request.urlopen", side_effect=rate_limited),
+            patch("scanner._TELEGRAM_OPENER.open", side_effect=rate_limited),
         ):
             with self.assertRaisesRegex(RuntimeError, "HTTP 429"):
                 scanner.send_telegram("test")
@@ -1071,7 +1071,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             from urllib.error import URLError
             raise URLError("connection reset after request")
         with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
-            "scanner.urllib.request.urlopen", side_effect=fail_open
+            "scanner._TELEGRAM_OPENER.open", side_effect=fail_open
         ):
             with self.assertRaises(scanner.TelegramDeliveryUncertain):
                 scanner.send_telegram("test")
@@ -1185,7 +1185,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             from io import BytesIO
             return BytesIO(b'{"ok": true}')
         with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
-            "scanner.urllib.request.urlopen", side_effect=fake_open
+            "scanner._TELEGRAM_OPENER.open", side_effect=fake_open
         ):
             scanner.send_telegram(message)
         self.assertIn("👤 https://bloxswaps.com/fr/users/12345", captured[0])

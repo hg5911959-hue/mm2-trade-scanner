@@ -20,6 +20,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 
 import rblxvalue_guard
+import telegram_delivery
 from tools.metrics import update_metrics
 from tools.alert_policy import rank_and_split
 from tools.cash_market import calculate_cash_side, cash_profit_bounds, normalize_cash_name, cash_price_is_fresh, strict_quantity, parse_haircut_tiers
@@ -2977,119 +2978,38 @@ def format_number(value):
     return f"{value:,.2f}".rstrip("0").rstrip(".")
 
 
-class TelegramDeliveryUncertain(RuntimeError):
-    """Telegram may have accepted a message but the response was not received."""
+TelegramDeliveryUncertain = telegram_delivery.TelegramDeliveryUncertain
+_RejectTelegramRedirects = telegram_delivery.RejectTelegramRedirects
+_TELEGRAM_OPENER = telegram_delivery._TELEGRAM_OPENER
 
 
 def _wait_for_telegram_rate_limit():
-    """Respect the configured minimum spacing between messages to one chat."""
+    """Compatibility wrapper retaining scanner-level clock and state patches."""
     global _LAST_TELEGRAM_SEND_AT
-    now = time.monotonic()
-    wait = ALERT_DELAY_SECONDS - (now - _LAST_TELEGRAM_SEND_AT)
-    if wait > 0:
-        time.sleep(wait)
-    _LAST_TELEGRAM_SEND_AT = time.monotonic()
+    _LAST_TELEGRAM_SEND_AT = telegram_delivery.wait_for_rate_limit(
+        _LAST_TELEGRAM_SEND_AT,
+        ALERT_DELAY_SECONDS,
+        monotonic=time.monotonic,
+        sleep=time.sleep,
+    )
 
 
 RBLXVALUE_ATTRIBUTION = "Data from rblxvalue.com"
 
 
 def send_telegram(message):
-    message = str(message)
-    needs_attribution = not message.rstrip().endswith(RBLXVALUE_ATTRIBUTION)
-    footer = "\n\n" + RBLXVALUE_ATTRIBUTION if needs_attribution else ""
-    if len(message) + len(footer) > TELEGRAM_MAX_CHARS:
-        # Reserve room for the multipart header and the mandatory source credit
-        # in every Telegram message. Never truncate trade details.
-        chunk_limit = TELEGRAM_MAX_CHARS - 96
-        chunks, current = [], ""
-        for line in message.splitlines():
-            candidate = (current + "\n" + line) if current else line
-            if len(candidate) <= chunk_limit:
-                current = candidate
-                continue
-            if current:
-                chunks.append(current)
-                current = ""
-            while len(line) > chunk_limit:
-                chunks.append(line[:chunk_limit])
-                line = line[chunk_limit:]
-            current = line
-        if current:
-            chunks.append(current)
-        total_chunks = len(chunks)
-        sent_chunks = 0
-        for index, chunk in enumerate(chunks, start=1):
-            try:
-                send_telegram(f"💎 MM2 TRADE DETAILS ({index}/{total_chunks})\n{chunk}")
-            except TelegramDeliveryUncertain:
-                raise
-            except Exception as exc:
-                if sent_chunks:
-                    raise TelegramDeliveryUncertain(
-                        "[telegram] Multipart alert was only partially delivered; "
-                        "resend is quarantined to avoid duplicate earlier parts."
-                    ) from exc
-                raise
-            sent_chunks += 1
-        return
-    message += footer
-    url = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage"
-    body = json.dumps({
-        "chat_id": CHAT_ID,
-        "text": message,
-        "disable_web_page_preview": True,
-    }).encode()
-
-    # sendMessage is non-idempotent. Never apply generic network/5xx retries:
-    # Telegram may have accepted the message even when its response was lost.
-    for attempt in range(2):
-        _wait_for_telegram_rate_limit()
-        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-        try:
-            with urllib.request.urlopen(req, timeout=20) as response:
-                raw = response.read()
-        except HTTPError as exc:
-            raw = exc.read(2000)
-            if exc.code == 429 and attempt < 1:
-                try:
-                    result = json.loads(raw.decode("utf-8"))
-                    retry_after = result.get("parameters", {}).get("retry_after", 2 ** (attempt + 1))
-                except (ValueError, UnicodeDecodeError):
-                    retry_after = 2 ** (attempt + 1)
-                delay = min(60, max(1, int(retry_after)))
-                print(f"[retry] Telegram explicitly rejected sendMessage with 429; waiting {delay}s")
-                time.sleep(delay)
-                continue
-            if exc.code >= 500:
-                raise TelegramDeliveryUncertain(
-                    f"[telegram] HTTP {exc.code}; delivery status is uncertain, not retrying."
-                ) from exc
-            raise RuntimeError(
-                f"[telegram] API rejected message: HTTP {exc.code}: "
-                f"{raw.decode('utf-8', errors='replace')[:300]}"
-            ) from exc
-        except (URLError, TimeoutError, OSError) as exc:
-            raise TelegramDeliveryUncertain(
-                "[telegram] Network response missing; delivery status is uncertain, not retrying."
-            ) from exc
-
-        try:
-            result = json.loads(raw.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise TelegramDeliveryUncertain(
-                "[telegram] Invalid response; delivery status is uncertain, not retrying."
-            ) from exc
-        if result.get("ok"):
-            return
-        if int(result.get("error_code", 0) or 0) == 429 and attempt < 1:
-            retry_after = result.get("parameters", {}).get("retry_after", 2 ** (attempt + 1))
-            delay = min(60, max(1, int(retry_after)))
-            print(f"[retry] Telegram explicitly rejected sendMessage with 429; waiting {delay}s")
-            time.sleep(delay)
-            continue
-        raise RuntimeError(f"[telegram] API rejected message: {result.get('description', 'unknown error')}")
-    raise RuntimeError("[telegram] Rate limit persisted after explicit 429 responses")
+    """Compatibility facade; transport implementation lives in telegram_delivery."""
+    return telegram_delivery.send_telegram(
+        message,
+        bot_token=BOT_TOKEN,
+        chat_id=CHAT_ID,
+        max_chars=TELEGRAM_MAX_CHARS,
+        attribution=RBLXVALUE_ATTRIBUTION,
+        wait_for_rate_limit=_wait_for_telegram_rate_limit,
+        request_factory=urllib.request.Request,
+        open_request=_TELEGRAM_OPENER.open,
+        sleep=time.sleep,
+    )
 
 
 def load_seen_ads():
