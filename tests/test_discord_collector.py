@@ -110,6 +110,8 @@ class DiscordCollectorTests(IsolatedDataTestCase):
             self.assertEqual(payload["configured_channel_ids"], ["1572655277130514472"])
 
     def test_load_existing_rejects_symlink_without_reading_target(self):
+        if not hasattr(os, "O_NOFOLLOW"):
+            self.skipTest("O_NOFOLLOW is unavailable on this platform")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             target = root / "outside.json"
