@@ -178,6 +178,16 @@ class StateValidationTests(IsolatedDataTestCase):
 
         self.assertTrue(any("symlink paths" in error for error in errors))
 
+    def test_public_state_rejects_symlink_only_directory(self):
+        outside = Path(self.temp.name).parent / (Path(self.temp.name).name + "-empty-outside")
+        outside.mkdir()
+        self.addCleanup(lambda: __import__("shutil").rmtree(outside, ignore_errors=True))
+        (self.root / "linked-directory").symlink_to(outside, target_is_directory=True)
+
+        errors = validate_state(self.root)
+
+        self.assertTrue(any("symlink paths" in error for error in errors))
+
     def test_api_safety_artifact_rejects_symlinked_files(self):
         from tools.validate_state import validate_api_safety_state
         outside = Path(self.temp.name).parent / (Path(self.temp.name).name + "-api-outside.json")
