@@ -1,6 +1,6 @@
 # MM2 Trade Scanner — Reference Architecture Review
 
-**Status:** Phase 0 complete (read-only repository and reference review)  
+**Status:** Phase 0 complete; Phase 1 alert-gate hardening validated; PR #85 reconciliation in progress  
 **Baseline:** `main` at `1f6bd2332524de684a0fce2286256a71fa5b2229`  
 **Review date:** 2026-11-20
 
@@ -119,5 +119,28 @@ Implemented on `improvement/reference-architecture-review`:
 - No feature flag, source policy, alert threshold default, or production workflow was enabled or changed.
 
 Validation:
-- Commit `cd20a93166c09e42ce6a8fe2897feaaf41da083a`: GitHub Actions ran **390 tests twice**, both passes succeeded, the data immutability checks passed, and all configured Ruff checks passed.
-- Commit `5dc94782d3f05f4801fbbc0efbaca919549ffacd` adds two additional negative-threshold assertions. Its full CI run is pending; Phase 1 is not considered accepted until that run succeeds.
+- Latest branch head: `43adb6dc1b05698f4bfa54df77f127512dcb0dcf`.
+
+- GitHub Actions run [44814950719](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44814950719) completed successfully on the latest branch head.
+- The full suite ran **394 tests twice**; both runs passed. Data immutability checks and every configured Ruff/lint step passed.
+- PR #99 remains open as Draft and has not been merged.
+
+### Phase 1 — PR #85 reconciliation (in progress)
+
+Current PR metadata:
+- PR #85 remains open and unmerged; head `98f922cb7c51eb204dbbb681033b6c920dc5dfb7`, base `main`.
+- Current comparison: 388 commits ahead, 2 behind, 42 changed files; merge base `d26ddf4205aff952754a825d741b0bc590260238`, while current main is `1f6bd2332524de684a0fce2286256a71fa5b2229`.
+- PR #85's latest associated test run [44643900064](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44643900064) succeeded: 504 tests ran twice, data immutability passed, Ruff checks passed, and the history secret scan passed. This is evidence of test success, not a substitute for code review.
+
+Preliminary file-level findings:
+- New, currently absent from main: `cash_offer_parser.py`, `cash_item_aliases.json`, `market_book.py`, `private_state.py`, `telegram_market.py`, and their associated fixtures/tests. These are candidates for isolated review and selective migration, not automatic acceptance.
+- Existing files modified by PR #85 include `scanner.py`, `discord_collector.py`, `rblxvalue_guard.py`, `tools/preflight.py`, `tools/validate_state.py`, `tools/weekly_report.py`, tests, and GitHub Actions workflows. These require three-way review against current main.
+- The PR changes workflow triggers and permissions, including a push trigger on `before-market-book`, inherited secrets, and write permissions for state persistence. The workflow changes are a security-sensitive blocker and must not be imported as a bundle.
+- The Discord collector supports an explicit `DISCORD_CHANNEL_IDS` allowlist, but its history is deliberately bounded to at most six pages of 100 messages per channel and reports truncation. It must not be described as a complete-history exporter.
+- The cash-market core needs additional correctness review before migration: unverified owner-supplied author metadata is propagated as a risk flag, but the current order-book confidence calculation still counts those author names; outlier/flooding flags are recorded but the opportunity functions do not consistently exclude flagged offers. These are potential false-positive paths and require regression tests/fixes.
+- No PR #85 commits or workflow changes have been merged or copied into main. PR #85 remains preserved as-is.
+
+Next acceptance work:
+1. Finish the 42-file reconciliation and inspect all workflow changes.
+2. Harden market-book author provenance and risk-flag gating with regression tests before migrating the cash-market core.
+3. Move only reviewed, isolated slices onto a fresh branch from current main; run the full test suite twice and all required lint/data checks after each slice.
