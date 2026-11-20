@@ -7,10 +7,10 @@ and runtime settings remain compatible during the extraction.
 from __future__ import annotations
 
 import json
+import urllib.request
 from collections.abc import Callable
 from typing import Any
 from urllib.error import HTTPError, URLError
-import urllib.request
 
 
 class RejectTelegramRedirects(urllib.request.HTTPRedirectHandler):
