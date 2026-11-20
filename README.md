@@ -385,7 +385,7 @@ Scanner and tool path defaults are module constants or explicit function argumen
 
 The scheduled collector is scoped to the two configured cash-market channels through \`DISCORD_CHANNEL_IDS\`. It uses the official Discord REST API with read-only requests, then sends eligible messages through \`cash_offer_parser.py\` and stores normalized observations in the encrypted private market state. Each observation retains its source channel/server IDs, channel name, author, UTC timestamp, and original Discord message permalink. An extracted offer is evidence of a seller/buyer quote, not a verified catalogue price.
 
-The collector is bounded to at most 6 pages of 100 messages per channel per run and keeps raw message imports for 7 days. The market book separately ignores stale offers according to \`MARKET_OFFER_MAX_AGE_HOURS\` (default 48 hours). It does not backfill an unlimited channel history.
+The collector is bounded to at most 6 pages of 100 recent messages per channel per run. Raw message payloads are job-local and are removed before state publication; parsed price observations persist in encrypted private market state (up to 20,000 offers). The market book ignores offers older than \`MARKET_OFFER_MAX_AGE_HOURS\` (default 48 hours). This is not an unlimited historical backfill.
 
 **Activation requirements (not currently satisfied):**
 1. A Discord bot must be a member of the server and be allowed to view both target channels.
