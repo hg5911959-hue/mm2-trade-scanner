@@ -127,14 +127,33 @@ def merge_messages(existing: list[dict[str, Any]], incoming: list[dict[str, Any]
 
 
 def load_existing(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
+    flags = (
+        os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    )
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        descriptor = os.open(path, flags)
+    except FileNotFoundError:
+        return []
+    except OSError:
+        raise RuntimeError(f"Existing Discord state cannot be opened safely: {path.name}") from None
+    try:
+        with os.fdopen(descriptor, "rb") as handle:
+            metadata = os.fstat(handle.fileno())
+            if not stat.S_ISREG(metadata.st_mode):
+                raise RuntimeError(f"Existing Discord state is not a regular file: {path.name}")
+            if metadata.st_size > MAX_EXISTING_STATE_BYTES:
+                raise RuntimeError(f"Existing Discord state exceeds the size limit: {path.name}")
+            raw = handle.read(MAX_EXISTING_STATE_BYTES + 1)
+        if len(raw) > MAX_EXISTING_STATE_BYTES:
+            raise RuntimeError(f"Existing Discord state exceeds the size limit: {path.name}")
+        payload = json.loads(raw.decode("utf-8"))
         rows = payload.get("messages", []) if isinstance(payload, dict) else []
         return rows if isinstance(rows, list) else []
-    except (OSError, json.JSONDecodeError):
-        raise RuntimeError(f"Existing Discord state is unreadable: {path}") from None
+    except RuntimeError:
+        raise
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        raise RuntimeError(f"Existing Discord state is unreadable: {path.name}") from None
 
 
 def atomic_save(
