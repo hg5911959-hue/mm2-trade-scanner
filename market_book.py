@@ -235,7 +235,12 @@ def build_order_book(
         author_count = len(authors)
         if author_count < 2:
             flags.add("single_author")
-        confidence = "high" if author_count >= 3 else "medium" if author_count >= 2 else "low"
+        confidence = (
+            "low" if not asks or not bids
+            else "high" if author_count >= 3
+            else "medium" if author_count >= 2
+            else "low"
+        )
         best_ask = min(asks, key=lambda row: (float(row["unit_price_usd"]), -row["_timestamp"])) if asks else None
         best_bid = max(bids, key=lambda row: (float(row["unit_price_usd"]), row["_timestamp"])) if bids else None
         median_ask = _weighted_median(asks, current)
