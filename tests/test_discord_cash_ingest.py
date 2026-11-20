@@ -43,9 +43,9 @@ def discord_message(index, body, *, author_id=None, author_id_source="discord_ap
 
 class DiscordCashIngestTests(IsolatedDataTestCase):
     def test_valid_collector_rows_preserve_identity_and_provenance(self):
-        payload = {"messages": [
+        payload = collector_payload([
             discord_message(1, "Selling\n1x Candy 4$/1", author_id="423456789012345")
-        ]}
+        ])
 
         result = parse_discord_messages(payload)
 
@@ -58,12 +58,12 @@ class DiscordCashIngestTests(IsolatedDataTestCase):
         self.assertEqual(offer["message_id"], "discord:123456789012341")
 
     def test_owner_supplied_author_id_is_discarded_and_offer_is_non_actionable(self):
-        payload = {"messages": [
+        payload = collector_payload([
             discord_message(
                 1, "Selling\n1x Candy 4$/1",
                 author_id="423456789012345", author_id_source="owner_supplied",
             )
-        ]}
+        ])
 
         result = parse_discord_messages(payload)
         offer = result["offers"][0]
@@ -99,9 +99,9 @@ class DiscordCashIngestTests(IsolatedDataTestCase):
         self.assertEqual(result["offers"][0]["unit_price_usd"], 4.0)
 
     def test_demand_hints_never_become_buy_offers(self):
-        result = parse_discord_messages({
-            "messages": [discord_message(1, "Buying\nEmbersickle", author_id="423456789012345")]
-        })
+        result = parse_discord_messages(collector_payload([
+            discord_message(1, "Buying\nEmbersickle", author_id="423456789012345")
+        ]))
 
         self.assertEqual(result["offers"], [])
         self.assertEqual(len(result["demand_hints"]), 1)
@@ -124,7 +124,7 @@ class DiscordCashIngestTests(IsolatedDataTestCase):
         self.assertEqual(opportunities[0]["quantity"], 5)
 
     def test_unlisted_channel_is_rejected_even_with_valid_message_permalink(self):
-        row = discord_message(1, "Selling\\n1x Candy 4$/1", author_id="423456789012345")
+        row = discord_message(1, "Selling\n1x Candy 4$/1", author_id="423456789012345")
         row["channel_id"] = "423456789012345"
         row["url"] = f"https://discord.com/channels/{GUILD_ID}/{row['channel_id']}/{row['message_id']}"
 
@@ -134,7 +134,7 @@ class DiscordCashIngestTests(IsolatedDataTestCase):
         self.assertEqual(result["rejected"][0]["reason"], "invalid_discord_source_identity")
 
     def test_missing_or_inconsistent_collector_allowlists_are_rejected(self):
-        row = discord_message(1, "Selling\\n1x Candy 4$/1", author_id="423456789012345")
+        row = discord_message(1, "Selling\n1x Candy 4$/1", author_id="423456789012345")
         with self.assertRaises(ValueError):
             parse_discord_messages({"messages": [row]})
         payload = collector_payload([row])
