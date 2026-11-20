@@ -7,9 +7,36 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class WorkflowReliabilityTests(IsolatedDataTestCase):
-    def test_ci_linter_version_is_pinned(self):
+    def test_ci_linter_version_is_pinned_in_development_manifest(self):
+        requirements = (ROOT / "requirements-dev.txt").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
-        self.assertIn("ruff==0.17.5", workflow)
+        self.assertIn("ruff==0.17.5", requirements)
+        self.assertIn("-r requirements-dev.txt", workflow)
+
+    def test_optional_discord_dependency_is_pinned_and_used_only_by_collector(self):
+        requirements = (ROOT / "requirements-discord.txt").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        self.assertIn("discord.py==2.6.4", requirements)
+        self.assertIn("-r requirements-discord.txt", workflow)
+        self.assertIn('DISCORD_GUILD_IDS: "1125462206151143464"', workflow)
+        self.assertIn(
+            'DISCORD_CHANNEL_IDS: "1572655277130514472,1567557584402120785"', workflow
+        )
+        self.assertNotIn("482699890741477376", workflow)
+
+    def test_ruff_configuration_declares_python_target(self):
+        config = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn('target-version = "py312"', config)
+
+    def test_operations_docs_match_live_scheduler_and_discord_scope(self):
+        operations = (ROOT / "docs/OPERATIONS.md").read_text(encoding="utf-8")
+        architecture = (ROOT / "MARKET_INTELLIGENCE.md").read_text(encoding="utf-8")
+        self.assertIn("every 10 minutes", operations)
+        self.assertNotIn("every 15 minutes", operations)
+        self.assertNotIn("15-minute cron", operations)
+        self.assertIn("two explicitly allowlisted trading channels", operations)
+        self.assertIn("two explicitly allowlisted trading channels", architecture)
+        self.assertNotIn("two configured MM2 Discord servers", operations)
 
     def test_ci_runs_repository_wide_correctness_lint(self):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
