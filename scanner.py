@@ -3762,10 +3762,21 @@ def qualifies(result, min_diff=None, min_percent=None):
     min_percent = MIN_PROFIT_PERCENT if min_percent is None else min_percent
     # Only fully verified, conservative-positive trades are eligible for Telegram.
     # A best-case-only profit is uncertain and must never be advertised as a WIN.
+    if not isinstance(result, dict):
+        return False
     if result.get("manual_review") or result.get("cash_estimate_only"):
         return False
     metric = result.get("profit_worst", result.get("difference", 0))
-    return metric > 0 and metric >= min_diff and result["margin"] >= min_percent
+    margin = result.get("margin")
+    numeric_values = (metric, margin, min_diff, min_percent)
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        for value in numeric_values
+    ):
+        return False
+    return metric > 0 and metric >= min_diff and margin >= min_percent
 
 
 def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=False):
