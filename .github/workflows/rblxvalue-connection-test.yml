@@ -12,6 +12,7 @@ concurrency:
 
 jobs:
   connection-test:
+    if: github.ref == 'refs/heads/main'
     name: Verify RBLXValue API credentials
     runs-on: ubuntu-latest
     timeout-minutes: 3
