@@ -318,7 +318,7 @@ class MarketBookTests(IsolatedDataTestCase):
         book = build_order_book(offers, now=NOW)
 
         self.assertIn("market_flooding", book["candy"]["risk_flags"])
-        self.assertIsInstance(row["flags"], list)
+        self.assertNotIn(row, book["candy"]["asks"])
 
 
     def test_private_price_history_is_atomic_rolling_and_compact(self):
