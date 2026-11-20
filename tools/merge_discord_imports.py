@@ -15,9 +15,10 @@ MAX_INPUT_BYTES = 10 * 1024 * 1024
 MAX_SECRET_BYTES = 1 * 1024 * 1024
 
 
-def _snowflake(value: Any) -> str:
+def _message_id(value: Any) -> str:
+    """Bound the dedupe key; strict Discord snowflake validation happens downstream."""
     candidate = str(value or "").strip()
-    return candidate if candidate.isdigit() and 15 <= len(candidate) <= 22 else ""
+    return candidate if candidate and len(candidate) <= 128 else ""
 
 
 def _collector_envelope(payload: Any) -> bool:
@@ -103,7 +104,7 @@ def merge_imports(primary, secondary, path="data/discord_messages.json", now=Non
     for row in existing_rows:
         if not isinstance(row, dict):
             continue
-        message_id = _snowflake(row.get("message_id"))
+        message_id = _message_id(row.get("message_id"))
         if not message_id:
             continue
         try:
