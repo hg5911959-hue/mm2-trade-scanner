@@ -8,6 +8,18 @@ from tools.cash_market import cash_price_is_fresh, load_cash_price_catalog
 from tools.next_to_verify import format_blockers
 from tools.preflight import collect_preflight_checks
 
+
+class _RejectTelegramRedirects(urllib.request.HTTPRedirectHandler):
+    """Never forward the bot token embedded in a Telegram URL to a redirect."""
+
+    handler_order = 100
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_TELEGRAM_OPENER = urllib.request.build_opener(_RejectTelegramRedirects())
+
 DATA_DIR = Path("data")
 
 def build_report(metrics, discord_status=None, key_state=None, daily_limit=60, now=None, cash_summary=None, blocker_summary=None, preflight_checks=None):
@@ -34,8 +46,8 @@ def build_report(metrics, discord_status=None, key_state=None, daily_limit=60, n
             f"Discord manual import: {'STALE / missing' if stale else 'fresh'}\n"
             f"Cash prices: {cash_summary or 'catalogue unavailable'}\n"
             f"Last 7 days alerts: {trend}"
-            + (f"\\n\\n{blocker_summary}" if blocker_summary else "")
-            + ("\\n\\nPreflight checks: " + "; ".join(preflight_checks) if preflight_checks else "\\n\\nPreflight checks: PASS"))
+            + (f"\n\n{blocker_summary}" if blocker_summary else "")
+            + ("\n\nPreflight checks: " + "; ".join(preflight_checks) if preflight_checks else "\n\nPreflight checks: PASS"))
 
 def main():
     data = DATA_DIR
@@ -85,8 +97,15 @@ def main():
     if token and chat:
         body = urllib.parse.urlencode({"chat_id": chat, "text": report}).encode()
         request = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=body)
-        with urllib.request.urlopen(request, timeout=20) as response:
-            if response.status != 200: raise RuntimeError("Telegram report delivery failed")
+        with _TELEGRAM_OPENER.open(request, timeout=20) as response:
+            if response.status != 200:
+                raise RuntimeError("Telegram report delivery failed")
+            try:
+                result = json.loads(response.read(65536).decode("utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                raise RuntimeError("Telegram report returned an invalid response") from None
+            if not isinstance(result, dict) or result.get("ok") is not True:
+                raise RuntimeError("Telegram API rejected weekly report delivery")
     else:
         raise RuntimeError("Telegram credentials are not configured")
 
