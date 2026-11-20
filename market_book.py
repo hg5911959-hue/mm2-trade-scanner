@@ -18,8 +18,9 @@ BLOCKED_STABILITY = frozenset({
     "decreasing", "receding", "unsafe", "untradeable", "unstable", "volatile",
 })
 BLOCKED_OFFER_FLAGS = frozenset({
-    "invalid_flags", "market_flooding", "owner_supplied_author",
-    "price_far_from_median", "sell_before_drop",
+    "invalid_flags", "market_flooding", "no_currency_symbol",
+    "owner_supplied_author", "price_far_from_median", "sell_before_drop",
+    "unsupported_payment",
 })
 DEFAULT_TRANSFER_FEE_USD = 0.50
 DEFAULT_SAFETY_MARGIN_PERCENT = 5.0
@@ -82,6 +83,14 @@ def _valid_offer(row: dict[str, Any]) -> bool:
         math.isfinite(price) and price > 0 and 1 <= quantity <= 5000
         and 1 <= minimum <= quantity and bool(row.get("item_key"))
     )
+
+
+def _unsupported_payment(row: dict[str, Any]) -> bool:
+    """Only USD-denominated offers may enter a USD order book."""
+    payment = row.get("payment")
+    if payment is None or not str(payment).strip():
+        return False
+    return str(payment).strip().casefold() not in {"usd", "us dollar", "dollar"}
 
 
 def _offer_flags(row: dict[str, Any]) -> set[str]:
@@ -164,6 +173,12 @@ def build_order_book(
     result: dict[str, dict[str, Any]] = {}
     for item_key in sorted(set(grouped) | set(stale_counts)):
         rows = grouped.get(item_key, [])
+        # USD cash prices must not mix with USDT or currency-ambiguous rows.
+        # Mark these before computing the benchmark so they cannot distort it.
+        for row in rows:
+            if _unsupported_payment(row):
+                _add_offer_flag(row, "unsupported_payment")
+
         # Build the outlier benchmark only from independently attributable,
         # currently unflagged offers. Collapse repeated posts by each author
         # and side so one account cannot dominate the reference median.
