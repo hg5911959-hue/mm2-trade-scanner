@@ -7,8 +7,9 @@ and runtime settings remain compatible during the extraction.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from typing import Any
 from urllib.error import HTTPError, URLError
-from typing import Any, Callable
 
 
 class TelegramDeliveryUncertain(RuntimeError):
@@ -67,20 +68,18 @@ def send_telegram(
             if current:
                 chunks.append(current)
             total_chunks = len(chunks)
-            sent_chunks = 0
             for index, chunk in enumerate(chunks, start=1):
                 try:
                     send_one(f"💎 MM2 TRADE DETAILS ({index}/{total_chunks})\n{chunk}")
                 except TelegramDeliveryUncertain:
                     raise
                 except Exception as exc:
-                    if sent_chunks:
+                    if index > 1:
                         raise TelegramDeliveryUncertain(
                             "[telegram] Multipart alert was only partially delivered; "
                             "resend is quarantined to avoid duplicate earlier parts."
                         ) from exc
                     raise
-                sent_chunks += 1
             return
 
         part += footer
