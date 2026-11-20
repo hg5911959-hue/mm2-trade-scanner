@@ -2979,6 +2979,8 @@ def format_number(value):
 
 
 TelegramDeliveryUncertain = telegram_delivery.TelegramDeliveryUncertain
+_RejectTelegramRedirects = telegram_delivery.RejectTelegramRedirects
+_TELEGRAM_OPENER = telegram_delivery._TELEGRAM_OPENER
 
 
 def _wait_for_telegram_rate_limit():
@@ -3005,7 +3007,7 @@ def send_telegram(message):
         attribution=RBLXVALUE_ATTRIBUTION,
         wait_for_rate_limit=_wait_for_telegram_rate_limit,
         request_factory=urllib.request.Request,
-        urlopen=urllib.request.urlopen,
+        open_request=_TELEGRAM_OPENER.open,
         sleep=time.sleep,
     )
 
