@@ -20,6 +20,7 @@ def offer(side, item, price, quantity, author, message_id):
     return {
         "side": side, "item": item, "item_key": item.casefold(),
         "unit_price_usd": price, "quantity": quantity, "author": author,
+        "author_id": f"user:{author.strip().casefold()}" if author.strip() else "",
         "message_id": message_id, "url": f"https://discord.com/channels/1/2/{message_id}",
         "posted_at": NOW - 300,
     }
@@ -100,8 +101,10 @@ class MarketBookTests(IsolatedDataTestCase):
         offers = [
             offer("sell", "Candy", 1.0, 5, "seller-a", "ask-a"),
             offer("sell", "Candy", 1.1, 5, "seller-b", "ask-b"),
-            offer("buy", "Candy", 2.0, 5, "", "bid"),
+            offer("buy", "Candy", 2.0, 5, "buyer-name", "bid"),
         ]
+        for entry in offers:
+            entry.pop("author_id", None)
 
         row = build_order_book(offers, now=NOW)["candy"]
 
