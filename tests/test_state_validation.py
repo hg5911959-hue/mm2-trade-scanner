@@ -6,6 +6,9 @@ from pathlib import Path
 
 from test_support import IsolatedDataTestCase
 
+from private_state import (
+    IV_BYTES, MAGIC, MAX_ENCRYPTED_BYTES, SALT_BYTES, TAG_BYTES,
+)
 from tools.validate_state import validate_state
 
 
@@ -123,6 +126,38 @@ class StateValidationTests(IsolatedDataTestCase):
         errors = validate_api_safety_state(self.root)
         self.assertTrue(any("unexpected files" in error for error in errors))
         self.assertTrue(any("budget timestamps" in error for error in errors))
+
+    def test_public_state_rejects_plaintext_private_files_without_parsing_them(self):
+        (self.root / "inventory.json").write_text("{broken", encoding="utf-8")
+
+        errors = validate_state(self.root)
+
+        self.assertTrue(any("private Telegram/market state" in error for error in errors))
+        self.assertFalse(any("invalid JSON state file: inventory.json" in error for error in errors))
+
+    def test_public_state_rejects_invalid_private_ciphertext_header(self):
+        minimum = len(MAGIC) + SALT_BYTES + IV_BYTES + TAG_BYTES
+        (self.root / "private_state.enc").write_bytes(b"X" * minimum)
+
+        errors = validate_state(self.root)
+
+        self.assertTrue(any("private-state bundle header is invalid" in error for error in errors))
+
+    def test_public_state_rejects_oversized_private_ciphertext_before_reading(self):
+        path = self.root / "private_state.enc"
+        with path.open("wb") as handle:
+            handle.write(MAGIC)
+            handle.truncate(MAX_ENCRYPTED_BYTES + 1)
+
+        errors = validate_state(self.root)
+
+        self.assertTrue(any("private-state bundle exceeds" in error for error in errors))
+
+    def test_public_state_accepts_bounded_private_ciphertext_envelope(self):
+        path = self.root / "private_state.enc"
+        path.write_bytes(MAGIC + b"0" * (SALT_BYTES + IV_BYTES + TAG_BYTES))
+
+        self.assertEqual(validate_state(self.root), [])
 
     def test_valid_state_passes_strict_success_validation(self):
         self._write_valid_state()
