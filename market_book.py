@@ -279,45 +279,75 @@ def find_direct_arbitrage(
     min_profit_usd: float = DEFAULT_MIN_PROFIT_USD,
     min_profit_percent: float = DEFAULT_MIN_PROFIT_PERCENT,
 ) -> list[dict[str, Any]]:
-    """Find ask-to-bid crosses with overlapping quantity after costs and margin."""
-    fee = float(transfer_fee_usd)
-    margin = float(safety_margin_percent)
-    if not all(math.isfinite(v) and v >= 0 for v in (fee, margin, min_profit_usd, min_profit_percent)) or margin >= 100:
+    """Find the best independent ask/bid pair per item after costs and margin."""
+    raw_thresholds = (
+        transfer_fee_usd, safety_margin_percent, min_profit_usd, min_profit_percent
+    )
+    if any(isinstance(value, bool) for value in raw_thresholds):
         raise ValueError("invalid arbitrage thresholds")
+    try:
+        fee, margin, min_profit_usd, min_profit_percent = (
+            float(value) for value in raw_thresholds
+        )
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("invalid arbitrage thresholds") from None
+    if (
+        not all(math.isfinite(value) and value >= 0 for value in (
+            fee, margin, min_profit_usd, min_profit_percent
+        ))
+        or margin >= 100
+    ):
+        raise ValueError("invalid arbitrage thresholds")
+
     opportunities = []
     for item_key, row in book.items():
-        ask, bid = row.get("best_ask"), row.get("best_bid")
-        if (
-            not ask or not bid or row.get("confidence") not in {"medium", "high"}
-            or not _offer_is_actionable(ask) or not _offer_is_actionable(bid)
-        ):
+        if row.get("confidence") not in {"medium", "high"}:
             continue
-        ask_price, bid_price = float(ask["unit_price_usd"]), float(bid["unit_price_usd"])
-        quantity = min(int(ask["quantity"]), int(bid["quantity"]))
-        minimum_quantity = max(
-            int(ask.get("min_quantity") or 1), int(bid.get("min_quantity") or 1)
-        )
-        if quantity < minimum_quantity or ask_price >= bid_price:
-            continue
-        ask_author = _trusted_author(ask)
-        bid_author = _trusted_author(bid)
-        if not ask_author or not bid_author or ask_author == bid_author:
-            continue
-        gross = (bid_price - ask_price) * quantity
-        fees = 2 * fee
-        safety = gross * margin / 100
-        net = gross - fees - safety
-        cost = ask_price * quantity + fees
-        profit_percent = net / cost * 100 if cost > 0 else 0.0
-        if net < float(min_profit_usd) or profit_percent < float(min_profit_percent):
-            continue
-        opportunities.append({
-            "type": "direct_arbitrage", "item_key": item_key, "item": row["item"],
-            "buy": dict(ask), "sell": dict(bid), "quantity": quantity,
-            "gross_profit_usd": gross, "fees_usd": fees, "safety_margin_usd": safety,
-            "profit_usd": net, "profit_percent": profit_percent,
-            "confidence": row["confidence"], "risk_flags": list(row["risk_flags"]),
-        })
+        asks = row.get("asks") or ([row["best_ask"]] if row.get("best_ask") else [])
+        bids = row.get("bids") or ([row["best_bid"]] if row.get("best_bid") else [])
+        best_candidate = None
+        for ask in asks:
+            if not _offer_is_actionable(ask):
+                continue
+            ask_price = float(ask["unit_price_usd"])
+            ask_author = _trusted_author(ask)
+            for bid in bids:
+                if not _offer_is_actionable(bid):
+                    continue
+                bid_author = _trusted_author(bid)
+                if not ask_author or not bid_author or ask_author == bid_author:
+                    continue
+                bid_price = float(bid["unit_price_usd"])
+                quantity = min(int(ask["quantity"]), int(bid["quantity"]))
+                minimum_quantity = max(
+                    int(ask.get("min_quantity") or 1),
+                    int(bid.get("min_quantity") or 1),
+                )
+                if quantity < minimum_quantity or ask_price >= bid_price:
+                    continue
+                gross = (bid_price - ask_price) * quantity
+                fees = 2 * fee
+                safety = gross * margin / 100
+                net = gross - fees - safety
+                cost = ask_price * quantity + fees
+                profit_percent = net / cost * 100 if cost > 0 else 0.0
+                if net < min_profit_usd or profit_percent < min_profit_percent:
+                    continue
+                candidate = {
+                    "type": "direct_arbitrage", "item_key": item_key, "item": row["item"],
+                    "buy": dict(ask), "sell": dict(bid), "quantity": quantity,
+                    "gross_profit_usd": gross, "fees_usd": fees,
+                    "safety_margin_usd": safety, "profit_usd": net,
+                    "profit_percent": profit_percent,
+                    "confidence": row["confidence"], "risk_flags": list(row["risk_flags"]),
+                }
+                if (
+                    best_candidate is None
+                    or candidate["profit_usd"] > best_candidate["profit_usd"]
+                ):
+                    best_candidate = candidate
+        if best_candidate is not None:
+            opportunities.append(best_candidate)
     return sorted(opportunities, key=lambda item: item["profit_usd"], reverse=True)
 
 
