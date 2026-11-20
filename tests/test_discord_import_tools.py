@@ -1,6 +1,8 @@
 import json
+import os
 import tempfile
 import unittest
+from unittest.mock import patch
 from test_support import IsolatedDataTestCase
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -28,6 +30,35 @@ class DiscordImportToolTests(IsolatedDataTestCase):
         with tempfile.TemporaryDirectory() as d:
             result=merge_imports(json.dumps({"messages":[self.row("old",60)]}),"",Path(d)/"m.json")
             self.assertTrue(result["stale"])
+    def test_existing_merge_state_rejects_symlink_without_reading_target(self):
+        if not hasattr(os, "O_NOFOLLOW"):
+            self.skipTest("O_NOFOLLOW is unavailable on this platform")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "outside.json"
+            target.write_text('{"messages":[]}', encoding="utf-8")
+            link = root / "messages.json"
+            link.symlink_to(target)
+            with self.assertRaisesRegex(RuntimeError, "cannot be opened safely"):
+                merge_imports("", "", link)
+
+    def test_existing_merge_state_rejects_fifo_without_blocking(self):
+        if not hasattr(os, "mkfifo") or not hasattr(os, "O_NONBLOCK"):
+            self.skipTest("FIFO/nonblocking open is unavailable on this platform")
+        with tempfile.TemporaryDirectory() as directory:
+            fifo = Path(directory) / "messages.pipe"
+            os.mkfifo(fifo)
+            with self.assertRaisesRegex(RuntimeError, "not a regular file"):
+                merge_imports("", "", fifo)
+
+    def test_existing_merge_state_enforces_read_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "messages.json"
+            path.write_text('{"messages":[]}', encoding="utf-8")
+            with patch("tools.merge_discord_imports.MAX_INPUT_BYTES", 4):
+                with self.assertRaisesRegex(RuntimeError, "exceeds the size limit"):
+                    merge_imports("", "", path)
+
     def test_size_warning_above_45_kb(self):
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)/"import.json"
