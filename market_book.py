@@ -108,11 +108,11 @@ def _add_offer_flag(row: dict[str, Any], flag: str) -> None:
 
 
 def _trusted_author(row: dict[str, Any]) -> str:
-    """Only collector-verified author metadata contributes to independence."""
+    """Only stable source author IDs contribute to independent-author counts."""
     if "owner_supplied_author" in _offer_flags(row):
         return ""
-    author = str(row.get("author") or "").strip().casefold()
-    return "" if author in {"", "unknown", "none", "null", "n/a"} else author
+    author_id = str(row.get("author_id") or "").strip().casefold()
+    return "" if author_id in {"", "unknown", "none", "null", "n/a"} else author_id
 
 
 def build_order_book(
