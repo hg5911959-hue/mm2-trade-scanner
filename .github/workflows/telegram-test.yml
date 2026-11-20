@@ -40,8 +40,14 @@ jobs:
               headers={"Content-Type": "application/json"},
               method="POST",
           )
+          class RejectTelegramRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          opener = urllib.request.build_opener(RejectTelegramRedirects())
           try:
-              with urllib.request.urlopen(request, timeout=20) as response:
+              # The bot token is embedded in the URL path; never follow redirects.
+              with opener.open(request, timeout=20) as response:
                   result = json.loads(response.read().decode("utf-8"))
           except urllib.error.HTTPError as exc:
               try:
