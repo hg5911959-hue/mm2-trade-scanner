@@ -10,6 +10,19 @@ import json
 from collections.abc import Callable
 from typing import Any
 from urllib.error import HTTPError, URLError
+import urllib.request
+
+
+class RejectTelegramRedirects(urllib.request.HTTPRedirectHandler):
+    """Never forward a bot token embedded in a Telegram URL to a redirect."""
+
+    handler_order = 100
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_TELEGRAM_OPENER = urllib.request.build_opener(RejectTelegramRedirects())
 
 
 class TelegramDeliveryUncertain(RuntimeError):
@@ -40,7 +53,7 @@ def send_telegram(
     attribution: str,
     wait_for_rate_limit: Callable[[], Any],
     request_factory: Callable[..., Any],
-    urlopen: Callable[..., Any],
+    open_request: Callable[..., Any],
     sleep: Callable[[float], Any],
 ) -> None:
     """Send one message or safe multipart details; never retry uncertain sends."""
@@ -97,7 +110,7 @@ def send_telegram(
                 url, data=body, headers={"Content-Type": "application/json"}
             )
             try:
-                with urlopen(request, timeout=20) as response:
+                with open_request(request, timeout=20) as response:
                     raw = response.read()
             except HTTPError as exc:
                 raw = exc.read(2000)
