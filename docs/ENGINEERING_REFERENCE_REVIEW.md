@@ -167,10 +167,11 @@ A separate security slice was ported from PR #85 onto a fresh branch based on cu
 - Retain the allowlisted AES-256-CTR plus HMAC-SHA256 encrypt-then-MAC format, with authentication verified before decryption.
 - Check plaintext file sizes with `stat()` before reading them during encryption.
 - Bound encrypted bundle size before reading it during decryption, accounting for base64 expansion and bounded JSON metadata.
+- Extend the public-state validator to reject plaintext private files and malformed/oversized ciphertext envelopes without loading private payloads.
 - Add sparse-file tests to prove oversized inputs are rejected without allocating or restoring the payload.
 
 Validation:
-- GitHub Actions run [44818273130](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44818273130) passed **396 tests twice**, data immutability, and all configured Ruff/lint checks.
+- GitHub Actions run [44819822324](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44819822324) passed **400 tests twice**, data immutability, and all configured Ruff/lint checks.
 - PR #101 is open as Draft; no workflows or secrets were changed.
 
 Remaining security review before enabling private state:
