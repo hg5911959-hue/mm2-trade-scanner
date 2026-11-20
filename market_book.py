@@ -108,11 +108,16 @@ def _add_offer_flag(row: dict[str, Any], flag: str) -> None:
 
 
 def _trusted_author(row: dict[str, Any]) -> str:
-    """Only stable source author IDs contribute to independent-author counts."""
-    if "owner_supplied_author" in _offer_flags(row):
+    """Only validated Discord API author IDs contribute to independence."""
+    if (
+        "owner_supplied_author" in _offer_flags(row)
+        or row.get("author_id_source") != "discord_api"
+    ):
         return ""
-    author_id = str(row.get("author_id") or "").strip().casefold()
-    return "" if author_id in {"", "unknown", "none", "null", "n/a"} else author_id
+    author_id = str(row.get("author_id") or "").strip()
+    if not author_id.isdigit() or not 15 <= len(author_id) <= 22:
+        return ""
+    return author_id
 
 
 def build_order_book(
