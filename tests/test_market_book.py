@@ -134,6 +134,27 @@ class MarketBookTests(IsolatedDataTestCase):
         self.assertTrue(chains)
         self.assertIn("owner_supplied_author", chains[0]["risk_flags"])
 
+    def test_swap_chain_requires_verified_independent_authors_on_both_legs(self):
+        offers = [
+            offer("sell", "A", 2.0, 2, "seller-a1", "a1"),
+            offer("sell", "A", 2.2, 2, "seller-a2", "a2"),
+            offer("sell", "B", 5.0, 2, "seller-b1", "b1"),
+            offer("sell", "B", 5.2, 2, "seller-b2", "b2"),
+            offer("buy", "B", 10.0, 1, "", "bid-unknown"),
+        ]
+        book = build_order_book(offers, now=NOW)
+        values = {
+            "a": {"value": 100, "stability": "Stable", "confidence": "high", "data_age_seconds": 60},
+            "b": {"value": 200, "stability": "Stable", "confidence": "high", "data_age_seconds": 60},
+        }
+
+        self.assertIsNone(book["b"]["best_bid"])
+        self.assertEqual(
+            find_swap_chains(book, values, transfer_fee_usd=0.1,
+                             min_profit_usd=0, min_profit_percent=0),
+            [],
+        )
+
     def test_swap_chain_rejects_received_bid_with_minimum_above_one(self):
         ask = offer("sell", "A", 5, 2, "seller-a", "ask")
         ask_other = offer("sell", "A", 5.2, 2, "seller-b", "ask-other")
