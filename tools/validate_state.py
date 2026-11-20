@@ -98,9 +98,13 @@ def _validate_api_key_block_document(block: Any) -> list[str]:
 def validate_state(directory: str | Path, *, require_cache: bool = False) -> list[str]:
     """Return validation errors; never mutate the supplied state directory."""
     root = Path(directory)
+    if root.is_symlink():
+        return ["state directory must not be a symlink"]
     if not root.exists():
         return ["state directory is missing"] if require_cache else []
-    files = [path for path in root.rglob("*") if path.is_file()]
+    entries = list(root.rglob("*"))
+    symlinks = [path for path in entries if path.is_symlink()]
+    files = [path for path in entries if path.is_file() and not path.is_symlink()]
     if not files:
         if require_cache:
             return [
@@ -110,6 +114,8 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
         return []
 
     errors: list[str] = []
+    if symlinks:
+        errors.append("state contains symlink paths")
     if any(path.name == "discord_messages.json" for path in files):
         errors.append("private Discord message file must not enter durable public state")
     private_plaintext = [path for path in files if path.name in PRIVATE_STATE_PLAINTEXT_FILES]
@@ -306,11 +312,17 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
 def validate_api_safety_state(directory: str | Path) -> list[str]:
     """Validate only the small API safety ledger used after failed scans."""
     root = Path(directory)
+    if root.is_symlink():
+        return ["API safety artifact directory must not be a symlink"]
     if not root.exists():
         return []
-    files = [path for path in root.rglob("*") if path.is_file()]
+    entries = list(root.rglob("*"))
+    symlinks = [path for path in entries if path.is_symlink()]
+    files = [path for path in entries if path.is_file() and not path.is_symlink()]
     allowed = {"rblxvalue_request_budget.json", "api_key_blocked.json"}
     errors: list[str] = []
+    if symlinks:
+        errors.append("API safety artifact contains symlink paths")
     unexpected = [path.name for path in files if path.name not in allowed]
     if unexpected:
         errors.append("API safety artifact contains unexpected files")
