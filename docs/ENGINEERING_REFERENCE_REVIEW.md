@@ -114,15 +114,16 @@ Complete. The baseline review is documentation-only and does not change feature 
 
 Implemented on `improvement/reference-architecture-review`:
 - `scanner.qualifies()` now fails closed for non-dictionary results, missing/malformed numeric metrics, booleans, NaN/infinite values, and invalid thresholds.
+- Cash alert qualification now rejects negative/non-finite `CASH_MIN_MARGIN_PERCENT` configuration at startup and at the alert gate, with regression coverage.
 - Negative minimum-difference and minimum-margin thresholds are rejected rather than silently weakening the alert gate.
 - Regression tests cover malformed metrics, non-finite profit/margin values, non-finite/negative thresholds, and a valid finite positive trade.
 - No feature flag, source policy, alert threshold default, or production workflow was enabled or changed.
 
 Validation:
-- Latest branch head: `43adb6dc1b05698f4bfa54df77f127512dcb0dcf`.
+- Latest branch head: `09c1478a012161e204b4269d6606da5d3e353f50`.
 
-- GitHub Actions run [44814950719](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44814950719) completed successfully on the latest branch head.
-- The full suite ran **394 tests twice**; both runs passed. Data immutability checks and every configured Ruff/lint step passed.
+- GitHub Actions run [44835271454](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44835271454) completed successfully on the latest branch head.
+- The full suite ran **395 tests twice**; both runs passed. Data immutability checks and every configured Ruff/lint step passed.
 - PR #99 remains open as Draft and has not been merged.
 
 ### Phase 1 — PR #85 reconciliation (selective migration underway)
@@ -139,7 +140,7 @@ Preliminary file-level findings:
 - The Discord collector supports an explicit `DISCORD_CHANNEL_IDS` allowlist, but its history is deliberately bounded to at most six pages of 100 messages per channel and reports truncation. It must not be described as a complete-history exporter.
 - The reviewed market-book core had concrete false-positive paths: owner-supplied author labels could inflate independence confidence, flagged outliers/flooding/sell-before-drop offers could remain actionable, and missing author identities could appear in candidate legs.
 - These paths were hardened in a separate branch and PR #100; the original PR #85 branch remains unchanged.
-- PR #100 contains only `market_book.py` and `tests/test_market_book.py`; it does not wire the module into the live scanner or change workflows, secrets, defaults, or price data.
+- PR #100 now contains the isolated cash-offer parser and alias catalogue, normalized Discord ingestion adapter, channel-allowlisted read-only collector changes, manual-import provenance boundary, conservative order book, and associated regression tests. It does not wire cash-market analysis into the live scanner or change workflows, secrets, defaults, or price data.
 - Workflow changes in PR #85 remain a security-sensitive blocker. No PR #85 workflow changes or commits have been merged into `main`.
 
 ### Selective market-book hardening — PR #100
@@ -157,21 +158,22 @@ Implemented on `fix/market-book-trust-and-risk-gates`, based directly on current
 - Add regression tests for all the above cases.
 
 Validation:
-- PR #100 GitHub Actions run [44819738814](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44819738814) succeeded on the latest code head.
-- **442 tests passed twice**, data immutability passed, and all configured Ruff/lint checks passed.
+- PR #100 GitHub Actions run [44835150100](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44835150100) succeeded on the latest code head.
+- **455 tests passed twice**, data immutability passed, and all configured Ruff/lint checks passed.
+- A follow-up regression prevents overflowing numeric timestamps from crashing order-book construction; invalid timestamps remain stale/risk-only.
 - PR #100 is open as Draft; no code has been merged into `main`.
 
 ### Private-state encryption hardening — PR #101
 
 A separate security slice was ported from PR #85 onto a fresh branch based on current `main`:
 - Retain the allowlisted AES-256-CTR plus HMAC-SHA256 encrypt-then-MAC format, with authentication verified before decryption.
-- Check plaintext file sizes with `stat()` before reading them during encryption.
-- Bound encrypted bundle size before reading it during decryption, accounting for base64 expansion and bounded JSON metadata.
+- Read private inputs and encrypted bundles through opened file descriptors with `O_NOFOLLOW`, `fstat`, regular-file checks, and a `max_bytes + 1` read cap. This remains bounded if a file grows after the size check and rejects symlinked input paths.
+- Preserve per-file/total decoded size limits and base64-expansion bounds.
 - Extend the public-state validator to reject plaintext private files and malformed/oversized ciphertext envelopes without loading private payloads.
 - Add sparse-file tests to prove oversized inputs are rejected without allocating or restoring the payload.
 
 Validation:
-- GitHub Actions run [44819822324](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44819822324) passed **400 tests twice**, data immutability, and all configured Ruff/lint checks.
+- GitHub Actions run [44834934901](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44834934901) passed **407 tests twice**, data immutability, and all configured Ruff/lint checks.
 - PR #101 is open as Draft; no workflows or secrets were changed.
 
 Remaining security review before enabling private state:
