@@ -32,7 +32,10 @@ def _timestamp(value: Any) -> float | None:
     if isinstance(value, bool) or value is None:
         return None
     if isinstance(value, (int, float)):
-        parsed = float(value)
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
         return parsed if math.isfinite(parsed) and parsed > 0 else None
     try:
         parsed_dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
