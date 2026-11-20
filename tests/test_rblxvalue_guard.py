@@ -7,6 +7,7 @@ from unittest.mock import patch
 from test_support import IsolatedDataTestCase
 
 import rblxvalue_guard as guard
+from rblxvalue_guard import MAX_GUARD_STATE_BYTES
 
 
 class RblxValueGuardTests(IsolatedDataTestCase):
@@ -204,13 +205,34 @@ class RblxValueGuardTests(IsolatedDataTestCase):
         })
 
     def test_invalid_budget_clock_fails_closed_before_writing(self):
-        for value in (True, False, 0, -1, float("nan"), float("inf"), -float("inf")):
+        for value in (True, False, 0, -1, float("nan"), float("inf"), -float("inf"), 1e300):
             with self.subTest(now=value), self.assertRaises(guard.RblxValueGuardError):
                 guard.reserve_request(
                     now=value, key="rbx_test_key",
                     budget_path=self.budget, block_path=self.block,
                 )
             self.assertFalse(self.budget.exists())
+
+    def test_oversized_guard_ledger_fails_closed_before_reading(self):
+        with self.budget.open("wb") as handle:
+            handle.truncate(MAX_GUARD_STATE_BYTES + 1)
+
+        with self.assertRaisesRegex(guard.RblxValueGuardError, "exceeds the size limit"):
+            guard.reserve_request(
+                now=1_800_000_000, key="rbx_test_key",
+                budget_path=self.budget, block_path=self.block,
+            )
+
+        self.assertEqual(self.budget.stat().st_size, MAX_GUARD_STATE_BYTES + 1)
+
+    def test_non_utf8_guard_ledger_fails_closed(self):
+        self.budget.write_bytes(b"\\xff\\xfe")
+        with self.assertRaisesRegex(guard.RblxValueGuardError, "not valid UTF-8"):
+            guard.reserve_request(
+                now=1_800_000_000, key="rbx_test_key",
+                budget_path=self.budget, block_path=self.block,
+            )
+        self.assertEqual(self.budget.read_bytes(), b"\\xff\\xfe")
 
     def test_invalid_workflow_identifier_fails_closed_before_writing(self):
         for workflow in ("   ", "bad\nworkflow", "x" * 101):
