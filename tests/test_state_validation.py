@@ -7,7 +7,11 @@ from pathlib import Path
 from test_support import IsolatedDataTestCase
 
 from private_state import (
-    IV_BYTES, MAGIC, MAX_ENCRYPTED_BYTES, SALT_BYTES, TAG_BYTES,
+    IV_BYTES,
+    MAGIC,
+    MAX_ENCRYPTED_BYTES,
+    SALT_BYTES,
+    TAG_BYTES,
 )
 from tools.validate_state import validate_state
 
