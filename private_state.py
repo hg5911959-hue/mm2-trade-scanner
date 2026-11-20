@@ -15,6 +15,7 @@ import json
 import os
 import secrets
 import shutil
+import stat
 import subprocess
 import tempfile
 from pathlib import Path
@@ -71,6 +72,44 @@ def _openssl_crypt(data: bytes, *, key: bytes, iv: bytes, decrypt: bool) -> byte
     return result.stdout
 
 
+def _read_bounded_regular_file(
+    path: Path, max_bytes: int, *, missing_ok: bool = False,
+    unavailable_message: str = "private-state file is unavailable",
+    oversized_message: str = "private-state file exceeds the configured size limit",
+) -> bytes | None:
+    """Read at most max_bytes + 1 bytes from an opened regular file.
+
+    O_NOFOLLOW prevents a final-component symlink from redirecting the read;
+    fstat validates the opened descriptor, and the bounded read remains safe
+    if another process grows the file after the initial size check.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except FileNotFoundError as exc:
+        if missing_ok:
+            return None
+        raise PrivateStateError(unavailable_message) from exc
+    except OSError as exc:
+        raise PrivateStateError("private-state path cannot be opened safely") from exc
+
+    try:
+        with os.fdopen(descriptor, "rb") as handle:
+            metadata = os.fstat(handle.fileno())
+            if not stat.S_ISREG(metadata.st_mode):
+                raise PrivateStateError("private-state path is not a regular file")
+            if metadata.st_size > max_bytes:
+                raise PrivateStateError(oversized_message)
+            raw = handle.read(max_bytes + 1)
+            if len(raw) > max_bytes:
+                raise PrivateStateError(oversized_message)
+            return raw
+    except PrivateStateError:
+        raise
+    except OSError as exc:
+        raise PrivateStateError(unavailable_message) from exc
+
+
 def _atomic_write(path: Path, payload: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
@@ -92,19 +131,12 @@ def encrypt_private_state(directory: str | Path, output: str | Path, secret: str
     total = 0
     for name in sorted(PRIVATE_FILENAMES):
         path = root / name
-        if not path.exists():
+        raw = _read_bounded_regular_file(
+            path, MAX_FILE_BYTES, missing_ok=True,
+            oversized_message="private-state file exceeds the configured size limit",
+        )
+        if raw is None:
             continue
-        if path.is_symlink() or not path.is_file():
-            raise PrivateStateError("private-state path is not a regular file")
-        try:
-            file_size = path.stat().st_size
-        except OSError as exc:
-            raise PrivateStateError("private-state file cannot be inspected safely") from exc
-        if file_size > MAX_FILE_BYTES:
-            raise PrivateStateError("private-state file exceeds the configured size limit")
-        raw = path.read_bytes()
-        if len(raw) > MAX_FILE_BYTES:
-            raise PrivateStateError("private-state file exceeds the configured size limit")
         total += len(raw)
         if total > MAX_TOTAL_BYTES:
             raise PrivateStateError("private-state bundle exceeds the configured size limit")
@@ -129,18 +161,12 @@ def encrypt_private_state(directory: str | Path, output: str | Path, secret: str
 def decrypt_private_state(encrypted_path: str | Path, directory: str | Path, secret: str) -> int:
     """Verify the HMAC before decrypting; validate all names before writing anything."""
     source, root = Path(encrypted_path), Path(directory)
-    try:
-        encrypted_size = source.stat().st_size
-    except OSError as exc:
-        raise PrivateStateError("encrypted private-state bundle is unavailable") from exc
-    if encrypted_size > MAX_ENCRYPTED_BYTES:
-        raise PrivateStateError("encrypted private-state bundle exceeds the configured size limit")
-    try:
-        blob = source.read_bytes()
-    except OSError as exc:
-        raise PrivateStateError("encrypted private-state bundle is unavailable") from exc
-    if len(blob) > MAX_ENCRYPTED_BYTES:
-        raise PrivateStateError("encrypted private-state bundle exceeds the configured size limit")
+    blob = _read_bounded_regular_file(
+        source, MAX_ENCRYPTED_BYTES,
+        unavailable_message="encrypted private-state bundle is unavailable",
+        oversized_message="encrypted private-state bundle exceeds the configured size limit",
+    )
+    assert blob is not None
     minimum = len(MAGIC) + SALT_BYTES + IV_BYTES + TAG_BYTES
     if len(blob) < minimum or not blob.startswith(MAGIC):
         raise PrivateStateError("encrypted private-state bundle has an invalid header")
