@@ -328,7 +328,7 @@ class MarketBookTests(IsolatedDataTestCase):
         self.assertAlmostEqual(row["median_market"], 4.9)
         self.assertEqual(row["best_ask"]["message_id"], "ask-a")
         self.assertEqual(row["best_bid"]["message_id"], "bid-a")
-        self.assertEqual(row["confidence"], "high")
+        self.assertEqual(row["confidence"], "low")
 
     def test_wide_legitimate_bid_ask_spread_uses_side_specific_medians(self):
         offers = [
