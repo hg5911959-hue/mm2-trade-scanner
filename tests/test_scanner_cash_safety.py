@@ -32,7 +32,8 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         base = {"manual_review": False, "cash_estimate_only": False,
                 "profit_worst": 100.0, "margin": 20.0}
         for kwargs in ({"min_diff": float("nan")}, {"min_diff": float("inf")},
-                       {"min_percent": float("nan")}, {"min_percent": float("inf")}):
+                       {"min_percent": float("nan")}, {"min_percent": float("inf")},
+                       {"min_diff": -1.0}, {"min_percent": -1.0}):
             with self.subTest(kwargs=kwargs):
                 self.assertFalse(scanner.qualifies(base, **kwargs))
 
