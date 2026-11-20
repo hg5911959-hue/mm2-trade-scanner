@@ -23,6 +23,7 @@ PERMANENT_BLOCK_AFTER = 3
 ALERT_INTERVAL_SECONDS = 24 * 60 * 60
 ALERT_RETRY_SECONDS = 5 * 60
 REQUESTS_THIS_RUN = 0
+MAX_GUARD_STATE_BYTES = 256 * 1024
 
 
 class RblxValueGuardError(RuntimeError):
@@ -49,9 +50,19 @@ def key_fingerprint(key: str | None = None) -> str:
 def _read_json(path: Path) -> dict[str, Any]:
     """Read guard state without silently resetting a corrupt safety ledger."""
     try:
+        if path.stat().st_size > MAX_GUARD_STATE_BYTES:
+            raise RblxValueGuardError(
+                f"[rblxvalue-state] safety state file {path.name} exceeds the size limit; refusing API request"
+            )
         raw = path.read_text(encoding="utf-8")
+        if len(raw.encode("utf-8")) > MAX_GUARD_STATE_BYTES:
+            raise RblxValueGuardError(
+                f"[rblxvalue-state] safety state file {path.name} exceeds the size limit; refusing API request"
+            )
     except FileNotFoundError:
         return {}
+    except RblxValueGuardError:
+        raise
     except OSError as exc:
         raise RblxValueGuardError(
             f"[rblxvalue-state] cannot read safety state file {path.name}; refusing API request"
@@ -268,6 +279,12 @@ def reserve_request(
         raise RblxValueGuardError(
             "[rblxvalue-state] request budget clock is non-finite or non-positive; refusing API request"
         )
+    try:
+        datetime.fromtimestamp(current, UTC)
+    except (OverflowError, OSError, ValueError) as exc:
+        raise RblxValueGuardError(
+            "[rblxvalue-state] request budget clock is outside the supported range; refusing API request"
+        ) from exc
 
     current_workflow = str(workflow or os.environ.get("GITHUB_WORKFLOW") or "local").strip()
     if (
