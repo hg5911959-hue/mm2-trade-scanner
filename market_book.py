@@ -245,9 +245,9 @@ def find_direct_arbitrage(
         )
         if quantity < minimum_quantity or ask_price >= bid_price:
             continue
-        ask_author = str(ask.get("author") or "").strip().casefold()
-        bid_author = str(bid.get("author") or "").strip().casefold()
-        if ask_author and bid_author and ask_author == bid_author:
+        ask_author = _trusted_author(ask)
+        bid_author = _trusted_author(bid)
+        if not ask_author or not bid_author or ask_author == bid_author:
             continue
         gross = (bid_price - ask_price) * quantity
         fees = 2 * fee
@@ -321,6 +321,9 @@ def find_swap_chains(
         for ask in row_a.get("asks", []):
             if not _offer_is_actionable(ask):
                 continue
+            ask_author = _trusted_author(ask)
+            if not ask_author:
+                continue
             ask_price = float(ask["unit_price_usd"])
             ask_qty = int(ask["quantity"])
             minimum_ask_quantity = max(1, int(ask.get("min_quantity") or 1))
@@ -338,6 +341,9 @@ def find_swap_chains(
                     not bid or not _offer_is_actionable(bid)
                     or int(bid.get("quantity", 0)) < 1
                 ):
+                    continue
+                bid_author = _trusted_author(bid)
+                if not bid_author or bid_author == ask_author:
                     continue
                 # The sell leg is one received item. A buyer demanding 2+ units
                 # cannot fill that leg, so the chain is rejected.
