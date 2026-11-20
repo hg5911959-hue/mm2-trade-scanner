@@ -121,6 +121,15 @@ class PrivateStateEncryptionTests(IsolatedDataTestCase):
                 with self.assertRaisesRegex(PrivateStateError, "size limit"):
                     _read_bounded_regular_file(path, 4)
 
+    def test_bounded_reader_rejects_fifo_without_blocking(self):
+        if not hasattr(os, "mkfifo") or not hasattr(os, "O_NONBLOCK"):
+            self.skipTest("FIFO/nonblocking open is unavailable on this platform")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "private-state.pipe"
+            os.mkfifo(path)
+            with self.assertRaisesRegex(PrivateStateError, "not a regular file"):
+                _read_bounded_regular_file(path, 1024)
+
     def test_encrypt_rejects_symlinked_private_input(self):
         if not hasattr(os, "O_NOFOLLOW"):
             self.skipTest("O_NOFOLLOW is unavailable on this platform")
