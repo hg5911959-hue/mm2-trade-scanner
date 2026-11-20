@@ -310,6 +310,41 @@ class MarketBookTests(IsolatedDataTestCase):
         self.assertEqual(row["best_bid"]["unit_price_usd"], 4.8)
         self.assertIn("sell_before_drop", row["risk_flags"])
 
+    def test_unverified_posts_cannot_distort_the_reference_median(self):
+        offers = [
+            offer("sell", "Candy", 5.0, 2, "seller-a", "ask-a"),
+            offer("sell", "Candy", 5.2, 2, "seller-b", "ask-b"),
+            offer("buy", "Candy", 4.8, 2, "buyer-a", "bid-a"),
+            offer("buy", "Candy", 4.7, 2, "buyer-b", "bid-b"),
+        ]
+        for index in range(10):
+            unverified = offer("sell", "Candy", 1000.0, 1, "", f"spoof-{index}")
+            unverified["author"] = "owner-supplied"
+            unverified["flags"] = ["owner_supplied_author"]
+            offers.append(unverified)
+
+        row = build_order_book(offers, now=NOW)["candy"]
+
+        self.assertAlmostEqual(row["median_market"], 4.9)
+        self.assertEqual(row["best_ask"]["message_id"], "ask-a")
+        self.assertEqual(row["best_bid"]["message_id"], "bid-a")
+        self.assertEqual(row["confidence"], "high")
+
+    def test_malformed_flag_container_fails_closed_for_actionability(self):
+        malformed = offer("sell", "Candy", 4.9, 2, "seller-a", "bad-flags")
+        malformed["flags"] = "sell_before_drop"
+        offers = [
+            malformed,
+            offer("sell", "Candy", 5.0, 2, "seller-b", "ask-b"),
+            offer("buy", "Candy", 4.8, 2, "buyer-a", "bid-a"),
+            offer("buy", "Candy", 4.7, 2, "buyer-b", "bid-b"),
+        ]
+
+        row = build_order_book(offers, now=NOW)["candy"]
+
+        self.assertNotIn("bad-flags", {entry["message_id"] for entry in row["asks"]})
+        self.assertIn("invalid_flags", row["risk_flags"])
+
     def test_malformed_flag_container_is_normalized_without_crashing(self):
         row = offer("sell", "Candy", 1.0, 100, "seller", "flood")
         row["flags"] = "not-a-list"
