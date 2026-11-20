@@ -85,6 +85,22 @@ def normalize_message(message: Any) -> dict[str, Any]:
     }
 
 
+def filter_messages_to_allowlist(
+    messages: list[dict[str, Any]], guild_ids: list[int], channel_ids: list[int],
+) -> list[dict[str, Any]]:
+    """Prevent retained history from leaking messages outside the current allowlist."""
+    allowed_guilds = {str(value) for value in guild_ids}
+    allowed_channels = {str(value) for value in channel_ids}
+    if not allowed_guilds or not allowed_channels:
+        return []
+    return [
+        row for row in messages
+        if isinstance(row, dict)
+        and str(row.get("guild_id") or "") in allowed_guilds
+        and str(row.get("channel_id") or "") in allowed_channels
+    ]
+
+
 def merge_messages(existing: list[dict[str, Any]], incoming: list[dict[str, Any]], retention_days: int = 7) -> list[dict[str, Any]]:
     cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, min(int(retention_days), 30)))
     by_id: dict[str, dict[str, Any]] = {}
@@ -167,7 +183,9 @@ async def collect(
     intents.messages = True
     intents.message_content = True
     client = discord.Client(intents=intents)
-    state = load_existing(output)
+    state = filter_messages_to_allowlist(
+        load_existing(output), guild_ids, channel_ids
+    )
     collected: list[dict[str, Any]] = []
     errors: list[str] = []
     scanned_channels: list[str] = []
