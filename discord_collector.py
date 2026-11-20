@@ -299,6 +299,7 @@ def collect(
     collected: list[dict[str, Any]] = []
     errors: list[str] = []
     scanned_channels: list[str] = []
+    found_channel_ids: set[str] = set()
     for guild_id in guild_ids:
         try:
             channels = _discord_get_json(f"/guilds/{guild_id}/channels", token)
@@ -334,12 +335,7 @@ def collect(
                 str(row.get("id") or "") for row in available_channels
                 if isinstance(row, dict)
             }
-            missing_ids = sorted(set(channel_ids) - available_ids)
-            for missing_id in missing_ids:
-                errors.append(
-                    f"configured channel {missing_id}: not visible in the configured server; "
-                    "check channel ID, server membership, and VIEW_CHANNEL permission"
-                )
+            found_channel_ids.update(available_ids.intersection(channel_ids))
             selected_channels = [
                 row for row in available_channels
                 if str(row.get("id") or "") in set(channel_ids)
@@ -373,6 +369,11 @@ def collect(
                 if row["content"].strip() or row["embeds"] or row["attachments"]:
                     collected.append(row)
 
+    for missing_id in sorted(set(channel_ids or []) - found_channel_ids):
+        errors.append(
+            f"configured channel {missing_id}: not visible in the configured servers; "
+            "check channel ID, server membership, and VIEW_CHANNEL permission"
+        )
     if not scanned_channels:
         errors.append("No readable text channels found; check bot membership and permissions.")
     merged = merge_messages(existing, collected, retention_days)
