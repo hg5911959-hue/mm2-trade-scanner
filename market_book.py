@@ -372,7 +372,9 @@ def find_swap_chains(
     except (TypeError, ValueError, OverflowError):
         raise ValueError("invalid swap-chain thresholds") from None
     if (
-        not all(math.isfinite(value) for value in (tolerance, fee, min_profit, min_profit_pct, max_value_age))
+        not all(math.isfinite(value) for value in (
+            tolerance, fee, min_profit, min_profit_pct, max_value_age
+        ))
         or not 0 <= tolerance < 100 or fee < 0 or min_profit < 0
         or min_profit_pct < 0 or max_value_age <= 0
     ):
@@ -424,6 +426,7 @@ def find_swap_chains(
             minimum_ask_quantity = max(1, int(ask.get("min_quantity") or 1))
             if ask_qty < minimum_ask_quantity:
                 continue
+
             for item_b, row_b in book.items():
                 value_b = eligible.get(item_b)
                 if (
@@ -431,6 +434,9 @@ def find_swap_chains(
                     or row_b.get("confidence") not in {"medium", "high"}
                 ):
                     continue
+                # Examine every bid, not only best_bid: the top bid may be
+                # posted by the same author as the buy leg or require too much
+                # quantity, while a lower independent bid can still execute.
                 for bid in row_b.get("bids", []):
                     if (
                         not _offer_is_actionable(bid)
@@ -440,62 +446,65 @@ def find_swap_chains(
                     bid_author = _trusted_author(bid)
                     if not bid_author or bid_author == ask_author:
                         continue
-                    # The sell leg is one received item. A buyer demanding 2+ units
-                    # cannot fill that leg, so the chain is rejected.
+                    # The sell leg is one received item. A buyer demanding 2+
+                    # units cannot fill that leg, so the chain is rejected.
                     if int(bid.get("min_quantity") or 1) > 1:
                         continue
+                    bid_price = float(bid["unit_price_usd"])
                     try:
-                    value_limit = math.floor(
-                        value_b["value"] / (value_a["value"] * (1 - tolerance / 100))
+                        value_limit = math.floor(
+                            value_b["value"] / (value_a["value"] * (1 - tolerance / 100))
+                        )
+                        usd_limit = math.floor(
+                            (bid_price - fees - min_profit) / ask_price
+                        )
+                        pct_ratio = min_profit_pct / 100
+                        percent_limit = math.floor(
+                            (bid_price - fees * (1 + pct_ratio))
+                            / (ask_price * (1 + pct_ratio))
+                        )
+                    except (OverflowError, ZeroDivisionError, ValueError):
+                        continue
+                    maximum_ask_quantity = min(
+                        ask_qty, value_limit, usd_limit, percent_limit
                     )
-                    usd_limit = math.floor((float(bid["unit_price_usd"]) - fees - min_profit) / ask_price)
-                    pct_ratio = min_profit_pct / 100
-                    percent_limit = math.floor(
-                        (float(bid["unit_price_usd"]) - fees * (1 + pct_ratio))
-                        / (ask_price * (1 + pct_ratio))
-                    )
-                except (OverflowError, ZeroDivisionError, ValueError):
-                    continue
-                    maximum_ask_quantity = min(ask_qty, value_limit, usd_limit, percent_limit)
                     if maximum_ask_quantity < minimum_ask_quantity:
                         continue
 
-                    # Keep the highest-profit minimum lot and, when different, the
-                # largest still-profitable lot. This preserves N:1 discovery
-                # without an O(5,000) quantity loop for every item pair.
-                quantities = [minimum_ask_quantity]
-                if maximum_ask_quantity != minimum_ask_quantity:
-                    quantities.append(maximum_ask_quantity)
-                bid_price = float(bid["unit_price_usd"])
-                for qty_a in quantities:
-                    profit = bid_price - ask_price * qty_a - fees
-                    cost = ask_price * qty_a + fees
-                    profit_pct = profit / cost * 100 if cost > 0 else 0.0
-                    if profit < min_profit or profit_pct < min_profit_pct:
-                        continue
-                    chains.append({
-                        "type": "swap_chain", "buy_item": item_a, "swap_item": item_b,
-                        "buy": dict(ask), "swap_value_in": value_a["value"] * qty_a,
-                        "swap_value_out": value_b["value"], "sell": dict(bid),
-                        "ask_to_value_ratio": ask_price / value_a["value"],
-                        "buy_price_per_value": ask_price / value_a["value"],
-                        "sell_price_per_value": bid_price / value_b["value"],
-                        "quantity_buy": qty_a, "quantity_sell": 1,
-                        "profit_usd": profit, "profit_percent": profit_pct,
-                        "fees_usd": fees,
-                        "source_links": [str(ask.get("url") or ""), str(bid.get("url") or "")],
-                        "data_age_seconds": max(
-                            float(row_a["data_age_seconds"]), float(row_b["data_age_seconds"]),
-                            float(value_a["data_age_seconds"]), float(value_b["data_age_seconds"]),
-                        ),
-                        "confidence": "medium" if "medium" in {
-                            row_a["confidence"], row_b["confidence"],
-                            value_a["confidence"], value_b["confidence"],
-                        } else "high",
-                        "risk_flags": sorted(set(
-                            list(row_a.get("risk_flags", [])) + list(row_b.get("risk_flags", []))
-                        )),
-                    })
+                    # Evaluate the minimum lot and the largest still-profitable
+                    # lot without an O(5,000) quantity loop for each item pair.
+                    quantities = [minimum_ask_quantity]
+                    if maximum_ask_quantity != minimum_ask_quantity:
+                        quantities.append(maximum_ask_quantity)
+                    for qty_a in quantities:
+                        profit = bid_price - ask_price * qty_a - fees
+                        cost = ask_price * qty_a + fees
+                        profit_pct = profit / cost * 100 if cost > 0 else 0.0
+                        if profit < min_profit or profit_pct < min_profit_pct:
+                            continue
+                        chains.append({
+                            "type": "swap_chain", "buy_item": item_a, "swap_item": item_b,
+                            "buy": dict(ask), "swap_value_in": value_a["value"] * qty_a,
+                            "swap_value_out": value_b["value"], "sell": dict(bid),
+                            "ask_to_value_ratio": ask_price / value_a["value"],
+                            "buy_price_per_value": ask_price / value_a["value"],
+                            "sell_price_per_value": bid_price / value_b["value"],
+                            "quantity_buy": qty_a, "quantity_sell": 1,
+                            "profit_usd": profit, "profit_percent": profit_pct,
+                            "fees_usd": fees,
+                            "source_links": [str(ask.get("url") or ""), str(bid.get("url") or "")],
+                            "data_age_seconds": max(
+                                float(row_a["data_age_seconds"]), float(row_b["data_age_seconds"]),
+                                float(value_a["data_age_seconds"]), float(value_b["data_age_seconds"]),
+                            ),
+                            "confidence": "medium" if "medium" in {
+                                row_a["confidence"], row_b["confidence"],
+                                value_a["confidence"], value_b["confidence"],
+                            } else "high",
+                            "risk_flags": sorted(set(
+                                list(row_a.get("risk_flags", [])) + list(row_b.get("risk_flags", []))
+                            )),
+                        })
     unique: dict[tuple[Any, ...], dict[str, Any]] = {}
     for chain in chains:
         key = (
