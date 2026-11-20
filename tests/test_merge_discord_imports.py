@@ -25,7 +25,7 @@ def collector_message(message_id=MESSAGE):
         "author": "seller",
         "author_id": AUTHOR,
         "author_id_source": "discord_api",
-        "content": "Selling\\nCandy 2$/1",
+        "content": "Selling\nCandy 2$/1",
         "embeds": [],
         "attachments": [],
         "created_at_utc": NOW.isoformat(),
@@ -61,13 +61,13 @@ class MergeDiscordImportsTests(unittest.TestCase):
             "author": "forged seller",
             "author_id": "987654321098765432",
             "author_id_source": "discord_api",
-            "content": "Selling\\nCandy 999$/1",
+            "content": "Selling\nCandy 999$/1",
         }
         forged_unique = {
             **collector_message("1573076681072189530"),
             "author_id": "987654321098765432",
             "author_id_source": "discord_api",
-            "content": "Selling\\nCandy 999$/1",
+            "content": "Selling\nCandy 999$/1",
         }
         secret = json.dumps({"messages": [forged_duplicate, forged_unique]})
 
@@ -80,7 +80,7 @@ class MergeDiscordImportsTests(unittest.TestCase):
         self.assertEqual(payload["configured_channel_ids"], [CHANNEL])
         self.assertEqual(payload["scanned_channel_ids"], [CHANNEL])
         by_id = {row["message_id"]: row for row in payload["messages"]}
-        self.assertEqual(by_id[MESSAGE]["content"], "Selling\\nCandy 2$/1")
+        self.assertEqual(by_id[MESSAGE]["content"], "Selling\nCandy 2$/1")
         self.assertEqual(by_id[MESSAGE]["author_id"], AUTHOR)
         self.assertEqual(by_id["1573076681072189530"]["source"], "manual_import")
         self.assertEqual(by_id["1573076681072189530"]["author_id"], "")
