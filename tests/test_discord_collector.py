@@ -1,14 +1,16 @@
 import json
+import os
 import tempfile
 import unittest
+from unittest.mock import patch
 from test_support import IsolatedDataTestCase
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from pathlib import Path
 
 from discord_collector import (
-    atomic_save, filter_messages_to_allowlist, merge_messages, normalize_message,
-    parse_channel_ids, parse_guild_ids,
+    atomic_save, filter_messages_to_allowlist, load_existing, merge_messages,
+    normalize_message, parse_channel_ids, parse_guild_ids,
 )
 
 
@@ -106,6 +108,34 @@ class DiscordCollectorTests(IsolatedDataTestCase):
             payload = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(payload["schema_version"], 2)
             self.assertEqual(payload["configured_channel_ids"], ["1572655277130514472"])
+
+    def test_load_existing_rejects_symlink_without_reading_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "outside.json"
+            target.write_text('{"messages":[]}', encoding="utf-8")
+            link = root / "discord_messages.json"
+            link.symlink_to(target)
+
+            with self.assertRaisesRegex(RuntimeError, "cannot be opened safely"):
+                load_existing(link)
+
+    def test_load_existing_rejects_fifo_without_blocking(self):
+        if not hasattr(os, "mkfifo") or not hasattr(os, "O_NONBLOCK"):
+            self.skipTest("FIFO/nonblocking open is unavailable on this platform")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "discord_messages.pipe"
+            os.mkfifo(path)
+            with self.assertRaisesRegex(RuntimeError, "not a regular file"):
+                load_existing(path)
+
+    def test_load_existing_enforces_read_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "discord_messages.json"
+            path.write_text('{"messages":[]}', encoding="utf-8")
+            with patch("discord_collector.MAX_EXISTING_STATE_BYTES", 4):
+                with self.assertRaisesRegex(RuntimeError, "exceeds the size limit"):
+                    load_existing(path)
 
     def test_merge_deduplicates_and_retains_recent(self):
         recent = datetime.now(timezone.utc).isoformat()
