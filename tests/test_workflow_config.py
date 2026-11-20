@@ -7,6 +7,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class WorkflowReliabilityTests(IsolatedDataTestCase):
+    def test_telegram_connection_workflow_never_follows_token_redirects(self):
+        workflow = (ROOT / ".github/workflows/telegram-test.yml").read_text(encoding="utf-8")
+        self.assertIn("RejectTelegramRedirects", workflow)
+        self.assertIn("opener.open(request", workflow)
+        self.assertNotIn("urllib.request.urlopen(request", workflow)
+
     def test_ci_linter_version_is_pinned_in_development_manifest(self):
         requirements = (ROOT / "requirements-dev.txt").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
