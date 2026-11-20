@@ -13,6 +13,23 @@ on:
         required: false
         type: boolean
         default: false
+    secrets:
+      TELEGRAM_BOT_TOKEN:
+        required: false
+      TELEGRAM_CHAT_ID:
+        required: false
+      RBLXVALUE_API_KEY:
+        required: false
+      DISCORD_BOT_TOKEN:
+        required: false
+      DISCORD_MANUAL_MESSAGES_JSON:
+        required: false
+      DISCORD_MANUAL_MESSAGES_JSON_2:
+        required: false
+      CASH_PRICES_CSV:
+        required: false
+      HEALTHCHECKS_PING_URL:
+        required: false
   workflow_dispatch:
     inputs:
       verify_rblxvalue_key:
