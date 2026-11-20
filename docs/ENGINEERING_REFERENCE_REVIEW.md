@@ -151,12 +151,13 @@ Implemented on `fix/market-book-trust-and-risk-gates`, based directly on current
 - Extend the existing read-only Discord collector to preserve validated author snowflakes and label their provenance as `discord_api`.
 - Add the isolated cash-offer parser and explicit alias catalogue; carry validated author IDs into parsed offers and demand hints, and reject malformed alias schemas or normalized alias collisions.
 - Add a pure normalized-Discord ingestion adapter that validates source snowflakes, matching permalinks and timestamps, deduplicates messages, preserves channel provenance, and keeps demand hints separate from bids. An end-to-end regression test verifies that independent, verified offers can form a qualified opportunity.
+- Require an explicit `DISCORD_CHANNEL_IDS` allowlist in the existing collector and refuse server-wide collection if it is absent; this avoids accidental collection of every readable channel in an allowed guild.
 - Normalize malformed optional risk-flag containers defensively.
 - Add regression tests for all the above cases.
 
 Validation:
-- PR #100 GitHub Actions run [44817922102](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44817922102) succeeded on the latest code head.
-- **435 tests passed twice**, data immutability passed, and all configured Ruff/lint checks passed.
+- PR #100 GitHub Actions run [44818524150](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44818524150) succeeded on the latest code head.
+- **437 tests passed twice**, data immutability passed, and all configured Ruff/lint checks passed.
 - PR #100 is open as Draft; no code has been merged into `main`.
 
 ### Private-state encryption hardening — PR #101
