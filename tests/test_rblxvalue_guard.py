@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -212,6 +213,17 @@ class RblxValueGuardTests(IsolatedDataTestCase):
                     budget_path=self.budget, block_path=self.block,
                 )
             self.assertFalse(self.budget.exists())
+
+    def test_fifo_guard_ledger_is_rejected_without_blocking(self):
+        if not hasattr(os, "mkfifo") or not hasattr(os, "O_NONBLOCK"):
+            self.skipTest("FIFO/nonblocking open is unavailable on this platform")
+        fifo = self.root / "budget.pipe"
+        os.mkfifo(fifo)
+        with self.assertRaisesRegex(guard.RblxValueGuardError, "not a regular file"):
+            guard.reserve_request(
+                now=1_800_000_000, key="rbx_test_key",
+                budget_path=fifo, block_path=self.block,
+            )
 
     def test_oversized_guard_ledger_fails_closed_before_reading(self):
         with self.budget.open("wb") as handle:
