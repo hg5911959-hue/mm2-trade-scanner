@@ -12,6 +12,15 @@ GUILD_ID = "223456789012345"
 CHANNEL_ID = "323456789012345"
 
 
+def collector_payload(messages):
+    return {
+        "configured_guild_ids": [GUILD_ID],
+        "configured_channel_ids": [CHANNEL_ID],
+        "scanned_channel_ids": [CHANNEL_ID],
+        "messages": messages,
+    }
+
+
 def discord_message(index, body, *, author_id=None, author_id_source="discord_api"):
     message_id = f"12345678901234{index}"
     row = {
@@ -71,7 +80,7 @@ class DiscordCashIngestTests(IsolatedDataTestCase):
         no_time = discord_message(2, "Selling\n1x Candy 4$/1", author_id="423456789012346")
         no_time["created_at_utc"] = ""
 
-        result = parse_discord_messages({"messages": [wrong_url, no_time]})
+        result = parse_discord_messages(collector_payload([wrong_url, no_time]))
 
         self.assertEqual(result["offers"], [])
         self.assertEqual(
@@ -83,7 +92,7 @@ class DiscordCashIngestTests(IsolatedDataTestCase):
         row = discord_message(1, "Selling\n1x Candy 4$/1", author_id="423456789012345")
         duplicate = {**row, "content": "Selling\n1x Candy 9$/1"}
 
-        result = parse_discord_messages({"messages": [row, duplicate]})
+        result = parse_discord_messages(collector_payload([row, duplicate]))
 
         self.assertEqual(len(result["offers"]), 1)
         self.assertEqual(result["stats"]["duplicate_messages"], 1)
@@ -106,13 +115,32 @@ class DiscordCashIngestTests(IsolatedDataTestCase):
             discord_message(4, "Buying\n5x Candy 4.8$/1", author_id="423456789012348"),
         ]
 
-        parsed = parse_discord_messages({"messages": rows})
+        parsed = parse_discord_messages(collector_payload(rows))
         book = build_order_book(parsed["offers"], now=NOW)
         opportunities = find_direct_arbitrage(book)
 
         self.assertEqual(book["candy"]["confidence"], "high")
         self.assertEqual(len(opportunities), 1)
         self.assertEqual(opportunities[0]["quantity"], 5)
+
+    def test_unlisted_channel_is_rejected_even_with_valid_message_permalink(self):
+        row = discord_message(1, "Selling\\n1x Candy 4$/1", author_id="423456789012345")
+        row["channel_id"] = "423456789012345"
+        row["url"] = f"https://discord.com/channels/{GUILD_ID}/{row['channel_id']}/{row['message_id']}"
+
+        result = parse_discord_messages(collector_payload([row]))
+
+        self.assertEqual(result["offers"], [])
+        self.assertEqual(result["rejected"][0]["reason"], "invalid_discord_source_identity")
+
+    def test_missing_or_inconsistent_collector_allowlists_are_rejected(self):
+        row = discord_message(1, "Selling\\n1x Candy 4$/1", author_id="423456789012345")
+        with self.assertRaises(ValueError):
+            parse_discord_messages({"messages": [row]})
+        payload = collector_payload([row])
+        payload["scanned_channel_ids"] = ["423456789012345"]
+        with self.assertRaises(ValueError):
+            parse_discord_messages(payload)
 
     def test_invalid_payload_schema_is_rejected(self):
         with self.assertRaises(ValueError):
