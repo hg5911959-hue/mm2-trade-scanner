@@ -6,7 +6,7 @@ from pathlib import Path
 
 from test_support import IsolatedDataTestCase
 
-from tools.validate_state import validate_state
+from tools.validate_state import validate_state, validate_rblxvalue_cache_state
 
 
 class StateValidationTests(IsolatedDataTestCase):
@@ -97,6 +97,19 @@ class StateValidationTests(IsolatedDataTestCase):
         self.assertTrue(any("budget timestamps" in error for error in errors))
         self.assertTrue(any("breaker timing" in error for error in errors))
 
+    def test_api_safety_ledger_rejects_inconsistent_per_workflow_counts(self):
+        from tools.validate_state import validate_api_safety_state
+        (self.root / "rblxvalue_request_budget.json").write_text(json.dumps({
+            "schema_version": 1,
+            "window": "rolling_24_hours",
+            "limit": 60,
+            "request_timestamps_epoch": [1_800_000_000, 1_800_000_001],
+            "request_workflows": ["scanner", "scanner"],
+            "request_counts_by_workflow": {"scanner": 1},
+        }), encoding="utf-8")
+        errors = validate_api_safety_state(self.root)
+        self.assertTrue(any("per-workflow request counts" in error for error in errors))
+
     def test_invalid_api_key_breaker_blocks_full_state_persistence(self):
         from tools.validate_state import validate_state
         self._write_valid_state()
@@ -123,6 +136,85 @@ class StateValidationTests(IsolatedDataTestCase):
         errors = validate_api_safety_state(self.root)
         self.assertTrue(any("unexpected files" in error for error in errors))
         self.assertTrue(any("budget timestamps" in error for error in errors))
+
+    def test_plaintext_private_market_state_is_rejected_from_public_branch(self):
+        (self.root / "cash_market_offers.json").write_text('{"offers":[]}', encoding="utf-8")
+        errors = validate_state(self.root)
+        self.assertTrue(any("private Telegram/market state" in error for error in errors))
+
+    def test_plaintext_discord_alert_state_is_rejected_from_public_branch(self):
+        (self.root / "discord_alert_state.json").write_text(
+            '{"alerted":["private-message-id"]}', encoding="utf-8"
+        )
+        errors = validate_state(self.root)
+        self.assertTrue(any("private Telegram/market state" in error for error in errors))
+
+    def test_encrypted_private_state_blob_is_allowed_but_header_is_checked(self):
+        (self.root / "private_state.enc").write_bytes(b"MM2PSTATE1" + b"\x00" * 64)
+        self.assertEqual(validate_state(self.root), [])
+        (self.root / "private_state.enc").write_bytes(b"not-encrypted")
+        self.assertTrue(any("encrypted private-state bundle header" in error
+                            for error in validate_state(self.root)))
+
+
+    def _write_valid_rblxvalue_cache(self, now_epoch=1_800_000_000):
+        fetched_at = now_epoch - 600
+        cache = {
+            "schema_version": 4,
+            "fetched_at": fetched_at,
+            "source_last_updated": "2026-11-20 00:02:36",
+            "source_items_total": 3,
+            "pages": {
+                "0": {"total": 3, "items": [{"id": "1", "name": "One"}, {"id": "2", "name": "Two"}]},
+                "2": {"total": 3, "items": [{"id": "3", "name": "Three"}]},
+            },
+            "values": {
+                "one": {"name": "One", "value": 1},
+                "two": {"name": "Two", "value": 2},
+            },
+        }
+        meta = {
+            "schema_version": 1,
+            "last_updated": cache["source_last_updated"],
+            "items_total": 3,
+            "checked_at_epoch": fetched_at,
+        }
+        (self.root / "supreme_values.json").write_text(json.dumps(cache), encoding="utf-8")
+        (self.root / "rblxvalue_meta.json").write_text(json.dumps(meta), encoding="utf-8")
+        return cache, meta
+
+    def test_fresh_complete_rblxvalue_cache_passes_recovery_validation(self):
+        self._write_valid_rblxvalue_cache()
+        self.assertEqual(
+            validate_rblxvalue_cache_state(self.root, now_epoch=1_800_000_000), []
+        )
+
+    def test_rblxvalue_cache_recovery_rejects_stale_and_future_snapshots(self):
+        cache, meta = self._write_valid_rblxvalue_cache()
+        cache["fetched_at"] = 1_800_000_000 - 43_201
+        meta["checked_at_epoch"] = cache["fetched_at"]
+        (self.root / "supreme_values.json").write_text(json.dumps(cache), encoding="utf-8")
+        (self.root / "rblxvalue_meta.json").write_text(json.dumps(meta), encoding="utf-8")
+        self.assertTrue(any("older than" in error for error in validate_rblxvalue_cache_state(
+            self.root, now_epoch=1_800_000_000
+        )))
+        cache["fetched_at"] = 1_800_000_301
+        meta["checked_at_epoch"] = cache["fetched_at"]
+        (self.root / "supreme_values.json").write_text(json.dumps(cache), encoding="utf-8")
+        (self.root / "rblxvalue_meta.json").write_text(json.dumps(meta), encoding="utf-8")
+        self.assertTrue(any("future" in error for error in validate_rblxvalue_cache_state(
+            self.root, now_epoch=1_800_000_000
+        )))
+
+    def test_rblxvalue_cache_recovery_rejects_metadata_mismatch_and_duplicate_ids(self):
+        cache, meta = self._write_valid_rblxvalue_cache()
+        meta["items_total"] = 4
+        cache["pages"]["2"]["items"][0]["id"] = "2"
+        (self.root / "supreme_values.json").write_text(json.dumps(cache), encoding="utf-8")
+        (self.root / "rblxvalue_meta.json").write_text(json.dumps(meta), encoding="utf-8")
+        errors = validate_rblxvalue_cache_state(self.root, now_epoch=1_800_000_000)
+        self.assertTrue(any("item totals do not match" in error for error in errors))
+        self.assertTrue(any("duplicate item IDs" in error for error in errors))
 
     def test_valid_state_passes_strict_success_validation(self):
         self._write_valid_state()

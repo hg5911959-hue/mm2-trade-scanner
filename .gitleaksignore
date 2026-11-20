@@ -1,0 +1,4 @@
+# Exact historical fingerprints for synthetic values used only in redaction unit tests.
+769fe46ceb5f184efa8bc222e5911683dcb24a89:tests/test_redaction.py:generic-api-key:14
+769fe46ceb5f184efa8bc222e5911683dcb24a89:tests/test_redaction.py:generic-api-key:17
+769fe46ceb5f184efa8bc222e5911683dcb24a89:tests/test_redaction.py:generic-api-key:26

@@ -13,6 +13,95 @@ Re-enable cash mode only after reliable fresh verified prices exist:
 3. Run the scheduler with `dry_run=true` to preview the results without sending live alerts.
 4. Check the preview alerts and catalogue coverage carefully before enabling live mode.
 
+## Cash-market intelligence (opt-in; disabled by default)
+
+The cash-market path is separate from the legacy swap scanner and remains
+opt-in. The owner can forward or paste a Discord post and its permalink to the
+Telegram bot; the bot does not scrape Discord, use a Discord user token, or
+execute trades. Include the original Discord message permalink. When pasting
+plain text rather than forwarding a source with author metadata, prepend
+`Author: exact-discord-username`; that identity is marked
+`owner_supplied_author` because the bot cannot independently verify it.
+Without author metadata, the offer can be displayed but cannot increase the
+independent-author confidence count. A pasted offer without an authoritative
+Discord timestamp (permalink snowflake or collector timestamp) is rejected
+rather than assigned the Telegram receipt time.
+Existing authorized manual imports remain supported. Supreme game values are
+resolved only through the existing RBLXValue `value_source_b` cache; the
+Supreme Values website is never scraped.
+
+The optional bot collector uses only official Discord REST GET requests and Python's standard library; no `discord.py` package or user token is required.\n\nCore modules:
+- `cash_offer_parser.py` — parses price-list blocks, buyer/seller headers,
+  per-unit prices, inverse notation, decimal commas, minimum quantities,
+  payment hints, and pipe-separated offers. `QUICK SELL` is a seller header.
+- `cash_item_aliases.json` — owner-editable exact aliases and explicit
+  ambiguous-name list. Unknown names are rejected, never fuzzy-guessed.
+- `market_book.py` — 48-hour order book, recency-weighted medians, direct
+  arbitrage after fees/margin, conservative 1:1 and N:1 swap chains, inventory
+  verdicts, and rolling 14-day compact price history. Swap-chain risk flags are
+  propagated from both market legs.
+- `telegram_market.py` — owner-private-chat-only `getUpdates` interface:
+  `/p`, `/buy`, `/chains`, `/sell`, `/inv`, `/add`, `/remove`,
+  `/status`, and `/help`; `/buy` and `/chains` show source links and risk flags.
+  RBLXValue cache age is explicitly labelled `stale` when older than the
+  configured maximum; this disables swap chains without suppressing direct
+  cash-only signals. Missing or blocked stability is surfaced as a risk flag.
+  Unpriced wanted-list demand hints appear separately as informational demand;
+  they never become a bid, market price, or buy signal.
+  Threshold-qualified alerts are deduplicated and repeated only when net profit
+  changes by more than `MARKET_ALERT_PROFIT_DELTA_USD`.
+
+Telegram authorization accepts only a private one-to-one chat where both
+`chat.id` and `from.id` match `TELEGRAM_CHAT_ID`. Group/supergroup messages
+and messages from any other sender are ignored, even if a group ID is
+mistakenly configured. The bot is not intended for shared group use.
+- `private_state.py` — authenticated encryption for private offers, inventory,
+  Telegram offsets, private alert-dedup state, and private price history before state artifacts or the
+  public state branch are written.
+
+All four activation flags are false in `.github/workflows/scan.yml`:
+`MARKET_BOOK_ENABLED`, `TELEGRAM_COMMANDS_ENABLED`, `INVENTORY_ENABLED`,
+and `PRIVATE_STATE_ENABLED`. The owner must explicitly enable them after the
+dry-run and tests are green. Telegram commands require both market-book and
+private-state activation; inventory commands additionally require
+`INVENTORY_ENABLED`.
+
+### Protecting private state in this public repository
+
+The repository visibility is public, so the `state` branch and Actions
+artifacts are not private storage. The workflow therefore stores only the
+authenticated ciphertext `data/private_state.enc` there. Plaintext private
+files are decrypted only inside the runner and re-encrypted before artifacts
+are uploaded. `tools/validate_state.py` rejects plaintext private files.
+
+Private Discord messages are parsed only when `PRIVATE_STATE_ENABLED=true`.
+Their alert/uncertain-delivery deduplication IDs are held in
+`discord_alert_state.json`, which is part of the authenticated encrypted
+private-state allowlist. Discord offers are excluded from public SQLite
+listings/opportunities, public CSV history, unmatched-name records, public
+watch/alert/quarantine state, and item-level scanner logs. With private-state
+protection disabled, Discord posts are not evaluated or alerted.
+
+Encryption uses AES-256-CTR with HMAC-SHA256 authentication and PBKDF2-HMAC-SHA256
+key derivation. Python code uses the standard library; the GitHub Ubuntu runner
+must provide the OpenSSL command-line executable. The existing
+`TELEGRAM_BOT_TOKEN` secret is the encryption-key input, so no new secret is
+required. Keep that token stable: rotating it without first decrypting and
+re-encrypting the private bundle makes the previous bundle unreadable. Never
+print or expose the token.
+
+### Dry-run and limitations
+
+With `DRY_RUN=true`, the engine evaluates opportunities and logs scan-local
+IDs and estimated profits, but does not poll Telegram, send alerts, write alert
+state, or append price-history snapshots. The legacy `data/cash_prices.csv`
+may appear only as a clearly labelled reference fallback in dry-run; it never
+creates synthetic bids/asks or qualifies a live opportunity. Direct cash signals can operate
+without fresh game values; swap chains require a value snapshot no older than
+`RBLXVALUE_MAX_CACHE_AGE_SECONDS` (default 24 hours). Offers older than 48
+hours are excluded. GitHub cron can be delayed, and estimated profit is not a
+guarantee; the bot never executes a trade.
+
 ## Trade evaluation
 
 From the scanner user's perspective:
@@ -81,8 +170,12 @@ Cash-first mode does not use a Supreme numeric value as a dollar proxy. An item 
 
 The scanner currently reads `value_source_b` and `stability` from RBLXValue API v2; it does not scrape Supreme Values' website. RBLXValue describes itself as an independent platform that indexes third-party sources including Supreme Values, and its API exposes `value_source_b` as the Supreme source. However, RBLXValue's terms do not grant ownership of third-party data, while [Supreme Values' Terms of Service](https://supremevalues.com/tos) expressly prohibit scraping, manual input, or copying its value-list data into applications, websites, and bots without authorization. Therefore, continued use of Supreme-derived data in this bot/dashboard must be covered by written permission from Supreme Values or a clear redistribution authorization from the data provider. Do not add a direct Supreme collector or a manual Supreme-data editor without that permission. An editor for independently sourced, user-owned values is a separate option. The bot's Telegram messages and public dashboard display the required `Data from rblxvalue.com` attribution for free-plan API usage; `value_source_a` is secondary information only and is never blended into Supreme totals.
 
-- RBLXValue documents that its source dataset is refreshed every **12 hours**. The scanner therefore does not waste API calls re-downloading unchanged pages every few minutes. Instead, it polls the documented `/v2/meta` endpoint once per hour (24 checks/day), compares `last_updated` and the catalogue item count with the cached snapshot, and immediately refreshes all paginated item data when either changes. The full catalogue is checked for a consistent source version before and after pagination; a changing version or row-count mismatch rejects the snapshot. This gives a detection delay of up to about 1 hour **after RBLXValue publishes its new snapshot**; it cannot detect a Supreme website edit before RBLXValue itself ingests it. The expected request use is about 24 metadata checks + up to 22 item-page requests for two 12-hour source updates + 4 credential checks = about 50 of the configured 60 daily requests. At cache expiry, the scanner conditionally revalidates each cached API page with its HTTP `ETag` (`If-None-Match`); unchanged pages are reused only after a matching `304 Not Modified`. Pages without a stored ETag are fetched normally. If refresh/revalidation fails, a 304 has no matching cached page, or the API key is missing, it fails closed rather than using stale values. While that snapshot is fresh, the scanner performs a one-item credential health check every 6 hours (and immediately after a key rotation). Successful checks store only a truncated SHA-256 key fingerprint and timestamps in the private `state` branch. Temporary network/CDN failures are marked inconclusive and do not discard a still-fresh snapshot; the next check is throttled for 3 hours. Explicit credential rejection opens the existing circuit breaker and triggers a Telegram alert. All attempts use the same persistent rolling 60-request budget.
-- The site item catalogue is loaded from `https://api.bloxswaps.com/items` and cached for **1 hour**.
+- RBLXValue documents that its source dataset is refreshed every **12 hours**. The scanner revalidates the cached `/v2/items` pages with ETag/`If-None-Match` only after the 12-hour catalogue TTL expires; a fresh cache causes zero RBLXValue requests on every 30-second scan-loop tick. On each full catalogue refresh, `/v2/meta` is checked before and after pagination to verify a consistent source version (two checks per refresh; about 4/day at a 12-hour TTL). No metadata request is made while the catalogue cache is fresh. Up to 6 detail lookups/day are allowed for missing metadata. A normal upper-bound estimate is about 44 item-page revalidations/day (22 pages × 2), 4 metadata checks, and 6 detail lookups = 54 of the rolling 60-request budget, before a manually dispatched connection/key check. No automatic credential probe runs on a fresh cache; use the manual `verify_rblxvalue_key` dispatch when needed. Every HTTP attempt is budgeted before it is sent. If the cache exceeds `RBLXVALUE_MAX_CACHE_AGE_SECONDS` (default 24 hours), swap-chain signals are disabled while direct cash signals remain available.
+- 
+
+RBLXValue cache timestamps are validated before use. A future-dated, non-finite, or otherwise invalid `fetched_at` value is not treated as fresh; it cannot enable swap-chain signals. If the API key is blocked, an invalid/expired cache fails closed without a network request.
+
+The site item catalogue is loaded from `https://api.bloxswaps.com/items` and cached for **1 hour**.
 - The first BloxSwaps page is read from its HTML/RSC payload, then every new RSC post is converted through the site's item catalogue—even if its HTML card could not be parsed. Parsed HTML is cross-checked for quantity and contributes visible-price/raw-text diagnostics. Further pages are fetched from `https://api.bloxswaps.com/trade-posts` with `cursor` and `pageSize=20`.
 - The hot path scans new/refreshed posts until 25 consecutive seen posts establish the feed boundary; pinned posts do not advance that streak. Old pending/watch IDs cannot hold this boundary open. Only every fourth scan cycle runs a bounded backlog pass: at most 50 due pending IDs and up to 25 pages beyond the new-feed boundary. Unresolved IDs remain queued when the lookahead cap is reached. The 1,000-page safety cap still protects cold starts and feeds without a trusted success checkpoint.
 - RSC and HTML items are matched by catalogue ID or unique normalized name, never by list position. If identity cannot be established uniquely, quantity becomes `uncertain`. A newly observed `itemDetailsId` triggers one forced catalogue refresh, rate-limited to once per minute; unknown IDs are never assigned guessed names or values.
@@ -94,14 +187,14 @@ Open **Settings → Secrets and variables → Actions → New repository secret*
 
 - `TELEGRAM_BOT_TOKEN`: Telegram bot token.
 - `TELEGRAM_CHAT_ID`: your Telegram numeric chat ID.
-- `RBLXVALUE_API_KEY`: active API key from the RBLXValue developer dashboard (raw key only, no quotes).
+- `RBLXVALUE_API_KEY`: active API key from the RBLXValue developer dashboard (raw key only, no quotes). If the key is suspended, contact RBLXValue to reactivate the existing key; do not create another account/key.
 
 Never commit or share these secrets. The scanner does not print API keys or Telegram bot tokens in logs.
 
 ### RBLXValue free-plan compliance and key safety
 
 - The scanner displays the exact `Data from rblxvalue.com` credit in every Telegram message and on the public dashboard. It is shown unconditionally, so the project remains compliant if the API response requires free-plan attribution.
-- RBLXValue documents one free API key per account. Do not create alternate accounts or spread requests across keys to bypass limits. If a key is compromised or needs replacement, rotate the existing key through the official developer dashboard and update the `RBLXVALUE_API_KEY` repository secret.
+- RBLXValue documents one free API key per account. Do not create alternate accounts or spread requests across keys to bypass limits. If a key is compromised, follow the official rotation process. If the existing key is suspended or inactive (HTTP 403), the owner must contact RBLXValue through its official Discord/support channel to reactivate that same key; the scanner cannot reactivate it. Do not create a second account or key.
 - HTTP 429 is a rate-limit response, not a key suspension; the scanner respects retry guidance and its own persistent rolling request budget. HTTP 401 indicates a missing/wrong/rotated key; HTTP 403 may indicate a key that is not activated, expired, or suspended.
 - The scanner never stores the key itself in repository state. The private state branch stores only a truncated SHA-256 fingerprint and timestamps for health checks and circuit-breaker recovery.
 
@@ -113,7 +206,7 @@ Never commit or share these secrets. The scanner does not print API keys or Tele
 
 ## Runtime, deduplication, and persistence
 
-- **Trigger cadence:** GitHub cron starts the scanner every 10 minutes. Manual `workflow_dispatch` and `repository_dispatch` event type `mm2-scan` remain available.
+- **Trigger cadence:** GitHub cron starts the scanner every 10 minutes. Manual `workflow_dispatch` is also available; the reusable scanner supports `workflow_call` from the scheduler.
 - **Polling inside each job:** one process runs `scan_once()` every 30 seconds (configurable within 30–60 seconds) for 540 seconds (9 minutes). This leaves an approximately 1-minute scheduled gap; GitHub may delay scheduled runs, so this reduces but cannot eliminate missed-post risk. It handles SIGTERM/SIGINT by completing the current scan cycle before exiting.
 - **Concurrency:** `cancel-in-progress: false`; a running scan is not cancelled while it is sending Telegram messages or writing state. GitHub keeps at most one pending run for the concurrency group.
 - **Alert budget:** qualifying offers are ranked by conservative profit; the top 15 are sent per scan by default, and remaining offers stay eligible for the next scan.
@@ -138,21 +231,19 @@ Never commit or share these secrets. The scanner does not print API keys or Tele
 - RBLXValue encodes some Common/Uncommon/Rare xN T1-item notation as a small integer. Values below 10 in those categories are treated as tier-item counts, not ordinary Supreme value units. Higher numeric exceptions remain eligible.
 - Give/receive bounds use only the selected item's own published range. When the API has no range, the scalar value_source_b is used identically on both sides; another item with the same name is never used as a range.
 
-## Workflow hardening and external scheduling
+## Workflow hardening and scheduled operation
 
 - **Action integrity:** every third-party GitHub Action is pinned to a verified full commit SHA with a trailing release-version comment. Dependabot checks `github-actions` weekly.
-- **Test isolation:** `tests.yml` runs `python -m unittest discover -s tests` on pushes to `main` and on pull requests. The production scan job no longer runs tests, so a test failure cannot prevent a scheduled scan. The old `source-diagnostics.yml` workflow has been removed.
+- **Test isolation:** `tests.yml` runs `python -m unittest discover -s tests` on pushes to `main` and `before-market-book`, and on pull requests. The production scan job no longer runs tests, so a test failure cannot prevent a scheduled scan. The old `source-diagnostics.yml` workflow has been removed.
 - **Global log redaction:** `scanner.py` redacts the exact configured Telegram bot token, Telegram chat ID, and RBLXValue API key (only when at least six characters), plus Telegram bot URLs, `rbx_` keys, and Bearer credentials. Both stdout and stderr are filtered before output reaches `scanner.log` or the public Actions artifact.
 - **Durable state replacement:** when scanner data changes, `persist-state` compares staged `data/` with `origin/state` and skips an unchanged tree. Otherwise it creates `state-new` as an orphan branch and force-pushes it to `state`, leaving a single-commit state history. Empty or missing state artifacts are ignored so they cannot erase durable data. The workflow-level concurrency group covers both scan and persistence jobs, preventing overlapping state writes.
-- **Faster coverage:** the scanner cron runs every 15 minutes; each job polls for 780 seconds at 30-second intervals and has a 15-minute timeout. Fast new-feed scans run every cycle, while the bounded backlog pass runs once every four cycles. The watchdog default stale threshold is 20 minutes.
-- **Optional cron-job.org trigger:** configure a scheduled HTTP POST to `https://api.github.com/repos/hg5911959-hue/mm2-trade-scanner/dispatches` with JSON body `{"event_type":"mm2-scan"}` and GitHub's JSON accept/content headers. Use a fine-grained personal access token limited to this repository with the minimum `Contents: read and write` permission required for repository dispatch. Store the token only in cron-job.org's secret configuration; never put it in the repository, workflow YAML, URL, or logs. GitHub Actions cron remains the primary schedule.
+- **Faster coverage:** `.github/workflows/scan-scheduler.yml` runs every 10 minutes. Each scan polls at 30-second intervals for up to 540 seconds (9 minutes), with a 20-minute job timeout. Fast new-feed scans run every cycle, while the bounded backlog pass runs once every four cycles. The watchdog runs on a separate five-minute schedule and after each completed scanner-scheduler workflow.
 
 ## Logs and manual operations
 
 - Manual run: **Actions → MM2 Trade Scanner → Run workflow**.
 - Telegram connection test: **Actions → Telegram Connection Test → Run workflow**. This sends one explicit test message without changing scanner state or triggering a trade scan.
 - Logs: open the workflow run and download the `mm2-scanner-diagnostics` artifact.
-- External scheduler fallback: cron-job.org can call GitHub's repository-dispatch API with `{"event_type":"mm2-scan"}` to trigger the existing `repository_dispatch` workflow. Create a fine-grained personal access token limited to this repository, grant the minimum repository permission required for dispatch (`Contents: read and write`), and store it only in cron-job.org's secret configuration. Never put it in the repository, workflow YAML, URL, logs, or chat. GitHub cron remains the primary schedule.
 - `history.csv` records detected opportunities and calculated values; it cannot confirm that a Roblox trade was accepted or completed.
 
 ## Limitations and safety
@@ -198,7 +289,11 @@ The dashboard is static and uses no paid API, external analytics, or third-party
 
 The scanner includes a conservative parser for messages collected from the two configured MM2 Discord servers. It accepts only explicit two-sided trade statements, normalizes offered/requested items into the scanner schema, aggregates repeated item quantities, and rejects ambiguous or malformed messages. Discord message IDs are namespaced so they cannot collide with BloxSwaps IDs or be sent into BloxSwaps cursor/pending queries.
 
-Discord integration requires an official bot that is a member of the source server with read-only channel/history permissions and Message Content Intent. If the bot cannot be added, direct collection remains inactive. A private/manual import is supported through the GitHub Actions secrets `DISCORD_MANUAL_MESSAGES_JSON` and `DISCORD_MANUAL_MESSAGES_JSON_2`: add it under **Settings → Secrets and variables → Actions** as a JSON object containing a `messages` array (up to 2,000 rows). Example shape:
+Discord integration uses only the official Discord REST API with GET requests. It requires an official bot that is a member of the configured source servers, has **View Channels** and **Read Message History**, and has Message Content Intent enabled in the Discord Developer Portal. Store its token as the GitHub Actions secret `DISCORD_BOT_TOKEN`; never paste the token into chat, issues, commits, or logs. The collector runs only when the workflow's `enable_discord` input is explicitly enabled. If any configured channel cannot be read, the live collection fails closed and partial messages are discarded.
+
+For a safe cash-offer test, run **Actions → MM2 Scanner Scheduler → Run workflow** with `enable_discord=true`, `discord_only=true`, and `dry_run=true`. Both opt-in inputs default to false. This mode processes USD cash offers from Discord and writes only encrypted private state; it skips RBLXValue and BloxSwaps, sends no alerts, and does not update the full-scan health heartbeat. For normal game-value/trade scanning, use `enable_discord=true`, `discord_only=false`, and keep `dry_run=true` until source access and results are verified. The existing `TELEGRAM_BOT_TOKEN` is used as the private-state encryption key; it is not used to send alerts in Discord-only dry-run mode.
+
+A private/manual import remains supported through the GitHub Actions secrets `DISCORD_MANUAL_MESSAGES_JSON` and `DISCORD_MANUAL_MESSAGES_JSON_2`, even when no bot token is configured. Add each as a JSON object containing a `messages` array (up to 2,000 rows). Example shape:
 
 ```json
 {
@@ -223,9 +318,9 @@ The secret is merged into the temporary collector file for that run; its content
 
 ## Reliability controls: breaker, alert cap and dry-run
 
-- RBLXValue credential rejections are tracked by the SHA-256 key fingerprint only. Consecutive 401/credential-specific 403 responses escalate the lockout (6h, 12h, then permanent after the third consecutive rejection); a successful API response or key rotation resets the counter. Cloudflare/CAPTCHA challenge 403 responses are not classified as invalid credentials. After three rejections, replace the key or contact RBLXValue; the scanner makes no more requests using that fingerprint.
-- `MAX_ALERTS_PER_SCAN` defaults to 15 in production. In cash mode, the scanner ranks qualifying offers by conservative USD cash profit; in value mode it ranks by game-value profit. It sends the best 15 and leaves the remainder eligible for the next scan. A single Telegram notice reports how many offers were deferred. Set it to `0` only when unlimited alert volume is explicitly desired.
-- Use **Actions → MM2 Trade Scanner → Run workflow → dry_run=true** to evaluate offers without sending Telegram messages or writing alerted/delivery state. The log prints only listing IDs and the profit for the active mode (game value or cash USD). The default is false. Dry-run suppresses maintenance and failure notifications too.
+- RBLXValue credential rejections are tracked by the SHA-256 key fingerprint only. Consecutive 401/credential-specific 403 responses escalate the lockout (6h, 12h, then permanent after the third consecutive rejection); a successful API response or key rotation resets the counter. Cloudflare/CAPTCHA challenge 403 responses are not classified as invalid credentials. After three rejections, the breaker is permanent for that fingerprint. For a suspended key, contact RBLXValue to reactivate the existing key; do not create another account or key. The scanner makes no more requests using that fingerprint.
+- `MAX_ALERTS_PER_SCAN` defaults to 15 in production. In the legacy value/cash scanner, `0` means no per-scan cap. The separate cash-market alert sender has a hard maximum of 100 per scan and interprets `0` as disabled; use 100 for its maximum batch. In both paths, qualifying opportunities are ranked by estimated profit and deferred items remain eligible for later scans. Keep the default of 15 unless you have reviewed the Telegram volume and rate-limit implications.
+- Use **Actions → MM2 Trade Scanner → Run workflow → dry_run=true** to evaluate offers without sending Telegram messages or writing alerted/delivery state. The log prints only listing IDs and the profit for the active mode (game value or cash USD). Manual dispatch defaults to `dry_run=true`; scheduled runs intentionally use `dry_run=false`. Dry-run suppresses maintenance and failure notifications too.
 - Global log redaction includes Discord bot credentials and both manual-import secrets. Never paste a Discord bot token or raw message JSON into an issue, commit, or log.
 
 ## Manual Discord import: two-secret workflow
@@ -248,7 +343,7 @@ The checker validates the schema and row cap and reports the file size. It warns
 
 ## Scheduled scanning and pending rechecks
 
-- `.github/workflows/scan-scheduler.yml` owns the 15-minute cron and calls the reusable `scan.yml` workflow. `scan.yml` remains available for manual `workflow_dispatch` runs and reusable `workflow_call` execution. The shared concurrency group prevents overlapping scanner sessions.
+- `.github/workflows/scan-scheduler.yml` owns the 10-minute cron and calls the reusable `scan.yml` workflow. `scan.yml` remains available for manual `workflow_dispatch` runs and reusable `workflow_call` execution. The shared concurrency group prevents overlapping scanner sessions.
 - Unresolved BloxSwaps listing IDs remain in `data/pending_recheck.json` with their original first-seen/expiry timestamps. A separate `data/pending_recheck_schedule.json` controls when they are rechecked: 5 minutes, 15 minutes, 30 minutes, 1 hour, then 6 hours. New listings continue through the normal recent-feed cursor on every scan; only old unresolved IDs are backoff-limited.
 - Legacy pending state without a schedule is immediately eligible for one migration recheck. The schedule file is optional for older state branches and is validated before persistence.
 
@@ -258,11 +353,9 @@ The checker validates the schema and row cap and reports the file size. It warns
 
 The dashboard workflow checks GitHub Pages before deployment. If the Pages site does not exist, it attempts to initialize a workflow-based Pages site using the job-scoped `pages: write` token permission. If GitHub rejects site initialization because repository-administrator access is required, the build artifact is still retained and deployment is safely skipped with a warning.
 
-- The scanner scheduler also starts a scan after a successful `MM2 Scanner Tests` run on `main`. Failed test runs are ignored. This provides a post-deployment verification scan in addition to the 15-minute cron and manual dispatch.
-
 - The watchdog also runs after every completed `MM2 Scanner Scheduler` workflow, regardless of success or failure, so a finished scan is checked immediately as well as by the five-minute cron.
 
-- The scanner scheduler checks whether its own cron workflow or the watchdog cron workflow was disabled by GitHub. With the narrowly scoped `actions: write` token, it attempts to re-enable only those two known workflows; failure is non-fatal to the scan and is logged as a warning.
+- The watchdog scheduler checks whether the scanner cron workflow or its own watchdog cron workflow was disabled by GitHub. With the narrowly scoped `actions: write` token, it attempts to re-enable only those two known workflows; failure is non-fatal to the scan and is logged as a warning.
 
 - Pending rechecks run only on every fourth scan cycle by default (`BACKLOG_RECHECK_EVERY_CYCLES=4`), with at most 50 IDs per backlog pass (`MAX_PENDING_RECHECK_PER_SCAN`) and a 25-page lookahead (`MAX_BACKLOG_RECHECK_PAGES`). The newest due IDs are prioritized because they are closest to the feed head. Low-priority missing-value/stability IDs are seeded into the seen set while remaining in the recheck queue, preventing repeated hot-loop parsing. Deferred offers, definite Telegram send failures, uncertain quantities, and unparsed feed cards retain priority retry reasons and stay visible to the hot path, so they are not hidden by the seen-set optimization. Fast cycles omit the historical backlog entirely, so old unresolved listings cannot delay discovery of new offers. A genuinely changed Supreme snapshot or manual cash-price catalogue also triggers a bounded recheck immediately, so new identities or prices can resolve queued offers without repeatedly reprocessing them on every fast cycle. Unresolved IDs remain queued for later attempts.
 
@@ -286,3 +379,19 @@ Supreme numeric values are never converted into cash prices; the USD catalogue r
 Every unittest case uses its own temporary working directory. Tests that need catalogue data use synthetic fixtures under `tests/fixtures`; no test reads or writes the repository's real `data/` directory. CI runs `python -m unittest discover -s tests` twice and checks `git status --porcelain data` after each pass. `tests/test_no_data_pollution.py` hashes every file in the real data directory before and after a mocked scan.
 
 Scanner and tool path defaults are module constants or explicit function arguments so tests can patch them. Workflow permissions default to read-only; write access is scoped to state persistence, schedule enablement, repository keepalive, or Pages deployment. Third-party Actions are pinned to full 40-character commit SHAs, and workflow steps must never echo secrets.
+
+
+### Discord cash-price observations
+
+The scheduled collector is scoped to the two configured cash-market channels through \`DISCORD_CHANNEL_IDS\`. It uses the official Discord REST API with read-only requests, then sends eligible messages through \`cash_offer_parser.py\` and stores normalized observations in the encrypted private market state. Each observation retains its source channel/server IDs, channel name, author, UTC timestamp, and original Discord message permalink. An extracted offer is evidence of a seller/buyer quote, not a verified catalogue price.
+
+The collector is bounded to at most 6 pages of 100 recent messages per channel per run. Raw message payloads are job-local and are removed before state publication; parsed price observations persist in encrypted private market state (up to 20,000 offers). The market book ignores offers older than \`MARKET_OFFER_MAX_AGE_HOURS\` (default 48 hours). This is not an unlimited historical backfill.
+
+**Activation requirements (not currently satisfied):**
+1. A Discord bot must be a member of the server and be allowed to view both target channels.
+2. Grant only \`VIEW_CHANNEL\` and \`READ_MESSAGE_HISTORY\` in those channels; the collector never sends messages or manages channels.
+3. Enable the bot application's \`MESSAGE_CONTENT\` privileged intent in the Discord Developer Portal. Without it, Discord can return message objects with empty content; the collector now fails closed rather than reporting a healthy empty collection.
+4. The repository needs the \`DISCORD_BOT_TOKEN\` Actions secret. The current repository has no value configured, and the two manual-import secrets are also empty. The original project constraint says not to add new secrets, so do not add this secret until the owner explicitly approves changing that constraint.
+
+A one-time dry-run was attempted and correctly stopped before making a Discord API request because no bot token or manual-import source was configured. No channel content has been collected yet. To validate access after activation, use the scheduler's \`enable_discord\` and \`discord_only\` dry-run inputs; this mode skips BloxSwaps and sends no Telegram alerts.
+

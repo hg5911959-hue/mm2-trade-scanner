@@ -12,10 +12,10 @@ class SecretRedactionTests(IsolatedDataTestCase):
         secrets = {
             "TELEGRAM_BOT_TOKEN": "telegram-token-123456",
             "TELEGRAM_CHAT_ID": "-100987654321",
-            "RBLXVALUE_API_KEY": "rbx_secret_key_123",
+            "RBLXVALUE_API_KEY": "test-rblxvalue-api-key-placeholder",
         }
         with patch.dict(os.environ, secrets, clear=False):
-            output = scanner.redact("token=telegram-token-123456 chat=-100987654321 key=rbx_secret_key_123")
+            output = scanner.redact("token=telegram-token-123456 chat=-100987654321 key=test-rblxvalue-api-key-placeholder")
         self.assertEqual(output, "token=[REDACTED] chat=[REDACTED] key=[REDACTED]")
         for secret in secrets.values():
             self.assertNotIn(secret, output)
@@ -24,12 +24,12 @@ class SecretRedactionTests(IsolatedDataTestCase):
         secrets = {
             "TELEGRAM_BOT_TOKEN": "telegram-token-123456",
             "TELEGRAM_CHAT_ID": "-100987654321",
-            "RBLXVALUE_API_KEY": "rbx_secret_key_123",
+            "RBLXVALUE_API_KEY": "test-rblxvalue-api-key-placeholder",
         }
         target = io.StringIO()
         with patch.dict(os.environ, secrets, clear=False):
             stream = scanner.RedactingStream(target)
-            print("telegram-token-123456 -100987654321 rbx_secret_key_123", file=stream)
+            print("telegram-token-123456 -100987654321 test-rblxvalue-api-key-placeholder", file=stream)
             stream.flush()
         self.assertEqual(target.getvalue(), "[REDACTED] [REDACTED] [REDACTED]\n")
 
@@ -45,7 +45,7 @@ class SecretRedactionTests(IsolatedDataTestCase):
         self.assertEqual(scanner.redact(value), value)
 
     def test_existing_credential_patterns_are_redacted(self):
-        value = "https://api.telegram.org/botabc123456/sendMessage rbx_AbCdEf123 Authorization: Bearer token-value-123"
+        value = "https://api.telegram.org/botabc123456/sendMessage rbx_AAAAAAAAAAAAAAAA Authorization: Bearer token-value-123"
         output = scanner.redact(value)
         self.assertNotIn("abc123456", output)
         self.assertNotIn("AbCdEf123", output)

@@ -2,7 +2,7 @@ name: MM2 Scanner Tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, before-market-book]
   pull_request:
 
 permissions:
@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -52,11 +54,36 @@ jobs:
       - name: Install Ruff
         run: python -m pip install --disable-pip-version-check ruff==0.17.5
 
-      - name: Run Ruff on parser, API guard, history and dashboard modules
-        run: ruff check discord_parser.py rblxvalue_guard.py market_history.py market_intelligence/ai_advisor.py market_intelligence/public_sources.py tools/export_dashboard.py tools/cash_market.py tools/validate_state.py tests/test_cash_market.py tests/test_state_validation.py tests/test_discord_parser.py tests/test_rblxvalue_guard.py tests/test_rblxvalue_cache_migration.py tests/test_market_history.py tests/test_market_intelligence.py
+      - name: Run Ruff on all market, privacy, API and scanner modules
+        run: ruff check --select E4,E7,E9,F cash_offer_parser.py market_book.py telegram_market.py private_state.py tests/test_cash_offer_parser.py tests/test_market_book.py tests/test_telegram_market.py tests/test_private_state.py
 
       - name: Run focused correctness lint on scanner
         run: ruff check --select F scanner.py
  
       - name: Run undefined and unused-name checks across the repository
         run: ruff check --select F .
+
+  secret-scan:
+    name: Scan repository history for leaked secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Check out full Git history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Set up Go for Gitleaks
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: "1.24.3"
+          cache: false
+      - name: Install pinned Gitleaks
+        run: go install github.com/zricethezav/gitleaks/v8@v8.24.3
+      - name: Scan all fetched Git refs for leaked secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          "$(go env GOPATH)/bin/gitleaks" git --redact --verbose --no-banner --exit-code 1 --log-opts="--all" .

@@ -21,6 +21,52 @@ The workflow discovers text channels and active threads visible to the bot only 
 ### Alternative public sources
 Public RSS sources may supplement the primary sources later, but they are not a substitute for authorized Discord channel access. The Reddit RSS adapter is optional and remains separate.
 
+## Cash-market price-list ingestion and signals
+
+The cash-market extension is additive to the existing swap-message parser.
+Price-list messages are accepted only from:
+- Owner-supplied `DISCORD_MANUAL_MESSAGES_JSON` /
+  `DISCORD_MANUAL_MESSAGES_JSON_2` imports.
+- The existing authorized read-only Discord bot collector, when configured
+  with the documented read-only channel permissions.
+- The owner forwarding or pasting a post and its Discord permalink into the
+  owner-authorized Telegram chat. A pasted post without a verifiable Discord
+  snowflake timestamp is rejected; Telegram receipt time is never substituted
+  for the original offer time.
+
+`cash_offer_parser.py` parses seller/buyer blocks, including `QUICK SELL`
+as a seller header. It uses the explicit owner-editable
+`cash_item_aliases.json` map. Ambiguous names, unknown names, and
+multi-quantity prices without a per-unit marker are rejected. It does not
+perform fuzzy matching or scrape Discord. The existing
+`discord_parser.py` remains responsible for two-sided swap messages.
+
+Normalized cash offers feed `market_book.py`; raw Discord message bodies are
+not retained in the cash-offer store, public dashboard, public CSV/SQLite
+history, or logs. The raw temporary `data/discord_messages.json` import is
+removed before durable state artifacts are created. Private normalized offers,
+inventory, Telegram offsets, alert deduplication, and private price history
+are authenticated-encrypted into `data/private_state.enc` before public
+state persistence. The repository is public, so the state branch is not
+treated as private.
+
+The legacy `data/cash_prices.csv` is permitted only as a labelled reference
+fallback during `DRY_RUN=true`; it never fabricates bid/ask offers or qualifies
+live signals. The market engine calculates direct ask-to-bid arbitrage after
+fees and a safety margin, and 1:1 / N:1 buy→swap→sell chains only with fresh RBLXValue
+data. RBLXValue is the only game-value source; no Supreme Values site data is
+copied or scraped. Stale game values disable swap chains while cash-only
+direct opportunities remain available. Inventory guidance is advisory.
+
+The following flags are all `false` by default and must be deliberately
+enabled only after tests and dry-run review:
+`MARKET_BOOK_ENABLED`, `TELEGRAM_COMMANDS_ENABLED`,
+`INVENTORY_ENABLED`, and `PRIVATE_STATE_ENABLED`. The existing Telegram
+bot token is used as the private-state encryption-key input; no new secret or
+always-on host is required. OpenSSL CLI is provided by the GitHub Actions
+Ubuntu runner for AES-256-CTR, with HMAC-SHA256 authentication implemented
+using Python's standard library.
+
 ## AI providers and zero-budget operation
 
 - **Gemini:** a tested API adapter exists for the official Gemini Developer API, but it is **not currently called by the production scanner or scheduled workflow**. No automatic AI commentary is running. Free models and quotas can change. Wiring it into production would require a separate reviewed change, a bounded payload, and a strict advisory-only result path.

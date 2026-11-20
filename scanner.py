@@ -76,11 +76,12 @@ LAST_SUCCESS_FILE = Path("data/last_successful_scan.json")
 WATCH_FILE = Path("data/watch_ads.json")
 ALIASES_FILE = Path("aliases.json")
 UNMATCHED_FILE = Path("data/unmatched_names.json")
+DISCORD_ALERT_STATE_FILE = Path("data/discord_alert_state.json")
 MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
 BLOXSWAPS_PAGE_SIZE = 20
 MAX_FEED_PAGES = max(1, min(1000, int(os.environ.get("MAX_FEED_PAGES", "1000"))))
 VALUES_REVALIDATION_INTERVAL_SECONDS = 12 * 60 * 60
-RBLXVALUE_META_POLL_INTERVAL_SECONDS = 60 * 60
+RBLXVALUE_META_POLL_INTERVAL_SECONDS = 6 * 60 * 60
 RBLXVALUE_META_FILE = Path("data/rblxvalue_meta.json")
 RBLXVALUE_DETAIL_FILE = Path("data/rblxvalue_detail_enrichment.json")
 RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY = max(
@@ -1075,6 +1076,23 @@ RBLXVALUE_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_RETRY_AFTER_SECONDS = 120
 
 
+class BloxSwapsRateLimitError(RuntimeError):
+    """A 429 response requires the current scan to stop without retrying."""
+
+
+
+class _RejectTelegramRedirects(urllib.request.HTTPRedirectHandler):
+    """Never forward the bot token embedded in a Telegram URL to a redirect."""
+
+    handler_order = 100
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_TELEGRAM_OPENER = urllib.request.build_opener(_RejectTelegramRedirects())
+
+
 class _RejectCredentialRedirects(urllib.request.HTTPRedirectHandler):
     """Never forward the RBLXValue API key to a redirect target."""
 
@@ -1158,6 +1176,39 @@ def request_with_retry(req, timeout, label, attempts=4, return_headers=False, al
                     safe_detail = "empty response body"
                 raise RuntimeError(
                     f"[http] {label}: HTTP 403 Forbidden; upstream response: {safe_detail[:240]}"
+                ) from exc
+            if exc.code == 429 and not is_rblxvalue:
+                retry_after = (exc.headers or {}).get("Retry-After", "")
+                delay = None
+                if retry_after:
+                    try:
+                        delay = max(0, int(retry_after))
+                    except ValueError:
+                        try:
+                            delay = max(0, (parsedate_to_datetime(retry_after) -
+                                datetime.now(timezone.utc)).total_seconds())
+                        except Exception:
+                            delay = None
+                if delay is not None and delay > MAX_RETRY_AFTER_SECONDS:
+                    raise BloxSwapsRateLimitError(
+                        f"{label}: HTTP 429; Retry-After exceeds the safe wait "
+                        f"({int(delay)}s > {MAX_RETRY_AFTER_SECONDS}s); aborting this scan without retry"
+                    ) from exc
+                suffix = f"; Retry-After={int(delay)}s" if delay is not None else "; no Retry-After header"
+                headers = exc.headers or {}
+                diagnostic_headers = []
+                for header in ("Server", "CF-Ray", "Content-Type", "X-RateLimit-Limit",
+                               "X-RateLimit-Remaining", "X-RateLimit-Reset"):
+                    value = headers.get(header)
+                    if value:
+                        diagnostic_headers.append(f"{header}={str(value)[:100]}")
+                header_summary = (
+                    "; response=" + ", ".join(diagnostic_headers)
+                    if diagnostic_headers else ""
+                )
+                raise BloxSwapsRateLimitError(
+                    f"{label}: HTTP 429 rate limited{suffix}{header_summary}; "
+                    "aborting this scan without retry"
                 ) from exc
             retryable = exc.code == 429 or 500 <= exc.code <= 599
             if not retryable or attempt == attempts - 1:
@@ -2182,7 +2233,7 @@ def _read_rblxvalue_meta_state():
 
 
 def _fetch_rblxvalue_meta(force=False):
-    """Poll source metadata hourly; the upstream dataset itself updates every ~12h."""
+    """Read source metadata; forced pre/post checks bracket a full catalogue refresh."""
     if not RBLXVALUE_META_POLL_ENABLED or not RBLXVALUE_API_KEY:
         return None
     now = time.time()
@@ -2370,9 +2421,19 @@ def _read_values_cache():
     if cached is None:
         return None, None
     try:
-        age = max(0, int(time.time() - float(cached.get("fetched_at", 0))))
+        fetched_raw = cached.get("fetched_at")
+        if isinstance(fetched_raw, bool):
+            return None, None
+        fetched_at = float(fetched_raw)
+        current = float(time.time())
+        if (
+            not math.isfinite(fetched_at) or not math.isfinite(current)
+            or fetched_at <= 0 or current <= 0 or fetched_at > current
+        ):
+            return None, None
+        age = int(current - fetched_at)
         return cached["values"], age
-    except (TypeError, ValueError, KeyError):
+    except (TypeError, ValueError, KeyError, OverflowError):
         return None, None
 
 
@@ -2557,52 +2618,27 @@ def _source_snapshot_matches_meta(cached_document, source_meta):
 
 
 def load_supreme_values():
-    # Never spend API budget or perform health checks for a credential already blocked.
-    if RBLXVALUE_API_KEY and rblxvalue_guard.is_key_blocked(key=RBLXVALUE_API_KEY):
-        raise RuntimeError(
-            "[supreme] API key circuit breaker active; refusing stale-cache calculations "
-            "[rblxvalue-key-blocked] no request sent"
-        )
-    # Schema v4 preserves item identity and Supreme stability; older caches lack stability.
+    # A fresh persisted catalogue is authoritative for this scan tick.
+    # In particular, a 30-second loop tick must never call RBLXValue while the
+    # cache is fresh (including metadata, health checks, and detail enrichment).
     cached_document = _read_values_cache_document()
     cached_values, cached_age = _read_values_cache()
-    source_meta = None
-    if (
-        cached_values is not None and RBLXVALUE_API_KEY
-        and cached_age is not None and cached_age <= VALUES_TTL_SECONDS
-    ):
-        verify_rblxvalue_key_if_due()
-        if RBLXVALUE_META_POLL_ENABLED:
-            try:
-                source_meta = _fetch_rblxvalue_meta()
-            except Exception as exc:
-                print(f"[rblxvalue-meta] Poll failed safely: {type(exc).__name__}; cached snapshot policy remains in force")
-        if source_meta and _source_snapshot_matches_meta(cached_document, source_meta):
-            print(
-                "[supreme] Source metadata and catalogue size unchanged "
-                f"(updated {source_meta.get('last_updated')}; items {source_meta.get('items_total')}); "
-                "reusing complete cached catalogue"
-            )
-            _enrich_catalog_metadata_gaps(cached_values, cached_document, source_meta)
-            _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
-            return cached_values
-        if source_meta and cached_document:
-            previous_updated = cached_document.get("source_last_updated") or "unknown"
-            previous_total = cached_document.get("source_items_total") or "unknown"
-            print(
-                "[supreme] Source snapshot mismatch "
-                f"(timestamp {previous_updated} -> {source_meta.get('last_updated')}; "
-                f"items {previous_total} -> {source_meta.get('items_total')}); refreshing catalogue now"
-            )
-            cached_age = VALUES_TTL_SECONDS + 1
     if cached_values is not None and cached_age is not None and cached_age <= VALUES_TTL_SECONDS:
-        print(f"[supreme] Using fresh source_b snapshot (age {cached_age}s; TTL {VALUES_TTL_SECONDS}s)")
-        _enrich_catalog_metadata_gaps(cached_values, cached_document, source_meta)
+        print(f"[supreme] Using fresh source_b snapshot (age {cached_age}s; TTL {VALUES_TTL_SECONDS}s); no RBLXValue request")
         _write_supreme_values_audit(cached_values, fetched_at=(cached_document or {}).get("fetched_at"))
         return cached_values
+
+    if RBLXVALUE_API_KEY and rblxvalue_guard.is_key_blocked(key=RBLXVALUE_API_KEY):
+        raise RuntimeError(
+            "[supreme] API key circuit breaker active; refusing expired-cache calculations "
+            "[rblxvalue-key-blocked] no request sent"
+        )
+    source_meta = None
     if not RBLXVALUE_API_KEY:
         raise RuntimeError("[supreme] API key missing and no fresh cached source_b snapshot; refusing stale values.")
-    if RBLXVALUE_META_POLL_ENABLED and source_meta is None:
+    # Metadata polling is confined to an expired-cache refresh, never to each
+    # 30-second scan-loop tick. The catalogue request itself verifies the key.
+    if RBLXVALUE_META_POLL_ENABLED:
         try:
             source_meta = _fetch_rblxvalue_meta(force=True)
         except Exception as exc:
@@ -3047,7 +3083,7 @@ def send_telegram(message):
         _wait_for_telegram_rate_limit()
         req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=20) as response:
+            with _TELEGRAM_OPENER.open(req, timeout=20) as response:
                 raw = response.read()
         except HTTPError as exc:
             raw = exc.read(2000)
@@ -3380,6 +3416,38 @@ def load_alerted():
 def save_alerted(alerted):
     ordered = list(dict.fromkeys(str(value) for value in alerted))[-MAX_ALERTED:]
     atomic_write_text(ALERTED_FILE, json.dumps({"version": 2, "alerted": ordered}, indent=2) + "\n")
+
+
+def load_discord_alert_state():
+    """Load private Discord dedupe state; caller must have decrypted private storage."""
+    if not DISCORD_ALERT_STATE_FILE.exists():
+        return {"alerted": [], "uncertain": {}}
+    try:
+        state = json.loads(DISCORD_ALERT_STATE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("[private-state] Discord alert state is unreadable; refusing duplicate sends.") from exc
+    if not isinstance(state, dict) or not isinstance(state.get("alerted", []), list) or not isinstance(state.get("uncertain", {}), dict):
+        raise RuntimeError("[private-state] Discord alert state has an invalid structure.")
+    alerted = [str(value) for value in state.get("alerted", []) if str(value)]
+    uncertain = {}
+    for key, value in state.get("uncertain", {}).items():
+        try:
+            uncertain[str(key)] = float(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise RuntimeError("[private-state] Discord uncertain-delivery timestamp is invalid.") from exc
+    return {"alerted": alerted[-MAX_ALERTED:], "uncertain": uncertain}
+
+
+def save_discord_alert_state(state):
+    """Persist Discord IDs only in the allowlisted encrypted private-state bundle."""
+    if not isinstance(state, dict):
+        raise RuntimeError("[private-state] Discord alert state is invalid.")
+    payload = {
+        "version": 1,
+        "alerted": list(dict.fromkeys(str(value) for value in state.get("alerted", [])))[-MAX_ALERTED:],
+        "uncertain": {str(key): float(value) for key, value in state.get("uncertain", {}).items()},
+    }
+    atomic_write_text(DISCORD_ALERT_STATE_FILE, json.dumps(payload, indent=2) + "\n")
 
 
 def save_uncertain_state(state):
@@ -4033,6 +4101,8 @@ def save_watch_state(ads):
     atomic_write_text(WATCH_FILE, json.dumps({'version': 1, 'ads': active}, ensure_ascii=False, indent=2) + "\n")
 
 def update_watch_entry(watch_state, listing, values, aliases=None, cash_catalog=None):
+    if listing.get("source") == "discord":
+        return False  # Discord fingerprints/IDs belong only in encrypted private state.
     ad_id = str(listing.get('source_ad_id') or '')
     if not ad_id: return False
     content_hash, values_hash = listing_watch_fingerprints(listing, values, aliases, cash_catalog)
@@ -4115,9 +4185,87 @@ def accumulate_cash_blockers(missing, counts, groups):
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     dry_run = os.environ.get("DRY_RUN", "").strip().casefold() == "true"
+    discord_only = os.environ.get("DISCORD_ONLY", "").strip().casefold() == "true"
+    if discord_only and not dry_run:
+        raise RuntimeError("DISCORD_ONLY is permitted only with DRY_RUN=true.")
+    if discord_only and not (
+        cash_filter_enabled(os.environ.get("MARKET_BOOK_ENABLED", "false"))
+        and cash_filter_enabled(os.environ.get("PRIVATE_STATE_ENABLED", "false"))
+    ):
+        raise RuntimeError("DISCORD_ONLY requires encrypted private state and the market book parser.")
     if not dry_run and (not BOT_TOKEN or not CHAT_ID):
         raise RuntimeError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in GitHub Actions secrets.")
     update_metrics(increments={"scans": 1})
+
+    market_book_enabled = cash_filter_enabled(os.environ.get("MARKET_BOOK_ENABLED", "false"))
+    telegram_commands_enabled = cash_filter_enabled(os.environ.get("TELEGRAM_COMMANDS_ENABLED", "false"))
+    inventory_enabled = cash_filter_enabled(os.environ.get("INVENTORY_ENABLED", "false"))
+    private_state_enabled = cash_filter_enabled(os.environ.get("PRIVATE_STATE_ENABLED", "false"))
+    if market_book_enabled and private_state_enabled:
+        try:
+            import telegram_market
+            manual_added, manual_rejected = telegram_market.ingest_manual_discord_imports()
+            if manual_added or manual_rejected:
+                print(
+                    f"[market-book] authorized_manual_import_offers={manual_added} "
+                    f"rejected_lines={manual_rejected}"
+                )
+        except Exception as import_error:
+            print(f"[market-book] authorized import skipped safely: {type(import_error).__name__}")
+        if telegram_commands_enabled and not dry_run:
+            try:
+                from telegram_market import process_telegram_updates
+                processed = process_telegram_updates(
+                    token=BOT_TOKEN, chat_id=CHAT_ID, market_enabled=True,
+                    inventory_enabled=inventory_enabled, private_state_confirmed=True,
+                )
+                if processed:
+                    print(f"[telegram-market] processed_updates={processed}")
+            except Exception as telegram_error:
+                print(f"[telegram-market] polling skipped safely: {type(telegram_error).__name__}")
+        try:
+            import telegram_market
+            from market_book import save_private_price_history
+            market_snapshot = telegram_market._load_market()
+            opportunities = market_snapshot["direct"] + market_snapshot["chains"]
+            print(
+                f"[market-book] items={len(market_snapshot['book'])} "
+                f"direct_opportunities={len(market_snapshot['direct'])} "
+                f"swap_chains={len(market_snapshot['chains'])}"
+            )
+            if dry_run:
+                dry_run_limit = max(1, min(100, int(os.environ.get("MAX_ALERTS_PER_SCAN", "15"))))
+                for index, opportunity in enumerate(opportunities[:dry_run_limit], 1):
+                    print(
+                        f"[dry-run-market] opportunity_id=scan-local-{index:03d} "
+                        f"type={opportunity.get('type')} "
+                        f"profit_usd={float(opportunity.get('profit_usd', 0)):.2f} "
+                        f"profit_percent={float(opportunity.get('profit_percent', 0)):.2f}"
+                    )
+            else:
+                if telegram_commands_enabled:
+                    alerts_sent = telegram_market.send_market_alerts(
+                        token=BOT_TOKEN, chat_id=CHAT_ID, snapshot=market_snapshot,
+                        max_alerts=int(os.environ.get("MAX_ALERTS_PER_SCAN", "15")),
+                        profit_delta_usd=float(os.environ.get("MARKET_ALERT_PROFIT_DELTA_USD", "0.50")),
+                    )
+                    if alerts_sent:
+                        print(f"[market-book] alerts_sent={alerts_sent}")
+                if market_snapshot["book"]:
+                    save_private_price_history(
+                        telegram_market.HISTORY_FILE, market_snapshot["book"]
+                    )
+        except Exception as market_error:
+            print(f"[market-book] evaluation skipped safely: {type(market_error).__name__}")
+    elif market_book_enabled:
+        print("[market-book] disabled safely: PRIVATE_STATE_ENABLED must be true to protect owner data")
+
+    if discord_only:
+        write_step_summary(
+            "Discord-only cash-market dry-run completed; RBLXValue and BloxSwaps were not called, and no alerts were sent."
+        )
+        print("[health] Discord-only cash-market dry run complete; external value/feed sources were not requested.")
+        return
 
     print("[stage] Checking RBLXValue API credential")
     if not RBLXVALUE_API_KEY:
@@ -4222,11 +4370,22 @@ def scan_once(include_backlog_rechecks=True):
     # normalized schema, but keep its IDs namespaced away from BloxSwaps cursors.
     from discord_parser import load_discord_listings
 
-    try:
-        discord_listings, discord_rejected = load_discord_listings()
-    except Exception as discord_error:
+    if private_state_enabled:
+        try:
+            discord_listings, discord_rejected = load_discord_listings()
+        except Exception as discord_error:
+            discord_listings, discord_rejected = [], 0
+            print(f"[discord-parser] source skipped safely: {type(discord_error).__name__}; BloxSwaps scan continues")
+        discord_alert_state = load_discord_alert_state()
+        discord_alerted_set = set(discord_alert_state["alerted"])
+        discord_uncertain = discord_alert_state["uncertain"]
+    else:
+        # Do not process private-server offers unless their dedupe state can be
+        # persisted inside the authenticated encrypted private-state bundle.
         discord_listings, discord_rejected = [], 0
-        print(f"[discord-parser] source skipped safely: {type(discord_error).__name__}; BloxSwaps scan continues")
+        discord_alert_state = {"alerted": [], "uncertain": {}}
+        discord_alerted_set = set()
+        discord_uncertain = {}
     if discord_listings:
         existing_ids = {str(row.get("id") or "") for row in listings}
         fresh_discord = [row for row in discord_listings if str(row.get("id") or "") not in existing_ids]
@@ -4399,8 +4558,10 @@ def scan_once(include_backlog_rechecks=True):
             "Newer posts may remain unscanned; inspect the latest GitHub Actions logs.",
             cooldown_seconds=1800,
         )
-    # Runtime visibility for real-feed quantity validation: log only explicit stacks.
+    # Never print private Discord item names, message IDs or stack quantities.
     for listing in listings:
+        if listing.get("source") == "discord":
+            continue
         for side_label, field in (("Propose/receive", "receive_items"), ("Recherche/give", "give_items")):
             for item in listing.get(field, []):
                 quantity = item.get("quantity")
@@ -4488,25 +4649,35 @@ def scan_once(include_backlog_rechecks=True):
     evaluated = 0
     opportunities = []
     def deliver_opportunity(op):
-        nonlocal sent
+        nonlocal sent, already_alerted_skipped, uncertain_skipped
         global _SESSION_ALERTS_SENT
         listing = op["listing"]
         trade_id = listing["id"]
+        is_discord = listing.get("source") == "discord"
+        if is_discord and (trade_id in discord_alerted_set or trade_id in discord_uncertain):
+            if trade_id in discord_uncertain:
+                uncertain_skipped += 1
+            else:
+                already_alerted_skipped += 1
+            return
         # Re-check immediately before every non-idempotent send. A previously
         # alerted stable ad may be sent again only when its content or value
         # fingerprint changed; uncertain Telegram deliveries remain quarantined.
         watch_id = str(listing.get("source_ad_id") or "")
-        previous_watch = watch_state.get(watch_id, {})
+        previous_watch = {} if is_discord else watch_state.get(watch_id, {})
         current_content_hash, current_values_hash = listing_watch_fingerprints(listing, values, aliases, cash_catalog)
         variant_changed = bool(previous_watch) and (
             previous_watch.get("content_hash") != current_content_hash
             or previous_watch.get("values_hash") != current_values_hash
         )
-        if (trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids:
+        if not is_discord and ((trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids):
             print(f"[dedupe] Skipping unchanged or uncertain listing {trade_id} before Telegram send.")
             return
         if os.environ.get("DRY_RUN", "").strip().casefold() == "true":
-            print(f"[dry-run] would send: {trade_id} profit={op['difference']:g}")
+            if is_discord:
+                print(f"[dry-run] would send private Discord offer; profit={op['difference']:g}; identifiers suppressed")
+            else:
+                print(f"[dry-run] would send: {trade_id} profit={op['difference']:g}")
             return
         listing["alert_attempted_at_utc"] = datetime.now(timezone.utc).isoformat()
         message = format_trade_message(
@@ -4543,7 +4714,7 @@ def scan_once(include_backlog_rechecks=True):
             )
         ]
         if large_stacks:
-            message += "\nWARNING: quantity 5+ — verify the stack in BloxSwaps."
+            message += "\nWARNING: quantity 5+ — verify the stack in the original source."
         ignored_names = ignored_item_names(listing)
         if ignored_names:
             message += "\nNOTE: not valued (no numeric Supreme value): " + ", ".join(ignored_names)
@@ -4553,41 +4724,71 @@ def scan_once(include_backlog_rechecks=True):
         if secondary_note:
             message += "\nSECOND-SOURCE CHECK (MM2Values): " + secondary_note
         trade_id = listing["id"]
-        if listing.get("valuation_mode") == "cash":
+        if is_discord:
+            profit_label = (
+                f"cash_profit_usd={op['cash_profit_worst']:g}"
+                if listing.get("valuation_mode") == "cash"
+                else f"profit={op['difference']:g}"
+            )
+            print(f"[telegram] Sending ranked private Discord offer; {profit_label}; identifiers suppressed")
+        elif listing.get("valuation_mode") == "cash":
             print(
                 f"[telegram] Sending ranked cash trade id={trade_id}; "
                 f"cash_profit_usd={op['cash_profit_worst']:g}"
             )
         else:
             print(f"[telegram] Sending ranked value trade id={trade_id}; profit={op['difference']:g}")
-        # Persist a delivery guard before the non-idempotent Telegram request.
-        # It is cleared only after a definite success or definite API rejection.
-        uncertain_ids.add(trade_id)
-        save_uncertain_ids(uncertain_ids)
+        # Persist the delivery guard before the non-idempotent request. Discord
+        # IDs must remain inside the authenticated encrypted private-state file.
+        if is_discord:
+            discord_uncertain[trade_id] = time.time()
+            discord_alert_state["uncertain"] = discord_uncertain
+            save_discord_alert_state(discord_alert_state)
+        else:
+            uncertain_ids.add(trade_id)
+            save_uncertain_ids(uncertain_ids)
         _SESSION_ALERTS_SENT += 1
         try:
             send_telegram(message)
         except TelegramDeliveryUncertain:
-            print(
-                f"[telegram] Delivery uncertain for listing {trade_id}; "
-                "quarantined, skipping this message and continuing the batch."
-            )
+            if is_discord:
+                print("[telegram] Private Discord delivery uncertain; encrypted quarantine retained; identifiers suppressed.")
+            else:
+                print(
+                    f"[telegram] Delivery uncertain for listing {trade_id}; "
+                    "quarantined, skipping this message and continuing the batch."
+                )
             # The pre-send guard remains in uncertain_ids; persist the feed ID too.
             mark_seen_ad(listing)
             return
         except Exception as exc:
+            if is_discord:
+                discord_uncertain.pop(trade_id, None)
+                discord_alert_state["uncertain"] = discord_uncertain
+                save_discord_alert_state(discord_alert_state)
+            else:
+                uncertain_ids.discard(trade_id)
+                save_uncertain_ids(uncertain_ids)
+            mark_pending(listing, reason="telegram_failure")
+            if is_discord:
+                print(f"[telegram] Private Discord delivery failed: {type(exc).__name__}; identifiers suppressed.")
+            else:
+                print(
+                    f"[telegram] Definite send failure for listing {trade_id}: "
+                    f"{type(exc).__name__}; queued for a later scan and continuing the batch."
+                )
+            return
+        if is_discord:
+            discord_uncertain.pop(trade_id, None)
+            discord_alerted_set.add(trade_id)
+            discord_alert_state["alerted"] = sorted(discord_alerted_set)[-MAX_ALERTED:]
+            discord_alert_state["uncertain"] = discord_uncertain
+            save_discord_alert_state(discord_alert_state)
+        else:
+            mark_alerted(trade_id)
+            update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
             uncertain_ids.discard(trade_id)
             save_uncertain_ids(uncertain_ids)
-            mark_pending(listing, reason="telegram_failure")
-            print(
-                f"[telegram] Definite send failure for listing {trade_id}: "
-                f"{type(exc).__name__}; queued for a later scan and continuing the batch."
-            )
-            return
-        mark_alerted(trade_id)
-        update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
-        uncertain_ids.discard(trade_id)
-        save_uncertain_ids(uncertain_ids)
         mark_seen_ad(listing)
         listing["alerted_at_utc"] = datetime.now(timezone.utc).isoformat()
         if listing.get("source") != "discord":
@@ -4599,12 +4800,15 @@ def scan_once(include_backlog_rechecks=True):
             if first_seen_ts is not None and alerted_ts is not None else None
         )
         latency_label = f"{detection_latency:.2f}s" if detection_latency is not None else "unknown"
-        print(
-            f"[timing] listing={listing.get('source_ad_id') or trade_id} "
-            f"first_seen={listing.get('first_seen_at_utc', 'unknown')} "
-            f"alerted={listing['alerted_at_utc']} "
-            f"first_seen_to_alert={latency_label}"
-        )
+        if is_discord:
+            print(f"[timing] private Discord offer delivered; first_seen_to_alert={latency_label}; identifiers suppressed")
+        else:
+            print(
+                f"[timing] listing={listing.get('source_ad_id') or trade_id} "
+                f"first_seen={listing.get('first_seen_at_utc', 'unknown')} "
+                f"alerted={listing['alerted_at_utc']} "
+                f"first_seen_to_alert={latency_label}"
+            )
         sent += 1
         update_metrics(increments={"alerts_sent": 1})
 
@@ -4612,7 +4816,17 @@ def scan_once(include_backlog_rechecks=True):
     cash_blocker_groups = {}
     for listing in listings:
         trade_id = listing["id"]
-        legacy_state = legacy_alert_state(listing, alerted_set, uncertain_ids)
+        is_discord = listing.get("source") == "discord"
+        if is_discord:
+            if trade_id in discord_alerted_set:
+                already_alerted_skipped += 1
+                continue
+            if trade_id in discord_uncertain:
+                uncertain_skipped += 1
+                continue
+            legacy_state = None
+        else:
+            legacy_state = legacy_alert_state(listing, alerted_set, uncertain_ids)
         # One-time migration: old quantity-sensitive hashes may still exist in
         # alerted/history/quarantine state. Promote their new stable ad ID
         # before any Telegram send so the upgrade cannot replay old alerts.
@@ -4630,13 +4844,13 @@ def scan_once(include_backlog_rechecks=True):
             uncertain_skipped += 1
             continue
         watch_id = str(listing.get("source_ad_id") or "")
-        previous_watch = watch_state.get(watch_id, {})
+        previous_watch = {} if is_discord else watch_state.get(watch_id, {})
         content_hash, values_hash = listing_watch_fingerprints(listing, values, aliases, cash_catalog)
         fingerprint_changed = bool(previous_watch) and (
             previous_watch.get("content_hash") != content_hash
             or previous_watch.get("values_hash") != values_hash
         )
-        if trade_id in alerted_set and not fingerprint_changed:
+        if not is_discord and trade_id in alerted_set and not fingerprint_changed:
             if not previous_watch:
                 update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
             already_alerted_skipped += 1
@@ -4646,7 +4860,7 @@ def scan_once(include_backlog_rechecks=True):
             watch_unchanged_skipped += 1
             mark_seen_ad(listing)
             continue
-        if trade_id in uncertain_ids:
+        if not is_discord and trade_id in uncertain_ids:
             uncertain_skipped += 1
             mark_seen_ad(listing)
             continue
@@ -4662,15 +4876,19 @@ def scan_once(include_backlog_rechecks=True):
         if result is None:
             skipped_unknown += 1
             if CASH_FILTER and missing and all("cash price" in str(value).casefold() for value in missing):
-                accumulate_cash_blockers(missing, cash_blocker_counts, cash_blocker_groups)
-                print("[cash] Listing held from alerts: one or more manual USD prices are missing/unverified.")
+                if not is_discord:
+                    accumulate_cash_blockers(missing, cash_blocker_counts, cash_blocker_groups)
+                print("[cash] Private Discord offer held; item details suppressed." if is_discord else "[cash] Listing held from alerts: one or more manual USD prices are missing/unverified.")
                 update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
                 mark_seen_ad(listing, clear_pending=False)
                 continue
-            print(
-                f"[skip-unknown] Listing retained for recheck; missing/unvalued items: "
-                f"{', '.join(missing)}"
-            )
+            if is_discord:
+                print("[skip-unknown] Private Discord offer has unresolved items; names suppressed.")
+            else:
+                print(
+                    f"[skip-unknown] Listing retained for recheck; missing/unvalued items: "
+                    f"{', '.join(missing)}"
+                )
             pending_reason = pending_reason_from_missing(missing)
             mark_pending(listing, reason=pending_reason)
             unknown_names = [
@@ -4682,7 +4900,7 @@ def scan_once(include_backlog_rechecks=True):
                 and "quantity uncertain" not in str(value).casefold()
                 and "stability" not in str(value).casefold()
             ]
-            if unknown_names:
+            if unknown_names and not is_discord:
                 record_unmatched_names(unknown_names)
             update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
             # Low-priority missing values/stability remain queued but leave the
@@ -4696,10 +4914,13 @@ def scan_once(include_backlog_rechecks=True):
                 f"estimated_cash_profit_range=${result['cash_profit_worst']:.2f}.."
                 f"${result['cash_profit_best']:.2f}; NOT TRADE-ELIGIBLE"
             )
-            for line in result.get("give_lines", []):
-                print(f"[dry-run-estimate] GIVE {line}")
-            for line in result.get("receive_lines", []):
-                print(f"[dry-run-estimate] RECEIVE {line}")
+            if is_discord:
+                print("[dry-run-estimate] Private Discord item lines suppressed from public logs.")
+            else:
+                for line in result.get("give_lines", []):
+                    print(f"[dry-run-estimate] GIVE {line}")
+                for line in result.get("receive_lines", []):
+                    print(f"[dry-run-estimate] RECEIVE {line}")
             continue
         if not (qualifies_cash(result) if CASH_FILTER else qualifies(result)):
             if result.get("uncertain_items"):
@@ -4939,8 +5160,17 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
                 include_backlog = should_run_backlog_recheck(cycles)
                 scan_once(include_backlog_rechecks=include_backlog)
                 successful_cycles += 1
+            except BloxSwapsRateLimitError as exc:
+                last_failure = exc
+                print(f"[loop] Upstream rate limit received; stopping scan loop without further BloxSwaps requests: {redact(exc)[:240]}")
+                record_failure(exc)
+                break
             except Exception as exc:
                 last_failure = exc
+                if "[rblxvalue-budget-exhausted]" in str(exc) or "RblxValueBudgetExceeded" in str(exc):
+                    print("[loop] RBLXValue rolling request budget exhausted; stopping this job without retrying.")
+                    record_failure(exc)
+                    break
                 print(f"[loop] Scan cycle {cycles} failed safely: {type(exc).__name__}; reason={redact(exc)[:240]}")
                 record_failure(exc)
             cycle_elapsed = time.monotonic() - cycle_started
@@ -4965,6 +5195,8 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
     update_metrics(increments={"rblxvalue_requests": rblxvalue_guard.requests_this_run()})
     print(f"[loop] Finished: cycles={cycles}, successful={successful_cycles}, elapsed={elapsed:.1f}s")
     if successful_cycles == 0:
+        if isinstance(last_failure, BloxSwapsRateLimitError):
+            raise RuntimeError(str(last_failure))
         if last_failure and (
             "[rblxvalue-key-blocked]" in str(last_failure)
             or "[rblxvalue-budget-exhausted]" in str(last_failure)
@@ -4984,6 +5216,8 @@ def main():
             if not_modified or not isinstance(payload, dict) or not isinstance(payload.get("items"), list) or not payload["items"]:
                 raise RuntimeError("[rblxvalue-key-check] API credential check returned no valid item payload")
             print("[rblxvalue-key-check] PASS: credential accepted; one item returned")
+            rblxvalue_guard.log_request_count()
+            return 0
         except Exception:
             rblxvalue_guard.log_request_count()
             raise

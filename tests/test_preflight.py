@@ -1,11 +1,13 @@
 import json
+import os
 import tempfile
 import unittest
+from unittest.mock import patch
 from test_support import IsolatedDataTestCase
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from tools.preflight import collect_preflight_checks
+from tools.preflight import collect_preflight_checks, send_daily_notice
 
 
 class PreflightTests(IsolatedDataTestCase):
@@ -38,6 +40,76 @@ class PreflightTests(IsolatedDataTestCase):
             self.root, env=kwargs.pop("env", self.env), now=self.now,
             state_checker=kwargs.pop("state_checker", lambda: True), **kwargs,
         )["checks"]
+
+    def test_preflight_telegram_redirects_are_rejected(self):
+        handler = __import__("tools.preflight", fromlist=["_RejectTelegramRedirects"])._RejectTelegramRedirects()
+        request = __import__("urllib.request", fromlist=["Request"]).Request(
+            "https://api.telegram.org/botplaceholder/sendMessage", data=b"chat_id=123"
+        )
+        redirected = handler.redirect_request(
+            request, None, 302, "Found", {}, "https://attacker.example/collect"
+        )
+        self.assertIsNone(redirected)
+
+    def test_daily_notice_is_recorded_only_after_telegram_delivery(self):
+        class Response:
+            status = 200
+
+            def read(self, limit):
+                return b'{"ok":true}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        with patch("tools.preflight._TELEGRAM_OPENER.open", return_value=Response()) as opened:
+            self.assertTrue(send_daily_notice(
+                ["API key is blocked"], data_dir=self.root, env=self.env, now=self.now
+            ))
+            state = json.loads((self.root / "maintenance_alerts.json").read_text(encoding="utf-8"))
+            self.assertEqual(state["preflight-daily"], self.now.timestamp())
+            self.assertFalse(send_daily_notice(
+                ["API key is blocked"], data_dir=self.root, env=self.env, now=self.now
+            ))
+            self.assertEqual(opened.call_count, 1)
+
+    def test_telegram_http_200_with_api_error_is_not_recorded(self):
+        class Response:
+            status = 200
+
+            def read(self, limit):
+                return b'{"ok":false,"description":"chat not found"}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        with patch("tools.preflight._TELEGRAM_OPENER.open", return_value=Response()):
+            self.assertFalse(send_daily_notice(
+                ["API key is blocked"], data_dir=self.root, env=self.env, now=self.now
+            ))
+        self.assertFalse((self.root / "maintenance_alerts.json").exists())
+
+    def test_failed_daily_notice_remains_retryable(self):
+        with patch("tools.preflight._TELEGRAM_OPENER.open", side_effect=OSError("network unavailable")):
+            self.assertFalse(send_daily_notice(
+                ["API key is blocked"], data_dir=self.root, env=self.env, now=self.now
+            ))
+        state_path = self.root / "maintenance_alerts.json"
+        self.assertFalse(state_path.exists())
+
+    def test_dry_run_environment_suppresses_telegram_notice(self):
+        with patch.dict(os.environ, {"PREFLIGHT_SEND_NOTICES": "false"}):
+            with patch("tools.preflight.collect_preflight_checks", return_value={"checks": ["test warning"]}):
+                with patch("tools.preflight.send_daily_notice") as notice:
+                    from tools.preflight import main
+                    self.assertEqual(main(["--warn"]), 0)
+                    notice.assert_not_called()
+
 
     def test_healthy_fixture_passes(self):
         self.assertEqual(self._checks(), [])

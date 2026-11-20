@@ -973,7 +973,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             return BytesIO(b'{"ok": true}')
         original = "weapon-value-line-" * 300
         with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
-            "scanner.urllib.request.urlopen", side_effect=fake_open
+            "scanner._TELEGRAM_OPENER.open", side_effect=fake_open
         ):
             scanner.send_telegram(original)
         self.assertGreater(len(captured), 1)
@@ -992,7 +992,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             captured.append(json.loads(req.data.decode())["text"])
             return BytesIO(b'{"ok": true}')
         with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
-            "scanner.urllib.request.urlopen", side_effect=fake_open
+            "scanner._TELEGRAM_OPENER.open", side_effect=fake_open
         ):
             scanner.send_telegram("A short scanner status.")
         self.assertEqual(len(captured), 1)
@@ -1013,7 +1013,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             )
 
         with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
-            "scanner.urllib.request.urlopen", side_effect=fake_open
+            "scanner._TELEGRAM_OPENER.open", side_effect=fake_open
         ):
             with self.assertRaisesRegex(scanner.TelegramDeliveryUncertain, "partially delivered"):
                 scanner.send_telegram("X" * 5000)
@@ -1030,7 +1030,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             patch("scanner._LAST_TELEGRAM_SEND_AT", 0.0),
             patch("scanner.time.monotonic", side_effect=lambda: next(monotonic_values)),
             patch("scanner.time.sleep") as sleep,
-            patch("scanner.urllib.request.urlopen", side_effect=lambda req, timeout: BytesIO(b'{"ok": true}')),
+            patch("scanner._TELEGRAM_OPENER.open", side_effect=lambda req, timeout: BytesIO(b'{"ok": true}')),
         ):
             scanner.send_telegram("first")
             scanner.send_telegram("second")
@@ -1057,7 +1057,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             patch("scanner._LAST_TELEGRAM_SEND_AT", 0.0),
             patch("scanner.time.monotonic", side_effect=lambda: next(monotonic_values)),
             patch("scanner.time.sleep") as sleep,
-            patch("scanner.urllib.request.urlopen", side_effect=rate_limited),
+            patch("scanner._TELEGRAM_OPENER.open", side_effect=rate_limited),
         ):
             with self.assertRaisesRegex(RuntimeError, "HTTP 429"):
                 scanner.send_telegram("test")
@@ -1071,7 +1071,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             from urllib.error import URLError
             raise URLError("connection reset after request")
         with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
-            "scanner.urllib.request.urlopen", side_effect=fail_open
+            "scanner._TELEGRAM_OPENER.open", side_effect=fail_open
         ):
             with self.assertRaises(scanner.TelegramDeliveryUncertain):
                 scanner.send_telegram("test")
@@ -1185,7 +1185,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             from io import BytesIO
             return BytesIO(b'{"ok": true}')
         with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
-            "scanner.urllib.request.urlopen", side_effect=fake_open
+            "scanner._TELEGRAM_OPENER.open", side_effect=fake_open
         ):
             scanner.send_telegram(message)
         self.assertIn("👤 https://bloxswaps.com/fr/users/12345", captured[0])
@@ -1778,7 +1778,7 @@ class SourceMetaSnapshotTests(IsolatedDataTestCase):
         self.assertFalse(scanner._source_snapshot_matches_meta({}, matching))
 
 class RblxValueMetaPollingTests(IsolatedDataTestCase):
-    def test_meta_is_cached_for_one_hour_and_refreshed_when_due(self):
+    def test_meta_is_cached_for_six_hours_and_refreshed_when_due(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "rblxvalue_meta.json"
             payload = {
@@ -1790,7 +1790,7 @@ class RblxValueMetaPollingTests(IsolatedDataTestCase):
                 patch("scanner.RBLXVALUE_META_FILE", path),
                 patch("scanner.RBLXVALUE_META_POLL_ENABLED", True),
                 patch("scanner.RBLXVALUE_API_KEY", "test-key"),
-                patch("scanner.time.time", side_effect=[1000, 1500, 4601]),
+                patch("scanner.time.time", side_effect=[1000, 1500, 22601]),
                 patch("scanner.api_get_json", return_value=payload) as api,
             ):
                 first = scanner._fetch_rblxvalue_meta()
@@ -2048,7 +2048,7 @@ class RblxValueKeyHealthCheckTests(IsolatedDataTestCase):
         }), encoding="utf-8")
         return values
 
-    def test_fresh_cache_performs_one_small_key_check_when_due(self):
+    def test_fresh_cache_never_performs_an_api_key_check(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             cache = root / "supreme.json"
@@ -2064,11 +2064,8 @@ class RblxValueKeyHealthCheckTests(IsolatedDataTestCase):
             ):
                 loaded = scanner.load_supreme_values()
             self.assertEqual(loaded, expected)
-            api.assert_called_once_with("/items", {"limit": 1, "offset": 0})
-            saved = json.loads(health.read_text(encoding="utf-8"))
-            self.assertEqual(saved["key_fingerprint"], scanner.rblxvalue_guard.key_fingerprint("rbx_test_secret"))
-            self.assertTrue(saved["attribution_required"])
-            self.assertNotIn("rbx_test_secret", health.read_text(encoding="utf-8"))
+            api.assert_not_called()
+            self.assertFalse(health.exists())
 
     def test_successful_key_check_is_throttled_for_six_hours(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -2095,7 +2092,7 @@ class RblxValueKeyHealthCheckTests(IsolatedDataTestCase):
             api.assert_not_called()
 
 
-    def test_legacy_success_state_without_credit_metadata_is_refreshed_once(self):
+    def test_legacy_key_health_state_is_not_touched_while_cache_is_fresh(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             cache = root / "supreme.json"
@@ -2118,9 +2115,9 @@ class RblxValueKeyHealthCheckTests(IsolatedDataTestCase):
                 )) as api,
             ):
                 self.assertEqual(scanner.load_supreme_values(), expected)
-            api.assert_called_once_with("/items", {"limit": 1, "offset": 0})
+            api.assert_not_called()
             saved = json.loads(health.read_text(encoding="utf-8"))
-            self.assertTrue(saved["attribution_required"])
+            self.assertNotIn("attribution_required", saved)
 
 
 
@@ -2148,7 +2145,7 @@ class RblxValueKeyHealthCheckTests(IsolatedDataTestCase):
             api.assert_not_called()
 
 
-    def test_transient_health_check_failure_does_not_discard_fresh_cache_or_repeat_each_cycle(self):
+    def test_fresh_cache_skips_transient_health_check_entirely(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             cache = root / "supreme.json"
@@ -2164,12 +2161,10 @@ class RblxValueKeyHealthCheckTests(IsolatedDataTestCase):
             ):
                 self.assertEqual(scanner.load_supreme_values(), expected)
                 self.assertEqual(scanner.load_supreme_values(), expected)
-            api.assert_called_once()
-            saved = json.loads(health.read_text(encoding="utf-8"))
-            self.assertEqual(saved["last_attempt_at_epoch"], 1000)
-            self.assertIsNone(saved["last_success_at_epoch"])
+            api.assert_not_called()
+            self.assertFalse(health.exists())
 
-    def test_explicit_key_rejection_is_not_hidden_by_fresh_cache(self):
+    def test_fresh_cache_does_not_trigger_an_implicit_credential_probe(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             cache = root / "supreme.json"
@@ -2181,10 +2176,10 @@ class RblxValueKeyHealthCheckTests(IsolatedDataTestCase):
                 patch("scanner.RBLXVALUE_KEY_HEALTH_FILE", health),
                 patch("scanner.RBLXVALUE_API_KEY", "test-key"),
                 patch("scanner.time.time", return_value=1000),
-                patch("scanner.api_get_json_conditional", side_effect=scanner.rblxvalue_guard.RblxValueKeyBlocked("key rejected")),
+                patch("scanner.api_get_json_conditional", side_effect=scanner.rblxvalue_guard.RblxValueKeyBlocked("key rejected")) as api,
             ):
-                with self.assertRaisesRegex(scanner.rblxvalue_guard.RblxValueKeyBlocked, "key rejected"):
-                    scanner.load_supreme_values()
+                self.assertEqual(scanner.load_supreme_values(), self._fresh_cache(cache))
+                api.assert_not_called()
 
 
 class PendingRecheckStateTests(IsolatedDataTestCase):
@@ -3395,7 +3390,7 @@ class WorkflowSecurityTests(IsolatedDataTestCase):
         self.assertIn('cron: "*/10 * * * *"', scheduler)
         self.assertIn("uses: ./.github/workflows/scan.yml", scheduler)
         self.assertIn("cancel-in-progress: false", workflow)
-        self.assertIn('MM2_SCAN_DURATION_SECONDS: "540"', scan_job)
+        self.assertIn("MM2_SCAN_DURATION_SECONDS: ${{ inputs.discord_only && '0' || '540' }}", scan_job)
         self.assertIn("timeout-minutes: 20", scan_job)
         self.assertGreater(20 * 60, 540 + 5 * 60)
         self.assertNotIn("Test parser and value calculations", scan_job)
@@ -3420,7 +3415,8 @@ class WorkflowSecurityTests(IsolatedDataTestCase):
         self.assertNotIn("MM2_SCAN_DURATION_SECONDS", job_defaults)
         self.assertNotIn("MM2_SCAN_INTERVAL_SECONDS", job_defaults)
         self.assertIn("contents: read", scan_job)
-        self.assertNotIn("contents: write", scan_job)
+        scan_permissions = scan_job.split("  scan:", 1)[1].split("    env:", 1)[0]
+        self.assertIn("      contents: read", scan_permissions)
         self.assertIn("contents: write", state_job)
         self.assertNotIn("actions/cache/restore", workflow)
 

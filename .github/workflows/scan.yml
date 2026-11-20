@@ -8,6 +8,16 @@ on:
         required: false
         type: boolean
         default: false
+      enable_discord:
+        description: "Enable authorized Discord collection and parsing; requires the existing Telegram bot token for encrypted private state"
+        required: false
+        type: boolean
+        default: false
+      discord_only:
+        description: "Skip BloxSwaps and run one isolated Discord-only dry-run cycle"
+        required: false
+        type: boolean
+        default: false
       dry_run:
         description: "Evaluate and log opportunities without sending Telegram messages or recording alerts"
         required: false
@@ -20,13 +30,25 @@ on:
         required: false
         type: boolean
         default: false
+      enable_discord:
+        description: "Enable authorized Discord collection and parsing; requires the existing Telegram bot token for encrypted private state"
+        required: false
+        type: boolean
+        default: false
+      discord_only:
+        description: "Skip BloxSwaps and run one isolated Discord-only dry-run cycle"
+        required: false
+        type: boolean
+        default: false
       dry_run:
         description: "Evaluate and log opportunities without sending Telegram messages or recording alerts"
         required: false
         type: boolean
         default: true
 permissions:
-  contents: read
+  # State persistence requires write; individual jobs below reduce permissions
+  # where they do not need to publish the durable state branch.
+  contents: write
 
 concurrency:
   group: mm2-trade-scanner
@@ -42,6 +64,21 @@ jobs:
     env:
       HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
       CASH_FILTER: "false" # set to true only after fresh verified prices exist
+      MARKET_BOOK_ENABLED: ${{ inputs.enable_discord && 'true' || 'false' }}
+      TELEGRAM_COMMANDS_ENABLED: "false"
+      INVENTORY_ENABLED: "false"
+      PRIVATE_STATE_ENABLED: ${{ inputs.enable_discord && 'true' || 'false' }}
+      MAX_ALERTS_PER_SCAN: "15"
+      MARKET_ALERT_PROFIT_DELTA_USD: "0.50"
+      MARKET_TRANSFER_FEE_USD: "0.50"
+      MARKET_SAFETY_MARGIN_PERCENT: "5.0"
+      MIN_PROFIT_USD: "0.50"
+      MIN_PROFIT_PERCENT: "5.0"
+      SWAP_VALUE_TOLERANCE_PERCENT: "2.0"
+      MARKET_OFFER_MAX_AGE_HOURS: "48"
+      MARKET_LOW_PRICE_RATIO: "0.40"
+      MARKET_HIGH_PRICE_RATIO: "2.50"
+      MARKET_UNDERCUT_USD: "0.01"
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -86,32 +123,59 @@ jobs:
                   print(f"[state-audit] supreme_cache_present=true bytes={len(raw)} parse_error={type(exc).__name__}")
           PY
 
+      - name: Decrypt private market state
+        id: decrypt-private-state
+        if: env.PRIVATE_STATE_ENABLED == 'true'
+        env:
+          MM2_PRIVATE_STATE_KEY: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "${#MM2_PRIVATE_STATE_KEY}" -lt 32 ]; then
+            echo "::error::Discord processing requires the existing Telegram bot token for encrypted private state."
+            exit 1
+          fi
+          if [ -f data/private_state.enc ]; then
+            python private_state.py decrypt --input data/private_state.enc --directory data
+          else
+            for file in cash_market_offers.json inventory.json telegram_update_state.json telegram_last_run.json market_book_history.json market_alert_state.json discord_alert_state.json; do
+              if [ -f "data/$file" ]; then
+                echo "Refusing unencrypted private state on the public state branch."
+                exit 1
+              fi
+            done
+            echo "No previous encrypted private market state exists."
+          fi
+
       - name: Run scanner preflight checks (warnings do not block the scan)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PREFLIGHT_SEND_NOTICES: ${{ inputs.dry_run && 'false' || 'true' }}
           CASH_PRICES_CSV: ${{ (env.CASH_FILTER == '1' || env.CASH_FILTER == 'true' || env.CASH_FILTER == 'yes' || env.CASH_FILTER == 'on') && secrets.CASH_PRICES_CSV || '' }}
-          CASH_MAX_AGE_DAYS: "14"
           CASH_MIN_VERIFIED_ROWS: "8"
-        run: python tools/preflight.py --warn
+        continue-on-error: true
+        run: python -m tools.preflight --warn
 
       - name: Collect authorized Discord trade channels
+        if: env.PRIVATE_STATE_ENABLED == 'true'
         env:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           DISCORD_GUILD_IDS: "1125462206151143464,482699890741477376"
+          DISCORD_CHANNEL_IDS: "1572655277130514472,1567557584402120785"
           DISCORD_MANUAL_MESSAGES_JSON: ${{ secrets.DISCORD_MANUAL_MESSAGES_JSON }}
           DISCORD_MANUAL_MESSAGES_JSON_2: ${{ secrets.DISCORD_MANUAL_MESSAGES_JSON_2 }}
         run: |
           if [ -n "$DISCORD_BOT_TOKEN" ]; then
-            if python -m pip install --disable-pip-version-check "discord.py==2.6.4"; then
-              if ! python -u discord_collector.py --output data/discord_messages.json --limit 100 --retention-days 7; then
-                echo "Discord collector failed; continuing with BloxSwaps and any manual import."
-              fi
-            else
-              echo "discord.py install failed; continuing with BloxSwaps and any manual import."
+            if ! python -u discord_collector.py --output data/discord_messages.json --limit 100 --retention-days 7; then
+              echo "::error::Discord channel collection was incomplete; refusing to process partial live messages."
+              rm -f data/discord_messages.json data/discord_messages.json.tmp
+              exit 1
             fi
+          elif [ -z "$DISCORD_MANUAL_MESSAGES_JSON" ] && [ -z "$DISCORD_MANUAL_MESSAGES_JSON_2" ]; then
+            echo "::error::Discord opt-in requires DISCORD_BOT_TOKEN or at least one authorized manual-import secret."
+            exit 1
           else
-            echo "Discord bot collection skipped: DISCORD_BOT_TOKEN is not configured."
+            echo "::notice::No Discord bot token configured; processing only owner-supplied manual imports."
           fi
           # message contents are not logged or persisted to public state
           python tools/merge_discord_imports.py
@@ -131,7 +195,7 @@ jobs:
           BACKLOG_RECHECK_EVERY_CYCLES: "4"
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
           MAX_ALERTS_PER_SESSION: "0"
-          MM2_SCAN_DURATION_SECONDS: "540"
+          MM2_SCAN_DURATION_SECONDS: ${{ inputs.discord_only && '0' || '540' }}
           MM2_SCAN_INTERVAL_SECONDS: "30"
           ALERT_DELAY_SECONDS: "1.1"
           MAX_FEED_PAGES: "1000"
@@ -139,13 +203,19 @@ jobs:
           RBLXVALUE_META_POLL_ENABLED: "true"
           RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY: "6"
           RBLXVALUE_DAILY_REQUEST_LIMIT: "60"
+          RBLXVALUE_MAX_CACHE_AGE_SECONDS: "86400"
+          MARKET_BOOK_ENABLED: ${{ env.MARKET_BOOK_ENABLED }}
+          TELEGRAM_COMMANDS_ENABLED: ${{ env.TELEGRAM_COMMANDS_ENABLED }}
+          INVENTORY_ENABLED: ${{ env.INVENTORY_ENABLED }}
+          PRIVATE_STATE_ENABLED: ${{ env.PRIVATE_STATE_ENABLED }}
+          LANG: "ar"
           RBLXVALUE_FORCE_KEY_CHECK: ${{ inputs.verify_rblxvalue_key && 'true' || 'false' }}
+          DISCORD_ONLY: ${{ inputs.discord_only && 'true' || 'false' }}
           BLOXSWAPS_ITEMS_TTL_SECONDS: "3600"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RBLXVALUE_API_KEY: ${{ secrets.RBLXVALUE_API_KEY }}
           CASH_PRICES_CSV: ${{ (env.CASH_FILTER == '1' || env.CASH_FILTER == 'true' || env.CASH_FILTER == 'yes' || env.CASH_FILTER == 'on') && secrets.CASH_PRICES_CSV || '' }}
-          CASH_MAX_AGE_DAYS: "14"
         run: |
           mkdir -p data
           if [[ "${CASH_FILTER,,}" =~ ^(1|true|yes|on)$ ]] && [ -n "$CASH_PRICES_CSV" ]; then
@@ -171,7 +241,7 @@ jobs:
           python -u scanner.py 2>&1 | tee scanner.log
 
       - name: Send external uptime heartbeat
-        if: always() && env.HEALTHCHECKS_PING_URL != ''
+        if: always() && inputs.discord_only != true && env.HEALTHCHECKS_PING_URL != ''
         run: |
           if [ "${{ steps.scan.outcome }}" = "success" ]; then
             curl --fail --silent --show-error "$HEALTHCHECKS_PING_URL"
@@ -180,8 +250,16 @@ jobs:
           fi
 
       - name: Prepare state artifact
-        if: always()
+        if: always() && (env.PRIVATE_STATE_ENABLED != 'true' || steps.decrypt-private-state.outcome == 'success')
+        env:
+          MM2_PRIVATE_STATE_KEY: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
+          set -euo pipefail
+          if [ "${PRIVATE_STATE_ENABLED}" = "true" ]; then
+            python private_state.py encrypt --directory data --output data/private_state.enc
+          else
+            rm -f data/cash_market_offers.json data/inventory.json data/telegram_update_state.json data/telegram_last_run.json data/market_book_history.json data/market_alert_state.json data/discord_alert_state.json
+          fi
           mkdir -p state-bundle/data
           if [ -d data ]; then cp -a data/. state-bundle/data/; fi
           # Discord messages may come from private servers; process them in this
@@ -273,6 +351,18 @@ jobs:
           # the scan failed. The previous cache/database must survive failures.
           python tools/validate_state.py --directory state-artifact/data --require-cache
 
+      - name: Verify encrypted private-state authentication
+        id: verify-private-state
+        if: steps.download.outcome == 'success' && hashFiles('state-artifact/data/private_state.enc') != ''
+        env:
+          MM2_PRIVATE_STATE_KEY: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          verify_dir="$(mktemp -d)"
+          trap 'rm -rf "$verify_dir"' EXIT
+          python private_state.py decrypt --input state-artifact/data/private_state.enc --directory "$verify_dir"
+          echo "Authenticated encrypted private-state bundle verified; plaintext stayed in temporary runner storage."
+
       - name: Persist API safety ledger after failed scan
         id: persist-api-safety
         if: needs.scan.result != 'success' && steps.safety-download.outcome == 'success' && steps.validate-api-safety.outcome == 'success' && hashFiles('api-safety-artifact/data/*.json') != ''
@@ -306,6 +396,31 @@ jobs:
           git push origin HEAD:state
           echo "Persisted only validated API safety files; previous market cache remains untouched."
 
+      - name: Persist encrypted private state after failed scan
+        if: needs.scan.result != 'success' && steps.download.outcome == 'success' && steps.verify-private-state.outcome == 'success' && hashFiles('state-artifact/data/private_state.enc') != ''
+        run: |
+          set -euo pipefail
+          python -c 'from pathlib import Path; p=Path("state-artifact/data/private_state.enc"); d=p.read_bytes(); assert d.startswith(b"MM2PSTATE1") and len(d) >= 74'
+          if git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
+            git fetch origin refs/heads/state:refs/remotes/origin/state
+            git checkout --detach origin/state
+          else
+            git checkout --orphan state-private
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+          mkdir -p data
+          cp state-artifact/data/private_state.enc data/private_state.enc
+          git add data/private_state.enc
+          if git diff --cached --quiet; then
+            echo "Encrypted private state unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(state): persist encrypted private market state"
+          git push origin HEAD:state
+          echo "Persisted encrypted private state only; plaintext was not published."
+
       - name: Verify API safety ledger after failed scan
         if: steps.persist-api-safety.outcome == 'success'
         run: |
@@ -320,7 +435,7 @@ jobs:
 
       - name: Persist state branch
         id: persist-state
-        if: steps.download.outcome == 'success' && steps.validate-state.outcome == 'success'
+        if: steps.download.outcome == 'success' && steps.validate-state.outcome == 'success' && (steps.verify-private-state.outcome == 'success' || steps.verify-private-state.outcome == 'skipped')
         run: |
           set -euo pipefail
           if [ ! -d state-artifact/data ]; then
@@ -369,7 +484,7 @@ jobs:
             exit 1
           fi
           git fetch origin refs/heads/state:refs/remotes/origin/state
-          for file in data/supreme_values.json data/rblxvalue_request_budget.json data/api_key_blocked.json data/rblxvalue_key_health.json data/market_history.sqlite3; do
+          for file in data/supreme_values.json data/rblxvalue_request_budget.json data/api_key_blocked.json data/rblxvalue_key_health.json data/market_history.sqlite3 data/private_state.enc; do
             if git cat-file -e "refs/remotes/origin/state:$file" 2>/dev/null; then
               bytes="$(git cat-file -s "refs/remotes/origin/state:$file")"
               echo "[state-persist-audit] present=$file bytes=$bytes"

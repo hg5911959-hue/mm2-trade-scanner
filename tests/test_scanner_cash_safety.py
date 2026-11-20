@@ -181,5 +181,76 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         self.assertFalse(scanner.qualifies_cash(generic_only))
 
 
+    def test_discord_only_mode_refuses_non_dry_run(self):
+        from unittest.mock import patch
+
+        with patch.dict("os.environ", {"DISCORD_ONLY": "true", "DRY_RUN": "false"}):
+            with self.assertRaisesRegex(RuntimeError, "only with DRY_RUN=true"):
+                scanner.scan_once()
+
+    def test_rblxvalue_key_verification_exits_before_full_scanner_run(self):
+        from unittest.mock import patch
+
+        with (
+            patch.dict("os.environ", {"RBLXVALUE_FORCE_KEY_CHECK": "true"}),
+            patch.object(scanner, "install_redacting_streams"),
+            patch.object(scanner.rblxvalue_guard, "reset_run_counter"),
+            patch.object(
+                scanner, "api_get_json_conditional",
+                return_value=({"items": [{"id": "test-item"}]}, None, False),
+            ) as api_check,
+            patch.object(scanner.rblxvalue_guard, "log_request_count") as log_count,
+            patch.object(scanner, "run_scan_loop") as full_scan,
+        ):
+            self.assertEqual(scanner.main(), 0)
+
+        api_check.assert_called_once_with("/items", {"limit": 1, "offset": 0})
+        log_count.assert_called_once_with()
+        full_scan.assert_not_called()
+
+
+    def test_discord_only_cash_dry_run_skips_supreme_and_bloxswaps(self):
+        from unittest.mock import patch
+
+        with (
+            patch.dict("os.environ", {
+                "DRY_RUN": "true",
+                "DISCORD_ONLY": "true",
+                "MARKET_BOOK_ENABLED": "true",
+                "PRIVATE_STATE_ENABLED": "true",
+                "TELEGRAM_COMMANDS_ENABLED": "false",
+                "INVENTORY_ENABLED": "false",
+            }),
+            patch.object(scanner, "update_metrics"),
+            patch.object(scanner, "write_step_summary"),
+            patch.object(scanner, "load_supreme_values") as load_values,
+            patch.object(scanner, "fetch_bloxswaps_all") as fetch_bloxswaps,
+            patch("telegram_market.ingest_manual_discord_imports", return_value=(1, 0)),
+            patch("telegram_market._load_market", return_value={"book": {}, "direct": [], "chains": []}),
+        ):
+            scanner.scan_once()
+
+        load_values.assert_not_called()
+        fetch_bloxswaps.assert_not_called()
+
+
+    def test_scan_loop_stops_immediately_when_rblx_budget_is_exhausted(self):
+        from unittest.mock import patch
+
+        budget_error = RuntimeError("[rblxvalue-budget-exhausted] rolling 24-hour budget reached")
+        with (
+            patch.object(scanner, "scan_once", side_effect=budget_error) as scan_once,
+            patch.object(scanner, "record_failure") as record_failure,
+            patch.object(scanner.rblxvalue_guard, "log_request_count") as log_count,
+            patch.object(scanner, "update_metrics"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "budget-exhausted"):
+                scanner.run_scan_loop(duration_seconds=600, interval_seconds=30)
+
+        scan_once.assert_called_once()
+        record_failure.assert_called_once_with(budget_error)
+        log_count.assert_called_once_with()
+
+
 if __name__ == "__main__":
     unittest.main()

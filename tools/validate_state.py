@@ -5,6 +5,7 @@ import argparse
 import json
 import math
 import sqlite3
+import time
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +47,29 @@ def _finite_positive(value: Any) -> bool:
         return math.isfinite(value) and value > 0
     except OverflowError:
         return False
+
+
+def _validate_request_workflow_accounting(budget: dict[str, Any]) -> list[str]:
+    workflows = budget.get("request_workflows")
+    counts = budget.get("request_counts_by_workflow")
+    if workflows is None and counts is None:
+        return []
+    timestamps = budget.get("request_timestamps_epoch")
+    if (
+        not isinstance(workflows, list) or not isinstance(timestamps, list)
+        or len(workflows) != len(timestamps)
+        or any(
+            not isinstance(name, str) or not name or len(name) > 100
+            or any(ord(char) < 32 for char in name)
+            for name in workflows
+        )
+        or not isinstance(counts, dict)
+    ):
+        return ["RBLXValue per-workflow request accounting is invalid"]
+    expected = {name: workflows.count(name) for name in sorted(set(workflows))}
+    if counts != expected or any(type(value) is not int or value < 1 for value in counts.values()):
+        return ["RBLXValue per-workflow request counts do not match request timestamps"]
+    return []
 
 
 def _validate_api_key_block_document(block: Any) -> list[str]:
@@ -97,6 +121,22 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
     errors: list[str] = []
     if any(path.name == "discord_messages.json" for path in files):
         errors.append("private Discord message file must not enter durable public state")
+    private_plaintext = {
+        "cash_market_offers.json", "inventory.json", "telegram_update_state.json",
+        "telegram_last_run.json", "market_book_history.json", "market_alert_state.json",
+        "discord_alert_state.json",
+    }
+    leaked = [path.name for path in files if path.name in private_plaintext]
+    if leaked:
+        errors.append("private Telegram/market state must be encrypted before public persistence")
+    encrypted_private = root / "private_state.enc"
+    if encrypted_private.exists():
+        try:
+            header = encrypted_private.read_bytes()[:10]
+        except OSError:
+            header = b""
+        if header != b"MM2PSTATE1":
+            errors.append("encrypted private-state bundle header is invalid")
     temporary = [path for path in files if path.name.endswith(".tmp")]
     if temporary:
         errors.append(f"unfinished atomic-write temporary file found: {temporary[0].name}")
@@ -213,6 +253,7 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
         limit = budget.get("limit")
         if type(limit) is not int or not 1 <= limit <= 60:
             errors.append("RBLXValue request budget limit is invalid")
+        errors.extend(_validate_request_workflow_accounting(budget))
 
     health = documents.get("rblxvalue_key_health.json")
     health_path = root / "rblxvalue_key_health.json"
@@ -304,6 +345,7 @@ def validate_api_safety_state(directory: str | Path) -> list[str]:
                 or any(not _finite_positive(value) for value in timestamps)
             ):
                 errors.append("RBLXValue request budget timestamps are invalid")
+            errors.extend(_validate_request_workflow_accounting(budget))
 
     block_path = root / "api_key_blocked.json"
     if block_path.exists():
@@ -316,15 +358,152 @@ def validate_api_safety_state(directory: str | Path) -> list[str]:
     return errors
 
 
+
+def validate_rblxvalue_cache_state(
+    directory: str | Path,
+    *,
+    now_epoch: float | None = None,
+    max_age_seconds: int = 12 * 60 * 60,
+) -> list[str]:
+    """Validate a fresh public RBLXValue snapshot before recovering it independently."""
+    root = Path(directory)
+    cache_path = root / "supreme_values.json"
+    meta_path = root / "rblxvalue_meta.json"
+    errors: list[str] = []
+    if not root.exists():
+        return ["RBLXValue cache directory is missing"]
+
+    documents: dict[str, Any] = {}
+    for path in (cache_path, meta_path):
+        try:
+            documents[path.name] = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            errors.append(f"RBLXValue cache artifact is missing {path.name}")
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            errors.append(f"RBLXValue cache artifact contains invalid JSON: {path.name}")
+
+    cache = documents.get("supreme_values.json")
+    meta = documents.get("rblxvalue_meta.json")
+    if not isinstance(cache, dict):
+        if cache_path.exists():
+            errors.append("RBLXValue cache root must be an object")
+        return errors
+    if not isinstance(meta, dict):
+        if meta_path.exists():
+            errors.append("RBLXValue metadata root must be an object")
+        return errors
+
+    schema = cache.get("schema_version")
+    values = cache.get("values")
+    pages = cache.get("pages")
+    fetched_at = cache.get("fetched_at")
+    source_total = cache.get("source_items_total")
+    source_updated = cache.get("source_last_updated")
+    if type(schema) is not int or schema not in (3, 4):
+        errors.append("RBLXValue cache schema version is unsupported")
+    if not isinstance(values, dict) or not values:
+        errors.append("RBLXValue cache has no normalized item values")
+    elif any(
+        not isinstance(row, dict)
+        or not isinstance(row.get("name"), str)
+        or not row["name"].strip()
+        for row in values.values()
+    ):
+        errors.append("RBLXValue cache contains an invalid normalized value row")
+    if not isinstance(pages, dict) or not pages:
+        errors.append("RBLXValue cache has no source pages")
+    if not _finite_positive(fetched_at):
+        errors.append("RBLXValue cache fetched_at timestamp is invalid")
+    else:
+        now = time.time() if now_epoch is None else float(now_epoch)
+        if fetched_at > now + 300:
+            errors.append("RBLXValue cache fetched_at timestamp is in the future")
+        elif now - fetched_at > max_age_seconds:
+            errors.append("RBLXValue cache is older than the permitted recovery age")
+    if type(source_total) is not int or source_total < 1:
+        errors.append("RBLXValue cache source item total is invalid")
+    if not isinstance(source_updated, str) or not source_updated.strip():
+        errors.append("RBLXValue cache source update timestamp is missing")
+
+    if type(meta.get("schema_version")) is not int or meta.get("schema_version") != 1:
+        errors.append("RBLXValue metadata schema version is unsupported")
+    if type(meta.get("items_total")) is not int or meta.get("items_total") < 1:
+        errors.append("RBLXValue metadata item total is invalid")
+    if not isinstance(meta.get("last_updated"), str) or not meta.get("last_updated", "").strip():
+        errors.append("RBLXValue metadata update timestamp is missing")
+    if not _finite_positive(meta.get("checked_at_epoch")):
+        errors.append("RBLXValue metadata checked_at timestamp is invalid")
+    if type(source_total) is int and type(meta.get("items_total")) is int:
+        if source_total != meta["items_total"]:
+            errors.append("RBLXValue cache and metadata item totals do not match")
+    if isinstance(source_updated, str) and meta.get("last_updated") != source_updated:
+        errors.append("RBLXValue cache and metadata source versions do not match")
+
+    if isinstance(pages, dict) and pages and type(source_total) is int and source_total > 0:
+        offsets: list[int] = []
+        item_ids: list[str] = []
+        page_structure_valid = True
+        for key, page in pages.items():
+            try:
+                offset = int(key)
+            except (TypeError, ValueError):
+                errors.append("RBLXValue cache contains a non-numeric page offset")
+                page_structure_valid = False
+                break
+            if offset < 0:
+                errors.append("RBLXValue cache contains a negative page offset")
+                page_structure_valid = False
+                break
+            offsets.append(offset)
+            if not isinstance(page, dict) or not isinstance(page.get("items"), list) or not page["items"]:
+                errors.append("RBLXValue cache contains an empty or invalid source page")
+                page_structure_valid = False
+                break
+            page_total = page.get("total")
+            if page_total is not None and page_total != source_total:
+                errors.append("RBLXValue source pages disagree on the catalogue total")
+                page_structure_valid = False
+                break
+            if len(page["items"]) > 100:
+                errors.append("RBLXValue source page exceeds the 100-item page limit")
+                page_structure_valid = False
+                break
+            for item in page["items"]:
+                if not isinstance(item, dict) or item.get("id") is None or not str(item.get("id")).strip():
+                    errors.append("RBLXValue source page contains an item without an ID")
+                    page_structure_valid = False
+                    break
+                item_ids.append(str(item["id"]))
+            if not page_structure_valid:
+                break
+        if page_structure_valid:
+            expected_offset = 0
+            for offset in sorted(offsets):
+                if offset != expected_offset:
+                    errors.append("RBLXValue source pages are not contiguous")
+                    break
+                expected_offset += len(pages[str(offset)]["items"])
+            if expected_offset != source_total:
+                errors.append("RBLXValue source page rows do not match the catalogue total")
+            if len(item_ids) != len(set(item_ids)):
+                errors.append("RBLXValue source pages contain duplicate item IDs")
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--directory", default="state-artifact/data")
     parser.add_argument("--require-cache", action="store_true")
     parser.add_argument("--api-safety-only", action="store_true")
+    parser.add_argument("--rblxvalue-cache-only", action="store_true")
     args = parser.parse_args()
+    if args.api_safety_only and args.rblxvalue_cache_only:
+        parser.error("--api-safety-only and --rblxvalue-cache-only cannot be combined")
     errors = (
         validate_api_safety_state(args.directory)
         if args.api_safety_only
+        else validate_rblxvalue_cache_state(args.directory)
+        if args.rblxvalue_cache_only
         else validate_state(args.directory, require_cache=args.require_cache)
     )
     if errors:
