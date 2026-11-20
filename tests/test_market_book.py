@@ -96,6 +96,19 @@ class MarketBookTests(IsolatedDataTestCase):
         self.assertEqual(row["confidence"], "low")
         self.assertIn("single_author", row["risk_flags"])
 
+    def test_direct_arbitrage_requires_a_verified_author_on_each_leg(self):
+        offers = [
+            offer("sell", "Candy", 1.0, 5, "seller-a", "ask-a"),
+            offer("sell", "Candy", 1.1, 5, "seller-b", "ask-b"),
+            offer("buy", "Candy", 5.0, 5, "", "bid"),
+        ]
+
+        row = build_order_book(offers, now=NOW)["candy"]
+
+        self.assertEqual(row["confidence"], "medium")
+        self.assertIsNone(row["best_bid"])
+        self.assertEqual(find_direct_arbitrage({"candy": row}), [])
+
     def test_direct_arbitrage_respects_buyer_and_seller_minimum_quantities(self):
         ask = offer("sell", "Candy", 1, 10, "seller", "ask")
         bid = offer("buy", "Candy", 10, 5, "buyer", "bid")
