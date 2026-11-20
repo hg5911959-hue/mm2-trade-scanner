@@ -68,6 +68,12 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertNotIn("enable-schedules:", scheduler)
 
 
+    def test_existing_state_branch_is_validated_with_required_cache(self):
+        workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        restore = workflow.split("      - name: Restore durable state branch", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("python tools/validate_state.py --directory data --require-cache", restore)
+        self.assertIn("python tools/validate_state.py --directory data", restore)
+
     def test_manual_scan_dispatch_defaults_to_dry_run(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         scheduler = (ROOT / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
