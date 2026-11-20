@@ -106,4 +106,18 @@ PR #85 (`before-market-book`) is open and unmerged. The current comparison of `m
 
 ## Current phase result
 
-Phase 0 is a documentation-only baseline. It does not change scanner behaviour, feature flags, secrets, datasets, or runtime workflows. CI must pass on the review branch before this phase is considered accepted.
+### Phase 0 — baseline and reference review
+
+Complete. The baseline review is documentation-only and does not change feature flags, secrets, datasets, or runtime workflows.
+
+### Phase 1 — alert qualification hardening
+
+Implemented on `improvement/reference-architecture-review`:
+- `scanner.qualifies()` now fails closed for non-dictionary results, missing/malformed numeric metrics, booleans, NaN/infinite values, and invalid thresholds.
+- Negative minimum-difference and minimum-margin thresholds are rejected rather than silently weakening the alert gate.
+- Regression tests cover malformed metrics, non-finite profit/margin values, non-finite/negative thresholds, and a valid finite positive trade.
+- No feature flag, source policy, alert threshold default, or production workflow was enabled or changed.
+
+Validation:
+- Commit `cd20a93166c09e42ce6a8fe2897feaaf41da083a`: GitHub Actions ran **390 tests twice**, both passes succeeded, the data immutability checks passed, and all configured Ruff checks passed.
+- Commit `5dc94782d3f05f4801fbbc0efbaca919549ffacd` adds two additional negative-threshold assertions. Its full CI run is pending; Phase 1 is not considered accepted until that run succeeds.
