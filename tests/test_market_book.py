@@ -50,6 +50,8 @@ class MarketBookTests(IsolatedDataTestCase):
                                        min_profit_usd=0.5, min_profit_percent=5)
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["quantity"], 2)
+        self.assertEqual(result[0]["execution_status"], "unconfirmed_listing_pair")
+        self.assertTrue(result[0]["requires_manual_confirmation"])
         self.assertAlmostEqual(result[0]["profit_usd"], 4.7)
 
     def test_direct_arbitrage_skips_self_best_bid_and_uses_next_independent_bid(self):
@@ -311,6 +313,11 @@ class MarketBookTests(IsolatedDataTestCase):
         ]
         self.assertEqual(len(candy_to_laser), 1)
         self.assertEqual(candy_to_laser[0]["sell"]["message_id"], "laser-valid-bid")
+        self.assertEqual(
+            candy_to_laser[0]["execution_status"], "hypothetical_value_based_route"
+        )
+        self.assertEqual(candy_to_laser[0]["missing_execution_leg"], "actual_swap_offer")
+        self.assertTrue(candy_to_laser[0]["requires_manual_confirmation"])
 
     def test_swap_chain_rejects_boolean_thresholds_and_boolean_values(self):
         book = build_order_book([
