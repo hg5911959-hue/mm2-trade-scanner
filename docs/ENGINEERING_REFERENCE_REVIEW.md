@@ -145,19 +145,20 @@ Preliminary file-level findings:
 ### Selective market-book hardening — PR #100
 
 Implemented on `fix/market-book-trust-and-risk-gates`, based directly on current `main`:
-- Ignore owner-supplied and unidentified author labels when computing independent-author confidence and actionable depth.
+- Ignore owner-supplied and unidentified author labels; use stable `author_id` values rather than mutable display names for independent-author confidence and actionable depth.
 - Exclude `price_far_from_median`, `market_flooding`, and `sell_before_drop` offers from actionable price discovery and opportunity legs.
-- Require a verified, distinct author on both sides of direct arbitrage and swap-chain candidates.
+- Require verified, distinct stable author IDs on both sides of direct arbitrage and swap-chain candidates.
 - Normalize malformed optional risk-flag containers defensively.
 - Add regression tests for all the above cases.
 
 Validation:
-- PR #100 GitHub Actions run [44816256334](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44816256334) succeeded.
+- PR #100 GitHub Actions run [44816568993](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44816568993) succeeded on the latest code head.
 - **413 tests passed twice**, data immutability passed, and all configured Ruff/lint checks passed.
 - PR #100 is open as Draft; no code has been merged into `main`.
 
 Next acceptance work:
 1. Complete the remaining 42-file PR #85 overlap/security review; keep its workflow changes excluded until separately redesigned and reviewed.
 2. Review parser identity, quantity certainty, provenance, and duplicate-message handling before wiring the market book into the scanner.
-3. Add an integration boundary that consumes only normalized, authorized observations and remains disabled by default.
-4. Run the full suite twice, data immutability, Ruff, and relevant workflow checks after each isolated integration slice.
+3. Extend the Discord collector/parser pipeline to carry stable author IDs and source provenance into the normalized offer contract; treat missing IDs as non-actionable.
+4. Add an integration boundary that consumes only normalized, authorized observations and remains disabled by default.
+5. Run the full suite twice, data immutability, Ruff, and relevant workflow checks after each isolated integration slice.
