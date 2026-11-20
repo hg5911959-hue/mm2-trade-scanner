@@ -6,6 +6,8 @@ import json
 import math
 import os
 import random
+import stat
+import tempfile
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -48,13 +50,28 @@ def key_fingerprint(key: str | None = None) -> str:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    """Read guard state without silently resetting a corrupt safety ledger."""
+    """Read a bounded regular file without following symlinks or resetting corruption."""
     try:
-        if path.stat().st_size > MAX_GUARD_STATE_BYTES:
-            raise RblxValueGuardError(
-                f"[rblxvalue-state] safety state file {path.name} exceeds the size limit; refusing API request"
-            )
-        with path.open("rb") as handle:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        descriptor = os.open(path, flags)
+    except FileNotFoundError:
+        return {}
+    except OSError as exc:
+        raise RblxValueGuardError(
+            f"[rblxvalue-state] cannot safely open safety state file {path.name}; refusing API request"
+        ) from exc
+
+    try:
+        with os.fdopen(descriptor, "rb") as handle:
+            metadata = os.fstat(handle.fileno())
+            if not stat.S_ISREG(metadata.st_mode):
+                raise RblxValueGuardError(
+                    f"[rblxvalue-state] safety state file {path.name} is not a regular file; refusing API request"
+                )
+            if metadata.st_size > MAX_GUARD_STATE_BYTES:
+                raise RblxValueGuardError(
+                    f"[rblxvalue-state] safety state file {path.name} exceeds the size limit; refusing API request"
+                )
             raw_bytes = handle.read(MAX_GUARD_STATE_BYTES + 1)
         if len(raw_bytes) > MAX_GUARD_STATE_BYTES:
             raise RblxValueGuardError(
@@ -66,14 +83,13 @@ def _read_json(path: Path) -> dict[str, Any]:
             raise RblxValueGuardError(
                 f"[rblxvalue-state] safety state file {path.name} is not valid UTF-8; refusing API request"
             ) from exc
-    except FileNotFoundError:
-        return {}
     except RblxValueGuardError:
         raise
     except OSError as exc:
         raise RblxValueGuardError(
             f"[rblxvalue-state] cannot read safety state file {path.name}; refusing API request"
         ) from exc
+
     try:
         value = json.loads(raw)
     except (ValueError, TypeError) as exc:
@@ -88,10 +104,21 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
+    """Atomically replace state without following a predictable temporary path."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_name(path.name + ".tmp")
-    temp.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    os.replace(temp, path)
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=path.name + ".", suffix=".tmp", dir=path.parent
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(value, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def _validated_block_state(path: Path) -> dict[str, Any]:
