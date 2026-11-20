@@ -70,6 +70,21 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertNotIn("enable-schedules:", scheduler)
 
 
+    def test_reusable_workflows_declare_only_the_secrets_they_need(self):
+        scan = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        watchdog = (ROOT / ".github/workflows/watchdog.yml").read_text(encoding="utf-8")
+        scan_call = scan.split("  workflow_call:", 1)[1].split("  workflow_dispatch:", 1)[0]
+        watchdog_call = watchdog.split("  workflow_call:", 1)[1].split("  workflow_dispatch:", 1)[0]
+        for secret in (
+            "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "RBLXVALUE_API_KEY",
+            "DISCORD_BOT_TOKEN", "DISCORD_MANUAL_MESSAGES_JSON",
+            "DISCORD_MANUAL_MESSAGES_JSON_2", "CASH_PRICES_CSV",
+            "HEALTHCHECKS_PING_URL",
+        ):
+            self.assertIn(f"{secret}:\\n        required: false", scan_call)
+        for secret in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
+            self.assertIn(f"{secret}:\\n        required: false", watchdog_call)
+
     def test_manual_scan_dispatch_defaults_to_dry_run(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         scheduler = (ROOT / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
