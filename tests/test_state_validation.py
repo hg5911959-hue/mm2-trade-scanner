@@ -139,6 +139,30 @@ class StateValidationTests(IsolatedDataTestCase):
         self.assertTrue(any("private Telegram/market state" in error for error in errors))
         self.assertFalse(any("invalid JSON state file: inventory.json" in error for error in errors))
 
+    def test_public_state_rejects_symlinked_files_and_directories(self):
+        self._write_valid_state()
+        outside = Path(self.temp.name).parent / (Path(self.temp.name).name + "-outside")
+        outside.mkdir()
+        self.addCleanup(lambda: __import__("shutil").rmtree(outside, ignore_errors=True))
+        (outside / "payload.json").write_text("{}", encoding="utf-8")
+        (self.root / "linked-file.json").symlink_to(outside / "payload.json")
+        (self.root / "linked-directory").symlink_to(outside, target_is_directory=True)
+
+        errors = validate_state(self.root, require_cache=True)
+
+        self.assertTrue(any("symlink paths" in error for error in errors))
+
+    def test_api_safety_artifact_rejects_symlinked_files(self):
+        from tools.validate_state import validate_api_safety_state
+        outside = Path(self.temp.name).parent / (Path(self.temp.name).name + "-api-outside.json")
+        outside.write_text("{}", encoding="utf-8")
+        self.addCleanup(lambda: outside.unlink(missing_ok=True))
+        (self.root / "rblxvalue_request_budget.json").symlink_to(outside)
+
+        errors = validate_api_safety_state(self.root)
+
+        self.assertTrue(any("symlink paths" in error for error in errors))
+
     def test_public_state_rejects_invalid_private_ciphertext_header(self):
         minimum = len(MAGIC) + SALT_BYTES + IV_BYTES + TAG_BYTES
         (self.root / "private_state.enc").write_bytes(b"X" * minimum)
