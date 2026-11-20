@@ -279,6 +279,58 @@ class MarketBookTests(IsolatedDataTestCase):
         with self.assertRaises(ValueError):
             inventory_advice({}, {}, undercut_usd=float("nan"))
 
+    def test_swap_chain_uses_next_independent_bid_when_best_bid_is_same_author(self):
+        offers = [
+            offer("sell", "Candy", 5.0, 2, "seller-a", "candy-ask"),
+            offer("buy", "Candy", 4.0, 2, "buyer-c", "candy-bid"),
+            offer("sell", "Laser", 22.0, 2, "seller-b", "laser-ask-b"),
+            offer("sell", "Laser", 23.0, 2, "seller-c", "laser-ask-c"),
+            offer("buy", "Laser", 8.0, 2, "seller-a", "laser-self-bid"),
+            offer("buy", "Laser", 7.0, 2, "buyer-b", "laser-valid-bid"),
+        ]
+        book = build_order_book(offers, now=NOW)
+        values = {
+            "candy": {
+                "value": 10, "stability": "Stable",
+                "confidence": "high", "data_age_seconds": 60,
+            },
+            "laser": {
+                "value": 20, "stability": "Stable",
+                "confidence": "high", "data_age_seconds": 60,
+            },
+        }
+
+        chains = find_swap_chains(
+            book, values, tolerance_percent=2, transfer_fee_usd=0.25,
+            min_profit_usd=0.5, min_profit_percent=5,
+        )
+
+        candy_to_laser = [
+            chain for chain in chains
+            if chain["buy_item"] == "candy" and chain["swap_item"] == "laser"
+        ]
+        self.assertEqual(len(candy_to_laser), 1)
+        self.assertEqual(candy_to_laser[0]["sell"]["message_id"], "laser-valid-bid")
+
+    def test_swap_chain_rejects_boolean_thresholds_and_boolean_values(self):
+        book = build_order_book([
+            offer("sell", "Candy", 5.0, 2, "seller-a", "ask"),
+            offer("buy", "Candy", 7.0, 2, "buyer-b", "bid"),
+        ], now=NOW)
+        values = {
+            "candy": {
+                "value": True, "stability": "Stable",
+                "confidence": "high", "data_age_seconds": 60,
+            },
+            "laser": {
+                "value": 20, "stability": "Stable",
+                "confidence": "high", "data_age_seconds": 60,
+            },
+        }
+        self.assertEqual(find_swap_chains(book, values), [])
+        with self.assertRaises(ValueError):
+            find_swap_chains(book, values, tolerance_percent=True)
+
     def test_owner_supplied_author_labels_never_inflate_confidence(self):
         ask = offer("sell", "Candy", 5.0, 2, "claimed-seller", "ask")
         bid = offer("buy", "Candy", 8.0, 2, "claimed-buyer", "bid")
