@@ -359,15 +359,24 @@ def collect(
                 errors.append(f"channel {channel_id}: invalid message-list response")
                 continue
             scanned_channels.append(channel_id)
+            human_message_count = 0
+            readable_message_count = 0
             for message in messages:
                 if not isinstance(message, dict):
                     continue
                 author = message.get("author") or {}
                 if isinstance(author, dict) and author.get("bot", False):
                     continue
+                human_message_count += 1
                 row = normalize_message(message, guild_id, channel)
                 if row["content"].strip() or row["embeds"] or row["attachments"]:
                     collected.append(row)
+                    readable_message_count += 1
+            if human_message_count and not readable_message_count:
+                errors.append(
+                    f"channel {channel_id}: messages returned without readable content; "
+                    "enable the MESSAGE_CONTENT privileged intent for the bot"
+                )
 
     for missing_id in sorted(set(channel_ids or []) - found_channel_ids):
         errors.append(
