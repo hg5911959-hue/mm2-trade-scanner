@@ -37,6 +37,10 @@ jobs:
           git fetch origin refs/heads/state:refs/remotes/origin/state
           mkdir -p data
           git archive origin/state data | tar -x
+          if [ -L data ] || find data -type l -print -quit | grep -q .; then
+            echo "::error::State artifact contains symlink paths; refusing API access."
+            exit 1
+          fi
           python tools/validate_state.py --directory data --api-safety-only
 
       - name: Test API authentication within the shared request budget
@@ -139,6 +143,10 @@ jobs:
           fi
           git fetch origin refs/heads/state:refs/remotes/origin/state
           git worktree add /tmp/mm2-api-state origin/state
+          if [ -L /tmp/mm2-api-state/data ] || find /tmp/mm2-api-state/data -type l -print -quit | grep -q .; then
+            echo "::error::Durable state branch contains symlink paths; refusing ledger write."
+            exit 1
+          fi
           mkdir -p /tmp/mm2-api-state/data
           if [ -f data/rblxvalue_request_budget.json ]; then
             cp data/rblxvalue_request_budget.json /tmp/mm2-api-state/data/
