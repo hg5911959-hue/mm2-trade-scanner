@@ -123,7 +123,7 @@ def merge_imports(primary, secondary, path="data/discord_messages.json", now=Non
     # Owner-supplied JSON is never promoted to a Discord API record. A genuine
     # collector record wins if both sources contain the same message ID.
     for row in incoming:
-        message_id = _snowflake(row.get("message_id"))
+        message_id = _message_id(row.get("message_id"))
         if not message_id or message_id in by_id:
             continue
         try:
