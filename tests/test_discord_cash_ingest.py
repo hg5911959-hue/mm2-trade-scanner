@@ -100,10 +100,10 @@ class DiscordCashIngestTests(IsolatedDataTestCase):
 
     def test_end_to_end_verified_independent_offers_create_arbitrage(self):
         rows = [
-            discord_message(1, "Selling\\n1x Candy 4$/1", author_id="423456789012345"),
-            discord_message(2, "Selling\\n1x Candy 4.2$/1", author_id="423456789012346"),
-            discord_message(3, "Buying\\n1x Candy 5$/1", author_id="423456789012347"),
-            discord_message(4, "Buying\\n1x Candy 4.8$/1", author_id="423456789012348"),
+            discord_message(1, "Selling\\n5x Candy 4$/1", author_id="423456789012345"),
+            discord_message(2, "Selling\\n5x Candy 4.2$/1", author_id="423456789012346"),
+            discord_message(3, "Buying\\n5x Candy 5$/1", author_id="423456789012347"),
+            discord_message(4, "Buying\\n5x Candy 4.8$/1", author_id="423456789012348"),
         ]
 
         parsed = parse_discord_messages({"messages": rows})
