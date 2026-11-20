@@ -33,6 +33,21 @@ def parse_guild_ids(raw: str) -> list[int]:
     return ids
 
 
+def parse_channel_ids(raw: str) -> list[int]:
+    """Parse a comma/semicolon-separated allowlist of Discord channel IDs."""
+    ids: list[int] = []
+    for token in str(raw or "").replace(";", ",").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        if not token.isdigit() or not 15 <= len(token) <= 22:
+            raise ValueError("Each Discord channel ID must be a 15–22 digit snowflake")
+        value = int(token)
+        if value not in ids:
+            ids.append(value)
+    return ids
+
+
 def normalize_message(message: Any) -> dict[str, Any]:
     guild = getattr(message, "guild", None)
     channel = getattr(message, "channel", None)
@@ -105,13 +120,17 @@ def load_existing(path: Path) -> list[dict[str, Any]]:
         raise RuntimeError(f"Existing Discord state is unreadable: {path}") from None
 
 
-def atomic_save(path: Path, messages: list[dict[str, Any]], guild_ids: list[int], scanned_channels: list[str]) -> None:
+def atomic_save(
+    path: Path, messages: list[dict[str, Any]], guild_ids: list[int],
+    channel_ids: list[int], scanned_channels: list[str],
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "schema_version": 2,
         "source": "discord",
         "updated_at_utc": datetime.now(timezone.utc).isoformat(),
         "configured_guild_ids": [str(value) for value in guild_ids],
+        "configured_channel_ids": [str(value) for value in channel_ids],
         "scanned_channel_ids": sorted(set(scanned_channels)),
         "message_count": len(messages),
         "messages": messages,
@@ -121,7 +140,10 @@ def atomic_save(path: Path, messages: list[dict[str, Any]], guild_ids: list[int]
     os.replace(temp, path)
 
 
-async def collect(guild_ids: list[int], output: Path, limit: int, retention_days: int) -> int:
+async def collect(
+    guild_ids: list[int], output: Path, limit: int, retention_days: int,
+    channel_ids: list[int] | None = None,
+) -> int:
     try:
         import discord
     except ImportError:
@@ -135,7 +157,11 @@ async def collect(guild_ids: list[int], output: Path, limit: int, retention_days
     if not guild_ids:
         print("Discord collection skipped: DISCORD_GUILD_IDS is empty.")
         return 0
+    if not channel_ids:
+        print("Discord collection skipped: DISCORD_CHANNEL_IDS is empty; refusing server-wide collection.")
+        return 0
 
+    allowed_channel_ids = set(channel_ids)
     intents = discord.Intents.none()
     intents.guilds = True
     intents.messages = True
@@ -165,7 +191,11 @@ async def collect(guild_ids: list[int], output: Path, limit: int, retention_days
             # Include active public/private threads only when their parent is
             # in this explicitly allowlisted server and the bot can read them.
             channels.extend(list(getattr(guild, "threads", []) or []))
-            unique_channels = {int(channel.id): channel for channel in channels if hasattr(channel, "history")}
+            unique_channels = {
+                int(channel.id): channel
+                for channel in channels
+                if hasattr(channel, "history") and int(channel.id) in allowed_channel_ids
+            }
 
             for channel_id, channel in unique_channels.items():
                 parent = getattr(channel, "parent", None)
@@ -191,7 +221,7 @@ async def collect(guild_ids: list[int], output: Path, limit: int, retention_days
         if not scanned_channels:
             errors.append("No readable text channels found; check bot membership and channel permissions.")
         merged = merge_messages(state, collected, retention_days)
-        atomic_save(output, merged, guild_ids, scanned_channels)
+        atomic_save(output, merged, guild_ids, channel_ids, scanned_channels)
         print(f"Discord collection complete: {len(collected)} fetched, {len(merged)} retained, {len(scanned_channels)} channels scanned, {len(errors)} warnings.")
         for error in errors:
             print(f"Discord warning: {error}")
@@ -218,9 +248,12 @@ def main() -> int:
         parser.error("--limit must be between 1 and 100")
     try:
         guilds = parse_guild_ids(os.environ.get("DISCORD_GUILD_IDS", ""))
+        channels = parse_channel_ids(os.environ.get("DISCORD_CHANNEL_IDS", ""))
     except ValueError as exc:
         parser.error(str(exc))
-    return asyncio.run(collect(guilds, Path(args.output), args.limit, args.retention_days))
+    return asyncio.run(
+        collect(guilds, Path(args.output), args.limit, args.retention_days, channels)
+    )
 
 
 if __name__ == "__main__":
