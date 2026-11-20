@@ -2,6 +2,7 @@
 
 import csv
 import unittest
+from unittest.mock import patch
 from test_support import IsolatedDataTestCase
 from datetime import UTC, datetime
 
@@ -182,6 +183,20 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         standard = {**base, "give_total_max": 5.0}
         self.assertFalse(scanner.qualifies_cash({**standard, "cash_profit_worst": 0.499}))
         self.assertTrue(scanner.qualifies_cash({**standard, "cash_profit_worst": 0.50}))
+
+    def test_invalid_cash_margin_threshold_fails_closed(self):
+        result = {
+            "cash_estimate_only": False,
+            "manual_review": False,
+            "cash_price_basis": "verified manual USD resale catalogue",
+            "cash_profit_worst": 100.0,
+            "margin": 20.0,
+            "give_total_max": 10.0,
+        }
+        for threshold in (-1.0, float("nan"), float("inf")):
+            with self.subTest(threshold=threshold):
+                with patch.object(scanner, "CASH_MIN_MARGIN_PERCENT", threshold):
+                    self.assertFalse(scanner.qualifies_cash(result))
 
     def test_non_dictionary_cash_result_fails_closed(self):
         for result in (None, [], "profit", 10):
