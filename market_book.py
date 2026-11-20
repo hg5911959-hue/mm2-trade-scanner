@@ -164,9 +164,6 @@ def build_order_book(
     result: dict[str, dict[str, Any]] = {}
     for item_key in sorted(set(grouped) | set(stale_counts)):
         rows = grouped.get(item_key, [])
-        raw_asks = [row for row in rows if row["side"] == "sell"]
-        raw_bids = [row for row in rows if row["side"] == "buy"]
-
         # Build the outlier benchmark only from independently attributable,
         # currently unflagged offers. Collapse repeated posts by each author
         # and side so one account cannot dominate the reference median.
