@@ -2,32 +2,47 @@ name: RBLXValue API Connection Test
 
 on:
   workflow_dispatch:
-  # Run one non-secret-leaking live credential check when this workflow is
-  # intentionally updated on main. This lets maintainers verify the stored
-  # Actions secret without exposing it or requiring a manual UI dispatch.
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/rblxvalue-connection-test.yml"
 
 permissions:
   contents: read
 
 concurrency:
-  group: rblxvalue-api-connection-test
+  group: mm2-trade-scanner
   cancel-in-progress: false
 
 jobs:
   connection-test:
     name: Verify RBLXValue API credentials
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 3
     permissions:
-      contents: read
+      contents: write
     steps:
-      - name: Test API authentication without exposing secrets
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Restore and validate shared API safety ledger
+        id: restore-state
+        run: |
+          set -euo pipefail
+          if ! git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
+            echo "::error::Durable state branch is missing; refusing an unaccounted API request."
+            exit 1
+          fi
+          git fetch origin refs/heads/state:refs/remotes/origin/state
+          mkdir -p data
+          git archive origin/state data | tar -x
+          python tools/validate_state.py --directory data --api-safety-only
+
+      - name: Test API authentication within the shared request budget
         env:
           RBLXVALUE_API_KEY: ${{ secrets.RBLXVALUE_API_KEY }}
+          RBLXVALUE_DAILY_REQUEST_LIMIT: "60"
         run: |
           python - <<'PY'
           import json
@@ -37,9 +52,17 @@ jobs:
           import urllib.error
           import urllib.request
 
+          import rblxvalue_guard
+
           key = os.environ.get("RBLXVALUE_API_KEY", "").strip()
           if not key:
               print("FAIL: GitHub Actions secret RBLXVALUE_API_KEY is missing or empty.")
+              sys.exit(1)
+
+          try:
+              rblxvalue_guard.reserve_request(key=key)
+          except rblxvalue_guard.RblxValueGuardError as exc:
+              print(f"FAIL: {exc}")
               sys.exit(1)
 
           request = urllib.request.Request(
@@ -51,41 +74,89 @@ jobs:
               },
           )
 
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  raise urllib.error.HTTPError(
+                      req.full_url, code, "RBLXValue redirect refused", headers, fp
+                  )
+
+          opener = urllib.request.build_opener(RejectRedirects())
           try:
-              with urllib.request.urlopen(request, timeout=20) as response:
+              with opener.open(request, timeout=20) as response:
                   body = response.read(65536)
                   if response.status != 200:
                       print(f"FAIL: RBLXValue returned HTTP {response.status}.")
                       sys.exit(1)
                   try:
                       payload = json.loads(body.decode("utf-8"))
-                  except Exception:
+                  except (UnicodeDecodeError, json.JSONDecodeError):
                       print("FAIL: RBLXValue returned HTTP 200 but invalid JSON.")
                       sys.exit(1)
                   if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
                       print("FAIL: RBLXValue returned HTTP 200 but unexpected response structure.")
                       sys.exit(1)
-                  print(f"PASS: RBLXValue API authentication succeeded (HTTP 200; {len(payload['items'])} sample row(s)).")
+                  rblxvalue_guard.mark_key_success(key=key)
+                  print(
+                      "PASS: RBLXValue API authentication succeeded "
+                      f"(HTTP 200; {len(payload['items'])} sample row(s))."
+                  )
           except urllib.error.HTTPError as exc:
               detail = exc.read(1200).decode("utf-8", errors="replace").strip()
               detail = detail.replace(key, "[REDACTED]")
               detail = re.sub(r"rbx_[A-Za-z0-9_-]+", "rbx_[REDACTED]", detail)
-              detail = re.sub(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s]+", r"\1[REDACTED]", detail)
-              if exc.code == 403 and str(exc.headers.get("cf-mitigated", "")).casefold() == "challenge":
-                  reason = "Cloudflare challenge"
-              elif exc.code == 403:
-                  reason = "upstream access denied (check whether the repository secret contains the current active key)"
-              elif exc.code == 401:
-                  reason = "unauthorized (the key sent by GitHub is missing, incorrect, or rotated)"
-              elif exc.code == 429:
-                  reason = "rate limited"
-              else:
-                  reason = "upstream request rejected"
-              print(f"FAIL: HTTP {exc.code}: {reason}.")
+              detail = re.sub(
+                  r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s]+",
+                  r"\1[REDACTED]",
+                  detail,
+              )
+              try:
+                  rblxvalue_guard.raise_for_key_error(exc.code, detail, key=key)
+              except rblxvalue_guard.RblxValueKeyBlocked as blocked:
+                  print(f"FAIL: {blocked}")
+                  sys.exit(1)
+              print(f"FAIL: RBLXValue returned HTTP {exc.code}; credential status not assumed.")
               if detail and not detail.startswith("<"):
                   print(f"Safe response detail: {detail[:240]}")
               sys.exit(1)
+          except (urllib.error.URLError, TimeoutError) as exc:
+              print(f"FAIL: RBLXValue connection error: {type(exc).__name__}.")
+              sys.exit(1)
+          except rblxvalue_guard.RblxValueGuardError as exc:
+              print(f"FAIL: {exc}")
+              sys.exit(1)
           except Exception as exc:
-              print(f"FAIL: connection test error: {type(exc).__name__}: {str(exc)[:200]}")
+              print(f"FAIL: connection test error: {type(exc).__name__}.")
               sys.exit(1)
           PY
+
+      - name: Persist shared API safety ledger
+        if: always() && steps.restore-state.outcome == 'success'
+        run: |
+          set -euo pipefail
+          if [ ! -f data/rblxvalue_request_budget.json ] && [ ! -f data/api_key_blocked.json ]; then
+            echo "No API safety ledger was created; nothing to persist."
+            exit 0
+          fi
+          git fetch origin refs/heads/state:refs/remotes/origin/state
+          git worktree add /tmp/mm2-api-state origin/state
+          mkdir -p /tmp/mm2-api-state/data
+          if [ -f data/rblxvalue_request_budget.json ]; then
+            cp data/rblxvalue_request_budget.json /tmp/mm2-api-state/data/
+          else
+            rm -f /tmp/mm2-api-state/data/rblxvalue_request_budget.json
+          fi
+          if [ -f data/api_key_blocked.json ]; then
+            cp data/api_key_blocked.json /tmp/mm2-api-state/data/
+          else
+            rm -f /tmp/mm2-api-state/data/api_key_blocked.json
+          fi
+          cd /tmp/mm2-api-state
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+users.noreply.github.com"
+          git add -A -- data/rblxvalue_request_budget.json data/api_key_blocked.json
+          if git diff --cached --quiet; then
+            echo "Shared API safety ledger unchanged."
+          else
+            git commit -m "Persist RBLXValue API safety ledger"
+            git push origin HEAD:state
+          fi
