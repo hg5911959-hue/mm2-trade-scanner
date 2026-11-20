@@ -6,6 +6,13 @@ from pathlib import Path
 
 from test_support import IsolatedDataTestCase
 
+from private_state import (
+    IV_BYTES,
+    MAGIC,
+    MAX_ENCRYPTED_BYTES,
+    SALT_BYTES,
+    TAG_BYTES,
+)
 from tools.validate_state import validate_state
 
 
@@ -111,6 +118,32 @@ class StateValidationTests(IsolatedDataTestCase):
         errors = validate_state(self.root, require_cache=True)
         self.assertTrue(any("breaker timing or schema" in error for error in errors))
 
+    def test_workflow_attributed_budget_metadata_is_validated(self):
+        self._write_valid_state()
+        valid = {
+            "schema_version": 1,
+            "window": "rolling_24_hours",
+            "limit": 60,
+            "request_timestamps_epoch": [1_800_000_000, 1_800_000_001],
+            "request_workflows": ["MM2 Scanner", "RBLXValue Manual Check"],
+            "request_counts_by_workflow": {
+                "MM2 Scanner": 1, "RBLXValue Manual Check": 1,
+            },
+        }
+        path = self.root / "rblxvalue_request_budget.json"
+        path.write_text(json.dumps(valid), encoding="utf-8")
+        self.assertEqual(validate_state(self.root, require_cache=True), [])
+
+        for update in (
+            {"request_workflows": ["only-one"]},
+            {"request_workflows": ["MM2 Scanner", "bad\\nworkflow"]},
+            {"request_counts_by_workflow": {"MM2 Scanner": 2}},
+        ):
+            with self.subTest(update=update):
+                path.write_text(json.dumps({**valid, **update}), encoding="utf-8")
+                errors = validate_state(self.root, require_cache=True)
+                self.assertTrue(any("workflow" in error for error in errors))
+
     def test_api_safety_ledger_rejects_unexpected_files_and_oversized_budget(self):
         from tools.validate_state import validate_api_safety_state
         (self.root / "rblxvalue_request_budget.json").write_text(json.dumps({
@@ -123,6 +156,72 @@ class StateValidationTests(IsolatedDataTestCase):
         errors = validate_api_safety_state(self.root)
         self.assertTrue(any("unexpected files" in error for error in errors))
         self.assertTrue(any("budget timestamps" in error for error in errors))
+
+    def test_public_state_rejects_plaintext_private_files_without_parsing_them(self):
+        (self.root / "inventory.json").write_text("{broken", encoding="utf-8")
+
+        errors = validate_state(self.root)
+
+        self.assertTrue(any("private Telegram/market state" in error for error in errors))
+        self.assertFalse(any("invalid JSON state file: inventory.json" in error for error in errors))
+
+    def test_public_state_rejects_symlinked_files_and_directories(self):
+        self._write_valid_state()
+        outside = Path(self.temp.name).parent / (Path(self.temp.name).name + "-outside")
+        outside.mkdir()
+        self.addCleanup(lambda: __import__("shutil").rmtree(outside, ignore_errors=True))
+        (outside / "payload.json").write_text("{}", encoding="utf-8")
+        (self.root / "linked-file.json").symlink_to(outside / "payload.json")
+        (self.root / "linked-directory").symlink_to(outside, target_is_directory=True)
+
+        errors = validate_state(self.root, require_cache=True)
+
+        self.assertTrue(any("symlink paths" in error for error in errors))
+
+    def test_public_state_rejects_symlink_only_directory(self):
+        outside = Path(self.temp.name).parent / (Path(self.temp.name).name + "-empty-outside")
+        outside.mkdir()
+        self.addCleanup(lambda: __import__("shutil").rmtree(outside, ignore_errors=True))
+        (self.root / "linked-directory").symlink_to(outside, target_is_directory=True)
+
+        errors = validate_state(self.root)
+
+        self.assertTrue(any("symlink paths" in error for error in errors))
+
+    def test_api_safety_artifact_rejects_symlinked_files(self):
+        from tools.validate_state import validate_api_safety_state
+        outside = Path(self.temp.name).parent / (Path(self.temp.name).name + "-api-outside.json")
+        outside.write_text("{}", encoding="utf-8")
+        self.addCleanup(lambda: outside.unlink(missing_ok=True))
+        (self.root / "rblxvalue_request_budget.json").symlink_to(outside)
+
+        errors = validate_api_safety_state(self.root)
+
+        self.assertTrue(any("symlink paths" in error for error in errors))
+
+    def test_public_state_rejects_invalid_private_ciphertext_header(self):
+        minimum = len(MAGIC) + SALT_BYTES + IV_BYTES + TAG_BYTES
+        (self.root / "private_state.enc").write_bytes(b"X" * minimum)
+
+        errors = validate_state(self.root)
+
+        self.assertTrue(any("private-state bundle header is invalid" in error for error in errors))
+
+    def test_public_state_rejects_oversized_private_ciphertext_before_reading(self):
+        path = self.root / "private_state.enc"
+        with path.open("wb") as handle:
+            handle.write(MAGIC)
+            handle.truncate(MAX_ENCRYPTED_BYTES + 1)
+
+        errors = validate_state(self.root)
+
+        self.assertTrue(any("private-state bundle exceeds" in error for error in errors))
+
+    def test_public_state_accepts_bounded_private_ciphertext_envelope(self):
+        path = self.root / "private_state.enc"
+        path.write_bytes(MAGIC + b"0" * (SALT_BYTES + IV_BYTES + TAG_BYTES))
+
+        self.assertEqual(validate_state(self.root), [])
 
     def test_valid_state_passes_strict_success_validation(self):
         self._write_valid_state()

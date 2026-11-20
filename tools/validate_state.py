@@ -8,6 +8,21 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+# Keep these format limits aligned with private_state.py. This validator is
+# also executed as a script from tools/, so it must not rely on root imports.
+PRIVATE_STATE_MAGIC = b"MM2PSTATE1"
+PRIVATE_STATE_PLAINTEXT_FILES = frozenset({
+    "cash_market_offers.json",
+    "inventory.json",
+    "telegram_update_state.json",
+    "telegram_last_run.json",
+    "market_book_history.json",
+    "market_alert_state.json",
+    "discord_alert_state.json",
+})
+PRIVATE_STATE_MAX_ENCRYPTED_BYTES = ((50 * 1024 * 1024 + 2) // 3) * 4 + 64 * 1024
+PRIVATE_STATE_MIN_ENCRYPTED_BYTES = len(PRIVATE_STATE_MAGIC) + 16 + 16 + 32
+
 REQUIRED_MARKET_TABLES = {
     "market_snapshots",
     "market_values",
@@ -80,12 +95,68 @@ def _validate_api_key_block_document(block: Any) -> list[str]:
     return errors
 
 
+def _validate_rblxvalue_budget_document(budget: Any) -> list[str]:
+    """Validate legacy and workflow-attributed rolling request ledgers."""
+    if not isinstance(budget, dict):
+        return ["RBLXValue request budget root must be an object"]
+    errors: list[str] = []
+    version = budget.get("schema_version", 1)
+    if type(version) is not int or version != 1:
+        errors.append("RBLXValue request budget schema is unsupported")
+    if budget.get("window", "rolling_24_hours") != "rolling_24_hours":
+        errors.append("RBLXValue request budget window is invalid")
+    timestamps = budget.get("request_timestamps_epoch")
+    if (
+        not isinstance(timestamps, list)
+        or len(timestamps) > 60
+        or any(not _finite_positive(value) for value in timestamps)
+    ):
+        errors.append("RBLXValue request budget contains an invalid timestamp; request budget timestamps are invalid")
+        timestamps = []
+    limit = budget.get("limit")
+    if type(limit) is not int or not 1 <= limit <= 60:
+        errors.append("RBLXValue request budget limit is invalid")
+
+    # Legacy ledgers may omit workflow metadata. Once present, all derived
+    # metadata must match the timestamp-aligned workflow list exactly.
+    if "request_workflows" in budget or "request_counts_by_workflow" in budget:
+        workflows = budget.get("request_workflows")
+        if (
+            not isinstance(workflows, list)
+            or len(workflows) != len(timestamps)
+            or any(
+                not isinstance(name, str) or not name.strip() or len(name) > 100
+                or any(ord(char) < 32 for char in name)
+                for name in (workflows if isinstance(workflows, list) else [])
+            )
+        ):
+            errors.append("RBLXValue request budget workflow metadata is invalid")
+        else:
+            expected: dict[str, int] = {}
+            for name in workflows:
+                expected[name] = expected.get(name, 0) + 1
+            counts = budget.get("request_counts_by_workflow")
+            if (
+                not isinstance(counts, dict)
+                or any(type(value) is not int or value < 0 for value in counts.values())
+                or counts != expected
+            ):
+                errors.append("RBLXValue request budget workflow counts are inconsistent")
+    return errors
+
+
 def validate_state(directory: str | Path, *, require_cache: bool = False) -> list[str]:
     """Return validation errors; never mutate the supplied state directory."""
     root = Path(directory)
+    if root.is_symlink():
+        return ["state directory must not be a symlink"]
     if not root.exists():
         return ["state directory is missing"] if require_cache else []
-    files = [path for path in root.rglob("*") if path.is_file()]
+    entries = list(root.rglob("*"))
+    symlinks = [path for path in entries if path.is_symlink()]
+    if symlinks:
+        return ["state contains symlink paths"]
+    files = [path for path in entries if path.is_file() and not path.is_symlink()]
     if not files:
         if require_cache:
             return [
@@ -97,13 +168,36 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
     errors: list[str] = []
     if any(path.name == "discord_messages.json" for path in files):
         errors.append("private Discord message file must not enter durable public state")
+    private_plaintext = [path for path in files if path.name in PRIVATE_STATE_PLAINTEXT_FILES]
+    if private_plaintext:
+        errors.append("private Telegram/market state must be encrypted before public persistence")
+
+    encrypted_private = root / "private_state.enc"
+    if encrypted_private.exists() or encrypted_private.is_symlink():
+        if encrypted_private.is_symlink() or not encrypted_private.is_file():
+            errors.append("encrypted private-state path must be a regular file")
+        else:
+            try:
+                encrypted_size = encrypted_private.stat().st_size
+                if encrypted_size > PRIVATE_STATE_MAX_ENCRYPTED_BYTES:
+                    errors.append("encrypted private-state bundle exceeds the configured size limit")
+                elif encrypted_size < PRIVATE_STATE_MIN_ENCRYPTED_BYTES:
+                    errors.append("encrypted private-state bundle is too short")
+                else:
+                    with encrypted_private.open("rb") as handle:
+                        header = handle.read(len(PRIVATE_STATE_MAGIC))
+                    if header != PRIVATE_STATE_MAGIC:
+                        errors.append("encrypted private-state bundle header is invalid")
+            except OSError:
+                errors.append("encrypted private-state bundle cannot be inspected safely")
+
     temporary = [path for path in files if path.name.endswith(".tmp")]
     if temporary:
         errors.append(f"unfinished atomic-write temporary file found: {temporary[0].name}")
 
     documents: dict[str, Any] = {}
     for path in files:
-        if path.suffix.lower() != ".json":
+        if path.name in PRIVATE_STATE_PLAINTEXT_FILES or path.suffix.lower() != ".json":
             continue
         try:
             documents[path.name] = json.loads(path.read_text(encoding="utf-8"))
@@ -195,24 +289,8 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
 
     budget = documents.get("rblxvalue_request_budget.json")
     budget_path = root / "rblxvalue_request_budget.json"
-    if budget_path.exists() and not isinstance(budget, dict):
-        errors.append("RBLXValue request budget root must be an object")
-    elif budget_path.exists():
-        version = budget.get("schema_version", 1)
-        if type(version) is not int or version != 1:
-            errors.append("RBLXValue request budget schema is unsupported")
-        if budget.get("window", "rolling_24_hours") != "rolling_24_hours":
-            errors.append("RBLXValue request budget window is invalid")
-        timestamps = budget.get("request_timestamps_epoch")
-        if (
-            not isinstance(timestamps, list)
-            or len(timestamps) > 60
-            or any(not _finite_positive(value) for value in timestamps)
-        ):
-            errors.append("RBLXValue request budget contains an invalid timestamp")
-        limit = budget.get("limit")
-        if type(limit) is not int or not 1 <= limit <= 60:
-            errors.append("RBLXValue request budget limit is invalid")
+    if budget_path.exists():
+        errors.extend(_validate_rblxvalue_budget_document(budget))
 
     health = documents.get("rblxvalue_key_health.json")
     health_path = root / "rblxvalue_key_health.json"
@@ -268,11 +346,17 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
 def validate_api_safety_state(directory: str | Path) -> list[str]:
     """Validate only the small API safety ledger used after failed scans."""
     root = Path(directory)
+    if root.is_symlink():
+        return ["API safety artifact directory must not be a symlink"]
     if not root.exists():
         return []
-    files = [path for path in root.rglob("*") if path.is_file()]
+    entries = list(root.rglob("*"))
+    symlinks = [path for path in entries if path.is_symlink()]
+    files = [path for path in entries if path.is_file() and not path.is_symlink()]
     allowed = {"rblxvalue_request_budget.json", "api_key_blocked.json"}
     errors: list[str] = []
+    if symlinks:
+        errors.append("API safety artifact contains symlink paths")
     unexpected = [path.name for path in files if path.name not in allowed]
     if unexpected:
         errors.append("API safety artifact contains unexpected files")
@@ -286,24 +370,7 @@ def validate_api_safety_state(directory: str | Path) -> list[str]:
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             budget = None
             errors.append("RBLXValue request budget JSON is invalid")
-        if not isinstance(budget, dict):
-            errors.append("RBLXValue request budget root must be an object")
-        else:
-            version = budget.get("schema_version", 1)
-            if type(version) is not int or version != 1:
-                errors.append("RBLXValue request budget schema is unsupported")
-            if budget.get("window", "rolling_24_hours") != "rolling_24_hours":
-                errors.append("RBLXValue request budget window is invalid")
-            limit = budget.get("limit")
-            if type(limit) is not int or not 1 <= limit <= 60:
-                errors.append("RBLXValue request budget limit is invalid")
-            timestamps = budget.get("request_timestamps_epoch")
-            if (
-                not isinstance(timestamps, list)
-                or len(timestamps) > 60
-                or any(not _finite_positive(value) for value in timestamps)
-            ):
-                errors.append("RBLXValue request budget timestamps are invalid")
+        errors.extend(_validate_rblxvalue_budget_document(budget))
 
     block_path = root / "api_key_blocked.json"
     if block_path.exists():
