@@ -1,12 +1,15 @@
+import os
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from test_support import IsolatedDataTestCase
 
 from private_state import (
     MAX_ENCRYPTED_BYTES, MAX_FILE_BYTES,
-    PrivateStateError, decrypt_private_state, encrypt_private_state,
+    PrivateStateError, _read_bounded_regular_file,
+    decrypt_private_state, encrypt_private_state,
 )
 
 
@@ -99,6 +102,60 @@ class PrivateStateEncryptionTests(IsolatedDataTestCase):
                 decrypt_private_state(encrypted, root / "restored", "f" * 48)
 
             self.assertFalse((root / "restored" / "inventory.json").exists())
+
+    def test_bounded_reader_catches_growth_after_fstat(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "growing.json"
+            path.write_bytes(b"0123456789")
+            real_fstat = os.fstat
+
+            def report_small_size(fd):
+                actual = real_fstat(fd)
+                return os.stat_result((
+                    actual.st_mode, actual.st_ino, actual.st_dev, actual.st_nlink,
+                    actual.st_uid, actual.st_gid, 0, actual.st_atime,
+                    actual.st_mtime, actual.st_ctime,
+                ))
+
+            with patch("private_state.os.fstat", side_effect=report_small_size):
+                with self.assertRaisesRegex(PrivateStateError, "size limit"):
+                    _read_bounded_regular_file(path, 4)
+
+    def test_encrypt_rejects_symlinked_private_input(self):
+        if not hasattr(os, "O_NOFOLLOW"):
+            self.skipTest("O_NOFOLLOW is unavailable on this platform")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            target = root / "outside.json"
+            target.write_text('{"private":true}', encoding="utf-8")
+            (source / "inventory.json").symlink_to(target)
+
+            with self.assertRaises(PrivateStateError):
+                encrypt_private_state(source, root / "private_state.enc", "g" * 48)
+
+            self.assertEqual(target.read_text(encoding="utf-8"), '{"private":true}')
+            self.assertFalse((root / "private_state.enc").exists())
+
+    def test_decrypt_rejects_symlinked_encrypted_input(self):
+        if not hasattr(os, "O_NOFOLLOW"):
+            self.skipTest("O_NOFOLLOW is unavailable on this platform")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            (source / "inventory.json").write_text('{"private":true}', encoding="utf-8")
+            encrypted = root / "private_state.enc"
+            encrypt_private_state(source, encrypted, "h" * 48)
+            linked = root / "linked.enc"
+            linked.symlink_to(encrypted)
+            restored = root / "restored"
+
+            with self.assertRaises(PrivateStateError):
+                decrypt_private_state(linked, restored, "h" * 48)
+
+            self.assertFalse((restored / "inventory.json").exists())
 
     def test_short_or_missing_key_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:
