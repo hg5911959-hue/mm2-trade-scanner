@@ -68,6 +68,13 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertNotIn("enable-schedules:", scheduler)
 
 
+    def test_discord_collection_uses_only_the_explicit_channel_allowlist(self):
+        workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        collector = workflow.split("      - name: Collect authorized Discord trade channels", 1)[1].split("      - name: Run BloxSwaps scanner", 1)[0]
+        self.assertIn('DISCORD_GUILD_IDS: "1125462206151143464"', collector)
+        self.assertIn('DISCORD_CHANNEL_IDS: "1572655277130514472,1567557584402120785"', collector)
+        self.assertNotIn("482699890741477376", collector)
+
     def test_manual_scan_dispatch_defaults_to_dry_run(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         scheduler = (ROOT / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
