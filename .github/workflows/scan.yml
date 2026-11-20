@@ -62,12 +62,13 @@ jobs:
             # Keep the cash catalogue untouched when restoring durable runtime state.
             git archive origin/state data | tar --exclude='data/cash_prices.csv' -x
             echo "Restored scanner state from branch 'state'."
+            # An existing state branch must contain the successful-scan cache;
+            # otherwise fail closed rather than silently resetting dedupe state.
+            python tools/validate_state.py --directory data --require-cache
           else
             echo "State branch not found; cold-start safety window will evaluate recent posts."
+            python tools/validate_state.py --directory data
           fi
-          # Validate restored durable state before any scanner code reads it.
-          # This also rejects symlinks and malformed API safety ledgers.
-          python tools/validate_state.py --directory data
           python - <<'PY'
           import json
           from pathlib import Path
