@@ -1097,6 +1097,10 @@ def _open_rblxvalue_url(req, timeout):
     return opener.open(req, timeout=timeout)
 
 
+class BloxSwapsRateLimitError(RuntimeError):
+    """A BloxSwaps HTTP 429 stops the current scan without retrying."""
+
+
 def request_with_retry(req, timeout, label, attempts=4, return_headers=False, allow_not_modified=False):
     """Retry transient failures with exponential backoff and respect Retry-After."""
     request_url = req.full_url if isinstance(req, urllib.request.Request) else str(req)
@@ -1158,6 +1162,51 @@ def request_with_retry(req, timeout, label, attempts=4, return_headers=False, al
                     safe_detail = "empty response body"
                 raise RuntimeError(
                     f"[http] {label}: HTTP 403 Forbidden; upstream response: {safe_detail[:240]}"
+                ) from exc
+            if exc.code == 429 and not is_rblxvalue:
+                retry_after = (exc.headers or {}).get("Retry-After", "")
+                delay = None
+                if retry_after:
+                    try:
+                        delay = max(0, int(retry_after))
+                    except ValueError:
+                        try:
+                            parsed_retry_after = parsedate_to_datetime(retry_after)
+                            if parsed_retry_after.tzinfo is None:
+                                parsed_retry_after = parsed_retry_after.replace(tzinfo=timezone.utc)
+                            delay = max(
+                                0,
+                                (parsed_retry_after - datetime.now(timezone.utc)).total_seconds(),
+                            )
+                        except (TypeError, ValueError, OverflowError, OSError):
+                            delay = None
+                if delay is not None and delay > MAX_RETRY_AFTER_SECONDS:
+                    raise BloxSwapsRateLimitError(
+                        f"{label}: HTTP 429; Retry-After exceeds the safe wait "
+                        f"({int(delay)}s > {MAX_RETRY_AFTER_SECONDS}s); aborting this scan without retry"
+                    ) from exc
+                if not retry_after:
+                    suffix = "; no Retry-After header"
+                elif delay is None:
+                    suffix = "; invalid Retry-After header"
+                else:
+                    suffix = f"; Retry-After={int(delay)}s"
+                headers = exc.headers or {}
+                diagnostic_headers = []
+                for header in (
+                    "Server", "CF-Ray", "Content-Type", "X-RateLimit-Limit",
+                    "X-RateLimit-Remaining", "X-RateLimit-Reset",
+                ):
+                    value = headers.get(header)
+                    if value:
+                        diagnostic_headers.append(f"{header}={str(value)[:100]}")
+                header_summary = (
+                    "; response=" + ", ".join(diagnostic_headers)
+                    if diagnostic_headers else ""
+                )
+                raise BloxSwapsRateLimitError(
+                    f"{label}: HTTP 429 rate limited{suffix}{header_summary}; "
+                    "aborting this scan without retry"
                 ) from exc
             retryable = exc.code == 429 or 500 <= exc.code <= 599
             if not retryable or attempt == attempts - 1:
@@ -2370,9 +2419,19 @@ def _read_values_cache():
     if cached is None:
         return None, None
     try:
-        age = max(0, int(time.time() - float(cached.get("fetched_at", 0))))
+        fetched_raw = cached.get("fetched_at")
+        if isinstance(fetched_raw, bool):
+            return None, None
+        fetched_at = float(fetched_raw)
+        current = float(time.time())
+        if (
+            not math.isfinite(fetched_at) or not math.isfinite(current)
+            or fetched_at <= 0 or current <= 0 or fetched_at > current
+        ):
+            return None, None
+        age = int(current - fetched_at)
         return cached["values"], age
-    except (TypeError, ValueError, KeyError):
+    except (TypeError, ValueError, KeyError, OverflowError):
         return None, None
 
 
