@@ -150,17 +150,18 @@ Implemented on `fix/market-book-trust-and-risk-gates`, based directly on current
 - Require verified, distinct stable author IDs on both sides of direct arbitrage and swap-chain candidates.
 - Extend the existing read-only Discord collector to preserve validated author snowflakes and label their provenance as `discord_api`.
 - Add the isolated cash-offer parser and explicit alias catalogue; carry validated author IDs into parsed offers and demand hints, and reject malformed alias schemas or normalized alias collisions.
+- Add a pure normalized-Discord ingestion adapter that validates source snowflakes, matching permalinks and timestamps, deduplicates messages, preserves channel provenance, and keeps demand hints separate from bids. An end-to-end regression test verifies that independent, verified offers can form a qualified opportunity.
 - Normalize malformed optional risk-flag containers defensively.
 - Add regression tests for all the above cases.
 
 Validation:
-- PR #100 GitHub Actions run [44817454902](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44817454902) succeeded on the latest code head.
-- **428 tests passed twice**, data immutability passed, and all configured Ruff/lint checks passed.
+- PR #100 GitHub Actions run [44817922102](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44817922102) succeeded on the latest code head.
+- **435 tests passed twice**, data immutability passed, and all configured Ruff/lint checks passed.
 - PR #100 is open as Draft; no code has been merged into `main`.
 
 Next acceptance work:
 1. Complete the remaining 42-file PR #85 overlap/security review; keep its workflow changes excluded until separately redesigned and reviewed.
 2. Review parser identity, quantity certainty, provenance, and duplicate-message handling before wiring the market book into the scanner.
-3. Port and review the normalized Discord import boundary so only collector-provenanced author IDs reach the parser; reject manual/owner-supplied identity claims.
-4. Add an integration boundary that consumes only normalized, authorized observations and remains disabled by default.
+3. Review and harden the normalized Discord import adapter's edge cases and data-retention boundary; ensure only collector-provenanced author IDs reach actionable offers.
+4. Design the live-scanner integration boundary separately, keeping cash mode disabled by default and excluding private state from public artifacts.
 5. Run the full suite twice, data immutability, Ruff, and relevant workflow checks after each isolated integration slice.
