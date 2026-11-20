@@ -3,7 +3,7 @@ from test_support import IsolatedDataTestCase
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-from discord_collector import merge_messages, normalize_message, parse_guild_ids
+from discord_collector import merge_messages, normalize_message, parse_channel_ids, parse_guild_ids
 
 
 class DiscordCollectorTests(IsolatedDataTestCase):
@@ -17,6 +17,17 @@ class DiscordCollectorTests(IsolatedDataTestCase):
         for raw in ("abc", "123", "-123456789012345", "123456789012345, nope"):
             with self.subTest(raw=raw), self.assertRaises(ValueError):
                 parse_guild_ids(raw)
+
+    def test_parse_channel_ids_deduplicates(self):
+        self.assertEqual(
+            parse_channel_ids("1572655277130514472;1567557584402120785,1572655277130514472"),
+            [1572655277130514472, 1567557584402120785],
+        )
+
+    def test_parse_channel_ids_rejects_invalid_values(self):
+        for raw in ("abc", "123", "-123456789012345", "123456789012345, nope"):
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                parse_channel_ids(raw)
 
     def test_normalize_message_keeps_jump_url_and_content(self):
         created = datetime(2026, 11, 13, tzinfo=timezone.utc)
