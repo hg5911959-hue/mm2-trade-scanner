@@ -9,6 +9,7 @@ import json
 import math
 import os
 import statistics
+import stat
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -26,6 +27,7 @@ DEFAULT_TRANSFER_FEE_USD = 0.50
 DEFAULT_SAFETY_MARGIN_PERCENT = 5.0
 DEFAULT_MIN_PROFIT_USD = 0.50
 DEFAULT_MIN_PROFIT_PERCENT = 5.0
+MAX_HISTORY_BYTES = 8 * 1024 * 1024
 
 
 def _timestamp(value: Any) -> float | None:
@@ -606,6 +608,35 @@ def inventory_advice(
     return advice
 
 
+def _read_private_history(path: Path) -> dict[str, Any]:
+    flags = (
+        os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    )
+    try:
+        descriptor = os.open(path, flags)
+    except FileNotFoundError:
+        return {"schema_version": 1, "snapshots": []}
+    except OSError:
+        raise RuntimeError("private market history cannot be opened safely") from None
+    try:
+        with os.fdopen(descriptor, "rb") as handle:
+            metadata = os.fstat(handle.fileno())
+            if not stat.S_ISREG(metadata.st_mode):
+                raise RuntimeError("private market history is not a regular file")
+            if metadata.st_size > MAX_HISTORY_BYTES:
+                raise RuntimeError("private market history exceeds the size limit")
+            raw = handle.read(MAX_HISTORY_BYTES + 1)
+        if len(raw) > MAX_HISTORY_BYTES:
+            raise RuntimeError("private market history exceeds the size limit")
+        payload = json.loads(raw.decode("utf-8"))
+    except RuntimeError:
+        raise
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        raise RuntimeError("private market history is unreadable; refusing overwrite") from None
+    return payload
+
+
 def save_private_price_history(
     path: str | Path, snapshot: dict[str, Any], *, now: float | None = None,
     retention_days: int = 14,
@@ -617,12 +648,7 @@ def save_private_price_history(
         raise ValueError("history timestamp must be finite and positive")
     if retention_days < 1:
         raise ValueError("retention_days must be positive")
-    existing = {"schema_version": 1, "snapshots": []}
-    if target.exists():
-        try:
-            existing = json.loads(target.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as exc:
-            raise RuntimeError("private market history is unreadable; refusing overwrite") from exc
+    existing = _read_private_history(target)
     if not isinstance(existing, dict) or existing.get("schema_version") != 1 or not isinstance(existing.get("snapshots"), list):
         raise RuntimeError("private market history schema is invalid; refusing overwrite")
     snapshots = [row for row in existing["snapshots"] if isinstance(row, dict)
