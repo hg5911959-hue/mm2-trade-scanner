@@ -198,7 +198,8 @@ def build_order_book(
             for side, prices in benchmark_prices_by_side.items()
         }
         benchmark_prices = [
-            price for prices in benchmark_prices_by_side.values() for price in prices
+            statistics.median(prices)
+            for prices in benchmark_prices_by_author.values()
         ]
         median_all = statistics.median(benchmark_prices) if benchmark_prices else None
         flags: set[str] = set()
