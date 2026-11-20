@@ -8,6 +8,10 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from private_state import (
+    IV_BYTES, MAGIC, MAX_ENCRYPTED_BYTES, PRIVATE_FILENAMES, SALT_BYTES, TAG_BYTES,
+)
+
 REQUIRED_MARKET_TABLES = {
     "market_snapshots",
     "market_values",
@@ -97,13 +101,36 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
     errors: list[str] = []
     if any(path.name == "discord_messages.json" for path in files):
         errors.append("private Discord message file must not enter durable public state")
+    private_plaintext = [path for path in files if path.name in PRIVATE_FILENAMES]
+    if private_plaintext:
+        errors.append("private Telegram/market state must be encrypted before public persistence")
+
+    encrypted_private = root / "private_state.enc"
+    if encrypted_private.exists() or encrypted_private.is_symlink():
+        if encrypted_private.is_symlink() or not encrypted_private.is_file():
+            errors.append("encrypted private-state path must be a regular file")
+        else:
+            try:
+                encrypted_size = encrypted_private.stat().st_size
+                if encrypted_size > MAX_ENCRYPTED_BYTES:
+                    errors.append("encrypted private-state bundle exceeds the configured size limit")
+                elif encrypted_size < len(MAGIC) + SALT_BYTES + IV_BYTES + TAG_BYTES:
+                    errors.append("encrypted private-state bundle is too short")
+                else:
+                    with encrypted_private.open("rb") as handle:
+                        header = handle.read(len(MAGIC))
+                    if header != MAGIC:
+                        errors.append("encrypted private-state bundle header is invalid")
+            except OSError:
+                errors.append("encrypted private-state bundle cannot be inspected safely")
+
     temporary = [path for path in files if path.name.endswith(".tmp")]
     if temporary:
         errors.append(f"unfinished atomic-write temporary file found: {temporary[0].name}")
 
     documents: dict[str, Any] = {}
     for path in files:
-        if path.suffix.lower() != ".json":
+        if path.name in PRIVATE_FILENAMES or path.suffix.lower() != ".json":
             continue
         try:
             documents[path.name] = json.loads(path.read_text(encoding="utf-8"))
