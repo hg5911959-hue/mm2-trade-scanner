@@ -24,7 +24,7 @@ class DiscordCollectorTests(IsolatedDataTestCase):
             id=123456789012345,
             guild=SimpleNamespace(id=223456789012345, name="MM2"),
             channel=SimpleNamespace(id=323456789012345, name="trading"),
-            author=SimpleNamespace(display_name="Trader", name="Trader", bot=False),
+            author=SimpleNamespace(id=423456789012345, display_name="Trader", name="Trader", bot=False),
             content="Trading two items",
             attachments=[],
             embeds=[],
@@ -35,6 +35,26 @@ class DiscordCollectorTests(IsolatedDataTestCase):
         self.assertEqual(row["source"], "discord")
         self.assertEqual(row["content"], "Trading two items")
         self.assertEqual(row["url"], "https://discord.com/channels/1/2/3")
+        self.assertEqual(row["author_id"], "423456789012345")
+        self.assertEqual(row["author_id_source"], "discord_api")
+
+    def test_normalize_message_does_not_trust_invalid_author_ids(self):
+        message = SimpleNamespace(
+            id=123456789012345,
+            guild=SimpleNamespace(id=223456789012345, name="MM2"),
+            channel=SimpleNamespace(id=323456789012345, name="trading"),
+            author=SimpleNamespace(id="not-a-snowflake", display_name="Trader", bot=False),
+            content="Trading",
+            attachments=[],
+            embeds=[],
+            created_at=datetime(2026, 11, 13, tzinfo=timezone.utc),
+            jump_url="",
+        )
+
+        row = normalize_message(message)
+
+        self.assertEqual(row["author_id"], "")
+        self.assertEqual(row["author_id_source"], "")
 
     def test_merge_deduplicates_and_retains_recent(self):
         recent = datetime.now(timezone.utc).isoformat()
