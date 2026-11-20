@@ -47,6 +47,10 @@ class DiscordCollectorTests(IsolatedDataTestCase):
                 ]
             if path == "/guilds/1125462206151143464/threads/active":
                 return {"threads": []}
+            if path == "/guilds/482699890741477376/channels":
+                return []
+            if path == "/guilds/482699890741477376/threads/active":
+                return {"threads": []}
             if path == "/channels/200000000000000001/messages":
                 return [{
                     "id": "300000000000000001", "channel_id": "200000000000000001",
@@ -60,7 +64,7 @@ class DiscordCollectorTests(IsolatedDataTestCase):
             with patch.dict("os.environ", {"DISCORD_BOT_TOKEN": "bot-token"}):
                 with patch("discord_collector._discord_get_json", side_effect=fake_get):
                     result = collect(
-                        [1125462206151143464], output, 100, 7,
+                        [1125462206151143464, 482699890741477376], output, 100, 7,
                         channel_ids=["200000000000000001"],
                     )
             saved = json.loads(output.read_text(encoding="utf-8"))
@@ -72,6 +76,8 @@ class DiscordCollectorTests(IsolatedDataTestCase):
             [
                 "/guilds/1125462206151143464/channels",
                 "/guilds/1125462206151143464/threads/active",
+                "/guilds/482699890741477376/channels",
+                "/guilds/482699890741477376/threads/active",
                 "/channels/200000000000000001/messages",
             ],
         )
