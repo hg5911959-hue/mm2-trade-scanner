@@ -111,7 +111,7 @@ def _validate_rblxvalue_budget_document(budget: Any) -> list[str]:
         or len(timestamps) > 60
         or any(not _finite_positive(value) for value in timestamps)
     ):
-        errors.append("RBLXValue request budget contains an invalid timestamp")
+        errors.append("RBLXValue request budget contains an invalid timestamp; request budget timestamps are invalid")
         timestamps = []
     limit = budget.get("limit")
     if type(limit) is not int or not 1 <= limit <= 60:
