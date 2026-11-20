@@ -1,10 +1,13 @@
+import json
+import tempfile
 import unittest
 from test_support import IsolatedDataTestCase
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from pathlib import Path
 
 from discord_collector import (
-    filter_messages_to_allowlist, merge_messages, normalize_message,
+    atomic_save, filter_messages_to_allowlist, merge_messages, normalize_message,
     parse_channel_ids, parse_guild_ids,
 )
 
@@ -85,6 +88,24 @@ class DiscordCollectorTests(IsolatedDataTestCase):
             filter_messages_to_allowlist([allowed], [], [200000000000001]),
             [],
         )
+
+    def test_atomic_save_does_not_follow_predictable_tmp_symlink(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "discord_messages.json"
+            outside = root / "outside.json"
+            outside.write_text("preserve-me", encoding="utf-8")
+            output.with_name(output.name + ".tmp").symlink_to(outside)
+
+            atomic_save(
+                output, [], [1125462206151143464],
+                [1572655277130514472], ["1572655277130514472"],
+            )
+
+            self.assertEqual(outside.read_text(encoding="utf-8"), "preserve-me")
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["schema_version"], 2)
+            self.assertEqual(payload["configured_channel_ids"], ["1572655277130514472"])
 
     def test_merge_deduplicates_and_retains_recent(self):
         recent = datetime.now(timezone.utc).isoformat()
