@@ -41,6 +41,24 @@ class BloxSwapsRateLimitTests(IsolatedDataTestCase):
         self.assertEqual(len(calls), 1)
         sleep.assert_not_called()
 
+    def test_rate_limit_stops_the_polling_window_without_another_cycle(self):
+        failure = scanner.BloxSwapsRateLimitError("BloxSwaps page: HTTP 429 rate limited")
+        with (
+            patch.object(scanner, "scan_once", side_effect=failure) as scan,
+            patch.object(scanner, "should_start_scan_cycle", return_value=True),
+            patch("scanner.time.monotonic", return_value=0.0),
+            patch("scanner.time.sleep") as sleep,
+            patch.object(scanner.rblxvalue_guard, "log_request_count"),
+            patch.object(scanner, "update_metrics"),
+            patch.object(scanner, "record_failure") as record_failure,
+        ):
+            with self.assertRaises(scanner.BloxSwapsRateLimitError):
+                scanner.run_scan_loop(duration_seconds=120, interval_seconds=30)
+
+        self.assertEqual(scan.call_count, 1)
+        sleep.assert_not_called()
+        record_failure.assert_not_called()
+
     def test_http_429_without_retry_after_fails_closed_immediately(self):
         calls = []
 
