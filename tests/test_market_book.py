@@ -161,14 +161,11 @@ class MarketBookTests(IsolatedDataTestCase):
         offers = [
             offer("sell", "A", 2.0, 2, "seller-a", "a1"),
             offer("sell", "A", 2.2, 2, "seller-b", "a2"),
-            offer("buy", "A", 1.5, 1, "buyer-a", "a-bid1"),
-            offer("buy", "A", 1.2, 1, "buyer-b", "a-bid2"),
-            offer("sell", "B", 20.0, 1, "seller-c", "b-ask1"),
-            offer("sell", "B", 21.0, 1, "seller-d", "b-ask2"),
-            offer("buy", "B", 10.0, 1, "buyer-e", "b1"),
-            offer("buy", "B", 9.5, 1, "buyer-f", "b2"),
+            offer("buy", "B", 10.0, 1, "buyer-a", "b1"),
+            offer("buy", "B", 9.5, 1, "buyer-b", "b2"),
         ]
         offers[0]["flags"] = ["owner_supplied_author"]
+        offers[1]["flags"] = ["owner_supplied_author"]
         book = build_order_book(offers, now=NOW)
         values = {
             "a": {"value": 100, "stability": "Stable", "confidence": "high", "data_age_seconds": 60},
@@ -226,8 +223,12 @@ class MarketBookTests(IsolatedDataTestCase):
         offers = [
             offer("sell", "A", 2.0, 2, "seller-a", "a1"),
             offer("sell", "A", 2.2, 2, "seller-b", "a2"),
-            offer("buy", "B", 10.0, 1, "buyer-a", "b1"),
-            offer("buy", "B", 9.5, 1, "buyer-b", "b2"),
+            offer("buy", "A", 1.5, 1, "buyer-a", "a-bid1"),
+            offer("buy", "A", 1.2, 1, "buyer-b", "a-bid2"),
+            offer("sell", "B", 20.0, 1, "seller-c", "b-ask1"),
+            offer("sell", "B", 21.0, 1, "seller-d", "b-ask2"),
+            offer("buy", "B", 10.0, 1, "buyer-e", "b1"),
+            offer("buy", "B", 9.5, 1, "buyer-f", "b2"),
         ]
         book = build_order_book(offers, now=NOW)
         values = {
