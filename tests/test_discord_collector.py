@@ -3,7 +3,10 @@ from test_support import IsolatedDataTestCase
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-from discord_collector import merge_messages, normalize_message, parse_channel_ids, parse_guild_ids
+from discord_collector import (
+    filter_messages_to_allowlist, merge_messages, normalize_message,
+    parse_channel_ids, parse_guild_ids,
+)
 
 
 class DiscordCollectorTests(IsolatedDataTestCase):
@@ -66,6 +69,22 @@ class DiscordCollectorTests(IsolatedDataTestCase):
 
         self.assertEqual(row["author_id"], "")
         self.assertEqual(row["author_id_source"], "")
+
+    def test_existing_history_is_filtered_to_current_guild_and_channel_allowlists(self):
+        allowed = {"message_id": "1", "guild_id": "100000000000001", "channel_id": "200000000000001"}
+        other_channel = {"message_id": "2", "guild_id": "100000000000001", "channel_id": "200000000000002"}
+        other_guild = {"message_id": "3", "guild_id": "100000000000002", "channel_id": "200000000000001"}
+
+        filtered = filter_messages_to_allowlist(
+            [allowed, other_channel, other_guild, "malformed"],
+            [100000000000001], [200000000000001],
+        )
+
+        self.assertEqual(filtered, [allowed])
+        self.assertEqual(
+            filter_messages_to_allowlist([allowed], [], [200000000000001]),
+            [],
+        )
 
     def test_merge_deduplicates_and_retains_recent(self):
         recent = datetime.now(timezone.utc).isoformat()
