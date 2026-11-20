@@ -88,7 +88,12 @@ def _add_flag(row: dict[str, Any], flag: str) -> None:
 
 def parse_discord_messages(payload: Any) -> dict[str, Any]:
     """Parse a collector JSON payload into offers, demand hints, and safe stats."""
-    if not isinstance(payload, dict) or not isinstance(payload.get("messages"), list):
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema_version") != 2
+        or payload.get("source") != "discord"
+        or not isinstance(payload.get("messages"), list)
+    ):
         raise ValueError("Discord collector payload has an invalid schema")
     messages = payload["messages"]
     if len(messages) > MAX_MESSAGES:
@@ -126,7 +131,6 @@ def parse_discord_messages(payload: Any) -> dict[str, Any]:
         if message_id in seen_ids:
             duplicates += 1
             continue
-        seen_ids.add(message_id)
 
         posted_at = _posted_at(row.get("created_at_utc"))
         if not posted_at:
@@ -140,6 +144,7 @@ def parse_discord_messages(payload: Any) -> dict[str, Any]:
         if not body:
             rejected.append({"message": message_id, "reason": "empty_or_oversized_message"})
             continue
+        seen_ids.add(message_id)
 
         author = str(row.get("author") or "")[:100]
         author_id = _snowflake(row.get("author_id"))
