@@ -136,6 +136,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
             with self.subTest(workflow=path.name):
                 text = path.read_text(encoding="utf-8")
                 self.assertNotIn("write-all", text)
+                self.assertNotIn("secrets: inherit", text)
                 for line in text.splitlines():
                     match = re.match(r"\s*uses:\s*([^\s#]+)", line)
                     if match and not match.group(1).startswith("./"):
