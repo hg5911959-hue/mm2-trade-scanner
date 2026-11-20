@@ -1,5 +1,7 @@
 # MM2 Market Intelligence — Engineering Report
 
+> **Historical record:** this report documents an earlier engineering phase and its original baseline. It is not the current release-readiness or operational status. For current behavior, see [README.md](README.md), the [operations runbook](docs/OPERATIONS.md), and the active pull requests in GitHub.
+
 ## Baseline and phase log
 
 - Baseline main commit: `47ef8b93346d156d9af34aa53c7f84b754bd1998`
