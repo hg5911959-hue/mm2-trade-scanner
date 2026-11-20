@@ -98,12 +98,13 @@ jobs:
       - name: Collect authorized Discord trade channels
         env:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
-          DISCORD_GUILD_IDS: "1125462206151143464,482699890741477376"
+          DISCORD_GUILD_IDS: "1125462206151143464"
+          DISCORD_CHANNEL_IDS: "1572655277130514472,1567557584402120785"
           DISCORD_MANUAL_MESSAGES_JSON: ${{ secrets.DISCORD_MANUAL_MESSAGES_JSON }}
           DISCORD_MANUAL_MESSAGES_JSON_2: ${{ secrets.DISCORD_MANUAL_MESSAGES_JSON_2 }}
         run: |
           if [ -n "$DISCORD_BOT_TOKEN" ]; then
-            if python -m pip install --disable-pip-version-check "discord.py==2.6.4"; then
+            if python -m pip install --disable-pip-version-check -r requirements-discord.txt; then
               if ! python -u discord_collector.py --output data/discord_messages.json --limit 100 --retention-days 7; then
                 echo "Discord collector failed; continuing with BloxSwaps and any manual import."
               fi
