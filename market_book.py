@@ -97,6 +97,16 @@ def _offer_is_actionable(row: dict[str, Any]) -> bool:
     return not (_offer_flags(row) & BLOCKED_OFFER_FLAGS)
 
 
+def _add_offer_flag(row: dict[str, Any], flag: str) -> None:
+    """Append a risk flag while repairing malformed optional flag containers."""
+    flags = row.get("flags")
+    if not isinstance(flags, list):
+        flags = sorted(_offer_flags(row))
+        row["flags"] = flags
+    if flag not in flags:
+        flags.append(flag)
+
+
 def _trusted_author(row: dict[str, Any]) -> str:
     """Only collector-verified author metadata contributes to independence."""
     if "owner_supplied_author" in _offer_flags(row):
@@ -154,14 +164,14 @@ def build_order_book(
             flags.update(row_flags)
             price = float(row["unit_price_usd"])
             if median_all and (price < median_all * low_price_ratio or price > median_all * high_price_ratio):
-                row.setdefault("flags", []).append("price_far_from_median")
+                _add_offer_flag(row, "price_far_from_median")
                 flags.add("price_far_from_median")
             if row["side"] == "sell" and int(row["quantity"]) >= 100 and median_all and price < median_all * low_price_ratio:
-                row.setdefault("flags", []).append("market_flooding")
+                _add_offer_flag(row, "market_flooding")
                 flags.add("market_flooding")
             text = str(row.get("source_text") or "").casefold()
             if row["side"] == "buy" and "sell before it drops" in text:
-                row.setdefault("flags", []).append("sell_before_drop")
+                _add_offer_flag(row, "sell_before_drop")
                 flags.add("sell_before_drop")
 
         # Unverified pasted author labels and flagged outliers remain visible as
