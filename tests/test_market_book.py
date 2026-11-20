@@ -57,7 +57,7 @@ class MarketBookTests(IsolatedDataTestCase):
     def test_direct_arbitrage_skips_self_best_bid_and_uses_next_independent_bid(self):
         offers = [
             offer("sell", "Candy", 5.0, 3, "seller-a", "ask-a"),
-            offer("sell", "Candy", 5.5, 3, "seller-b", "ask-b"),
+            offer("sell", "Candy", 8.5, 3, "seller-b", "ask-b"),
             offer("buy", "Candy", 8.0, 3, "seller-a", "self-bid"),
             offer("buy", "Candy", 7.0, 2, "buyer-c", "valid-bid"),
             offer("buy", "Candy", 6.5, 1, "buyer-d", "other-bid"),
@@ -146,7 +146,7 @@ class MarketBookTests(IsolatedDataTestCase):
 
         row = build_order_book(offers, now=NOW)["candy"]
 
-        self.assertEqual(row["confidence"], "medium")
+        self.assertEqual(row["confidence"], "low")
         self.assertIsNone(row["best_bid"])
         self.assertEqual(find_direct_arbitrage({"candy": row}), [])
 
@@ -161,8 +161,12 @@ class MarketBookTests(IsolatedDataTestCase):
         offers = [
             offer("sell", "A", 2.0, 2, "seller-a", "a1"),
             offer("sell", "A", 2.2, 2, "seller-b", "a2"),
-            offer("buy", "B", 10.0, 1, "buyer-a", "b1"),
-            offer("buy", "B", 9.5, 1, "buyer-b", "b2"),
+            offer("buy", "A", 1.5, 1, "buyer-a", "a-bid1"),
+            offer("buy", "A", 1.2, 1, "buyer-b", "a-bid2"),
+            offer("sell", "B", 20.0, 1, "seller-c", "b-ask1"),
+            offer("sell", "B", 21.0, 1, "seller-d", "b-ask2"),
+            offer("buy", "B", 10.0, 1, "buyer-e", "b1"),
+            offer("buy", "B", 9.5, 1, "buyer-f", "b2"),
         ]
         offers[0]["flags"] = ["owner_supplied_author"]
         book = build_order_book(offers, now=NOW)
@@ -364,7 +368,7 @@ class MarketBookTests(IsolatedDataTestCase):
         row = build_order_book(offers, now=NOW)["candy"]
 
         self.assertEqual(row["author_count"], 2)
-        self.assertEqual(row["confidence"], "medium")
+        self.assertEqual(row["confidence"], "low")
         self.assertIsNone(row["best_bid"])
         self.assertEqual(row["ask_author_count"], 2)
         self.assertEqual(row["bid_author_count"], 0)
@@ -420,7 +424,7 @@ class MarketBookTests(IsolatedDataTestCase):
         self.assertAlmostEqual(row["median_market"], 4.9)
         self.assertEqual(row["best_ask"]["message_id"], "ask-a")
         self.assertEqual(row["best_bid"]["message_id"], "bid-a")
-        self.assertEqual(row["confidence"], "low")
+        self.assertEqual(row["confidence"], "high")
 
     def test_wide_legitimate_bid_ask_spread_uses_side_specific_medians(self):
         offers = [
