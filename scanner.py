@@ -115,6 +115,8 @@ if any(not math.isfinite(value) or value < 0 for value in (
 )):
     raise ValueError("Cash minimum-profit thresholds must be finite and non-negative")
 CASH_MIN_MARGIN_PERCENT = float(os.environ.get("CASH_MIN_MARGIN_PERCENT", "0"))
+if not math.isfinite(CASH_MIN_MARGIN_PERCENT) or CASH_MIN_MARGIN_PERCENT < 0:
+    raise ValueError("CASH_MIN_MARGIN_PERCENT must be finite and non-negative")
 CASH_MAX_AGE_DAYS = max(1, int(os.environ.get("CASH_MAX_AGE_DAYS", "14")))
 CASH_PRICE_FILE = Path("data/cash_prices.csv")
 CASH_PRICE_SNAPSHOT_FILE = Path("data/cash_price_snapshot.json")
@@ -3933,7 +3935,8 @@ def qualifies_cash(result):
         return False
     threshold = CASH_MIN_PROFIT_USD_SMALL if give_total < 5.0 else CASH_MIN_PROFIT_USD
     return (
-        math.isfinite(profit) and math.isfinite(margin) and math.isfinite(give_total)
+        math.isfinite(CASH_MIN_MARGIN_PERCENT) and CASH_MIN_MARGIN_PERCENT >= 0
+        and math.isfinite(profit) and math.isfinite(margin) and math.isfinite(give_total)
         and give_total >= 0
         and profit >= threshold
         and margin >= CASH_MIN_MARGIN_PERCENT
