@@ -33,6 +33,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         architecture = (ROOT / "MARKET_INTELLIGENCE.md").read_text(encoding="utf-8")
         self.assertIn("every 10 minutes", operations)
         self.assertNotIn("every 15 minutes", operations)
+        self.assertNotIn("15-minute cron", operations)
         self.assertIn("two explicitly allowlisted trading channels", operations)
         self.assertIn("two explicitly allowlisted trading channels", architecture)
         self.assertNotIn("two configured MM2 Discord servers", operations)
