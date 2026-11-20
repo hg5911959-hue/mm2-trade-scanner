@@ -141,7 +141,7 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
 
     documents: dict[str, Any] = {}
     for path in files:
-        if path.name in PRIVATE_FILENAMES or path.suffix.lower() != ".json":
+        if path.name in PRIVATE_STATE_PLAINTEXT_FILES or path.suffix.lower() != ".json":
             continue
         try:
             documents[path.name] = json.loads(path.read_text(encoding="utf-8"))
