@@ -182,6 +182,33 @@ class DiscordCollectorTests(IsolatedDataTestCase):
         self.assertTrue(all(call[1] == "bot-token" for call in calls))
         self.assertTrue(all(call[2] is None or call[2] == {"limit": 100} for call in calls))
 
+    def test_missing_message_content_intent_marks_channel_degraded(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from discord_collector import collect
+
+        def fake_get(path, token, params=None, timeout=20):
+            if path == "/guilds/1125462206151143464/channels":
+                return [{"id": "200000000000000001", "type": 0, "name": "cash-market"}]
+            if path == "/guilds/1125462206151143464/threads/active":
+                return {"threads": []}
+            if path == "/channels/200000000000000001/messages":
+                return [{
+                    "id": "300000000000000001", "channel_id": "200000000000000001",
+                    "author": {"username": "seller", "bot": False},
+                    "content": "", "embeds": [], "attachments": [],
+                }]
+            raise AssertionError(f"Unexpected Discord API path: {path}")
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "discord_messages.json"
+            with patch.dict("os.environ", {"DISCORD_BOT_TOKEN": "bot-token"}):
+                with patch("discord_collector._discord_get_json", side_effect=fake_get):
+                    result = collect([1125462206151143464], output, 100, 7)
+
+        self.assertEqual(result, 1)
+
     def test_discord_redirect_handler_rejects_credential_forwarding(self):
         import urllib.error
         import urllib.request
