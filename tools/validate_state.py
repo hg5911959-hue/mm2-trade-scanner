@@ -8,9 +8,20 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from private_state import (
-    IV_BYTES, MAGIC, MAX_ENCRYPTED_BYTES, PRIVATE_FILENAMES, SALT_BYTES, TAG_BYTES,
-)
+# Keep these format limits aligned with private_state.py. This validator is
+# also executed as a script from tools/, so it must not rely on root imports.
+PRIVATE_STATE_MAGIC = b"MM2PSTATE1"
+PRIVATE_STATE_PLAINTEXT_FILES = frozenset({
+    "cash_market_offers.json",
+    "inventory.json",
+    "telegram_update_state.json",
+    "telegram_last_run.json",
+    "market_book_history.json",
+    "market_alert_state.json",
+    "discord_alert_state.json",
+})
+PRIVATE_STATE_MAX_ENCRYPTED_BYTES = ((50 * 1024 * 1024 + 2) // 3) * 4 + 64 * 1024
+PRIVATE_STATE_MIN_ENCRYPTED_BYTES = len(PRIVATE_STATE_MAGIC) + 16 + 16 + 32
 
 REQUIRED_MARKET_TABLES = {
     "market_snapshots",
@@ -101,7 +112,7 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
     errors: list[str] = []
     if any(path.name == "discord_messages.json" for path in files):
         errors.append("private Discord message file must not enter durable public state")
-    private_plaintext = [path for path in files if path.name in PRIVATE_FILENAMES]
+    private_plaintext = [path for path in files if path.name in PRIVATE_STATE_PLAINTEXT_FILES]
     if private_plaintext:
         errors.append("private Telegram/market state must be encrypted before public persistence")
 
@@ -112,14 +123,14 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
         else:
             try:
                 encrypted_size = encrypted_private.stat().st_size
-                if encrypted_size > MAX_ENCRYPTED_BYTES:
+                if encrypted_size > PRIVATE_STATE_MAX_ENCRYPTED_BYTES:
                     errors.append("encrypted private-state bundle exceeds the configured size limit")
-                elif encrypted_size < len(MAGIC) + SALT_BYTES + IV_BYTES + TAG_BYTES:
+                elif encrypted_size < PRIVATE_STATE_MIN_ENCRYPTED_BYTES:
                     errors.append("encrypted private-state bundle is too short")
                 else:
                     with encrypted_private.open("rb") as handle:
-                        header = handle.read(len(MAGIC))
-                    if header != MAGIC:
+                        header = handle.read(len(PRIVATE_STATE_MAGIC))
+                    if header != PRIVATE_STATE_MAGIC:
                         errors.append("encrypted private-state bundle header is invalid")
             except OSError:
                 errors.append("encrypted private-state bundle cannot be inspected safely")
