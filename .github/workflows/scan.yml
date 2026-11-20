@@ -65,6 +65,9 @@ jobs:
           else
             echo "State branch not found; cold-start safety window will evaluate recent posts."
           fi
+          # Validate restored durable state before any scanner code reads it.
+          # This also rejects symlinks and malformed API safety ledgers.
+          python tools/validate_state.py --directory data
           python - <<'PY'
           import json
           from pathlib import Path
