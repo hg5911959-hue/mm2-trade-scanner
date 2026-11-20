@@ -18,8 +18,8 @@ BLOCKED_STABILITY = frozenset({
     "decreasing", "receding", "unsafe", "untradeable", "unstable", "volatile",
 })
 BLOCKED_OFFER_FLAGS = frozenset({
-    "market_flooding", "owner_supplied_author", "price_far_from_median",
-    "sell_before_drop",
+    "invalid_flags", "market_flooding", "owner_supplied_author",
+    "price_far_from_median", "sell_before_drop",
 })
 DEFAULT_TRANSFER_FEE_USD = 0.50
 DEFAULT_SAFETY_MARGIN_PERCENT = 5.0
@@ -85,11 +85,17 @@ def _valid_offer(row: dict[str, Any]) -> bool:
 
 
 def _offer_flags(row: dict[str, Any]) -> set[str]:
-    """Return normalized flags without trusting malformed flag containers."""
+    """Normalize flags and fail closed when their container or entries are malformed."""
     raw = row.get("flags", [])
     if not isinstance(raw, (list, tuple, set, frozenset)):
-        return set()
-    return {str(value).strip().casefold() for value in raw if value}
+        return {"invalid_flags"}
+    flags: set[str] = set()
+    for value in raw:
+        if not isinstance(value, str) or not value.strip():
+            flags.add("invalid_flags")
+            continue
+        flags.add(value.strip().casefold())
+    return flags
 
 
 def _offer_is_actionable(row: dict[str, Any]) -> bool:
@@ -160,8 +166,23 @@ def build_order_book(
         rows = grouped.get(item_key, [])
         raw_asks = [row for row in rows if row["side"] == "sell"]
         raw_bids = [row for row in rows if row["side"] == "buy"]
-        raw_prices = [float(row["unit_price_usd"]) for row in raw_asks + raw_bids]
-        median_all = statistics.median(raw_prices) if raw_prices else None
+
+        # Build the outlier benchmark only from independently attributable,
+        # currently unflagged offers. Collapse repeated posts by each author
+        # and side so one account cannot dominate the reference median.
+        benchmark_prices_by_author: dict[tuple[str, str], list[float]] = {}
+        for row in rows:
+            author = _trusted_author(row)
+            if author and not (_offer_flags(row) & BLOCKED_OFFER_FLAGS):
+                key = (str(row["side"]), author)
+                benchmark_prices_by_author.setdefault(key, []).append(
+                    float(row["unit_price_usd"])
+                )
+        benchmark_prices = [
+            statistics.median(prices)
+            for prices in benchmark_prices_by_author.values()
+        ]
+        median_all = statistics.median(benchmark_prices) if benchmark_prices else None
         flags: set[str] = set()
         if stale_counts.get(item_key):
             flags.add("stale_offer")
