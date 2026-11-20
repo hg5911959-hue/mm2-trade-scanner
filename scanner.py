@@ -3776,6 +3776,8 @@ def qualifies(result, min_diff=None, min_percent=None):
         for value in numeric_values
     ):
         return False
+    if min_diff < 0 or min_percent < 0:
+        return False
     return metric > 0 and metric >= min_diff and margin >= min_percent
 
 
