@@ -103,8 +103,7 @@ class MarketBookTests(IsolatedDataTestCase):
             offer("sell", "Candy", 1.1, 5, "seller-b", "ask-b"),
             offer("buy", "Candy", 2.0, 5, "buyer-name", "bid"),
         ]
-        for entry in offers:
-            entry.pop("author_id", None)
+        offers[2].pop("author_id", None)
 
         row = build_order_book(offers, now=NOW)["candy"]
 
