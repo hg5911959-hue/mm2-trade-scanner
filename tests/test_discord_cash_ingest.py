@@ -14,6 +14,8 @@ CHANNEL_ID = "323456789012345"
 
 def collector_payload(messages):
     return {
+        "schema_version": 2,
+        "source": "discord",
         "configured_guild_ids": [GUILD_ID],
         "configured_channel_ids": [CHANNEL_ID],
         "scanned_channel_ids": [CHANNEL_ID],
@@ -87,6 +89,27 @@ class DiscordCashIngestTests(IsolatedDataTestCase):
             {row["reason"] for row in result["rejected"]},
             {"discord_permalink_mismatch", "invalid_or_missing_timestamp"},
         )
+
+    def test_invalid_first_duplicate_does_not_shadow_valid_record(self):
+        invalid = discord_message(1, "Selling\n1x Candy 4$/1", author_id="423456789012345")
+        invalid["url"] = "https://discord.com/channels/1/2/3"
+        valid = discord_message(1, "Selling\n1x Candy 4$/1", author_id="423456789012345")
+
+        result = parse_discord_messages(collector_payload([invalid, valid]))
+
+        self.assertEqual(len(result["offers"]), 1)
+        self.assertEqual(result["offers"][0]["unit_price_usd"], 4.0)
+        self.assertEqual(result["stats"]["duplicate_messages"], 0)
+
+    def test_collector_envelope_requires_expected_source_and_version(self):
+        payload = collector_payload([])
+        payload["schema_version"] = 1
+        with self.assertRaises(ValueError):
+            parse_discord_messages(payload)
+        payload["schema_version"] = 2
+        payload["source"] = "manual"
+        with self.assertRaises(ValueError):
+            parse_discord_messages(payload)
 
     def test_duplicate_message_ids_are_processed_once(self):
         row = discord_message(1, "Selling\n1x Candy 4$/1", author_id="423456789012345")
