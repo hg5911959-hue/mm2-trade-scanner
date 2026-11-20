@@ -83,7 +83,7 @@ def _read_bounded_regular_file(
     fstat validates the opened descriptor, and the bounded read remains safe
     if another process grows the file after the initial size check.
     """
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    flags = (os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
     try:
         descriptor = os.open(path, flags)
     except FileNotFoundError as exc:
