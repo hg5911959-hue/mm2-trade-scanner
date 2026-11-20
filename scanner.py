@@ -115,6 +115,8 @@ if any(not math.isfinite(value) or value < 0 for value in (
 )):
     raise ValueError("Cash minimum-profit thresholds must be finite and non-negative")
 CASH_MIN_MARGIN_PERCENT = float(os.environ.get("CASH_MIN_MARGIN_PERCENT", "0"))
+if not math.isfinite(CASH_MIN_MARGIN_PERCENT) or CASH_MIN_MARGIN_PERCENT < 0:
+    raise ValueError("CASH_MIN_MARGIN_PERCENT must be finite and non-negative")
 CASH_MAX_AGE_DAYS = max(1, int(os.environ.get("CASH_MAX_AGE_DAYS", "14")))
 CASH_PRICE_FILE = Path("data/cash_prices.csv")
 CASH_PRICE_SNAPSHOT_FILE = Path("data/cash_price_snapshot.json")
@@ -3762,10 +3764,23 @@ def qualifies(result, min_diff=None, min_percent=None):
     min_percent = MIN_PROFIT_PERCENT if min_percent is None else min_percent
     # Only fully verified, conservative-positive trades are eligible for Telegram.
     # A best-case-only profit is uncertain and must never be advertised as a WIN.
+    if not isinstance(result, dict):
+        return False
     if result.get("manual_review") or result.get("cash_estimate_only"):
         return False
     metric = result.get("profit_worst", result.get("difference", 0))
-    return metric > 0 and metric >= min_diff and result["margin"] >= min_percent
+    margin = result.get("margin")
+    numeric_values = (metric, margin, min_diff, min_percent)
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        for value in numeric_values
+    ):
+        return False
+    if min_diff < 0 or min_percent < 0:
+        return False
+    return metric > 0 and metric >= min_diff and margin >= min_percent
 
 
 def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=False):
@@ -3920,7 +3935,8 @@ def qualifies_cash(result):
         return False
     threshold = CASH_MIN_PROFIT_USD_SMALL if give_total < 5.0 else CASH_MIN_PROFIT_USD
     return (
-        math.isfinite(profit) and math.isfinite(margin) and math.isfinite(give_total)
+        math.isfinite(CASH_MIN_MARGIN_PERCENT) and CASH_MIN_MARGIN_PERCENT >= 0
+        and math.isfinite(profit) and math.isfinite(margin) and math.isfinite(give_total)
         and give_total >= 0
         and profit >= threshold
         and margin >= CASH_MIN_MARGIN_PERCENT
