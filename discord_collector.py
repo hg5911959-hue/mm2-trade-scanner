@@ -42,6 +42,22 @@ def parse_guild_ids(raw: str) -> list[int]:
     return ids
 
 
+def parse_channel_ids(raw: str) -> list[str]:
+    """Parse a bounded allowlist of exact Discord channel IDs."""
+    ids: list[str] = []
+    for token in str(raw or "").replace(";", ",").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        if not token.isdigit() or not 15 <= len(token) <= 22:
+            raise ValueError("Each Discord channel ID must be a 15–22 digit snowflake")
+        if token not in ids:
+            ids.append(token)
+    if len(ids) > 10:
+        raise ValueError("At most 10 Discord channel IDs may be configured")
+    return ids
+
+
 def _get(value: Any, key: str, default: Any = None) -> Any:
     if isinstance(value, dict):
         return value.get(key, default)
@@ -267,6 +283,7 @@ def atomic_save(
 
 def collect(
     guild_ids: list[int], output: Path, limit: int, retention_days: int,
+    channel_ids: list[str] | None = None,
 ) -> int:
     token = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
     if not token:
@@ -311,8 +328,26 @@ def collect(
         if len(supported_threads) >= MAX_THREADS_PER_GUILD:
             errors.append(f"server {guild_id}: active thread limit reached; coverage may be incomplete")
         thread_channels = supported_threads[:MAX_THREADS_PER_GUILD]
+        available_channels = guild_channels + thread_channels
+        if channel_ids:
+            available_ids = {
+                str(row.get("id") or "") for row in available_channels
+                if isinstance(row, dict)
+            }
+            missing_ids = sorted(set(channel_ids) - available_ids)
+            for missing_id in missing_ids:
+                errors.append(
+                    f"configured channel {missing_id}: not visible in the configured server; "
+                    "check channel ID, server membership, and VIEW_CHANNEL permission"
+                )
+            selected_channels = [
+                row for row in available_channels
+                if str(row.get("id") or "") in set(channel_ids)
+            ]
+        else:
+            selected_channels = available_channels
         seen_channel_ids: set[str] = set()
-        for channel in guild_channels + thread_channels:
+        for channel in selected_channels:
             channel_id = str(channel.get("id") or "")
             if not channel_id or channel_id in seen_channel_ids:
                 continue
@@ -365,9 +400,13 @@ def main() -> int:
         parser.error("--limit must be between 1 and 100")
     try:
         guilds = parse_guild_ids(os.environ.get("DISCORD_GUILD_IDS", ""))
+        channels = parse_channel_ids(os.environ.get("DISCORD_CHANNEL_IDS", ""))
     except ValueError as exc:
         parser.error(str(exc))
-    return collect(guilds, Path(args.output), args.limit, args.retention_days)
+    return collect(
+        guilds, Path(args.output), args.limit, args.retention_days,
+        channel_ids=channels or None,
+    )
 
 
 if __name__ == "__main__":
