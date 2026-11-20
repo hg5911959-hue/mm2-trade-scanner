@@ -230,7 +230,15 @@ def ingest_manual_discord_imports(
             )
             parsed["offers"] = []
         rejected += len(parsed["rejected"])
+        source_channel_id = str(row.get("channel_id") or "")[:32]
+        source_guild_id = str(row.get("guild_id") or "")[:32]
+        source_channel_name = str(row.get("channel_name") or "")[:100]
         for offer in parsed["offers"]:
+            # Keep immutable source provenance beside every extracted price.
+            offer["source_channel_id"] = source_channel_id
+            offer["source_guild_id"] = source_guild_id
+            offer["source_channel_name"] = source_channel_name
+            offer["source_type"] = "discord_channel"
             identity = (
                 str(offer.get("message_id")), str(offer.get("side")),
                 str(offer.get("item_key")), int(offer.get("quantity", 0)),
