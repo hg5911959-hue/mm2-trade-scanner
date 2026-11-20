@@ -161,7 +161,7 @@ jobs:
           fi
           cd /tmp/mm2-api-state
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A -- data/rblxvalue_request_budget.json data/api_key_blocked.json
           if git diff --cached --quiet; then
             echo "Shared API safety ledger unchanged."
