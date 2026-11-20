@@ -49,6 +49,9 @@ def normalize_message(message: Any) -> dict[str, Any]:
     created = getattr(message, "created_at", None)
     if created is not None and created.tzinfo is None:
         created = created.replace(tzinfo=timezone.utc)
+    author_id = str(getattr(author, "id", "") or "").strip()
+    if not author_id.isdigit() or not 15 <= len(author_id) <= 22:
+        author_id = ""
     return {
         "source": "discord",
         "message_id": str(getattr(message, "id", "")),
@@ -57,6 +60,8 @@ def normalize_message(message: Any) -> dict[str, Any]:
         "channel_id": str(getattr(channel, "id", "")) if channel else "",
         "channel_name": str(getattr(channel, "name", ""))[:100] if channel else "",
         "author": str(getattr(author, "display_name", getattr(author, "name", "unknown")))[:100],
+        "author_id": author_id,
+        "author_id_source": "discord_api" if author_id else "",
         "content": str(getattr(message, "content", "") or "")[:8000],
         "embeds": embeds,
         "attachments": attachments,
