@@ -359,11 +359,18 @@ def find_swap_chains(
     max_value_age_hours: float = 24,
 ) -> list[dict[str, Any]]:
     """Find conservative 1:1 and N:1 buy→swap→sell chains."""
-    tolerance = float(tolerance_percent)
-    fee = float(transfer_fee_usd)
-    min_profit = float(min_profit_usd)
-    min_profit_pct = float(min_profit_percent)
-    max_value_age = float(max_value_age_hours)
+    raw_thresholds = (
+        tolerance_percent, transfer_fee_usd, min_profit_usd,
+        min_profit_percent, max_value_age_hours,
+    )
+    if any(isinstance(value, bool) for value in raw_thresholds):
+        raise ValueError("invalid swap-chain thresholds")
+    try:
+        tolerance, fee, min_profit, min_profit_pct, max_value_age = (
+            float(value) for value in raw_thresholds
+        )
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("invalid swap-chain thresholds") from None
     if (
         not all(math.isfinite(value) for value in (tolerance, fee, min_profit, min_profit_pct, max_value_age))
         or not 0 <= tolerance < 100 or fee < 0 or min_profit < 0
@@ -378,10 +385,14 @@ def find_swap_chains(
     for key, item in game_values.items():
         if not isinstance(item, dict):
             continue
+        raw_value = item.get("value")
+        raw_age = item.get("data_age_seconds")
+        if isinstance(raw_value, bool) or isinstance(raw_age, bool):
+            continue
         try:
-            value = float(item.get("value"))
-            age = float(item.get("data_age_seconds"))
-        except (TypeError, ValueError):
+            value = float(raw_value)
+            age = float(raw_age)
+        except (TypeError, ValueError, OverflowError):
             continue
         confidence = str(item.get("confidence") or "low").casefold()
         stability = str(item.get("stability") or "").casefold()
@@ -420,20 +431,20 @@ def find_swap_chains(
                     or row_b.get("confidence") not in {"medium", "high"}
                 ):
                     continue
-                bid = row_b.get("best_bid")
-                if (
-                    not bid or not _offer_is_actionable(bid)
-                    or int(bid.get("quantity", 0)) < 1
-                ):
-                    continue
-                bid_author = _trusted_author(bid)
-                if not bid_author or bid_author == ask_author:
-                    continue
-                # The sell leg is one received item. A buyer demanding 2+ units
-                # cannot fill that leg, so the chain is rejected.
-                if int(bid.get("min_quantity") or 1) > 1:
-                    continue
-                try:
+                for bid in row_b.get("bids", []):
+                    if (
+                        not _offer_is_actionable(bid)
+                        or int(bid.get("quantity", 0)) < 1
+                    ):
+                        continue
+                    bid_author = _trusted_author(bid)
+                    if not bid_author or bid_author == ask_author:
+                        continue
+                    # The sell leg is one received item. A buyer demanding 2+ units
+                    # cannot fill that leg, so the chain is rejected.
+                    if int(bid.get("min_quantity") or 1) > 1:
+                        continue
+                    try:
                     value_limit = math.floor(
                         value_b["value"] / (value_a["value"] * (1 - tolerance / 100))
                     )
@@ -445,11 +456,11 @@ def find_swap_chains(
                     )
                 except (OverflowError, ZeroDivisionError, ValueError):
                     continue
-                maximum_ask_quantity = min(ask_qty, value_limit, usd_limit, percent_limit)
-                if maximum_ask_quantity < minimum_ask_quantity:
-                    continue
+                    maximum_ask_quantity = min(ask_qty, value_limit, usd_limit, percent_limit)
+                    if maximum_ask_quantity < minimum_ask_quantity:
+                        continue
 
-                # Keep the highest-profit minimum lot and, when different, the
+                    # Keep the highest-profit minimum lot and, when different, the
                 # largest still-profitable lot. This preserves N:1 discovery
                 # without an O(5,000) quantity loop for every item pair.
                 quantities = [minimum_ask_quantity]
