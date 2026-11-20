@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import json
 import os
+import stat
 import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
@@ -17,6 +18,7 @@ from typing import Any
 
 MAX_HISTORY_PER_CHANNEL = 100
 MAX_STORED_MESSAGES = 10000
+MAX_EXISTING_STATE_BYTES = 16 * 1024 * 1024
 
 
 def parse_guild_ids(raw: str) -> list[int]:
