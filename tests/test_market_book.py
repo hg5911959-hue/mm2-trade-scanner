@@ -21,7 +21,7 @@ def offer(side, item, price, quantity, author, message_id):
         "side": side, "item": item, "item_key": item.casefold(),
         "unit_price_usd": price, "quantity": quantity, "author": author,
         "author_id": (
-            str(100000000000000 + sum((index + 1) * ord(char) for index, char in enumerate(author.casefold())))
+            str(100000000000000 + sum((index + 1) * ord(char) for index, char in enumerate(author.strip().casefold())))
             if author.strip() else ""
         ),
         "author_id_source": "discord_api" if author.strip() else "",
