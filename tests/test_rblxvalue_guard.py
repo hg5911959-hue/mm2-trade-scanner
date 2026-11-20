@@ -213,7 +213,7 @@ class RblxValueGuardTests(IsolatedDataTestCase):
             self.assertFalse(self.budget.exists())
 
     def test_invalid_workflow_identifier_fails_closed_before_writing(self):
-        for workflow in ("   ", "bad\\nworkflow", "x" * 101):
+        for workflow in ("   ", "bad\nworkflow", "x" * 101):
             with self.subTest(workflow=workflow), self.assertRaises(guard.RblxValueGuardError):
                 guard.reserve_request(
                     now=1_800_000_000, key="rbx_test_key",
