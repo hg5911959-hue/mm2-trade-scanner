@@ -225,6 +225,33 @@ class RblxValueGuardTests(IsolatedDataTestCase):
 
         self.assertEqual(self.budget.stat().st_size, MAX_GUARD_STATE_BYTES + 1)
 
+    def test_symlinked_guard_ledger_fails_closed_without_reading_target(self):
+        target = self.root / "outside.json"
+        target.write_text("{}", encoding="utf-8")
+        self.budget.symlink_to(target)
+
+        with self.assertRaisesRegex(guard.RblxValueGuardError, "cannot safely open"):
+            guard.reserve_request(
+                now=1_800_000_000, key="rbx_test_key",
+                budget_path=self.budget, block_path=self.block,
+            )
+
+        self.assertEqual(target.read_text(encoding="utf-8"), "{}")
+
+    def test_atomic_guard_write_does_not_follow_predictable_tmp_symlink(self):
+        target = self.root / "outside-target.json"
+        target.write_text("preserve-me", encoding="utf-8")
+        self.budget.with_name(self.budget.name + ".tmp").symlink_to(target)
+
+        guard.reserve_request(
+            now=1_800_000_000, key="rbx_test_key",
+            budget_path=self.budget, block_path=self.block,
+        )
+
+        self.assertEqual(target.read_text(encoding="utf-8"), "preserve-me")
+        self.assertTrue(self.budget.is_file())
+        self.assertFalse(self.budget.is_symlink())
+
     def test_non_utf8_guard_ledger_fails_closed(self):
         self.budget.write_bytes(b"\xff\xfe")
         with self.assertRaisesRegex(guard.RblxValueGuardError, "not valid UTF-8"):
