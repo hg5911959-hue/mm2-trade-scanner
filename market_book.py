@@ -190,9 +190,15 @@ def build_order_book(
                 benchmark_prices_by_author.setdefault(key, []).append(
                     float(row["unit_price_usd"])
                 )
+        benchmark_prices_by_side: dict[str, list[float]] = {"sell": [], "buy": []}
+        for (side, _author), prices in benchmark_prices_by_author.items():
+            benchmark_prices_by_side[side].append(statistics.median(prices))
+        median_by_side = {
+            side: statistics.median(prices) if prices else None
+            for side, prices in benchmark_prices_by_side.items()
+        }
         benchmark_prices = [
-            statistics.median(prices)
-            for prices in benchmark_prices_by_author.values()
+            price for prices in benchmark_prices_by_side.values() for price in prices
         ]
         median_all = statistics.median(benchmark_prices) if benchmark_prices else None
         flags: set[str] = set()
@@ -202,10 +208,14 @@ def build_order_book(
             row_flags = _offer_flags(row)
             flags.update(row_flags)
             price = float(row["unit_price_usd"])
-            if median_all and (price < median_all * low_price_ratio or price > median_all * high_price_ratio):
+            side_median = median_by_side.get(row["side"])
+            if side_median and (
+                price < side_median * low_price_ratio
+                or price > side_median * high_price_ratio
+            ):
                 _add_offer_flag(row, "price_far_from_median")
                 flags.add("price_far_from_median")
-            if row["side"] == "sell" and int(row["quantity"]) >= 100 and median_all and price < median_all * low_price_ratio:
+            if row["side"] == "sell" and int(row["quantity"]) >= 100 and side_median and price < side_median * low_price_ratio:
                 _add_offer_flag(row, "market_flooding")
                 flags.add("market_flooding")
             text = str(row.get("source_text") or "").casefold()
