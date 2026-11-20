@@ -159,6 +159,22 @@ Validation:
 - **435 tests passed twice**, data immutability passed, and all configured Ruff/lint checks passed.
 - PR #100 is open as Draft; no code has been merged into `main`.
 
+### Private-state encryption hardening — PR #101
+
+A separate security slice was ported from PR #85 onto a fresh branch based on current `main`:
+- Retain the allowlisted AES-256-CTR plus HMAC-SHA256 encrypt-then-MAC format, with authentication verified before decryption.
+- Check plaintext file sizes with `stat()` before reading them during encryption.
+- Bound encrypted bundle size before reading it during decryption, accounting for base64 expansion and bounded JSON metadata.
+- Add sparse-file tests to prove oversized inputs are rejected without allocating or restoring the payload.
+
+Validation:
+- GitHub Actions run [44818273130](https://github.com/hg5911959-hue/mm2-trade-scanner/actions/runs/44818273130) passed **396 tests twice**, data immutability, and all configured Ruff/lint checks.
+- PR #101 is open as Draft; no workflows or secrets were changed.
+
+Remaining security review before enabling private state:
+- The current key derivation uses the Telegram bot token as its secret input. Token rotation therefore requires a documented re-encryption/key-recovery plan before production activation.
+- PR #85 workflow changes still require an independent least-privilege review. Do not import its push trigger, inherited secrets, write permissions, or hard-coded artifact recovery workflow as a bundle.
+
 Next acceptance work:
 1. Complete the remaining 42-file PR #85 overlap/security review; keep its workflow changes excluded until separately redesigned and reviewed.
 2. Review parser identity, quantity certainty, provenance, and duplicate-message handling before wiring the market book into the scanner.
