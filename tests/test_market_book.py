@@ -52,6 +52,39 @@ class MarketBookTests(IsolatedDataTestCase):
         self.assertEqual(result[0]["quantity"], 2)
         self.assertAlmostEqual(result[0]["profit_usd"], 4.7)
 
+    def test_direct_arbitrage_skips_self_best_bid_and_uses_next_independent_bid(self):
+        offers = [
+            offer("sell", "Candy", 5.0, 3, "seller-a", "ask-a"),
+            offer("sell", "Candy", 5.5, 3, "seller-b", "ask-b"),
+            offer("buy", "Candy", 8.0, 3, "seller-a", "self-bid"),
+            offer("buy", "Candy", 7.0, 2, "buyer-c", "valid-bid"),
+            offer("buy", "Candy", 6.5, 3, "buyer-d", "other-bid"),
+        ]
+        book = build_order_book(offers, now=NOW)
+
+        result = find_direct_arbitrage(book, transfer_fee_usd=0.25,
+                                       safety_margin_percent=5,
+                                       min_profit_usd=0.5, min_profit_percent=5)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["buy"]["message_id"], "ask-a")
+        self.assertEqual(result[0]["sell"]["message_id"], "valid-bid")
+        self.assertEqual(result[0]["quantity"], 2)
+
+    def test_direct_arbitrage_rejects_malformed_or_boolean_thresholds(self):
+        book = build_order_book([
+            offer("sell", "Candy", 5.0, 2, "seller-a", "ask"),
+            offer("buy", "Candy", 7.0, 2, "buyer-b", "bid"),
+        ], now=NOW)
+        for kwargs in (
+            {"min_profit_usd": "not-a-number"},
+            {"min_profit_usd": True},
+            {"transfer_fee_usd": float("nan")},
+        ):
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaises(ValueError):
+                    find_direct_arbitrage(book, **kwargs)
+
     def test_direct_arbitrage_requires_independent_author_confidence(self):
         ask = offer("sell", "Candy", 1, 5, "", "ask")
         bid = offer("buy", "Candy", 5, 5, "", "bid")
