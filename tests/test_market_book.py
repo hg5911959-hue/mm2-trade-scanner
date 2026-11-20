@@ -1,5 +1,7 @@
 import unittest
+from unittest.mock import patch
 import json
+import os
 import tempfile
 from test_support import IsolatedDataTestCase
 from pathlib import Path
@@ -508,6 +510,36 @@ class MarketBookTests(IsolatedDataTestCase):
             "flood", {entry["message_id"] for entry in book["candy"]["asks"]}
         )
 
+
+    def test_private_price_history_rejects_symlink_without_overwriting_target(self):
+        if not hasattr(os, "O_NOFOLLOW"):
+            self.skipTest("O_NOFOLLOW is unavailable on this platform")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "outside.json"
+            target.write_text('{"schema_version":1,"snapshots":[]}', encoding="utf-8")
+            link = root / "history.json"
+            link.symlink_to(target)
+            with self.assertRaisesRegex(RuntimeError, "cannot be opened safely"):
+                save_private_price_history(link, {}, now=NOW)
+            self.assertEqual(target.read_text(encoding="utf-8"), '{"schema_version":1,"snapshots":[]}')
+
+    def test_private_price_history_rejects_fifo_without_blocking(self):
+        if not hasattr(os, "mkfifo") or not hasattr(os, "O_NONBLOCK"):
+            self.skipTest("FIFO/nonblocking open is unavailable on this platform")
+        with tempfile.TemporaryDirectory() as directory:
+            fifo = Path(directory) / "history.pipe"
+            os.mkfifo(fifo)
+            with self.assertRaisesRegex(RuntimeError, "not a regular file"):
+                save_private_price_history(fifo, {}, now=NOW)
+
+    def test_private_price_history_enforces_read_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "history.json"
+            path.write_text('{"schema_version":1,"snapshots":[]}', encoding="utf-8")
+            with patch("market_book.MAX_HISTORY_BYTES", 4):
+                with self.assertRaisesRegex(RuntimeError, "exceeds the size limit"):
+                    save_private_price_history(path, {}, now=NOW)
 
     def test_private_price_history_is_atomic_rolling_and_compact(self):
         with tempfile.TemporaryDirectory() as directory:
