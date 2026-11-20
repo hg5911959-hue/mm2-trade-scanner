@@ -4998,6 +4998,13 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
                 include_backlog = should_run_backlog_recheck(cycles)
                 scan_once(include_backlog_rechecks=include_backlog)
                 successful_cycles += 1
+            except BloxSwapsRateLimitError as exc:
+                last_failure = exc
+                print(
+                    f"[loop] Upstream rate limit in cycle {cycles}; stopping the polling window: "
+                    f"{redact(exc)[:240]}"
+                )
+                break
             except Exception as exc:
                 last_failure = exc
                 print(f"[loop] Scan cycle {cycles} failed safely: {type(exc).__name__}; reason={redact(exc)[:240]}")
@@ -5023,6 +5030,8 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
     rblxvalue_guard.log_request_count()
     update_metrics(increments={"rblxvalue_requests": rblxvalue_guard.requests_this_run()})
     print(f"[loop] Finished: cycles={cycles}, successful={successful_cycles}, elapsed={elapsed:.1f}s")
+    if isinstance(last_failure, BloxSwapsRateLimitError):
+        raise last_failure
     if successful_cycles == 0:
         if last_failure and (
             "[rblxvalue-key-blocked]" in str(last_failure)
