@@ -23,6 +23,15 @@ def _snowflake(value: Any) -> str:
     return candidate if SNOWFLAKE_RE.fullmatch(candidate) else ""
 
 
+def _allowlist(value: Any, label: str) -> set[str]:
+    if not isinstance(value, list):
+        raise ValueError(f"Discord collector {label} allowlist has an invalid schema")
+    values = [_snowflake(item) for item in value]
+    if not values or any(not item for item in values) or len(values) != len(set(values)):
+        raise ValueError(f"Discord collector {label} allowlist is empty, duplicated, or invalid")
+    return set(values)
+
+
 def _posted_at(value: Any) -> str:
     raw = str(value or "").strip()
     if not raw:
@@ -84,6 +93,14 @@ def parse_discord_messages(payload: Any) -> dict[str, Any]:
     messages = payload["messages"]
     if len(messages) > MAX_MESSAGES:
         raise ValueError("Discord collector payload exceeds the message limit")
+    allowed_guilds = _allowlist(payload.get("configured_guild_ids"), "guild")
+    allowed_channels = _allowlist(payload.get("configured_channel_ids"), "channel")
+    scanned_channels = payload.get("scanned_channel_ids")
+    if not isinstance(scanned_channels, list):
+        raise ValueError("Discord collector scanned-channel metadata has an invalid schema")
+    scanned = {_snowflake(value) for value in scanned_channels}
+    if any(not value for value in scanned) or not scanned.issubset(allowed_channels):
+        raise ValueError("Discord collector scanned channels exceed the configured allowlist")
 
     offers: list[dict[str, Any]] = []
     demand_hints: list[dict[str, Any]] = []
@@ -98,7 +115,12 @@ def parse_discord_messages(payload: Any) -> dict[str, Any]:
         message_id = _snowflake(row.get("message_id"))
         guild_id = _snowflake(row.get("guild_id"))
         channel_id = _snowflake(row.get("channel_id"))
-        if row.get("source") != "discord" or not message_id or not guild_id or not channel_id:
+        if (
+            row.get("source") != "discord" or not message_id or not guild_id or not channel_id
+            or guild_id not in allowed_guilds
+            or channel_id not in allowed_channels
+            or channel_id not in scanned
+        ):
             rejected.append({"message": message_id or str(index), "reason": "invalid_discord_source_identity"})
             continue
         if message_id in seen_ids:
