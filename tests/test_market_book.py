@@ -330,6 +330,24 @@ class MarketBookTests(IsolatedDataTestCase):
         self.assertEqual(row["best_bid"]["message_id"], "bid-a")
         self.assertEqual(row["confidence"], "high")
 
+    def test_wide_legitimate_bid_ask_spread_uses_side_specific_medians(self):
+        offers = [
+            offer("sell", "Candy", 10.0, 2, "seller-a", "ask-a"),
+            offer("sell", "Candy", 11.0, 2, "seller-b", "ask-b"),
+            offer("sell", "Candy", 12.0, 2, "seller-c", "ask-c"),
+            offer("buy", "Candy", 2.0, 2, "buyer-a", "bid-a"),
+            offer("buy", "Candy", 2.5, 2, "buyer-b", "bid-b"),
+            offer("buy", "Candy", 3.0, 2, "buyer-c", "bid-c"),
+        ]
+
+        row = build_order_book(offers, now=NOW)["candy"]
+
+        self.assertEqual(len(row["asks"]), 3)
+        self.assertEqual(len(row["bids"]), 3)
+        self.assertAlmostEqual(row["median_ask"], 11.0)
+        self.assertAlmostEqual(row["median_bid"], 2.5)
+        self.assertNotIn("price_far_from_median", row["risk_flags"])
+
     def test_currencyless_and_usdt_offers_cannot_enter_usd_order_book(self):
         usdt = offer("sell", "Candy", 1.0, 2, "seller-usdt", "usdt")
         usdt["payment"] = "usdt_bep20"
