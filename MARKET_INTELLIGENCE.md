@@ -8,15 +8,15 @@ This extension is additive. The existing BloxSwaps scanner, Supreme valuation, T
 The existing production scanner continues to collect BloxSwaps listings and calculate trade values using the existing verified Supreme Values pipeline. No AI model is allowed to invent or replace these values.
 
 ### Discord (authorized read-only bot)
-The repository now includes `discord_collector.py`, an official Discord bot client that discovers readable text channels and active threads only inside the two server IDs configured in the workflow. It does not send messages, moderate, join voice, access other servers, or use a personal account token/self-bot.
+The repository now includes `discord_collector.py`, an official Discord bot client that is restricted to the two explicitly allowlisted trading channels in one configured server. It does not send messages, moderate, join voice, access other servers, or use a personal account token/self-bot.
 
 Configure:
 - GitHub Actions Secret: `DISCORD_BOT_TOKEN` — the bot token from Discord Developer Portal.
-- The two approved server IDs are configured directly in `.github/workflows/scan.yml` (they are public identifiers, not secrets).
+- The approved guild ID and the two channel IDs are configured directly in `.github/workflows/scan.yml` (they are public identifiers, not secrets).
 
-In Discord Developer Portal, enable **Message Content Intent**. Invite the bot into each server with only **View Channels** and **Read Message History**, and ensure those permissions are granted on the trading channels the bot should read. Do not grant Administrator, Send Messages, Manage Messages, or other write permissions.
+In Discord Developer Portal, enable **Message Content Intent**. Invite the bot into the single approved server with only **View Channels** and **Read Message History**, granted only for the two approved trading channels. Do not grant Administrator, Send Messages, Manage Messages, or other write permissions.
 
-The workflow discovers text channels and active threads visible to the bot only within the configured servers, fetches up to 100 recent messages per readable channel on each scheduled scan, and stores a bounded seven-day deduplicated history in `data/discord_messages.json`. Channels without read permissions are skipped; access errors are reported rather than treated as empty results. Forum archived threads and channels hidden from the bot are not collected.
+The workflow reads only the two configured channel IDs, fetches up to 100 recent messages per channel on each scheduled scan, and stores a bounded seven-day deduplicated history in `data/discord_messages.json`. Channels without read permissions are skipped; access errors are reported rather than treated as empty results. Forum archived threads and channels hidden from the bot are not collected.
 
 ### Alternative public sources
 Public RSS sources may supplement the primary sources later, but they are not a substitute for authorized Discord channel access. The Reddit RSS adapter is optional and remains separate.
@@ -39,4 +39,4 @@ Only public listing text, message links, and normalized trade details should be 
 
 ## Current implementation status
 
-The repository has a read-only Discord collector, a BloxSwaps scanner, a tested but not production-wired Gemini adapter, a manual DeepSeek prompt exporter, and unit tests. Discord collection activates after the owner configures the `DISCORD_BOT_TOKEN` secret and the bot is present in both configured servers with the required permissions. The scanner can parse authorized collector output and manual imports into normalized item/quantity offers; private Discord records remain excluded from public history and the dashboard. Reddit RSS ingestion is a separate adapter and is not currently part of the scheduled scanner path.
+The repository has a read-only Discord collector, a BloxSwaps scanner, a tested but not production-wired Gemini adapter, a manual DeepSeek prompt exporter, and unit tests. Discord collection activates after the owner configures the `DISCORD_BOT_TOKEN` secret and the bot is present in the approved server with the required channel permissions. The scanner can parse authorized collector output and manual imports into normalized item/quantity offers; private Discord records remain excluded from public history and the dashboard. Reddit RSS ingestion is a separate adapter and is not currently part of the scheduled scanner path.
