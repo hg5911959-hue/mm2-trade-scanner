@@ -1,0 +1,4 @@
+# Shared Python tooling configuration. The production scanner remains stdlib-only.
+[tool.ruff]
+target-version = "py312"
+line-length = 100
