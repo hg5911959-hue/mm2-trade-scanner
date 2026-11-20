@@ -12,6 +12,95 @@ class DiscordCollectorTests(IsolatedDataTestCase):
             [1125462206151143464, 482699890741477376],
         )
 
+    def test_parse_channel_ids_deduplicates_and_bounds_input(self):
+        from discord_collector import parse_channel_ids
+
+        self.assertEqual(
+            parse_channel_ids("1572655277130514472;1567557584402120785,1572655277130514472"),
+            ["1572655277130514472", "1567557584402120785"],
+        )
+        with self.assertRaises(ValueError):
+            parse_channel_ids(",".join(str(100000000000000000 + i) for i in range(11)))
+
+    def test_parse_channel_ids_rejects_invalid_values(self):
+        from discord_collector import parse_channel_ids
+
+        for raw in ("abc", "123", "-123456789012345", "123456789012345, nope"):
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                parse_channel_ids(raw)
+
+    def test_collect_can_be_restricted_to_exact_configured_channels(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from discord_collector import collect
+
+        calls = []
+
+        def fake_get(path, token, params=None, timeout=20):
+            calls.append(path)
+            if path == "/guilds/1125462206151143464/channels":
+                return [
+                    {"id": "200000000000000001", "type": 0, "name": "wanted"},
+                    {"id": "200000000000000002", "type": 0, "name": "not-wanted"},
+                ]
+            if path == "/guilds/1125462206151143464/threads/active":
+                return {"threads": []}
+            if path == "/channels/200000000000000001/messages":
+                return [{
+                    "id": "300000000000000001", "channel_id": "200000000000000001",
+                    "author": {"username": "seller", "bot": False},
+                    "content": "Selling Candy 2$", "timestamp": "2026-11-19T20:00:00+00:00",
+                }]
+            raise AssertionError(f"Unexpected Discord API path: {path}")
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "discord_messages.json"
+            with patch.dict("os.environ", {"DISCORD_BOT_TOKEN": "bot-token"}):
+                with patch("discord_collector._discord_get_json", side_effect=fake_get):
+                    result = collect(
+                        [1125462206151143464], output, 100, 7,
+                        channel_ids=["200000000000000001"],
+                    )
+            saved = json.loads(output.read_text(encoding="utf-8"))
+
+        self.assertEqual(result, 0)
+        self.assertEqual(saved["scanned_channel_ids"], ["200000000000000001"])
+        self.assertEqual(
+            calls,
+            [
+                "/guilds/1125462206151143464/channels",
+                "/guilds/1125462206151143464/threads/active",
+                "/channels/200000000000000001/messages",
+            ],
+        )
+
+    def test_missing_configured_channel_marks_collection_degraded(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from discord_collector import collect
+
+        def fake_get(path, token, params=None, timeout=20):
+            if path == "/guilds/1125462206151143464/channels":
+                return [{"id": "200000000000000001", "type": 0, "name": "other"}]
+            if path == "/guilds/1125462206151143464/threads/active":
+                return {"threads": []}
+            raise AssertionError(f"Unexpected Discord API path: {path}")
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "discord_messages.json"
+            with patch.dict("os.environ", {"DISCORD_BOT_TOKEN": "bot-token"}):
+                with patch("discord_collector._discord_get_json", side_effect=fake_get):
+                    result = collect(
+                        [1125462206151143464], output, 100, 7,
+                        channel_ids=["200000000000000099"],
+                    )
+
+        self.assertEqual(result, 1)
+
+
     def test_parse_guild_ids_rejects_invalid_values(self):
         for raw in ("abc", "123", "-123456789012345", "123456789012345, nope"):
             with self.subTest(raw=raw), self.assertRaises(ValueError):
