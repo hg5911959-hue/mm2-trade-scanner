@@ -95,6 +95,16 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertNotIn("enable-schedules:", scheduler)
 
 
+    def test_discord_collection_is_scoped_to_the_two_requested_channels(self):
+        workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        self.assertIn(
+            'DISCORD_CHANNEL_IDS: "1572655277130514472,1567557584402120785"',
+            workflow,
+        )
+        collector = (ROOT / "discord_collector.py").read_text(encoding="utf-8")
+        self.assertIn("parse_channel_ids", collector)
+        self.assertIn("channel_ids=channels or None", collector)
+
     def test_cash_market_and_telegram_features_are_disabled_and_private_state_is_encrypted(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         for flag in ("TELEGRAM_COMMANDS_ENABLED", "INVENTORY_ENABLED"):
