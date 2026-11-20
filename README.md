@@ -379,3 +379,19 @@ Supreme numeric values are never converted into cash prices; the USD catalogue r
 Every unittest case uses its own temporary working directory. Tests that need catalogue data use synthetic fixtures under `tests/fixtures`; no test reads or writes the repository's real `data/` directory. CI runs `python -m unittest discover -s tests` twice and checks `git status --porcelain data` after each pass. `tests/test_no_data_pollution.py` hashes every file in the real data directory before and after a mocked scan.
 
 Scanner and tool path defaults are module constants or explicit function arguments so tests can patch them. Workflow permissions default to read-only; write access is scoped to state persistence, schedule enablement, repository keepalive, or Pages deployment. Third-party Actions are pinned to full 40-character commit SHAs, and workflow steps must never echo secrets.
+
+
+### Discord cash-price observations
+
+The scheduled collector is scoped to the two configured cash-market channels through \`DISCORD_CHANNEL_IDS\`. It uses the official Discord REST API with read-only requests, then sends eligible messages through \`cash_offer_parser.py\` and stores normalized observations in the encrypted private market state. Each observation retains its source channel/server IDs, channel name, author, UTC timestamp, and original Discord message permalink. An extracted offer is evidence of a seller/buyer quote, not a verified catalogue price.
+
+The collector is bounded to at most 6 pages of 100 messages per channel per run and keeps raw message imports for 7 days. The market book separately ignores stale offers according to \`MARKET_OFFER_MAX_AGE_HOURS\` (default 48 hours). It does not backfill an unlimited channel history.
+
+**Activation requirements (not currently satisfied):**
+1. A Discord bot must be a member of the server and be allowed to view both target channels.
+2. Grant only \`VIEW_CHANNEL\` and \`READ_MESSAGE_HISTORY\` in those channels; the collector never sends messages or manages channels.
+3. Enable the bot application's \`MESSAGE_CONTENT\` privileged intent in the Discord Developer Portal. Without it, Discord can return message objects with empty content; the collector now fails closed rather than reporting a healthy empty collection.
+4. The repository needs the \`DISCORD_BOT_TOKEN\` Actions secret. The current repository has no value configured, and the two manual-import secrets are also empty. The original project constraint says not to add new secrets, so do not add this secret until the owner explicitly approves changing that constraint.
+
+A one-time dry-run was attempted and correctly stopped before making a Discord API request because no bot token or manual-import source was configured. No channel content has been collected yet. To validate access after activation, use the scheduler's \`enable_discord\` and \`discord_only\` dry-run inputs; this mode skips BloxSwaps and sends no Telegram alerts.
+
