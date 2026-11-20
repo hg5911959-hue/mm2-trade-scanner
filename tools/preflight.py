@@ -128,6 +128,16 @@ def _atomic_json(path, data):
     os.replace(temp, target)
 
 
+class _RejectTelegramRedirects(urllib.request.HTTPRedirectHandler):
+    """Do not forward bot-token-bearing requests to redirect targets."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_TELEGRAM_OPENER = urllib.request.build_opener(_RejectTelegramRedirects())
+
+
 def send_daily_notice(checks, *, data_dir="data", env=None, now=None):
     if not checks:
         return False
@@ -145,16 +155,25 @@ def send_daily_notice(checks, *, data_dir="data", env=None, now=None):
     if isinstance(last, (int, float)) and not isinstance(last, bool):
         if datetime.fromtimestamp(last, UTC).date() == current.date():
             return False
-    state["preflight-daily"] = current.timestamp()
-    _atomic_json(path, state)
-    message = "MM2 PREFLIGHT WARNING\n" + "\n".join("- " + check for check in checks)
+    message = "MM2 PREFLIGHT WARNING\\n" + "\\n".join("- " + check for check in checks)
     body = urllib.parse.urlencode({"chat_id": chat, "text": message}).encode()
     request = urllib.request.Request(
         "https://api.telegram.org/bot" + token + "/sendMessage", data=body
     )
     try:
-        with urllib.request.urlopen(request, timeout=15) as response:
-            return response.status == 200
+        with _TELEGRAM_OPENER.open(request, timeout=15) as response:
+            if response.status != 200:
+                return False
+            try:
+                result = json.loads(response.read(65536).decode("utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                return False
+            if not isinstance(result, dict) or result.get("ok") is not True:
+                return False
+        # Record the daily notice only after Telegram confirms delivery.
+        state["preflight-daily"] = current.timestamp()
+        _atomic_json(path, state)
+        return True
     except Exception as exc:
         print("[preflight] Telegram notice failed: " + type(exc).__name__)
         return False
@@ -169,7 +188,10 @@ def main(argv=None):
         for check in result["checks"]:
             print("[preflight] FAIL: " + check)
         if args.warn:
-            send_daily_notice(result["checks"])
+            if os.environ.get("PREFLIGHT_SEND_NOTICES", "true").strip().casefold() in {"1", "true", "yes", "on"}:
+                send_daily_notice(result["checks"])
+            else:
+                print("[preflight] Telegram notice suppressed for dry-run execution")
             return 0
         return 1
     print("[preflight] PASS: all configured checks are healthy")
