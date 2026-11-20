@@ -76,9 +76,9 @@ class DiscordCollectorTests(IsolatedDataTestCase):
             [
                 "/guilds/1125462206151143464/channels",
                 "/guilds/1125462206151143464/threads/active",
+                "/channels/200000000000000001/messages",
                 "/guilds/482699890741477376/channels",
                 "/guilds/482699890741477376/threads/active",
-                "/channels/200000000000000001/messages",
             ],
         )
 
