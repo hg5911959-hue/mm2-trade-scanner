@@ -118,6 +118,32 @@ class StateValidationTests(IsolatedDataTestCase):
         errors = validate_state(self.root, require_cache=True)
         self.assertTrue(any("breaker timing or schema" in error for error in errors))
 
+    def test_workflow_attributed_budget_metadata_is_validated(self):
+        self._write_valid_state()
+        valid = {
+            "schema_version": 1,
+            "window": "rolling_24_hours",
+            "limit": 60,
+            "request_timestamps_epoch": [1_800_000_000, 1_800_000_001],
+            "request_workflows": ["MM2 Scanner", "RBLXValue Manual Check"],
+            "request_counts_by_workflow": {
+                "MM2 Scanner": 1, "RBLXValue Manual Check": 1,
+            },
+        }
+        path = self.root / "rblxvalue_request_budget.json"
+        path.write_text(json.dumps(valid), encoding="utf-8")
+        self.assertEqual(validate_state(self.root, require_cache=True), [])
+
+        for update in (
+            {"request_workflows": ["only-one"]},
+            {"request_workflows": ["MM2 Scanner", "bad\\nworkflow"]},
+            {"request_counts_by_workflow": {"MM2 Scanner": 2}},
+        ):
+            with self.subTest(update=update):
+                path.write_text(json.dumps({**valid, **update}), encoding="utf-8")
+                errors = validate_state(self.root, require_cache=True)
+                self.assertTrue(any("workflow" in error for error in errors))
+
     def test_api_safety_ledger_rejects_unexpected_files_and_oversized_budget(self):
         from tools.validate_state import validate_api_safety_state
         (self.root / "rblxvalue_request_budget.json").write_text(json.dumps({
