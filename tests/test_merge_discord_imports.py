@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from market_intelligence.discord_cash_ingest import parse_discord_messages
+from test_support import IsolatedDataTestCase
 from tools.merge_discord_imports import merge_imports
 
 
@@ -47,7 +48,7 @@ def collector_payload(messages=None):
     }
 
 
-class MergeDiscordImportsTests(unittest.TestCase):
+class MergeDiscordImportsTests(IsolatedDataTestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
