@@ -29,6 +29,7 @@ class PrivateStateEncryptionTests(IsolatedDataTestCase):
                 "market_book_history.json": b'{"snapshots":[]}',
                 "market_alert_state.json": b'{"opportunities":{}}',
                 "discord_alert_state.json": b'{"version":1,"alerted":["private-id"],"uncertain":{}}',
+                "discord_messages.json": b'{"messages":[{"content":"private discord message","author_id":"123456789012345"}]}',
             }
             for name, payload in private_files.items():
                 (source / name).write_bytes(payload)
@@ -40,6 +41,8 @@ class PrivateStateEncryptionTests(IsolatedDataTestCase):
             ciphertext = encrypted.read_bytes()
             self.assertNotIn(b"Secret Candy", ciphertext)
             self.assertNotIn(b"98765", ciphertext)
+            self.assertNotIn(b"private discord message", ciphertext)
+            self.assertNotIn(b"123456789012345", ciphertext)
             restored_count = decrypt_private_state(encrypted, restored, "a" * 48)
             self.assertEqual(restored_count, len(private_files))
             for name, payload in private_files.items():
@@ -69,10 +72,10 @@ class PrivateStateEncryptionTests(IsolatedDataTestCase):
             root = Path(directory)
             source = root / "source"
             source.mkdir()
-            (source / "discord_messages.json").write_text('{"private":"body"}', encoding="utf-8")
+            (source / "unrelated.json").write_text('{"private":"body"}', encoding="utf-8")
             encrypted = root / "private_state.enc"
             encrypt_private_state(source, encrypted, "d" * 48)
-            self.assertTrue((source / "discord_messages.json").exists())
+            self.assertTrue((source / "unrelated.json").exists())
             self.assertNotIn(b"private", encrypted.read_bytes())
 
     def test_oversized_private_file_is_rejected_before_reading(self):
