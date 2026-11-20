@@ -271,6 +271,16 @@ class MarketBookTests(IsolatedDataTestCase):
         self.assertEqual(advice[0]["verdict"], "SELL NOW")
         self.assertIn("price_falling", advice[0]["risk_flags"])
 
+    def test_overflowing_numeric_timestamp_is_retained_only_as_stale_metadata(self):
+        malformed = offer("sell", "Candy", 1.0, 1, "seller", "huge-timestamp")
+        malformed["posted_at"] = 10 ** 1000
+
+        row = build_order_book([malformed], now=NOW)["candy"]
+
+        self.assertIsNone(row["best_ask"])
+        self.assertEqual(row["stale_offer_count"], 1)
+        self.assertIn("stale_offer", row["risk_flags"])
+
     def test_malformed_offer_minimum_is_ignored(self):
         malformed = offer("buy", "Candy", 2, 5, "buyer", "bad-min")
         malformed["min_quantity"] = 0
