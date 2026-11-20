@@ -37,6 +37,7 @@ PRIVATE_FILENAMES = frozenset({
     "market_book_history.json",
     "market_alert_state.json",
     "discord_alert_state.json",
+    "discord_messages.json",
 })
 
 
