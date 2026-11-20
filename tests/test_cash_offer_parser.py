@@ -110,7 +110,7 @@ class CashOfferParserTests(IsolatedDataTestCase):
 
     def test_verified_discord_author_identity_is_preserved(self):
         result = parse_cash_post(
-            "Selling\\n1x Candy 2$/1",
+            "Selling\n1x Candy 2$/1",
             author="Trader",
             author_id="123456789012345",
             author_id_source="discord_api",
@@ -122,7 +122,7 @@ class CashOfferParserTests(IsolatedDataTestCase):
 
     def test_non_discord_author_identity_is_not_trusted(self):
         result = parse_cash_post(
-            "Selling\\n1x Candy 2$/1",
+            "Selling\n1x Candy 2$/1",
             author="Trader",
             author_id="123456789012345",
             author_id_source="owner_supplied",
