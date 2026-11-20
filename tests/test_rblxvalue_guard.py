@@ -141,6 +141,87 @@ class RblxValueGuardTests(IsolatedDataTestCase):
         self.assertEqual(json.loads(text)["key_fingerprint"],
                          guard.key_fingerprint("rbx_sensitive_secret"))
 
+    def test_budget_tracks_request_counts_by_workflow(self):
+        guard.reserve_request(
+            now=1_800_000_000, key="rbx_test_key",
+            budget_path=self.budget, block_path=self.block,
+            workflow="MM2 Scanner",
+        )
+        guard.reserve_request(
+            now=1_800_000_001, key="rbx_test_key",
+            budget_path=self.budget, block_path=self.block,
+            workflow="RBLXValue Manual Check",
+        )
+        state = json.loads(self.budget.read_text(encoding="utf-8"))
+        self.assertEqual(state["request_counts_by_workflow"], {
+            "MM2 Scanner": 1, "RBLXValue Manual Check": 1,
+        })
+        self.assertEqual(state["request_workflows"], [
+            "MM2 Scanner", "RBLXValue Manual Check",
+        ])
+
+    def test_workflow_count_rolls_off_with_its_request_timestamp(self):
+        guard.reserve_request(
+            now=1_800_000_000, key="rbx_test_key",
+            budget_path=self.budget, block_path=self.block, workflow="old",
+        )
+        guard.reserve_request(
+            now=1_800_086_401, key="rbx_test_key",
+            budget_path=self.budget, block_path=self.block, workflow="new",
+        )
+        state = json.loads(self.budget.read_text(encoding="utf-8"))
+        self.assertEqual(state["request_counts_by_workflow"], {"new": 1})
+        self.assertEqual(state["request_workflows"], ["new"])
+
+    def test_explicit_empty_or_mismatched_workflow_list_fails_closed(self):
+        for workflows in ([], None, ["only-one"]):
+            with self.subTest(workflows=workflows):
+                self.budget.write_text(json.dumps({
+                    "request_timestamps_epoch": [1_800_000_000, 1_800_000_001],
+                    "request_workflows": workflows,
+                }), encoding="utf-8")
+                with self.assertRaisesRegex(guard.RblxValueGuardError, "timestamps/workflows"):
+                    guard.reserve_request(
+                        now=1_800_000_002, key="rbx_test_key",
+                        budget_path=self.budget, block_path=self.block,
+                    )
+
+    def test_legacy_budget_without_workflow_metadata_migrates_explicitly(self):
+        self.budget.write_text(json.dumps({
+            "request_timestamps_epoch": [1_800_000_000],
+        }), encoding="utf-8")
+
+        guard.reserve_request(
+            now=1_800_000_001, key="rbx_test_key",
+            budget_path=self.budget, block_path=self.block,
+            workflow="MM2 Scanner",
+        )
+
+        state = json.loads(self.budget.read_text(encoding="utf-8"))
+        self.assertEqual(state["request_workflows"], ["legacy/unknown", "MM2 Scanner"])
+        self.assertEqual(state["request_counts_by_workflow"], {
+            "MM2 Scanner": 1, "legacy/unknown": 1,
+        })
+
+    def test_invalid_budget_clock_fails_closed_before_writing(self):
+        for value in (True, False, 0, -1, float("nan"), float("inf"), -float("inf")):
+            with self.subTest(now=value), self.assertRaises(guard.RblxValueGuardError):
+                guard.reserve_request(
+                    now=value, key="rbx_test_key",
+                    budget_path=self.budget, block_path=self.block,
+                )
+            self.assertFalse(self.budget.exists())
+
+    def test_invalid_workflow_identifier_fails_closed_before_writing(self):
+        for workflow in ("   ", "bad\\nworkflow", "x" * 101):
+            with self.subTest(workflow=workflow), self.assertRaises(guard.RblxValueGuardError):
+                guard.reserve_request(
+                    now=1_800_000_000, key="rbx_test_key",
+                    budget_path=self.budget, block_path=self.block,
+                    workflow=workflow,
+                )
+            self.assertFalse(self.budget.exists())
+
     def test_request_counter_counts_reserved_requests(self):
         guard.reset_run_counter()
         guard.reserve_request(now=1_800_000_000, key="rbx_test_key",
