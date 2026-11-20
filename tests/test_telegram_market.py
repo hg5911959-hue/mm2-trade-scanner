@@ -435,7 +435,9 @@ class TelegramMarketTests(IsolatedDataTestCase):
         source = Path(self.temp.name) / "discord_messages.json"
         source.write_text(json.dumps({"messages": [{
             "message_id": "123456", "author": "discord-seller",
-            "url": "https://discord.com/channels/1/2/123456",
+            "guild_id": "1125462206151143464",
+            "channel_id": "1572655277130514472", "channel_name": "cash-market",
+            "url": "https://discord.com/channels/1/1572655277130514472/123456",
             "created_at_utc": "2026-11-19T10:00:00+00:00",
             "content": "Selling\n1x Candy 2$/1",
         }]}), encoding="utf-8")
@@ -449,6 +451,11 @@ class TelegramMarketTests(IsolatedDataTestCase):
         self.assertEqual(len(stored["offers"]), 1)
         self.assertEqual(stored["offers"][0]["message_id"], "discord:123456")
         self.assertEqual(stored["offers"][0]["side"], "sell")
+        self.assertEqual(stored["offers"][0]["source_type"], "discord_channel")
+        self.assertEqual(stored["offers"][0]["source_channel_id"], "1572655277130514472")
+        self.assertEqual(stored["offers"][0]["source_guild_id"], "1125462206151143464")
+        self.assertEqual(stored["offers"][0]["source_channel_name"], "cash-market")
+        self.assertEqual(stored["offers"][0]["url"], "https://discord.com/channels/1/1572655277130514472/123456")
         self.assertNotIn("Selling", self.offers.read_text(encoding="utf-8"))
         self.assertNotIn("source_text", stored["offers"][0])
 
