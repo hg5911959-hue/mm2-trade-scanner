@@ -2,6 +2,7 @@
 
 import csv
 import unittest
+from unittest.mock import patch
 from test_support import IsolatedDataTestCase
 from datetime import UTC, datetime
 
@@ -10,6 +11,38 @@ from tools.cash_market import load_cash_price_catalog
 
 
 class ScannerCashSafetyTests(IsolatedDataTestCase):
+    def test_non_finite_value_profit_or_margin_never_alert_eligible(self):
+        base = {"manual_review": False, "cash_estimate_only": False,
+                "profit_worst": 100.0, "margin": 20.0}
+        for field in ("profit_worst", "margin"):
+            for value in (float("nan"), float("inf"), float("-inf")):
+                with self.subTest(field=field, value=value):
+                    self.assertFalse(scanner.qualifies({**base, field: value}))
+
+    def test_malformed_value_metrics_fail_closed(self):
+        base = {"manual_review": False, "cash_estimate_only": False,
+                "profit_worst": 100.0, "margin": 20.0}
+        for field, value in (("profit_worst", None), ("profit_worst", "bad"),
+                             ("margin", None), ("margin", "bad")):
+            with self.subTest(field=field, value=value):
+                self.assertFalse(scanner.qualifies({**base, field: value}))
+        self.assertFalse(scanner.qualifies(None))
+        self.assertFalse(scanner.qualifies([]))
+
+    def test_non_finite_thresholds_fail_closed(self):
+        base = {"manual_review": False, "cash_estimate_only": False,
+                "profit_worst": 100.0, "margin": 20.0}
+        for kwargs in ({"min_diff": float("nan")}, {"min_diff": float("inf")},
+                       {"min_percent": float("nan")}, {"min_percent": float("inf")},
+                       {"min_diff": -1.0}, {"min_percent": -1.0}):
+            with self.subTest(kwargs=kwargs):
+                self.assertFalse(scanner.qualifies(base, **kwargs))
+
+    def test_verified_finite_value_trade_remains_alert_eligible(self):
+        result = {"manual_review": False, "cash_estimate_only": False,
+                  "profit_worst": 10.0, "margin": 5.0}
+        self.assertTrue(scanner.qualifies(result, min_diff=1.0, min_percent=5.0))
+
     def test_legacy_estimate_is_never_alert_eligible(self):
         result = {
             "cash_estimate_only": True,
@@ -150,6 +183,20 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         standard = {**base, "give_total_max": 5.0}
         self.assertFalse(scanner.qualifies_cash({**standard, "cash_profit_worst": 0.499}))
         self.assertTrue(scanner.qualifies_cash({**standard, "cash_profit_worst": 0.50}))
+
+    def test_invalid_cash_margin_threshold_fails_closed(self):
+        result = {
+            "cash_estimate_only": False,
+            "manual_review": False,
+            "cash_price_basis": "verified manual USD resale catalogue",
+            "cash_profit_worst": 100.0,
+            "margin": 20.0,
+            "give_total_max": 10.0,
+        }
+        for threshold in (-1.0, float("nan"), float("inf")):
+            with self.subTest(threshold=threshold):
+                with patch.object(scanner, "CASH_MIN_MARGIN_PERCENT", threshold):
+                    self.assertFalse(scanner.qualifies_cash(result))
 
     def test_non_dictionary_cash_result_fails_closed(self):
         for result in (None, [], "profit", 10):

@@ -116,6 +116,8 @@ if any(not math.isfinite(value) or value < 0 for value in (
 )):
     raise ValueError("Cash minimum-profit thresholds must be finite and non-negative")
 CASH_MIN_MARGIN_PERCENT = float(os.environ.get("CASH_MIN_MARGIN_PERCENT", "0"))
+if not math.isfinite(CASH_MIN_MARGIN_PERCENT) or CASH_MIN_MARGIN_PERCENT < 0:
+    raise ValueError("CASH_MIN_MARGIN_PERCENT must be finite and non-negative")
 CASH_MAX_AGE_DAYS = max(1, int(os.environ.get("CASH_MAX_AGE_DAYS", "14")))
 CASH_PRICE_FILE = Path("data/cash_prices.csv")
 CASH_PRICE_SNAPSHOT_FILE = Path("data/cash_price_snapshot.json")
@@ -1098,6 +1100,10 @@ def _open_rblxvalue_url(req, timeout):
     return opener.open(req, timeout=timeout)
 
 
+class BloxSwapsRateLimitError(RuntimeError):
+    """A BloxSwaps HTTP 429 stops the current scan without retrying."""
+
+
 def request_with_retry(req, timeout, label, attempts=4, return_headers=False, allow_not_modified=False):
     """Retry transient failures with exponential backoff and respect Retry-After."""
     request_url = req.full_url if isinstance(req, urllib.request.Request) else str(req)
@@ -1159,6 +1165,51 @@ def request_with_retry(req, timeout, label, attempts=4, return_headers=False, al
                     safe_detail = "empty response body"
                 raise RuntimeError(
                     f"[http] {label}: HTTP 403 Forbidden; upstream response: {safe_detail[:240]}"
+                ) from exc
+            if exc.code == 429 and not is_rblxvalue:
+                retry_after = (exc.headers or {}).get("Retry-After", "")
+                delay = None
+                if retry_after:
+                    try:
+                        delay = max(0, int(retry_after))
+                    except ValueError:
+                        try:
+                            parsed_retry_after = parsedate_to_datetime(retry_after)
+                            if parsed_retry_after.tzinfo is None:
+                                parsed_retry_after = parsed_retry_after.replace(tzinfo=timezone.utc)
+                            delay = max(
+                                0,
+                                (parsed_retry_after - datetime.now(timezone.utc)).total_seconds(),
+                            )
+                        except (TypeError, ValueError, OverflowError, OSError):
+                            delay = None
+                if delay is not None and delay > MAX_RETRY_AFTER_SECONDS:
+                    raise BloxSwapsRateLimitError(
+                        f"{label}: HTTP 429; Retry-After exceeds the safe wait "
+                        f"({int(delay)}s > {MAX_RETRY_AFTER_SECONDS}s); aborting this scan without retry"
+                    ) from exc
+                if not retry_after:
+                    suffix = "; no Retry-After header"
+                elif delay is None:
+                    suffix = "; invalid Retry-After header"
+                else:
+                    suffix = f"; Retry-After={int(delay)}s"
+                headers = exc.headers or {}
+                diagnostic_headers = []
+                for header in (
+                    "Server", "CF-Ray", "Content-Type", "X-RateLimit-Limit",
+                    "X-RateLimit-Remaining", "X-RateLimit-Reset",
+                ):
+                    value = headers.get(header)
+                    if value:
+                        diagnostic_headers.append(f"{header}={str(value)[:100]}")
+                header_summary = (
+                    "; response=" + ", ".join(diagnostic_headers)
+                    if diagnostic_headers else ""
+                )
+                raise BloxSwapsRateLimitError(
+                    f"{label}: HTTP 429 rate limited{suffix}{header_summary}; "
+                    "aborting this scan without retry"
                 ) from exc
             retryable = exc.code == 429 or 500 <= exc.code <= 599
             if not retryable or attempt == attempts - 1:
@@ -2371,9 +2422,19 @@ def _read_values_cache():
     if cached is None:
         return None, None
     try:
-        age = max(0, int(time.time() - float(cached.get("fetched_at", 0))))
+        fetched_raw = cached.get("fetched_at")
+        if isinstance(fetched_raw, bool):
+            return None, None
+        fetched_at = float(fetched_raw)
+        current = float(time.time())
+        if (
+            not math.isfinite(fetched_at) or not math.isfinite(current)
+            or fetched_at <= 0 or current <= 0 or fetched_at > current
+        ):
+            return None, None
+        age = int(current - fetched_at)
         return cached["values"], age
-    except (TypeError, ValueError, KeyError):
+    except (TypeError, ValueError, KeyError, OverflowError):
         return None, None
 
 
@@ -3682,10 +3743,23 @@ def qualifies(result, min_diff=None, min_percent=None):
     min_percent = MIN_PROFIT_PERCENT if min_percent is None else min_percent
     # Only fully verified, conservative-positive trades are eligible for Telegram.
     # A best-case-only profit is uncertain and must never be advertised as a WIN.
+    if not isinstance(result, dict):
+        return False
     if result.get("manual_review") or result.get("cash_estimate_only"):
         return False
     metric = result.get("profit_worst", result.get("difference", 0))
-    return metric > 0 and metric >= min_diff and result["margin"] >= min_percent
+    margin = result.get("margin")
+    numeric_values = (metric, margin, min_diff, min_percent)
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        for value in numeric_values
+    ):
+        return False
+    if min_diff < 0 or min_percent < 0:
+        return False
+    return metric > 0 and metric >= min_diff and margin >= min_percent
 
 
 def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=False):
@@ -3840,7 +3914,8 @@ def qualifies_cash(result):
         return False
     threshold = CASH_MIN_PROFIT_USD_SMALL if give_total < 5.0 else CASH_MIN_PROFIT_USD
     return (
-        math.isfinite(profit) and math.isfinite(margin) and math.isfinite(give_total)
+        math.isfinite(CASH_MIN_MARGIN_PERCENT) and CASH_MIN_MARGIN_PERCENT >= 0
+        and math.isfinite(profit) and math.isfinite(margin) and math.isfinite(give_total)
         and give_total >= 0
         and profit >= threshold
         and margin >= CASH_MIN_MARGIN_PERCENT
@@ -4859,6 +4934,13 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
                 include_backlog = should_run_backlog_recheck(cycles)
                 scan_once(include_backlog_rechecks=include_backlog)
                 successful_cycles += 1
+            except BloxSwapsRateLimitError as exc:
+                last_failure = exc
+                print(
+                    f"[loop] Upstream rate limit in cycle {cycles}; stopping the polling window: "
+                    f"{redact(exc)[:240]}"
+                )
+                break
             except Exception as exc:
                 last_failure = exc
                 print(f"[loop] Scan cycle {cycles} failed safely: {type(exc).__name__}; reason={redact(exc)[:240]}")
@@ -4884,6 +4966,8 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
     rblxvalue_guard.log_request_count()
     update_metrics(increments={"rblxvalue_requests": rblxvalue_guard.requests_this_run()})
     print(f"[loop] Finished: cycles={cycles}, successful={successful_cycles}, elapsed={elapsed:.1f}s")
+    if isinstance(last_failure, BloxSwapsRateLimitError):
+        raise last_failure
     if successful_cycles == 0:
         if last_failure and (
             "[rblxvalue-key-blocked]" in str(last_failure)
