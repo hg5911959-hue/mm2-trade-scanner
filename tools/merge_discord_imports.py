@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import sys
 import tempfile
 from datetime import datetime, timezone, timedelta
@@ -44,14 +45,29 @@ def _manual_record(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _read_existing(target: Path) -> dict[str, Any]:
-    if target.is_symlink():
-        raise RuntimeError("Existing Discord state is a symlink; refusing to overwrite it")
-    if not target.exists():
-        return {}
-    if not target.is_file() or target.stat().st_size > MAX_INPUT_BYTES:
-        raise RuntimeError("Existing Discord state is not a bounded regular file")
+    flags = (
+        os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    )
     try:
-        payload = json.loads(target.read_text(encoding="utf-8"))
+        descriptor = os.open(target, flags)
+    except FileNotFoundError:
+        return {}
+    except OSError:
+        raise RuntimeError("Existing Discord state cannot be opened safely") from None
+    try:
+        with os.fdopen(descriptor, "rb") as handle:
+            metadata = os.fstat(handle.fileno())
+            if not stat.S_ISREG(metadata.st_mode):
+                raise RuntimeError("Existing Discord state is not a regular file")
+            if metadata.st_size > MAX_INPUT_BYTES:
+                raise RuntimeError("Existing Discord state exceeds the size limit")
+            raw = handle.read(MAX_INPUT_BYTES + 1)
+        if len(raw) > MAX_INPUT_BYTES:
+            raise RuntimeError("Existing Discord state exceeds the size limit")
+        payload = json.loads(raw.decode("utf-8"))
+    except RuntimeError:
+        raise
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         raise RuntimeError("Existing Discord state is unreadable; refusing to reset history") from None
     return payload if isinstance(payload, dict) else {}
