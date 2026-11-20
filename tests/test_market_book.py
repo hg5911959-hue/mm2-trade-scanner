@@ -330,6 +330,26 @@ class MarketBookTests(IsolatedDataTestCase):
         self.assertEqual(row["best_bid"]["message_id"], "bid-a")
         self.assertEqual(row["confidence"], "high")
 
+    def test_currencyless_and_usdt_offers_cannot_enter_usd_order_book(self):
+        usdt = offer("sell", "Candy", 1.0, 2, "seller-usdt", "usdt")
+        usdt["payment"] = "usdt_bep20"
+        currencyless = offer("sell", "Candy", 1.0, 2, "seller-no-currency", "no-currency")
+        currencyless["flags"] = ["no_currency_symbol"]
+        offers = [
+            offer("sell", "Candy", 5.0, 2, "seller-usd", "usd-ask"),
+            offer("buy", "Candy", 6.0, 2, "buyer-usd", "usd-bid"),
+            usdt,
+            currencyless,
+        ]
+
+        row = build_order_book(offers, now=NOW)["candy"]
+
+        self.assertEqual(row["best_ask"]["message_id"], "usd-ask")
+        self.assertEqual(row["best_bid"]["message_id"], "usd-bid")
+        self.assertEqual({item["message_id"] for item in row["asks"]}, {"usd-ask"})
+        self.assertIn("unsupported_payment", row["risk_flags"])
+        self.assertIn("no_currency_symbol", row["risk_flags"])
+
     def test_malformed_flag_container_fails_closed_for_actionability(self):
         malformed = offer("sell", "Candy", 4.9, 2, "seller-a", "bad-flags")
         malformed["flags"] = "sell_before_drop"
