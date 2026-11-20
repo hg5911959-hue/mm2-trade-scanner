@@ -100,7 +100,7 @@ class MarketBookTests(IsolatedDataTestCase):
         offers = [
             offer("sell", "Candy", 1.0, 5, "seller-a", "ask-a"),
             offer("sell", "Candy", 1.1, 5, "seller-b", "ask-b"),
-            offer("buy", "Candy", 5.0, 5, "", "bid"),
+            offer("buy", "Candy", 2.0, 5, "", "bid"),
         ]
 
         row = build_order_book(offers, now=NOW)["candy"]
