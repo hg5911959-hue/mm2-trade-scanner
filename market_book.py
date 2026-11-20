@@ -93,8 +93,8 @@ def _offer_flags(row: dict[str, Any]) -> set[str]:
 
 
 def _offer_is_actionable(row: dict[str, Any]) -> bool:
-    """Exclude offers carrying a risk flag that invalidates price discovery."""
-    return not (_offer_flags(row) & BLOCKED_OFFER_FLAGS)
+    """Require a verified author and exclude offers with blocking risk flags."""
+    return bool(_trusted_author(row)) and not (_offer_flags(row) & BLOCKED_OFFER_FLAGS)
 
 
 def _add_offer_flag(row: dict[str, Any], flag: str) -> None:
@@ -111,7 +111,8 @@ def _trusted_author(row: dict[str, Any]) -> str:
     """Only collector-verified author metadata contributes to independence."""
     if "owner_supplied_author" in _offer_flags(row):
         return ""
-    return str(row.get("author") or "").strip().casefold()
+    author = str(row.get("author") or "").strip().casefold()
+    return "" if author in {"", "unknown", "none", "null", "n/a"} else author
 
 
 def build_order_book(
