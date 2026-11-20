@@ -52,7 +52,7 @@ def key_fingerprint(key: str | None = None) -> str:
 def _read_json(path: Path) -> dict[str, Any]:
     """Read a bounded regular file without following symlinks or resetting corruption."""
     try:
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0))
         descriptor = os.open(path, flags)
     except FileNotFoundError:
         return {}
