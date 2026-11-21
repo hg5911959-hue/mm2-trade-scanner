@@ -1238,7 +1238,8 @@ class ReliabilityTests(IsolatedDataTestCase):
             second_message = send.call_args_list[1].args[0]
             self.assertIn("WARNING: quantity 5+", second_message)
             self.assertIn("WARNING: unusually high profit", second_message)
-            self.assertIn("Knife B x5", second_message)
+            self.assertIn("Knife B", second_message)
+            self.assertIn("<code>×5</code>", second_message)
             alerted = json.loads((root / "alerted.json").read_text(encoding="utf-8"))["alerted"]
             self.assertEqual(len(alerted), 1)
             seen = json.loads((root / "seen_ads.json").read_text(encoding="utf-8"))["ad_ids"]
