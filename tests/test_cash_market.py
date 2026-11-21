@@ -11,8 +11,8 @@ from tools.cash_market import (
     calculate_cash_side,
     cash_profit_bounds,
     load_cash_price_catalog,
-    normalize_cash_name,
     load_robase_price_catalog,
+    normalize_cash_name,
 )
 
 
