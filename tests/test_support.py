@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import os
-os.environ.setdefault("CASH_MAX_AGE_DAYS", "14")
 import tempfile
 import unittest
 from pathlib import Path
+
+os.environ.setdefault("CASH_MAX_AGE_DAYS", "14")
 
 
 class IsolatedDataTestCase(unittest.TestCase):
