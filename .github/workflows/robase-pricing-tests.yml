@@ -43,8 +43,10 @@ jobs:
         run: |
           python -m tools.robase_prices --output "$RUNNER_TEMP/robase_prices.json"
           python - <<'PY'
+          import os
+          from pathlib import Path
           from tools.cash_market import load_robase_price_catalog
-          catalog = load_robase_price_catalog("$RUNNER_TEMP/robase_prices.json")
+          catalog = load_robase_price_catalog(Path(os.environ["RUNNER_TEMP"]) / "robase_prices.json")
           print(
               "[robase-live] rows=%d verified=%d unverified=%d"
               % (
