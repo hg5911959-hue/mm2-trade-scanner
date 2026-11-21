@@ -44,7 +44,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn('      CASH_FILTER: "false" # set to true only after fresh verified prices exist\n', weekly)
         self.assertIn("env.CASH_FILTER == '1' || env.CASH_FILTER == 'true'", workflow)
         self.assertIn("env.CASH_FILTER == '1' || env.CASH_FILTER == 'true'", weekly)
-        self.assertIn('          RBLXVALUE_META_POLL_ENABLED: "true"\n', workflow)
+        self.assertNotIn('          RBLXVALUE_META_POLL_ENABLED: "true"\n', workflow)
         self.assertIn('          RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY: "6"\n', workflow)
         self.assertIn('          MM2_SCAN_DURATION_SECONDS: "540"\n', workflow)
         self.assertIn('          MM2_SCAN_INTERVAL_SECONDS: "30"\n', workflow)
