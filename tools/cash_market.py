@@ -290,3 +290,64 @@ def cash_profit_bounds(give_bounds, receive_bounds):
     if give_min > give_max or receive_min > receive_max:
         raise ValueError("cash lower bounds cannot exceed upper bounds")
     return receive_min - give_max, receive_max - give_min
+
+
+def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=14, now=None):
+    """Load the latest ROBASE completed-sales snapshot as the sole cash catalogue.
+
+    ROBASE prices are seller proceeds after marketplace fees. Rows with fewer
+    than three sales in the reported seven-day volume, or an expired snapshot,
+    remain unverified and cannot qualify for live cash alerts.
+    """
+    import json
+    from datetime import datetime, timezone
+
+    snapshot_path = Path(path)
+    try:
+        raw = snapshot_path.read_bytes()
+        snapshot = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("[cash] ROBASE price snapshot is missing or invalid.") from exc
+
+    if snapshot.get("schema_version") != 1 or snapshot.get("price_basis") != "seller_proceeds_after_marketplace_fees":
+        raise RuntimeError("[cash] Unsupported ROBASE price snapshot schema or price basis.")
+    fetched_at = str(snapshot.get("fetched_at_utc") or "")
+    stamp_entry = {"status": "verified", "verified_at_utc": fetched_at}
+    snapshot_fresh = cash_price_is_fresh(stamp_entry, max_age_days=max_age_days, now=now)
+    items = {}
+    for row in snapshot.get("items", []):
+        name = str(row.get("name") or "").strip()
+        key = normalize_cash_name(name)
+        try:
+            price = float(row.get("cash_price_usd"))
+            sold_7d = int(row.get("sold_7d"))
+        except (TypeError, ValueError):
+            raise RuntimeError("[cash] Invalid ROBASE price row.")
+        if not name or not key or not math.isfinite(price) or price <= 0 or sold_7d < 0:
+            raise RuntimeError("[cash] Invalid ROBASE price row.")
+        if key in items:
+            raise RuntimeError(f"[cash] Duplicate normalized ROBASE item name: {name}")
+        verified = snapshot_fresh and row.get("status") == "verified" and sold_7d >= 3
+        items[key] = {
+            "name": name,
+            "cash_price_usd": price,
+            "price_low_usd": price,
+            "price_high_usd": price,
+            "tier": "robase",
+            "status": "verified" if verified else "unverified",
+            "verified_at_utc": fetched_at if verified else "",
+            "source": "https://robase.gg/",
+            "notes": f"Completed-sales average; seller proceeds after fees; 7d sales={sold_7d}",
+            "sold_7d": sold_7d,
+        }
+    if len(items) < 100:
+        raise RuntimeError(f"[cash] ROBASE snapshot incomplete: only {len(items)} items.")
+    fresh_rows = [row for row in items.values() if row["status"] == "verified"]
+    return {
+        "items": items,
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "row_count": len(items),
+        "verified_count": len(fresh_rows),
+        "expiring_within_3_days": 0,
+        "oldest_verified_at": fetched_at if fresh_rows else None,
+    }
