@@ -58,34 +58,6 @@ jobs:
           if catalog["verified_count"] < 8:
               raise SystemExit("ROBASE has fewer than 8 sufficiently traded items; live cash mode must remain disabled.")
           PY
-      - name: Probe ROBASE endpoint without cache-busting parameter
-        continue-on-error: true
-        run: |
-          python - <<'PY'
-          import json
-          from urllib.request import Request, urlopen
-
-          for page in (1, 2):
-              url = "https://robase.gg/api/list?r=&page=%s&v=1" % page
-              request = Request(url, headers={
-                  "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-                  "Accept": "*/*",
-                  "Accept-Language": "en-US,en;q=0.9",
-                  "Referer": "https://robase.gg/",
-                  "Sec-Fetch-Dest": "empty",
-                  "Sec-Fetch-Mode": "cors",
-                  "Sec-Fetch-Site": "same-origin",
-              })
-              try:
-                  with urlopen(request, timeout=25) as response:
-                      data = json.loads(response.read(2_000_001).decode("utf-8"))
-                      rows = data.get("data", []) if isinstance(data, dict) else []
-                      print("[robase-api-no-cache] page=%s status=%s type=%s rows=%s"
-                            % (page, response.status, response.headers.get("Content-Type", ""), len(rows)))
-              except Exception as exc:
-                  print("[robase-api-no-cache] page=%s status=%s"
-                        % (page, getattr(exc, "code", "network")))
-          PY
       - name: Install Ruff
         run: python -m pip install --disable-pip-version-check ruff==0.17.5
       - name: Lint ROBASE pricing changes
