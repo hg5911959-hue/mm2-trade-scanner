@@ -61,6 +61,11 @@ def _parse_item_name(raw: str) -> str:
     parts = name.rsplit(" ", 1)
     if len(parts) == 2 and parts[1] in CATEGORIES:
         name = parts[0]
+    else:
+        for category in sorted(CATEGORIES, key=len, reverse=True):
+            if len(name) > len(category) and name.endswith(category):
+                name = name[:-len(category)].rstrip()
+                break
     if not name:
         raise ValueError("empty ROBASE item name")
     return name
@@ -70,7 +75,12 @@ def parse_robase_html(document: str, fetched_at_utc: str | None = None) -> dict:
     parser = _TableParser()
     parser.feed(document)
     items = {}
-    for cells in parser.rows:
+    for raw_cells in parser.rows:
+        cells = list(raw_cells)
+        while cells and not cells[0].strip():
+            cells.pop(0)
+        while cells and not cells[-1].strip():
+            cells.pop()
         if len(cells) < 9 or not cells[0].strip().isdigit():
             continue
         name = _parse_item_name(cells[1])
