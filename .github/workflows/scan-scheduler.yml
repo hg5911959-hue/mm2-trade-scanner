@@ -8,6 +8,8 @@ on:
     paths:
       - ".github/workflows/scan.yml"
       - ".github/workflows/scan-scheduler.yml"
+      - "scanner.py"
+      - "tools/**"
   workflow_dispatch:
     inputs:
       dry_run:

@@ -61,6 +61,8 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         artifact = workflow.split("      - name: Prepare state artifact", 1)[1].split("      - name:", 1)[0]
         self.assertIn("rm -f state-bundle/data/cash_prices.csv", artifact)
         self.assertIn('cron: "*/10 * * * *"', scheduler)
+        self.assertIn('      - "scanner.py"\n', scheduler)
+        self.assertIn('      - "tools/**"\n', scheduler)
         self.assertIn("workflow_dispatch:", scheduler)
         self.assertIn("uses: ./.github/workflows/scan.yml", scheduler)
         self.assertIn("secrets: inherit", scheduler)
