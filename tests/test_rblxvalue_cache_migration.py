@@ -97,6 +97,69 @@ class SupremeCacheMigrationTests(IsolatedDataTestCase):
             self.assertIsNone(values)
             self.assertIsNone(age)
 
+    def test_cash_mode_reuses_23h_cached_catalog_when_request_budget_is_exhausted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = root / "supreme_values.json"
+            audit = root / "audit.json"
+            health = root / "key-health.json"
+            base = 1_800_000_000.0
+            cache.write_text(json.dumps(self._schema3_cache(base)), encoding="utf-8")
+            now = base + 23 * 60 * 60
+
+            with (
+                patch("scanner.VALUES_FILE", cache),
+                patch("scanner.VALUES_AUDIT_FILE", audit),
+                patch("scanner.RBLXVALUE_KEY_HEALTH_FILE", health),
+                patch("scanner.VALUES_TTL_SECONDS", 24 * 60 * 60),
+                patch("scanner.time.time", return_value=now),
+                patch("scanner.RBLXVALUE_API_KEY", "rbx_test_cash_cache"),
+                patch("scanner.RBLXVALUE_META_POLL_ENABLED", False),
+                patch("scanner.CASH_FILTER", True),
+                patch("rblxvalue_guard.BLOCK_FILE", root / "blocked.json"),
+                patch("rblxvalue_guard.BUDGET_FILE", root / "budget.json"),
+                patch("rblxvalue_guard.is_key_blocked", return_value=False),
+                patch(
+                    "scanner.api_get_json_conditional",
+                    side_effect=rblxvalue_guard.RblxValueBudgetExceeded("daily budget exhausted"),
+                ) as api,
+            ):
+                loaded = scanner.load_supreme_values()
+
+            self.assertEqual(loaded["item 7"]["variants"][0]["stability"], "Stable")
+            self.assertEqual(api.call_count, 1)
+
+    def test_cash_mode_rejects_supreme_cache_older_than_24h_when_budget_is_exhausted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = root / "supreme_values.json"
+            audit = root / "audit.json"
+            base = 1_800_000_000.0
+            cache.write_text(json.dumps(self._schema3_cache(base)), encoding="utf-8")
+            now = base + 25 * 60 * 60
+
+            with (
+                patch("scanner.VALUES_FILE", cache),
+                patch("scanner.VALUES_AUDIT_FILE", audit),
+                patch("scanner.RBLXVALUE_KEY_HEALTH_FILE", root / "key-health.json"),
+                patch("scanner.VALUES_TTL_SECONDS", 24 * 60 * 60),
+                patch("scanner.time.time", return_value=now),
+                patch("scanner.RBLXVALUE_API_KEY", "rbx_test_expired_cache"),
+                patch("scanner.RBLXVALUE_META_POLL_ENABLED", False),
+                patch("scanner.CASH_FILTER", True),
+                patch("rblxvalue_guard.BLOCK_FILE", root / "blocked.json"),
+                patch("rblxvalue_guard.BUDGET_FILE", root / "budget.json"),
+                patch("rblxvalue_guard.is_key_blocked", return_value=False),
+                patch(
+                    "scanner.api_get_json_conditional",
+                    side_effect=rblxvalue_guard.RblxValueBudgetExceeded("daily budget exhausted"),
+                ) as api,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "refusing stale-cache calculations"):
+                    scanner.load_supreme_values()
+
+            self.assertEqual(api.call_count, 1)
+
     def test_expired_cache_and_blocked_key_fail_closed_without_network(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
