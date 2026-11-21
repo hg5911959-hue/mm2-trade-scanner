@@ -143,5 +143,19 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("Repository administrator permission may be required", workflow)
 
 
+    def test_tools_that_import_the_tools_package_are_invoked_as_modules(self):
+        scanner = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        weekly = (ROOT / ".github/workflows/weekly-report.yml").read_text(encoding="utf-8")
+        self.assertIn("run: python -m tools.preflight --warn", scanner)
+        self.assertNotIn("run: python tools/preflight.py", scanner)
+        self.assertIn("run: python -m tools.weekly_report", weekly)
+        self.assertNotIn("run: python tools/weekly_report.py", weekly)
+
+    def test_bloxswaps_scanner_step_has_no_duplicate_environment_keys(self):
+        workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        step = workflow.split("      - name: Run BloxSwaps scanner", 1)[1].split("      - name:", 1)[0]
+        self.assertEqual(step.count("CASH_MAX_AGE_DAYS:"), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
