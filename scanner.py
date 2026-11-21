@@ -1344,7 +1344,7 @@ def _api_trade_post_to_listing(post, item_map):
         "trade-type": "P2P", "view": "messages", "with": username,
         "id": roblox_id, "name": display_name, "ad": post_id,
     })
-    listing_url = f"https://bloxswaps.com/fr/trade-mm2?{query}"
+    listing_url = f"https://bloxswaps.com/trade-mm2?{query}"
     receive, give = [], []
     for row in post.get("tradePostItems") or []:
         if not isinstance(row, dict):
@@ -1462,8 +1462,15 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     """Fetch recent RSC/API posts and recheck unresolved IDs beyond seen posts."""
     if seen_ad_ids is None and pending_ad_ids:
         seen_ad_ids = set()
-    html = fetch_bloxswaps()
-    initial_page = parse_structured_initial_page(html)
+    api_only = os.environ.get("BLOXSWAPS_API_ONLY", "false").strip().casefold() in {"1", "true", "yes", "on"}
+    if api_only:
+        initial_page = bloxswaps_api_get_json("/trade-posts", {"pageSize": BLOXSWAPS_PAGE_SIZE})
+        if not isinstance(initial_page, dict) or not isinstance(initial_page.get("items"), list):
+            raise RuntimeError("[bloxswaps] Initial trade-post API page is invalid; refusing an incomplete feed.")
+        html = None
+    else:
+        html = fetch_bloxswaps()
+        initial_page = parse_structured_initial_page(html)
     structured_rows = [
         row for post in (initial_page.get("items") or []) if isinstance(post, dict)
         for row in (post.get("tradePostItems") or []) if isinstance(row, dict)
@@ -1502,20 +1509,33 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                 f"Refresh failed safely ({type(exc).__name__}); no values were guessed.",
                 cooldown_seconds=3600,
             )
-    first_listings, stats = parse_page(html, initial_item_map)
-    if not initial_page:
-        stats.update({
-            "pagination_pages": 1, "pagination_complete": False,
-            "pagination_source": "html-only", "addition_ids": [],
-            "unparsed_ad_ids": [], "html_parse_warning_ids": [],
-        })
-        send_maintenance_alert(
-            "rsc-data-missing",
-            "BloxSwaps page is HTML-only: RSC initialPage/cursor data is missing. "
-            "The scan is treated as failed; no partial feed is trusted.",
-            cooldown_seconds=900,
-        )
-        raise RuntimeError("[bloxswaps] RSC initialPage/cursor data missing; refusing a partial HTML-only scan.")
+    if api_only:
+        first_listings = []
+        stats = {
+            "pagination_pages": 1,
+            "pagination_complete": False,
+            "pagination_source": "BloxSwaps API only",
+            "addition_ids": [],
+            "unparsed_ad_ids": [],
+            "html_parse_warning_ids": [],
+            "malformed_count": 0,
+            "malformed_samples": [],
+        }
+    else:
+        first_listings, stats = parse_page(html, initial_item_map)
+        if not initial_page:
+            stats.update({
+                "pagination_pages": 1, "pagination_complete": False,
+                "pagination_source": "html-only", "addition_ids": [],
+                "unparsed_ad_ids": [], "html_parse_warning_ids": [],
+            })
+            send_maintenance_alert(
+                "rsc-data-missing",
+                "BloxSwaps page is HTML-only: RSC initialPage/cursor data is missing. "
+                "The scan is treated as failed; no partial feed is trusted.",
+                cooldown_seconds=900,
+            )
+            raise RuntimeError("[bloxswaps] RSC initialPage/cursor data missing; refusing a partial HTML-only scan.")
 
     if seen_ad_ids is None:
         # Cold start: evaluate verifiably recent posts across cursor pages, then
@@ -1524,7 +1544,8 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
         cutoff = now_ts - 3600
         seed_ids, recent_ids, recent_listings = [], [], []
         addition_ids, unparsed_ids = [], []
-        additions = malformed = candidate_count = api_posts = 0
+        additions = malformed = candidate_count = 0
+        api_posts = len(raw_first_items) if api_only else 0
         old_streak = page_count = 1
         age_boundary = False
         complete = False
@@ -1625,7 +1646,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
             'pagination_pages': page_count,
             'pagination_api_posts': api_posts,
             'pagination_complete': complete,
-            'pagination_source': 'rsc-cold-start',
+            'pagination_source': 'api-cold-start' if api_only else 'rsc-cold-start',
             'seen_boundary_reached': age_boundary,
             'seen_streak': old_streak,
             'cold_start': True,
@@ -1666,7 +1687,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     additions = 0
     malformed = 0
     api_listings_added = 0
-    api_posts_scanned = 0
+    api_posts_scanned = len(raw_first_items) if api_only else 0
     candidate_count = 0
     item_map = initial_item_map
 
@@ -1768,7 +1789,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                 unparsed_ids.append(post_id)
                 unparsed_samples.append(json.dumps(raw, ensure_ascii=False)[:240])
 
-    consume_raw_posts(raw_first_items, compare_html=True)
+    consume_raw_posts(raw_first_items, compare_html=not api_only)
     cursor = (initial_page.get("meta") or {}).get("cursor")
     pages_scanned = 1
     seen_cursors = {str(cursor)} if cursor else set()
@@ -1823,7 +1844,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
         "pagination_pages": pages_scanned,
         "pagination_api_posts": api_posts_scanned,
         "pagination_complete": pagination_complete,
-        "pagination_source": "RSC + cursor API",
+        "pagination_source": "BloxSwaps API only" if api_only else "RSC + cursor API",
         "seen_boundary_reached": boundary_reached,
         "seen_streak": seen_streak,
         "seen_ids_skipped": seen_ids_skipped,

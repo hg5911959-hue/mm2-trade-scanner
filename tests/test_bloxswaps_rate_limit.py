@@ -96,6 +96,89 @@ class BloxSwapsRateLimitTests(IsolatedDataTestCase):
 
         self.assertNotIn("private response body", str(raised.exception))
 
+    def test_api_only_mode_uses_public_trade_posts_endpoint_without_html_request(self):
+        from datetime import datetime, timezone
+
+        post = {
+            "id": "trade-api-001",
+            "user": {
+                "robloxUserId": "123456",
+                "robloxUsername": "trader",
+                "robloxDisplayName": "Trader",
+            },
+            "lastRefreshedAt": datetime.now(timezone.utc).isoformat(),
+            "tradePostItems": [
+                {"itemDetailsId": "item-offered", "quantity": 2, "tradeRole": "OFFERED"},
+                {"itemDetailsId": "item-requested", "quantity": 1, "tradeRole": "REQUESTED"},
+            ],
+            "requestedWildcards": [],
+        }
+        item_map = {
+            "item-offered": {"displayName": "Offered Item", "slug": "offered", "rarity": "GODLY", "type": "Knife"},
+            "item-requested": {"displayName": "Requested Item", "slug": "requested", "rarity": "GODLY", "type": "Knife"},
+        }
+        with (
+            patch.dict("os.environ", {"BLOXSWAPS_API_ONLY": "true"}),
+            patch.object(scanner, "fetch_bloxswaps") as html_fetch,
+            patch.object(scanner, "bloxswaps_api_get_json", return_value={"items": [post], "meta": {"cursor": None}}) as api,
+            patch.object(scanner, "fetch_bloxswaps_items_map", return_value=item_map),
+        ):
+            listings, stats, discovered = scanner.fetch_bloxswaps_all(set())
+
+        html_fetch.assert_not_called()
+        api.assert_called_once_with("/trade-posts", {"pageSize": scanner.BLOXSWAPS_PAGE_SIZE})
+        self.assertEqual(discovered, ["trade-api-001"])
+        self.assertEqual(len(listings), 1)
+        self.assertEqual(listings[0]["receive_items"][0]["name"], "Offered Item")
+        self.assertEqual(listings[0]["give_items"][0]["name"], "Requested Item")
+        self.assertEqual(listings[0]["receive_items"][0]["quantity"], 2)
+        self.assertEqual(stats["pagination_source"], "BloxSwaps API only")
+        self.assertEqual(stats["pagination_complete"], True)
+        self.assertFalse(listings[0].get("html_card_parse_warning", False))
+        self.assertIn("https://bloxswaps.com/trade-mm2?", listings[0]["url"])
+
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_api_only_mode_uses_public_trade_posts_endpoint_without_html_request(self):
+        from datetime import datetime, timezone
+
+        post = {
+            "id": "trade-api-001",
+            "user": {
+                "robloxUserId": "123456",
+                "robloxUsername": "trader",
+                "robloxDisplayName": "Trader",
+            },
+            "lastRefreshedAt": datetime.now(timezone.utc).isoformat(),
+            "tradePostItems": [
+                {"itemDetailsId": "item-offered", "quantity": 2, "tradeRole": "OFFERED"},
+                {"itemDetailsId": "item-requested", "quantity": 1, "tradeRole": "REQUESTED"},
+            ],
+            "requestedWildcards": [],
+        }
+        item_map = {
+            "item-offered": {"displayName": "Offered Item", "slug": "offered", "rarity": "GODLY", "type": "Knife"},
+            "item-requested": {"displayName": "Requested Item", "slug": "requested", "rarity": "GODLY", "type": "Knife"},
+        }
+        with (
+            patch.dict("os.environ", {"BLOXSWAPS_API_ONLY": "true"}),
+            patch.object(scanner, "fetch_bloxswaps") as html_fetch,
+            patch.object(scanner, "bloxswaps_api_get_json", return_value={"items": [post], "meta": {"cursor": None}}) as api,
+            patch.object(scanner, "fetch_bloxswaps_items_map", return_value=item_map),
+        ):
+            listings, stats, discovered = scanner.fetch_bloxswaps_all(set())
+
+        html_fetch.assert_not_called()
+        api.assert_called_once_with("/trade-posts", {"pageSize": scanner.BLOXSWAPS_PAGE_SIZE})
+        self.assertEqual(discovered, ["trade-api-001"])
+        self.assertEqual(len(listings), 1)
+        self.assertEqual(listings[0]["receive_items"][0]["name"], "Offered Item")
+        self.assertEqual(listings[0]["give_items"][0]["name"], "Requested Item")
+        self.assertEqual(listings[0]["receive_items"][0]["quantity"], 2)
+        self.assertEqual(stats["pagination_source"], "BloxSwaps API only")
+        self.assertEqual(stats["pagination_complete"], True)
+        self.assertFalse(listings[0].get("html_card_parse_warning", False))
+        self.assertIn("https://bloxswaps.com/trade-mm2?", listings[0]["url"])
+
