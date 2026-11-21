@@ -3741,7 +3741,7 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
             f"Net resale: <b>{chr(36)}{format_number(receive_total)}</b>",
             "",
             f"💵 <b>CASH PROFIT (CONSERVATIVE): {'+' if difference > 0 else ''}{chr(36)}{format_number(difference)}</b>",
-            f"📊 Cash ROI: <b>{roi:.2f}%</b>",
+            f"📊 CASH ROI: <b>{roi:.2f}%</b>",
             f"Resale haircut: {_telegram_escape(f'{CASH_SELL_HAIRCUT_PCT:.1f}%')}",
             f"🏁 <b>RESULT: {'CASH WIN' if difference > 0 else 'NO CASH PROFIT'}</b>",
         ])
