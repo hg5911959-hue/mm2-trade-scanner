@@ -1,4 +1,3 @@
-import unittest
 from tools.robase_prices import parse_robase_html
 
 
@@ -35,5 +34,3 @@ class RobasePriceParserTests(unittest.TestCase):
             parse_robase_html(duplicate)
 
 
-if __name__ == "__main__":
-    unittest.main()
