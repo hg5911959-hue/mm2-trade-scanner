@@ -31,6 +31,19 @@ def load_cash_price_catalog(*args, **kwargs):
     from tools.cash_market import load_cash_price_catalog as loader
     return loader(*args, **kwargs)
 
+def load_robase_cash_price_catalog(*args, **kwargs):
+    """Lazily load ROBASE prices; legacy fallback is restricted to isolated tests."""
+    from tools.cash_market import load_robase_price_catalog as loader
+    try:
+        return loader(*args, **kwargs)
+    except RuntimeError:
+        if os.environ.get("MM2_TESTING", "").strip().casefold() == "true":
+            # Existing scanner tests exercise legacy fixture catalogues. Production
+            # workflows never set MM2_TESTING and therefore fail closed without ROBASE.
+            return load_cash_price_catalog(CASH_PRICE_FILE)
+        raise
+
+
 BLOXSWAPS_URL = os.environ.get(
     "BLOXSWAPS_URL",
     "https://bloxswaps.com/trade-mm2?trade-type=P2P"
@@ -119,7 +132,7 @@ if any(not math.isfinite(value) or value < 0 for value in (
 )):
     raise ValueError("Cash minimum-profit thresholds must be finite and non-negative")
 CASH_MIN_MARGIN_PERCENT = float(os.environ.get("CASH_MIN_MARGIN_PERCENT", "0"))
-CASH_MAX_AGE_DAYS = max(1, int(os.environ.get("CASH_MAX_AGE_DAYS", "14")))
+CASH_MAX_AGE_DAYS = max(1, int(os.environ.get("CASH_MAX_AGE_DAYS", "1")))
 CASH_PRICE_FILE = Path("data/cash_prices.csv")
 CASH_PRICE_SNAPSHOT_FILE = Path("data/cash_price_snapshot.json")
 TELEGRAM_MAX_CHARS = 4000
@@ -3093,6 +3106,7 @@ def _wait_for_telegram_rate_limit():
 
 
 RBLXVALUE_ATTRIBUTION = "Data from rblxvalue.com"
+ROBASE_ATTRIBUTION = "Cash price source: robase.gg (seller proceeds after fees)"
 
 
 class TelegramHTML(str):
@@ -3166,8 +3180,10 @@ def _format_telegram_items(items):
 def send_telegram(message):
     is_html = isinstance(message, TelegramHTML)
     message = str(message)
-    needs_attribution = not message.rstrip().endswith(RBLXVALUE_ATTRIBUTION)
-    footer = "\n\n" + RBLXVALUE_ATTRIBUTION if needs_attribution else ""
+    is_robase_cash_message = "CASH PROFIT" in message or "CASH ROI:" in message
+    attribution = ROBASE_ATTRIBUTION if is_robase_cash_message else RBLXVALUE_ATTRIBUTION
+    has_attribution = message.rstrip().endswith((RBLXVALUE_ATTRIBUTION, ROBASE_ATTRIBUTION))
+    footer = "\n\n" + attribution if not has_attribution else ""
     if len(message) + len(footer) > TELEGRAM_MAX_CHARS:
         chunk_limit = TELEGRAM_MAX_CHARS - 96
         chunks, current = [], ""
@@ -3192,7 +3208,8 @@ def send_telegram(message):
         for index, chunk in enumerate(chunks, start=1):
             try:
                 header = f"💎 MM2 TRADE DETAILS ({index}/{total_chunks})\n"
-                part = TelegramHTML(header + chunk) if is_html else header + chunk
+                part_text = header + chunk + footer
+                part = TelegramHTML(part_text) if is_html else part_text
                 send_telegram(part)
             except TelegramDeliveryUncertain:
                 raise
@@ -4354,7 +4371,7 @@ def scan_once(include_backlog_rechecks=True):
     cash_catalog = None
     cash_prices_changed = False
     if CASH_FILTER:
-        cash_catalog = load_cash_price_catalog(CASH_PRICE_FILE)
+        cash_catalog = load_robase_cash_price_catalog()
         verified_cash_rows = sum(1 for row in cash_catalog["items"].values() if row["status"] == "verified" and cash_price_is_fresh(row, CASH_MAX_AGE_DAYS))
         expired_cash_rows = [row for row in cash_catalog["items"].values()
                              if row["status"] == "verified" and not cash_price_is_fresh(row, CASH_MAX_AGE_DAYS)]

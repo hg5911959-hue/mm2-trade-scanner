@@ -39,7 +39,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn('          BLOXSWAPS_URL: "https://bloxswaps.com/trade-mm2?trade-type=P2P"\n', workflow)
         self.assertIn('          BLOXSWAPS_API_ONLY: "true"\n', workflow)
         self.assertIn('          MAX_PENDING_RECHECK_PER_SCAN: "50"\n', workflow)
-        self.assertIn('      CASH_FILTER: "false" # set to true only after fresh verified prices exist\n', workflow)
+        self.assertIn('      CASH_FILTER: "true" # only fully priced, fresh ROBASE-verified offers are eligible\n', workflow)
         weekly = (ROOT / ".github/workflows/weekly-report.yml").read_text(encoding="utf-8")
         self.assertIn('      CASH_FILTER: "false" # set to true only after fresh verified prices exist\n', weekly)
         self.assertIn("env.CASH_FILTER == '1' || env.CASH_FILTER == 'true'", workflow)

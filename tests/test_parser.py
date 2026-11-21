@@ -1215,6 +1215,7 @@ class ReliabilityTests(IsolatedDataTestCase):
                 "knife b": {"name": "Knife B", "value": 20},
             }
             with (
+                patch("scanner.CASH_FILTER", False),
                 patch("scanner.BOT_TOKEN", "test-token"),
                 patch("scanner.CHAT_ID", "123"),
                 patch("scanner.ALERTED_FILE", root / "alerted.json"),
@@ -1237,7 +1238,8 @@ class ReliabilityTests(IsolatedDataTestCase):
             second_message = send.call_args_list[1].args[0]
             self.assertIn("WARNING: quantity 5+", second_message)
             self.assertIn("WARNING: unusually high profit", second_message)
-            self.assertIn("Knife B x5", second_message)
+            self.assertIn("Knife B", second_message)
+            self.assertIn("<code>×5</code>", second_message)
             alerted = json.loads((root / "alerted.json").read_text(encoding="utf-8"))["alerted"]
             self.assertEqual(len(alerted), 1)
             seen = json.loads((root / "seen_ads.json").read_text(encoding="utf-8"))["ad_ids"]
@@ -1283,8 +1285,8 @@ class ReliabilityTests(IsolatedDataTestCase):
             trade_messages = [call.args[0] for call in send.call_args_list if "💎 MM2 TRADE" in call.args[0]]
             self.assertEqual(trade_messages, [])
             self.assertFalse(any("∞" in call.args[0] for call in send.call_args_list))
-            pending = json.loads((root / "pending.json").read_text(encoding="utf-8"))["pending"]
-            self.assertIn("manual-review-test", pending)
+            self.assertFalse((root / "pending.json").exists())
+            self.assertFalse((root / "alerted.json").exists())
 
     def test_unknown_receive_stack_does_not_produce_infinite_profit(self):
         listing = {
@@ -1318,6 +1320,7 @@ class ReliabilityTests(IsolatedDataTestCase):
                 "knife b": {"name": "Knife B", "value": 20},
             }
             with (
+                patch("scanner.CASH_FILTER", False),
                 patch("scanner.BOT_TOKEN", "test-token"),
                 patch("scanner.CHAT_ID", "123"),
                 patch("scanner.ALERTED_FILE", root / "alerted.json"),
@@ -1358,7 +1361,7 @@ class ReliabilityTests(IsolatedDataTestCase):
                 {"knife a": {"name": "Knife A", "value": 10},
                  "knife b": {"name": "Knife B", "value": 20}},
             ]
-            with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), \
+            with patch("scanner.CASH_FILTER", False), patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), \
                  patch("scanner.ALERTED_FILE", root / "alerted.json"), \
                  patch("scanner.FAILURE_FILE", root / "failure.json"), \
                  patch("scanner.HISTORY_FILE", root / "history.csv"), \
@@ -1366,6 +1369,7 @@ class ReliabilityTests(IsolatedDataTestCase):
                  patch("scanner.PENDING_FILE", root / "pending.json"), \
                  patch("scanner.PENDING_RECHECK_SCHEDULE_FILE", root / "pending_schedule.json"), \
                  patch("scanner.WATCH_FILE", root / "watch.json"), \
+                 patch("scanner.UNMATCHED_FILE", root / "unmatched_names.json"), \
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"), \
                  patch("scanner.load_supreme_values", side_effect=[cash_ready_values(value) for value in value_sets]), \
                  patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)), \
@@ -1380,9 +1384,10 @@ class ReliabilityTests(IsolatedDataTestCase):
             self.assertNotIn("MANUAL VALUE CHECK", "".join(trade_messages))
             self.assertTrue((root / "alerted.json").exists())
             seen = json.loads((root / "seen_ads.json").read_text(encoding="utf-8"))["ad_ids"]
-            pending = json.loads((root / "pending.json").read_text(encoding="utf-8"))["pending"]
+            unmatched = json.loads((root / "unmatched_names.json").read_text(encoding="utf-8"))
+            self.assertIn("knife b", unmatched)
             self.assertIn("retry-me", seen)
-            self.assertEqual(pending, {})
+            self.assertFalse((root / "pending.json").exists())
 
     def test_all_qualified_offers_send_without_per_run_cap(self):
         def html(ad_ids):
@@ -1406,6 +1411,7 @@ class ReliabilityTests(IsolatedDataTestCase):
                 "knife b": {"name": "Knife B", "value": 20},
             }
             with (
+                patch("scanner.CASH_FILTER", False),
                 patch("scanner.BOT_TOKEN", "test-token"),
                 patch("scanner.CHAT_ID", "123"),
                 patch("scanner.ALERTED_FILE", root / "alerted.json"),
@@ -1452,6 +1458,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             root = Path(directory)
             sent = []
             with (
+                patch("scanner.CASH_FILTER", False),
                 patch("scanner.BOT_TOKEN", "test-token"),
                 patch("scanner.CHAT_ID", "123"),
                 patch("scanner.ALERTED_FILE", root / "alerted.json"),
@@ -1470,10 +1477,9 @@ class ReliabilityTests(IsolatedDataTestCase):
             ):
                 with patch.dict(os.environ, {"MAX_ALERTS_PER_SCAN": "2"}):
                     scanner.main()
-                pending = json.loads((root / "pending.json").read_text(encoding="utf-8"))["pending"]
-                self.assertEqual(pending, {})
+                self.assertEqual(scanner.load_pending_ids(), {})
                 individual = [message for message in sent if "💎 MM2 TRADE" in message and "DIGEST" not in message]
-                digests = [message for message in sent if "MM2 TRADE DIGEST" in message]
+                digests = [message for message in sent if "MM2 TRADE " in message and "<b>DIGEST</b>" in message]
                 self.assertEqual(len(individual), 2)
                 self.assertEqual(len(digests), 1)
                 for ad in ("defer-c", "defer-d", "defer-e"):
@@ -1502,7 +1508,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             root = Path(directory)
             sent = []
             sequence = [html(["old"]), html(["old", "new"]), html(["old", "new"])]
-            with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), \
+            with patch("scanner.CASH_FILTER", False), patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), \
                  patch("scanner.ALERTED_FILE", root / "alerted.json"), \
                  patch("scanner.FAILURE_FILE", root / "failure.json"), \
                  patch("scanner.HISTORY_FILE", root / "history.csv"), \
@@ -3170,7 +3176,7 @@ class WatchWindowRegressionTests(IsolatedDataTestCase):
         second = scanner.listing_watch_fingerprints(self._listing(3), {})
         self.assertNotEqual(first[0], second[0])
 
-    def test_watch_state_round_trips_and_expires_after_six_hours(self):
+    def test_watch_state_round_trips_and_expires_after_24_hours(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "watch.json"
             with patch("scanner.WATCH_FILE", path), patch("scanner.time.time", return_value=1000):
@@ -3178,7 +3184,7 @@ class WatchWindowRegressionTests(IsolatedDataTestCase):
                                       "created_at": 1000, "updated_at": 1000}}
                 scanner.save_watch_state(state)
                 self.assertEqual(scanner.load_watch_state(), state)
-            with patch("scanner.WATCH_FILE", path), patch("scanner.time.time", return_value=1000 + 6 * 3600 + 1):
+            with patch("scanner.WATCH_FILE", path), patch("scanner.time.time", return_value=1000 + 24 * 3600 + 1):
                 self.assertEqual(scanner.load_watch_state(), {})
 
 

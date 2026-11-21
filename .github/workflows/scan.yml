@@ -41,7 +41,7 @@ jobs:
       actions: read
     env:
       HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
-      CASH_FILTER: "false" # set to true only after fresh verified prices exist
+      CASH_FILTER: "true" # only fully priced, fresh ROBASE-verified offers are eligible
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -86,15 +86,6 @@ jobs:
                   print(f"[state-audit] supreme_cache_present=true bytes={len(raw)} parse_error={type(exc).__name__}")
           PY
 
-      - name: Run scanner preflight checks (warnings do not block the scan)
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          CASH_PRICES_CSV: ${{ (env.CASH_FILTER == '1' || env.CASH_FILTER == 'true' || env.CASH_FILTER == 'yes' || env.CASH_FILTER == 'on') && secrets.CASH_PRICES_CSV || '' }}
-          CASH_MAX_AGE_DAYS: "14"
-          CASH_MIN_VERIFIED_ROWS: "8"
-        run: python -m tools.preflight --warn
-
       - name: Collect authorized Discord trade channels
         env:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
@@ -116,6 +107,22 @@ jobs:
           # message contents are not logged or persisted to public state
           python tools/merge_discord_imports.py
 
+      - name: Refresh public ROBASE completed-sales prices
+        if: env.CASH_FILTER == '1' || env.CASH_FILTER == 'true' || env.CASH_FILTER == 'yes' || env.CASH_FILTER == 'on'
+        continue-on-error: true
+        run: |
+          python -m tools.robase_prices --output data/robase_prices.json || {
+            echo "ROBASE refresh failed; the scanner will use only a still-fresh cached snapshot."
+          }
+
+      - name: Run scanner preflight checks (warnings do not block the scan)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CASH_MAX_AGE_DAYS: "1"
+          CASH_MIN_VERIFIED_ROWS: "8"
+        run: python -m tools.preflight --warn
+
       - name: Run BloxSwaps scanner
         id: scan
         env:
@@ -126,7 +133,7 @@ jobs:
           FAILURE_ALERT_THRESHOLD: "3"
           MAX_ALERTS_PER_RUN: "0"
           MAX_ALERTS_PER_SCAN: "15"
-          CASH_MAX_AGE_DAYS: "14"
+          CASH_MAX_AGE_DAYS: "1"
           MAX_PENDING_RECHECK_PER_SCAN: "50"
           MAX_BACKLOG_RECHECK_PAGES: "25"
           BACKLOG_RECHECK_EVERY_CYCLES: "4"
@@ -145,28 +152,8 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RBLXVALUE_API_KEY: ${{ secrets.RBLXVALUE_API_KEY }}
-          CASH_PRICES_CSV: ${{ (env.CASH_FILTER == '1' || env.CASH_FILTER == 'true' || env.CASH_FILTER == 'yes' || env.CASH_FILTER == 'on') && secrets.CASH_PRICES_CSV || '' }}
         run: |
           mkdir -p data
-          if [[ "${CASH_FILTER,,}" =~ ^(1|true|yes|on)$ ]] && [ -n "$CASH_PRICES_CSV" ]; then
-            python - <<'PY'
-          import csv, io, os, tempfile
-          from pathlib import Path
-          raw = os.environ["CASH_PRICES_CSV"]
-          reader = csv.DictReader(io.StringIO(raw))
-          required = {"name", "cash_price_usd", "tier", "status", "verified_at_utc", "source", "notes"}
-          if not reader.fieldnames or not required.issubset(reader.fieldnames):
-              raise SystemExit("CASH_PRICES_CSV has an invalid header; tracked fallback retained.")
-          path = Path("data/cash_prices.csv")
-          fd, temp = tempfile.mkstemp(prefix="cash_prices.", suffix=".tmp", dir="data")
-          with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
-              handle.write(raw)
-              handle.flush()
-              os.fsync(handle.fileno())
-          os.replace(temp, path)
-          print("[cash] Loaded private price catalogue secret; contents suppressed.")
-          PY
-          fi
           set -o pipefail
           python -u scanner.py 2>&1 | tee scanner.log
 

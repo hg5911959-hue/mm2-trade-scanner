@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 FIELDS = ("scans", "scan_failures", "alerts_sent", "alerts_deferred",
+          "alerts_digest_messages", "alerts_digest_items",
           "rblxvalue_requests", "key_blocked_seconds", "parse_empty")
 
 DEFAULT_METRICS_FILE = Path("data/metrics.json")

@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+os.environ.setdefault("CASH_MAX_AGE_DAYS", "14")
+
 
 class IsolatedDataTestCase(unittest.TestCase):
     """Give every test a fresh cwd so relative data/ paths cannot touch the repo."""

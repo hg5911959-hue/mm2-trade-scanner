@@ -1,6 +1,7 @@
 """Regression coverage for the default-off cash filter."""
 import contextlib
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -76,6 +77,66 @@ class WeeklyReportValueModeTests(IsolatedDataTestCase):
                 load.assert_not_called()
             self.assertIn("Cash prices: disabled (value-based mode)", output.getvalue())
 
+
+
+
+
+class CashTelegramAttributionTests(IsolatedDataTestCase):
+    def _deliver_and_read_payload(self, message):
+        class Response:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return None
+            def read(self):
+                return b'{"ok": true, "result": {"message_id": 123}}'
+
+        with (
+            patch.object(scanner, "BOT_TOKEN", "test-token"),
+            patch.object(scanner, "CHAT_ID", "123"),
+            patch.object(scanner, "_wait_for_telegram_rate_limit"),
+            patch.object(scanner.urllib.request, "urlopen", return_value=Response()) as send,
+        ):
+            scanner.send_telegram(message)
+        request = send.call_args.args[0]
+        return json.loads(request.data.decode("utf-8"))
+
+    def test_cash_trade_alert_uses_robase_attribution_not_rblxvalue(self):
+        listing = {
+            "id": "cash-alert", "source": "bloxswaps",
+            "valuation_mode": "cash",
+            "owner_url": "https://bloxswaps.com/users/1",
+            "url": "https://bloxswaps.com/trade/1",
+        }
+        message = scanner.format_trade_message(
+            listing, 5.02,
+            ["Harvester x1 — $5.02 each (replacement cost) = $5.02"],
+            221.22,
+            ["Gingerscope x1 — $260.26 each (net resale, haircut 15%) = $221.22"],
+            216.20,
+        )
+        payload = self._deliver_and_read_payload(message)
+        self.assertEqual(payload["parse_mode"], "HTML")
+        self.assertIn("CASH PROFIT", payload["text"])
+        self.assertIn("Cash price source: robase.gg", payload["text"])
+        self.assertNotIn("Data from rblxvalue.com", payload["text"])
+
+    def test_cash_digest_uses_robase_attribution(self):
+        listing = {
+            "id": "cash-digest", "source": "bloxswaps",
+            "valuation_mode": "cash", "url": "https://bloxswaps.com/trade/2",
+        }
+        message = scanner.format_opportunity_digest([{
+            "listing": listing, "give_total": 5.02, "receive_total": 221.22,
+            "give_lines": ["Harvester x1 — $5.02 each (replacement cost) = $5.02"],
+            "receive_lines": ["Gingerscope x1 — $260.26 each (net resale, haircut 15%) = $221.22"],
+            "difference": 216.20, "cash_profit_worst": 216.20,
+            "cash_profit_best": 216.20, "margin": 4302.79,
+        }])
+        payload = self._deliver_and_read_payload(message)
+        self.assertIn("DIGEST", payload["text"])
+        self.assertIn("Cash price source: robase.gg", payload["text"])
+        self.assertNotIn("Data from rblxvalue.com", payload["text"])
 
 
 class DisabledScanIntegrationTests(IsolatedDataTestCase):
