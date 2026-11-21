@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """BloxSwaps MM2 scanner with verified Supreme Values calculations."""
 import csv
+import html as html_lib
 import itertools
 import hashlib
 import json
@@ -120,6 +121,7 @@ CASH_MAX_AGE_DAYS = max(1, int(os.environ.get("CASH_MAX_AGE_DAYS", "14")))
 CASH_PRICE_FILE = Path("data/cash_prices.csv")
 CASH_PRICE_SNAPSHOT_FILE = Path("data/cash_price_snapshot.json")
 TELEGRAM_MAX_CHARS = 4000
+MAX_ITEM_QUANTITY = 9999  # Public BloxSwaps feed includes valid stacks above 100.
 _LAST_TELEGRAM_SEND_AT = 0.0
 _LAST_ITEMS_FORCE_REFRESH_AT = 0.0
 
@@ -290,10 +292,10 @@ def split_item_label(raw):
     name = re.sub(r"\s+", " ", name).strip()
     quantity = None
     normalized = _normalize_quantity_text(name)
-    match = re.search(r"(?:[x×]\s*(\d{1,3})|(\d{1,3})\s*[x×])\s*$", normalized, flags=re.I)
+    match = re.search(r"(?:[x×]\s*(\d{1,4})|(\d{1,4})\s*[x×])\s*$", normalized, flags=re.I)
     if match:
         parsed = int(match.group(1) or match.group(2))
-        quantity = parsed if 1 <= parsed <= 100 else None
+        quantity = parsed if 1 <= parsed <= MAX_ITEM_QUANTITY else None
         name = name[:match.start()].strip()
     ignored = {
         "coin", "offers", "offres", "ajouts", "ajout", "item stability",
@@ -336,25 +338,25 @@ def _normalize_quantity_text(raw):
 def _quantity_marker(raw):
     """Parse a whole explicit marker or structured numeric quantity."""
     text = _normalize_quantity_text(raw).strip()
-    match = re.fullmatch(r"(?:x|×)\s*(\d{1,3})|(?:\d{1,3})\s*(?:x|×)", text, flags=re.I)
+    match = re.fullmatch(r"(?:x|×)\s*(\d{1,4})|(?:\d{1,4})\s*(?:x|×)", text, flags=re.I)
     if match:
-        number = re.search(r"\d{1,3}", text)
+        number = re.search(r"\d{1,4}", text)
         parsed = int(number.group())
-        return parsed if 1 <= parsed <= 100 else None
-    if re.fullmatch(r"\d{1,3}", text):
+        return parsed if 1 <= parsed <= MAX_ITEM_QUANTITY else None
+    if re.fullmatch(r"\d{1,4}", text):
         parsed = int(text)
-        return parsed if 1 <= parsed <= 100 else None
+        return parsed if 1 <= parsed <= MAX_ITEM_QUANTITY else None
     return None
 
 
 def _explicit_stack_quantities(raw):
     """Return all explicit xN/×N/Nx markers; never parse bare prices as counts."""
     text = _normalize_quantity_text(raw)
-    pattern = r"(?<![A-Za-z0-9])(?:x|×)\s*(\d{1,3})(?!\d)|(?<![\d.,])(\d{1,3})\s*(?:x|×)(?![A-Za-z0-9])"
+    pattern = r"(?<![A-Za-z0-9])(?:x|×)\s*(\d{1,4})(?!\d)|(?<![\d.,])(\d{1,4})\s*(?:x|×)(?![A-Za-z0-9])"
     values = []
     for match in re.finditer(pattern, text, flags=re.I):
         parsed = int(match.group(1) or match.group(2))
-        if not 1 <= parsed <= 100:
+        if not 1 <= parsed <= MAX_ITEM_QUANTITY:
             continue
         values.append(parsed)
     return values
@@ -441,7 +443,7 @@ def _has_unreadable_quantity_hint(raw, wrapper=None, segment_nodes=()):
     )
     if invalid_numeric_marker:
         parsed = int(invalid_numeric_marker.group(1) or invalid_numeric_marker.group(2))
-        if not 1 <= parsed <= 100:
+        if not 1 <= parsed <= MAX_ITEM_QUANTITY:
             return True
     if re.search(r"(?<![A-Za-z0-9])(?:x|×)\s*(?:$|[^0-9\s])", text, flags=re.I):
         return True
@@ -975,12 +977,12 @@ def _apply_structured_quantities(listing, structured, item_map=None):
             item['html_quantity'], item['html_quantity_source'] = html_quantity, html_source
             try: quantity = int(row.get('quantity'))
             except (TypeError, ValueError): quantity = None
-            if quantity is None or not 1 <= quantity <= 100:
+            if quantity is None or not 1 <= quantity <= MAX_ITEM_QUANTITY:
                 _uncertain_quantity(item, 'invalid structured quantity')
             elif html_source == 'uncertain':
                 _uncertain_quantity(item, 'HTML quantity marker is ambiguous; structured data cannot override the conflict')
             elif html_quantity != quantity:
-                known = [int(v) for v in (html_quantity, quantity) if v is not None and str(v).isdigit() and 1 <= int(v) <= 100]
+                known = [int(v) for v in (html_quantity, quantity) if v is not None and str(v).isdigit() and 1 <= int(v) <= MAX_ITEM_QUANTITY]
                 _uncertain_quantity(item, f'HTML ({html_source}) says {html_quantity}; structured data says {quantity}')
                 item['quantity_min'] = min(known) if known else 1
                 item['quantity_max'] = max(known) if known else None
@@ -1362,7 +1364,7 @@ def _api_trade_post_to_listing(post, item_map):
             quantity = int(row.get("quantity"))
         except (TypeError, ValueError):
             quantity = None
-        if quantity is not None and not 1 <= quantity <= 100:
+        if quantity is not None and not 1 <= quantity <= MAX_ITEM_QUANTITY:
             quantity = None
         item = {
             "name": name,
@@ -1431,7 +1433,7 @@ def _merge_html_quantity_diagnostics(api_listing, html_listing):
                 _uncertain_quantity(api_item, html_item.get('quantity_reason', 'ambiguous HTML quantity'))
                 api_item['quantity_min'], api_item['quantity_max'] = html_item.get('quantity_min', 1), html_item.get('quantity_max')
             elif html_quantity != api_quantity:
-                known = [int(v) for v in (html_quantity, api_quantity) if v is not None and str(v).isdigit() and 1 <= int(v) <= 100]
+                known = [int(v) for v in (html_quantity, api_quantity) if v is not None and str(v).isdigit() and 1 <= int(v) <= MAX_ITEM_QUANTITY]
                 _uncertain_quantity(api_item, f'HTML quantity {html_quantity} disagrees with RSC quantity {api_quantity}')
                 api_item['quantity_min'] = min(known) if known else 1
                 api_item['quantity_max'] = max(known) if known else None
@@ -2952,14 +2954,14 @@ def calculate_side(items, values, aliases=None, side="give"):
         if quantity is None or item.get("quantity_source") == "uncertain":
             missing.append(f"{item['name']} (quantity uncertain)")
             continue
-        if not 1 <= int(quantity) <= 100:
+        if not 1 <= int(quantity) <= MAX_ITEM_QUANTITY:
             missing.append(f"{item['name']} (quantity outside supported range)")
             continue
         entry["quantity"] += int(quantity)
     for entry in grouped.values():
         item_total = entry["unit_value"] * entry["quantity"]
         total += item_total
-        suffix = f" x{entry['quantity']}" if entry["quantity"] > 1 else ""
+        suffix = f" x{entry['quantity']}"
         stability = entry.get("stability") or "N/A"
         breakdown.append(
             f"• {entry['name']}{suffix} — {entry['unit_value']:g} each = {item_total:g}"
@@ -3023,7 +3025,7 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
             qmin, qmax = int(qmin), int(qmax) if qmax is not None else None
         except (TypeError, ValueError):
             qmin, qmax, source = 1, None, "uncertain"
-        if qmin < 1 or qmin > 100 or (qmax is not None and (qmax < qmin or qmax > 100)):
+        if qmin < 1 or qmin > MAX_ITEM_QUANTITY or (qmax is not None and (qmax < qmin or qmax > MAX_ITEM_QUANTITY)):
             qmin, qmax, source = 1, None, "uncertain"
         entry["min_quantity"] += qmin
         if qmax is None:
@@ -3091,7 +3093,76 @@ def _wait_for_telegram_rate_limit():
 RBLXVALUE_ATTRIBUTION = "Data from rblxvalue.com"
 
 
+class TelegramHTML(str):
+    """Trusted, escaped Telegram HTML. Plain text is never interpreted as markup."""
+    def __add__(self, other):
+        suffix = str(other) if isinstance(other, TelegramHTML) else html_lib.escape(str(other), quote=False)
+        return TelegramHTML(str(self) + suffix)
+
+    def __radd__(self, other):
+        prefix = str(other) if isinstance(other, TelegramHTML) else html_lib.escape(str(other), quote=False)
+        return TelegramHTML(prefix + str(self))
+
+
+def _telegram_escape(value):
+    return html_lib.escape(str(value), quote=False)
+
+
+def _telegram_link(url, label):
+    raw = str(url or "").strip()
+    try:
+        parsed = urlsplit(raw)
+    except ValueError:
+        parsed = None
+    if (
+        parsed and parsed.scheme == "https"
+        and parsed.hostname in {"bloxswaps.com", "www.bloxswaps.com", "discord.com", "discordapp.com"}
+        and not parsed.username and not parsed.password
+    ):
+        return f'<a href="{html_lib.escape(raw, quote=True)}">{_telegram_escape(label)}</a>'
+    return _telegram_escape(label)
+
+
+def _format_telegram_item_line(line):
+    raw = str(line or "").strip()
+    core_parts = raw.lstrip("•").strip().split(" | ")
+    core = core_parts[0]
+    match = re.match(
+        r"^(?P<name>.*?)\s+x(?P<quantity>\d+)\s+—\s+(?P<unit>.*?)\s+each\s+=\s+(?P<total>.+)$",
+        core,
+    )
+    if not match:
+        return f"• {_telegram_escape(raw.lstrip('•').strip())}"
+    name = match.group("name").strip()
+    identity = ""
+    identity_match = re.match(r"^(.*?)\s+\[([^\]]+)\]$", name)
+    if identity_match:
+        name = identity_match.group(1).strip()
+        identity = identity_match.group(2).replace("/", " · ").title()
+    quantity = match.group("quantity")
+    unit_value = match.group("unit").strip()
+    total_value = match.group("total").strip()
+    heading = f"• <b>{_telegram_escape(name)}</b> <code>×{quantity}</code>"
+    if identity:
+        heading += f" <i>{_telegram_escape(identity)}</i>"
+    value_line = f"  {_telegram_escape(unit_value)} each → <b>{_telegram_escape(total_value)}</b>"
+    details = []
+    for detail in core_parts[1:]:
+        label = detail.strip().replace("Stability (RBLXValue):", "Stability:")
+        label = label.replace("Demand:", "Demand").replace("Rarity:", "Rarity")
+        if label:
+            details.append(label)
+    if details:
+        return heading + "\n" + value_line + "\n  <i>" + _telegram_escape(" · ".join(details)) + "</i>"
+    return heading + "\n" + value_line
+
+
+def _format_telegram_items(items):
+    return [_format_telegram_item_line(item) for item in _compact_telegram_items(items)]
+
+
 def send_telegram(message):
+    is_html = isinstance(message, TelegramHTML)
     message = str(message)
     needs_attribution = not message.rstrip().endswith(RBLXVALUE_ATTRIBUTION)
     footer = "\n\n" + RBLXVALUE_ATTRIBUTION if needs_attribution else ""
@@ -3108,6 +3179,8 @@ def send_telegram(message):
             if current:
                 chunks.append(current)
                 current = ""
+            if len(line) > chunk_limit and is_html:
+                raise RuntimeError("[telegram] A single formatted HTML line exceeds the safe chunk size.")
             while len(line) > chunk_limit:
                 chunks.append(line[:chunk_limit])
                 line = line[chunk_limit:]
@@ -3118,7 +3191,9 @@ def send_telegram(message):
         sent_chunks = 0
         for index, chunk in enumerate(chunks, start=1):
             try:
-                send_telegram(f"💎 MM2 TRADE DETAILS ({index}/{total_chunks})\n{chunk}")
+                header = f"💎 MM2 TRADE DETAILS ({index}/{total_chunks})\n"
+                part = TelegramHTML(header + chunk) if is_html else header + chunk
+                send_telegram(part)
             except TelegramDeliveryUncertain:
                 raise
             except Exception as exc:
@@ -3132,61 +3207,14 @@ def send_telegram(message):
         return
     message += footer
     url = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage"
-    body = json.dumps({
+    payload = {
         "chat_id": CHAT_ID,
         "text": message,
         "disable_web_page_preview": True,
-    }).encode()
-
-    # sendMessage is non-idempotent. Never apply generic network/5xx retries:
-    # Telegram may have accepted the message even when its response was lost.
-    for attempt in range(2):
-        _wait_for_telegram_rate_limit()
-        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-        try:
-            with urllib.request.urlopen(req, timeout=20) as response:
-                raw = response.read()
-        except HTTPError as exc:
-            raw = exc.read(2000)
-            if exc.code == 429 and attempt < 1:
-                try:
-                    result = json.loads(raw.decode("utf-8"))
-                    retry_after = result.get("parameters", {}).get("retry_after", 2 ** (attempt + 1))
-                except (ValueError, UnicodeDecodeError):
-                    retry_after = 2 ** (attempt + 1)
-                delay = min(60, max(1, int(retry_after)))
-                print(f"[retry] Telegram explicitly rejected sendMessage with 429; waiting {delay}s")
-                time.sleep(delay)
-                continue
-            if exc.code >= 500:
-                raise TelegramDeliveryUncertain(
-                    f"[telegram] HTTP {exc.code}; delivery status is uncertain, not retrying."
-                ) from exc
-            raise RuntimeError(
-                f"[telegram] API rejected message: HTTP {exc.code}: "
-                f"{raw.decode('utf-8', errors='replace')[:300]}"
-            ) from exc
-        except (URLError, TimeoutError, OSError) as exc:
-            raise TelegramDeliveryUncertain(
-                "[telegram] Network response missing; delivery status is uncertain, not retrying."
-            ) from exc
-
-        try:
-            result = json.loads(raw.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise TelegramDeliveryUncertain(
-                "[telegram] Invalid response; delivery status is uncertain, not retrying."
-            ) from exc
-        if result.get("ok"):
-            return
-        if int(result.get("error_code", 0) or 0) == 429 and attempt < 1:
-            retry_after = result.get("parameters", {}).get("retry_after", 2 ** (attempt + 1))
-            delay = min(60, max(1, int(retry_after)))
-            print(f"[retry] Telegram explicitly rejected sendMessage with 429; waiting {delay}s")
-            time.sleep(delay)
-            continue
-        raise RuntimeError(f"[telegram] API rejected message: {result.get('description', 'unknown error')}")
-    raise RuntimeError("[telegram] Rate limit persisted after explicit 429 responses")
+    }
+    if is_html:
+        payload["parse_mode"] = "HTML"
+    body = json.dumps(payload).encode()
 
 
 def load_seen_ads():
@@ -3637,53 +3665,56 @@ def _clean_owner_link(url):
 
 
 def format_trade_message(listing, give_total, give_lines, receive_total, receive_lines, difference):
-    """Short trade-first Telegram alert; parser diagnostics remain in Actions logs."""
+    """Readable, clickable Telegram trade card with escaped item data."""
     result = "WIN" if difference > 0 else ("FAIR" if difference == 0 else "LOSS")
-    owner_link = (
-        str(listing.get("owner_url") or listing.get("url") or "Discord message link unavailable")
-        if listing.get("source") == "discord"
-        else _clean_owner_link(listing.get("owner_url") or listing.get("url"))
-    )
+    status_icon = "🟢" if difference > 0 else ("🟡" if difference == 0 else "🔴")
+    source = str(listing.get("source", "bloxswaps")).upper()
+    owner_url = listing.get("owner_url") or listing.get("url")
+    trade_url = listing.get("url")
+    if source != "DISCORD" and owner_url:
+        owner_url = _clean_owner_link(owner_url)
+    owner_label = "Trader profile" if owner_url else "Profile unavailable"
     lines = [
-        "💎 MM2 TRADE",
-        f"SOURCE: {str(listing.get('source', 'bloxswaps')).upper()}",
+        "💎 <b>MM2 TRADE ALERT</b>",
+        f"{status_icon} <b>{_telegram_escape(source)} · {result}</b>",
         "",
-        f"👤 {owner_link}",
+        f"👤 {_telegram_link(owner_url, owner_label)}",
     ]
-    if listing.get("url") and listing.get("url") != owner_link:
-        lines.extend(["", f"🔗 {listing['url']}"])
+    if trade_url and trade_url != owner_url:
+        trade_label = "Open trade" if source != "DISCORD" else "Open Discord message"
+        lines.append(f"🔗 {_telegram_link(trade_url, trade_label)}")
+    lines.extend(["", "━━━━━━━━━━━━━━━━"])
     if listing.get("valuation_mode") == "cash":
         roi = (difference / give_total * 100.0) if give_total else 0.0
         lines.extend([
+            "📤 <b>YOU GIVE</b> <i>(cash replacement cost)</i>",
+            *_format_telegram_items(give_lines),
+            f"Total cost: <b>{chr(36)}{format_number(give_total)}</b>",
             "",
-            "📤 GIVE (CASH REPLACEMENT COST):",
-            *_compact_telegram_items(give_lines),
-            f"Total cost: ${format_number(give_total)}",
+            "📥 <b>YOU GET</b> <i>(net cash resale)</i>",
+            *_format_telegram_items(receive_lines),
+            f"Net resale: <b>{chr(36)}{format_number(receive_total)}</b>",
             "",
-            "📥 GET (NET CASH RESALE):",
-            *_compact_telegram_items(receive_lines),
-            f"Net resale: ${format_number(receive_total)}",
-            "",
-            f"💵 CASH PROFIT (CONSERVATIVE): {'+' if difference > 0 else ''}${format_number(difference)}",
-            f"CASH ROI: {roi:.2f}%",
-            f"Resale haircut: {CASH_SELL_HAIRCUT_PCT:.1f}%",
-            f"RESULT: {'CASH WIN' if difference > 0 else 'NO CASH PROFIT'}",
+            f"💵 <b>CASH PROFIT: {'+' if difference > 0 else ''}{chr(36)}{format_number(difference)}</b>",
+            f"📊 Cash ROI: <b>{roi:.2f}%</b>",
+            f"Resale haircut: {_telegram_escape(f'{CASH_SELL_HAIRCUT_PCT:.1f}%')}",
+            f"🏁 <b>RESULT: {'CASH WIN' if difference > 0 else 'NO CASH PROFIT'}</b>",
         ])
     else:
         lines.extend([
+            "📤 <b>YOU GIVE</b>",
+            *_format_telegram_items(give_lines),
+            f"Total: <b>{format_number(give_total)}</b>",
             "",
-            "📤 GIVE:",
-            *_compact_telegram_items(give_lines),
-            f"Total: {format_number(give_total)}",
+            "📥 <b>YOU GET</b>",
+            *_format_telegram_items(receive_lines),
+            f"Total: <b>{format_number(receive_total)}</b>",
             "",
-            "📥 GET:",
-            *_compact_telegram_items(receive_lines),
-            f"Total: {format_number(receive_total)}",
-            "",
-            f"💰 PROFIT: {'+' if difference > 0 else ''}{format_number(difference)}",
-            f"RESULT: {result}",
+            "━━━━━━━━━━━━━━━━",
+            f"💰 <b>GAME-VALUE PROFIT: {'+' if difference > 0 else ''}{format_number(difference)}</b>",
+            f"🏁 <b>RESULT: {result}</b>",
         ])
-    return "\n".join(lines)
+    return TelegramHTML("\n".join(lines))
 
 
 def format_unvalued_message(listing, missing):
@@ -4633,7 +4664,6 @@ def scan_once(include_backlog_rechecks=True):
             message += f"\n💵 {prefix}: ${op['cash_profit_worst']:.2f} to ${op['cash_profit_best']:.2f}"
             message += f"\n📊 CASH ROI: {op['margin']:.2f}%"
         else:
-            message += f"\n💰 PROFIT (game value): {op['difference']:+g}"
             message += f"\n📊 MARGIN: {op['margin']:.2f}%"
         if op.get("receive_demand_score") is not None and op.get("receive_stability_score") is not None:
             message += (

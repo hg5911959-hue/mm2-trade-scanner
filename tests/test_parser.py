@@ -1154,7 +1154,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             "owner_url": "https://bloxswaps.com/fr/users/12345?tab=trade-ads",
         }
         message = scanner.format_trade_message(listing, 10, ["give"], 20, ["receive"], 10)
-        self.assertIn("👤 https://bloxswaps.com/fr/users/12345", message)
+        self.assertIn('<a href="https://bloxswaps.com/fr/users/12345">Trader profile</a>', message)
         self.assertLess(message.index("👤 "), message.index("🔗 "))
         self.assertLess(message.index("👤 "), message.index("📤 GIVE"))
         self.assertNotIn("QUANTITY PROVENANCE", message)
@@ -1188,7 +1188,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             "scanner.urllib.request.urlopen", side_effect=fake_open
         ):
             scanner.send_telegram(message)
-        self.assertIn("👤 https://bloxswaps.com/fr/users/12345", captured[0])
+        self.assertIn('<a href="https://bloxswaps.com/fr/users/12345">Trader profile</a>', captured[0])
         self.assertGreater(len(captured), 1)
         self.assertTrue(all(len(part) <= scanner.TELEGRAM_MAX_CHARS for part in captured))
         self.assertFalse(any("more items" in part for part in captured))
