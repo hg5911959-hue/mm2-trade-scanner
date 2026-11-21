@@ -23,6 +23,11 @@ class DiscordParserTests(IsolatedDataTestCase):
         self.assertEqual(listing["source_ad_id"], "discord:123456789012345")
         self.assertEqual(listing["discord_message_id"], "123456789012345")
 
+    def test_large_stack_quantity_117_is_preserved(self):
+        listing = parse_trade_text("Trading: 117x Candy | LF: Icebreaker", message_id="123456789012354")
+        self.assertIsNotNone(listing)
+        self.assertEqual(listing["receive_items"][0]["quantity"], 117)
+
     def test_duplicate_item_rows_are_aggregated(self):
         listing = parse_trade_text("Trading: Icebreaker, 2x Icebreaker | LF: Candy", message_id="123456789012355")
         self.assertEqual(listing["receive_items"][0]["quantity"], 3)
@@ -35,7 +40,7 @@ class DiscordParserTests(IsolatedDataTestCase):
     def test_ambiguous_or_one_sided_message_is_rejected(self):
         for message in ("Trading Icebreaker", "Anyone trading?", "Trading: Icebreaker | LF:",
                         "Trading: 0x Icebreaker | LF: Candy",
-                        "Trading: 101x Icebreaker | LF: Candy"):
+                        "Trading: 10000x Icebreaker | LF: Candy"):
             with self.subTest(message=message):
                 self.assertIsNone(parse_trade_text(message, message_id="123456789012347"))
 
