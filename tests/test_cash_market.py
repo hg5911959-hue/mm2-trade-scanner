@@ -323,7 +323,7 @@ class CashMarketTests(IsolatedDataTestCase):
         snapshot = {
             "schema_version": 1,
             "source": "https://robase.gg/",
-            "fetched_at_utc": "2026-11-01T00:00:00Z",
+            "fetched_at_utc": "2026-11-19T00:00:00Z",
             "price_basis": "seller_proceeds_after_marketplace_fees",
             "items": [
                 {"name": f"Item {i}", "cash_price_usd": 2.5, "sold_7d": 10,
