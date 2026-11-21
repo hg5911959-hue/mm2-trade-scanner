@@ -56,7 +56,7 @@ class TelegramFormattingTests(IsolatedDataTestCase):
         self.assertIn("Ancient · Gun", message)
         self.assertIn("Stability: Stable", message)
         self.assertIn('<a href="https://bloxswaps.com/trade-mm2?ad=abc&amp;name=trader">Open trade</a>', message)
-        self.assertIn("PROFIT (GAME VALUE): +110", message)
+        self.assertIn("PROFIT (game value): +110", message)
 
     def test_send_telegram_uses_html_parse_mode_only_for_trusted_html(self):
         payloads = []

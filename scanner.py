@@ -3740,7 +3740,7 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
             *_format_telegram_items(receive_lines),
             f"Net resale: <b>{chr(36)}{format_number(receive_total)}</b>",
             "",
-            f"💵 <b>CASH PROFIT: {'+' if difference > 0 else ''}{chr(36)}{format_number(difference)}</b>",
+            f"💵 <b>CASH PROFIT (CONSERVATIVE): {'+' if difference > 0 else ''}{chr(36)}{format_number(difference)}</b>",
             f"📊 Cash ROI: <b>{roi:.2f}%</b>",
             f"Resale haircut: {_telegram_escape(f'{CASH_SELL_HAIRCUT_PCT:.1f}%')}",
             f"🏁 <b>RESULT: {'CASH WIN' if difference > 0 else 'NO CASH PROFIT'}</b>",
@@ -4707,7 +4707,6 @@ def scan_once(include_backlog_rechecks=True):
         if listing.get("valuation_mode") == "cash":
             prefix = "ESTIMATED ONLY — NOT TRADE-ELIGIBLE" if op.get("cash_estimate_only") else "CASH PROFIT RANGE"
             message += f"\n💵 {prefix}: ${op['cash_profit_worst']:.2f} to ${op['cash_profit_best']:.2f}"
-            message += f"\n📊 CASH ROI: {op['margin']:.2f}%"
         else:
             message += f"\n📊 MARGIN: {op['margin']:.2f}%"
         if op.get("receive_demand_score") is not None and op.get("receive_stability_score") is not None:
