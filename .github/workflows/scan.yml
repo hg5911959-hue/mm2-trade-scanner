@@ -116,6 +116,13 @@ jobs:
           # message contents are not logged or persisted to public state
           python tools/merge_discord_imports.py
 
+      - name: Refresh public ROBASE completed-sales prices
+        continue-on-error: true
+        run: |
+          python -m tools.robase_prices --output data/robase_prices.json || {
+            echo "ROBASE refresh failed; the scanner will use only a still-fresh cached snapshot."
+          }
+
       - name: Run BloxSwaps scanner
         id: scan
         env:
