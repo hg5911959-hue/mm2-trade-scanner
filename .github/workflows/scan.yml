@@ -143,8 +143,6 @@ jobs:
           MM2_SCAN_INTERVAL_SECONDS: "30"
           ALERT_DELAY_SECONDS: "1.1"
           MAX_FEED_PAGES: "1000"
-          VALUES_TTL_SECONDS: "86400"
-          RBLXVALUE_META_POLL_ENABLED: "false"
           RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY: "6"
           RBLXVALUE_DAILY_REQUEST_LIMIT: "60"
           RBLXVALUE_FORCE_KEY_CHECK: ${{ inputs.verify_rblxvalue_key && 'true' || 'false' }}
