@@ -96,6 +96,8 @@ MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
 BLOXSWAPS_PAGE_SIZE = 20
 MAX_FEED_PAGES = max(1, min(1000, int(os.environ.get("MAX_FEED_PAGES", "1000"))))
 VALUES_REVALIDATION_INTERVAL_SECONDS = 24 * 60 * 60
+_CASH_FILTER_REQUESTED = os.environ.get("CASH_FILTER", "false").strip().casefold() in {"1", "true", "yes", "on"}
+_DEFAULT_VALUES_TTL_SECONDS = 24 * 60 * 60 if _CASH_FILTER_REQUESTED else 12 * 60 * 60
 RBLXVALUE_META_POLL_INTERVAL_SECONDS = 60 * 60
 RBLXVALUE_META_FILE = Path("data/rblxvalue_meta.json")
 RBLXVALUE_DETAIL_FILE = Path("data/rblxvalue_detail_enrichment.json")
@@ -104,7 +106,7 @@ RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY = max(
 )
 RBLXVALUE_DETAIL_RETRY_SECONDS = 6 * 60 * 60
 RBLXVALUE_META_POLL_ENABLED = os.environ.get("RBLXVALUE_META_POLL_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
-VALUES_TTL_SECONDS = min(VALUES_REVALIDATION_INTERVAL_SECONDS, max(60, int(os.environ.get("VALUES_TTL_SECONDS", str(VALUES_REVALIDATION_INTERVAL_SECONDS)))))
+VALUES_TTL_SECONDS = min(VALUES_REVALIDATION_INTERVAL_SECONDS, max(60, int(os.environ.get("VALUES_TTL_SECONDS", str(_DEFAULT_VALUES_TTL_SECONDS)))))
 BLOXSWAPS_ITEMS_TTL_SECONDS = max(300, int(os.environ.get("BLOXSWAPS_ITEMS_TTL_SECONDS", "3600")))
 PENDING_TTL_SECONDS = max(86400, int(os.environ.get("PENDING_TTL_SECONDS", str(7 * 86400))))
 MAX_SUCCESS_GAP_SECONDS = max(3600, int(os.environ.get("MAX_SUCCESS_GAP_SECONDS", str(24 * 3600))))
