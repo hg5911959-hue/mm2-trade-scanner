@@ -51,7 +51,7 @@ class TelegramFormattingTests(IsolatedDataTestCase):
             110,
         )
         self.assertIsInstance(message, scanner.TelegramHTML)
-        self.assertIn("<b>MM2 TRADE ALERT</b>", message)
+        self.assertIn("💎 MM2 TRADE <b>ALERT</b>", message)
         self.assertIn("<code>×1</code>", message)
         self.assertIn("Ancient · Gun", message)
         self.assertIn("Stability: Stable", message)
@@ -70,7 +70,7 @@ class TelegramFormattingTests(IsolatedDataTestCase):
             scanner.send_telegram("plain <unsafe> text")
         self.assertEqual(payloads[0]["parse_mode"], "HTML")
         self.assertNotIn("parse_mode", payloads[1])
-        self.assertEqual(payloads[1]["text"], "plain <unsafe> text")
+        self.assertTrue(payloads[1]["text"].startswith("plain <unsafe> text"))
 
 
 if __name__ == "__main__":

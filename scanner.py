@@ -3720,7 +3720,7 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
         owner_url = _clean_owner_link(owner_url)
     owner_label = "Trader profile" if owner_url else "Profile unavailable"
     lines = [
-        "💎 <b>MM2 TRADE ALERT</b>",
+        "💎 MM2 TRADE <b>ALERT</b>",
         f"{status_icon} <b>{_telegram_escape(source)} · {result}</b>",
         "",
         f"👤 {_telegram_link(owner_url, owner_label)}",
@@ -3756,7 +3756,7 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
             f"Total: <b>{format_number(receive_total)}</b>",
             "",
             "━━━━━━━━━━━━━━━━",
-            f"💰 <b>PROFIT (GAME VALUE): {'+' if difference > 0 else ''}{format_number(difference)}</b>",
+            f"💰 <b>PROFIT (game value): {'+' if difference > 0 else ''}{format_number(difference)}</b>",
             f"🏁 <b>RESULT: {result}</b>",
         ])
     return TelegramHTML("\n".join(lines))
