@@ -75,6 +75,8 @@ BACKLOG_RECHECK_EVERY_CYCLES = max(1, int(os.environ.get('BACKLOG_RECHECK_EVERY_
 FIRST_SEEN_FILE = Path("data/first_seen_ads.json")
 LAST_SUCCESS_FILE = Path("data/last_successful_scan.json")
 WATCH_FILE = Path("data/watch_ads.json")
+WATCH_TTL_SECONDS = 24 * 60 * 60
+MAX_WATCHED_ADS = 1000
 ALIASES_FILE = Path("aliases.json")
 UNMATCHED_FILE = Path("data/unmatched_names.json")
 MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
@@ -3660,10 +3662,11 @@ def record_unmatched_names(names):
         if not key or key in IGNORED_VALUE_ITEMS:
             continue
         if key not in state:
-            state[key] = {"name": name, "first_seen_at": now, "last_seen_at": now}
+            state[key] = {"name": name, "first_seen_at": now, "last_seen_at": now, "occurrences": 1}
             new_names.append(name)
         else:
             state[key]["last_seen_at"] = now
+            state[key]["occurrences"] = max(1, int(state[key].get("occurrences", 1) or 1)) + 1
     atomic_write_text(UNMATCHED_FILE, json.dumps(state, ensure_ascii=False, indent=2) + "\n")
     if new_names:
         unique = sorted(set(new_names), key=str.casefold)
@@ -3674,7 +3677,8 @@ def record_unmatched_names(names):
             alert_key,
             "New item names not found in Supreme source_b (no values guessed): "
             + ", ".join(unique)
-            + "\nThey will be rechecked on every scan. Review aliases.json only after confirming the exact item.",
+            + "\nThey are stored in the item-identity review registry, not queued as offers. "
+            "A verified mapping will be applied to new listings and still-active watched listings.",
             cooldown_seconds=86400,
         )
     return new_names
@@ -3760,6 +3764,52 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
             f"🏁 <b>RESULT: {result}</b>",
         ])
     return TelegramHTML("\n".join(lines))
+
+
+def format_opportunity_digest(opportunities):
+    """One same-cycle digest for all qualified offers beyond the individual-alert budget."""
+    lines = [
+        "💎 MM2 TRADE <b>DIGEST</b>",
+        f"<b>{len(opportunities)} additional verified opportunities</b>",
+        "Ranked by conservative profit. Every offer is available now; none is deferred.",
+        "",
+    ]
+    for index, op in enumerate(opportunities, start=1):
+        listing = op.get("listing", {})
+        source = str(listing.get("source", "bloxswaps")).upper()
+        trade_url = str(listing.get("url") or "")
+        if trade_url.startswith("/"):
+            trade_url = "https://bloxswaps.com" + trade_url
+        link = _telegram_link(trade_url, "Open trade" if source != "DISCORD" else "Open Discord message")
+        give_summary = " + ".join(
+            str(line).lstrip("•").split(" — ", 1)[0].strip()
+            for line in op.get("give_lines", [])
+        ) or "—"
+        receive_summary = " + ".join(
+            str(line).lstrip("•").split(" — ", 1)[0].strip()
+            for line in op.get("receive_lines", [])
+        ) or "—"
+        if listing.get("valuation_mode") == "cash":
+            low = float(op.get("cash_profit_worst", op.get("difference", 0)) or 0)
+            high = float(op.get("cash_profit_best", low) or low)
+            profit_label = f"{chr(36)}{low:.2f} to {chr(36)}{high:.2f}"
+            quality_label = f"CASH ROI: {float(op.get('margin', 0) or 0):.2f}%"
+            totals = f"{chr(36)}{float(op.get('give_total', 0) or 0):.2f} → {chr(36)}{float(op.get('receive_total', 0) or 0):.2f}"
+        else:
+            conservative = float(op.get("profit_worst", op.get("difference", 0)) or 0)
+            profit_label = f"{'+' if conservative > 0 else ''}{format_number(conservative)}"
+            quality_label = f"MARGIN: {float(op.get('margin', 0) or 0):.2f}%"
+            totals = f"{format_number(op.get('give_total', 0))} → {format_number(op.get('receive_total', 0))}"
+        warning = "⚠️ " if op.get("manual_review") else ""
+        lines.append(
+            f"{index}. {warning}<b>{_telegram_escape(profit_label)}</b> · "
+            f"{_telegram_escape(quality_label)} · {link}"
+        )
+        lines.append(f"   GIVE: {_telegram_escape(give_summary)}")
+        lines.append(f"   GET: {_telegram_escape(receive_summary)}")
+        lines.append(f"   TOTAL: {_telegram_escape(totals)}")
+        lines.append("")
+    return TelegramHTML("\n".join(lines).rstrip())
 
 
 def format_unvalued_message(listing, missing):
@@ -4194,15 +4244,15 @@ def load_watch_state():
     for ad_id, entry in ads.items():
         if not isinstance(entry, dict): raise RuntimeError('[state] Watch-window entry has an invalid structure.')
         created = float(entry.get('created_at', 0) or 0)
-        if created > 0 and now - created <= 6 * 3600: active[str(ad_id)] = entry
-    if len(active) > 300: active = dict(sorted(active.items(), key=lambda pair: float(pair[1].get('updated_at', 0)))[-300:])
+        if created > 0 and now - created <= WATCH_TTL_SECONDS: active[str(ad_id)] = entry
+    if len(active) > MAX_WATCHED_ADS: active = dict(sorted(active.items(), key=lambda pair: float(pair[1].get('updated_at', 0)))[-300:])
     if len(active) != len(ads): save_watch_state(active)
     return active
 
 def save_watch_state(ads):
     now = time.time()
-    active = {str(k): v for k, v in ads.items() if isinstance(v, dict) and now - float(v.get('created_at', now)) <= 6 * 3600}
-    if len(active) > 300: active = dict(sorted(active.items(), key=lambda pair: float(pair[1].get('updated_at', 0)))[-300:])
+    active = {str(k): v for k, v in ads.items() if isinstance(v, dict) and now - float(v.get('created_at', now)) <= WATCH_TTL_SECONDS}
+    if len(active) > MAX_WATCHED_ADS: active = dict(sorted(active.items(), key=lambda pair: float(pair[1].get('updated_at', 0)))[-300:])
     atomic_write_text(WATCH_FILE, json.dumps({'version': 1, 'ads': active}, ensure_ascii=False, indent=2) + "\n")
 
 def update_watch_entry(watch_state, listing, values, aliases=None, cash_catalog=None):
@@ -4344,6 +4394,28 @@ def scan_once(include_backlog_rechecks=True):
     seen_ads = load_seen_ads()
     pending_ids = load_pending_ids()
     pending_schedule = load_pending_recheck_schedule()
+    # Retire legacy offer-review/deferred queues. Only technical feed and
+    # Telegram-delivery failures remain retryable; unknown items are tracked
+    # once in the knowledge registry and watched by fingerprint instead.
+    retryable_reasons = {"unparsed_feed", "telegram_failure"}
+    retired_pending = []
+    for pending_id in list(pending_ids):
+        reason = (pending_schedule.get(pending_id) or {}).get("reason")
+        if reason not in retryable_reasons:
+            retired_pending.append(pending_id)
+            pending_ids.pop(pending_id, None)
+            pending_schedule.pop(pending_id, None)
+    if retired_pending:
+        if seen_ads is None:
+            seen_ads = set()
+        seen_ads.update(retired_pending)
+        save_seen_ads(seen_ads)
+        save_pending_ids(pending_ids)
+        save_pending_recheck_schedule(pending_schedule)
+        print(
+            f"[state] Closed {len(retired_pending)} legacy review/deferred offer IDs; "
+            "no offer-level manual-review backlog remains."
+        )
     if seen_ads is not None:
         new_pending_seen = set(pending_ids) - seen_ads
         if new_pending_seen:
@@ -4488,7 +4560,7 @@ def scan_once(include_backlog_rechecks=True):
         send_maintenance_alert(
             "watch-ads-not-found",
             f"{len(missing_watch_ids)} watched listing(s) were no longer present in the searched feed window; "
-            "they were removed from the six-hour watch window.",
+            "they were removed from the 24-hour watch window.",
             cooldown_seconds=3600,
         )
     if stats.get("pending_remaining_ids"):
@@ -4669,7 +4741,7 @@ def scan_once(include_backlog_rechecks=True):
     sent = 0
     evaluated = 0
     opportunities = []
-    def deliver_opportunity(op):
+    def deliver_opportunity(op, send=True):
         nonlocal sent
         global _SESSION_ALERTS_SENT
         listing = op["listing"]
@@ -4690,7 +4762,8 @@ def scan_once(include_backlog_rechecks=True):
         if os.environ.get("DRY_RUN", "").strip().casefold() == "true":
             print(f"[dry-run] would send: {trade_id} profit={op['difference']:g}")
             return
-        listing["alert_attempted_at_utc"] = datetime.now(timezone.utc).isoformat()
+        if send or not listing.get("alert_attempted_at_utc"):
+            listing["alert_attempted_at_utc"] = datetime.now(timezone.utc).isoformat()
         message = format_trade_message(
             listing, op["give_total"], op["give_lines"],
             op["receive_total"], op["receive_lines"], op["difference"]
@@ -4733,37 +4806,38 @@ def scan_once(include_backlog_rechecks=True):
         if secondary_note:
             message += "\nSECOND-SOURCE CHECK (MM2Values): " + secondary_note
         trade_id = listing["id"]
-        if listing.get("valuation_mode") == "cash":
-            print(
-                f"[telegram] Sending ranked cash trade id={trade_id}; "
-                f"cash_profit_usd={op['cash_profit_worst']:g}"
-            )
-        else:
-            print(f"[telegram] Sending ranked value trade id={trade_id}; profit={op['difference']:g}")
-        # Persist a delivery guard before the non-idempotent Telegram request.
-        # It is cleared only after a definite success or definite API rejection.
-        uncertain_ids.add(trade_id)
-        save_uncertain_ids(uncertain_ids)
-        _SESSION_ALERTS_SENT += 1
-        try:
-            send_telegram(message)
-        except TelegramDeliveryUncertain:
-            print(
-                f"[telegram] Delivery uncertain for listing {trade_id}; "
-                "quarantined, skipping this message and continuing the batch."
-            )
-            # The pre-send guard remains in uncertain_ids; persist the feed ID too.
-            mark_seen_ad(listing)
-            return
-        except Exception as exc:
-            uncertain_ids.discard(trade_id)
+        if send:
+            if listing.get("valuation_mode") == "cash":
+                print(
+                    f"[telegram] Sending ranked cash trade id={trade_id}; "
+                    f"cash_profit_usd={op['cash_profit_worst']:g}"
+                )
+            else:
+                print(f"[telegram] Sending ranked value trade id={trade_id}; profit={op['difference']:g}")
+            # Persist a delivery guard before the non-idempotent Telegram request.
+            uncertain_ids.add(trade_id)
             save_uncertain_ids(uncertain_ids)
-            mark_pending(listing, reason="telegram_failure")
-            print(
-                f"[telegram] Definite send failure for listing {trade_id}: "
-                f"{type(exc).__name__}; queued for a later scan and continuing the batch."
-            )
-            return
+            _SESSION_ALERTS_SENT += 1
+            try:
+                send_telegram(message)
+            except TelegramDeliveryUncertain:
+                print(
+                    f"[telegram] Delivery uncertain for listing {trade_id}; "
+                    "quarantined, skipping this message and continuing the batch."
+                )
+                mark_seen_ad(listing)
+                return
+            except Exception as exc:
+                uncertain_ids.discard(trade_id)
+                save_uncertain_ids(uncertain_ids)
+                mark_pending(listing, reason="telegram_failure")
+                print(
+                    f"[telegram] Definite send failure for listing {trade_id}: "
+                    f"{type(exc).__name__}; queued for a later scan and continuing the batch."
+                )
+                return
+        else:
+            print(f"[telegram] Finalizing listing {trade_id} already delivered in the digest.")
         mark_alerted(trade_id)
         update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
         uncertain_ids.discard(trade_id)
@@ -4787,6 +4861,62 @@ def scan_once(include_backlog_rechecks=True):
         )
         sent += 1
         update_metrics(increments={"alerts_sent": 1})
+
+    def deliver_digest(items):
+        global _SESSION_ALERTS_SENT
+        eligible = []
+        for op in items:
+            listing = op["listing"]
+            trade_id = listing["id"]
+            watch_id = str(listing.get("source_ad_id") or "")
+            previous_watch = watch_state.get(watch_id, {})
+            current_content_hash, current_values_hash = listing_watch_fingerprints(
+                listing, values, aliases, cash_catalog
+            )
+            variant_changed = bool(previous_watch) and (
+                previous_watch.get("content_hash") != current_content_hash
+                or previous_watch.get("values_hash") != current_values_hash
+            )
+            if (trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids:
+                continue
+            eligible.append(op)
+        if not eligible:
+            return 0
+        if os.environ.get("DRY_RUN", "").strip().casefold() == "true":
+            print(f"[dry-run] would send one digest containing {len(eligible)} additional qualified offers")
+            return 0
+        attempted_at = datetime.now(timezone.utc).isoformat()
+        for op in eligible:
+            listing = op["listing"]
+            listing["alert_attempted_at_utc"] = attempted_at
+            uncertain_ids.add(listing["id"])
+        save_uncertain_ids(uncertain_ids)
+        try:
+            send_telegram(format_opportunity_digest(eligible))
+        except TelegramDeliveryUncertain:
+            print(
+                f"[telegram] Digest delivery uncertain for {len(eligible)} offer(s); "
+                "all IDs quarantined to prevent duplicate notifications."
+            )
+            for op in eligible:
+                mark_seen_ad(op["listing"])
+            return 0
+        except Exception as exc:
+            for op in eligible:
+                trade_id = op["listing"]["id"]
+                uncertain_ids.discard(trade_id)
+                mark_pending(op["listing"], reason="telegram_failure")
+            save_uncertain_ids(uncertain_ids)
+            print(f"[telegram] Digest send failed definitely: {type(exc).__name__}; offers queued for delivery retry.")
+            return 0
+        for op in eligible:
+            uncertain_ids.discard(op["listing"]["id"])
+        save_uncertain_ids(uncertain_ids)
+        _SESSION_ALERTS_SENT += len(eligible)
+        for op in eligible:
+            deliver_opportunity(op, send=False)
+        update_metrics(increments={"alerts_digest_messages": 1, "alerts_digest_items": len(eligible)})
+        return len(eligible)
 
     cash_blocker_counts = {}
     cash_blocker_groups = {}
@@ -4848,27 +4978,23 @@ def scan_once(include_backlog_rechecks=True):
                 mark_seen_ad(listing, clear_pending=False)
                 continue
             print(
-                f"[skip-unknown] Listing retained for recheck; missing/unvalued items: "
+                f"[skip-unknown] Listing rejected without offer-level deferral; missing/unvalued items: "
                 f"{', '.join(missing)}"
             )
-            pending_reason = pending_reason_from_missing(missing)
-            mark_pending(listing, reason=pending_reason)
             unknown_names = [
                 str(value).split(" (", 1)[0]
                 for value in missing
                 if value
                 and not str(value).startswith("one side has")
-                and "quantity unknown" not in str(value).casefold()
-                and "quantity uncertain" not in str(value).casefold()
+                and str(value).casefold() not in {"quantity unknown", "quantity uncertain"}
                 and "stability" not in str(value).casefold()
             ]
             if unknown_names:
                 record_unmatched_names(unknown_names)
             update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
-            # Low-priority missing values/stability remain queued but leave the
-            # hot path. Urgent quantity uncertainty stays visible for quick retry.
-            if pending_reason not in PRIORITY_PENDING_REASONS:
-                mark_seen_ad(listing, clear_pending=False)
+            # No listing is held for manual review. The item gap is remembered,
+            # while the bounded watch index can re-evaluate it after a mapping changes.
+            mark_seen_ad(listing)
             continue
         if CASH_FILTER and result.get("cash_estimate_only"):
             print(
@@ -4882,11 +5008,17 @@ def scan_once(include_backlog_rechecks=True):
                 print(f"[dry-run-estimate] RECEIVE {line}")
             continue
         if not (qualifies_cash(result) if CASH_FILTER else qualifies(result)):
-            if result.get("uncertain_items"):
-                mark_pending(listing, reason="quantity_uncertain")
-            else:
-                mark_seen_ad(listing)
+            uncertain_items = result.get("uncertain_items") or []
+            if uncertain_items:
+                uncertain_names = [
+                    str(item.get("name") if isinstance(item, dict) else item).strip()
+                    for item in uncertain_items
+                    if str(item.get("name") if isinstance(item, dict) else item).strip()
+                ]
+                if uncertain_names:
+                    record_unmatched_names(uncertain_names)
             update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
+            mark_seen_ad(listing)
             continue
         opportunities.append(result)
         if history_store is not None:
@@ -4903,28 +5035,16 @@ def scan_once(include_backlog_rechecks=True):
         )
 
     max_per_scan = max(0, int(os.environ.get("MAX_ALERTS_PER_SCAN", "15")))
-    selected, deferred_items = rank_and_split(opportunities, max_per_scan)
-    deferred = len(deferred_items)
-    if deferred:
-        update_metrics(increments={"alerts_deferred": deferred})
-    for opportunity in deferred_items:
-        if os.environ.get("DRY_RUN", "").strip().casefold() != "true":
-            mark_pending(opportunity["listing"], reason="deferred_offer")
+    selected, digest_items = rank_and_split(opportunities, max_per_scan)
     for opportunity in selected:
         deliver_opportunity(opportunity)
-    if deferred and os.environ.get("DRY_RUN", "").strip().casefold() != "true":
-        try:
-            send_telegram(f"{deferred} more qualifying offers deferred to the next scan")
-        except Exception as exc:
-            print(f"[telegram] Deferred notice failed: {type(exc).__name__}")
-    elif deferred:
-        print(f"[dry-run] {deferred} qualifying offers deferred")
-
+    digest_sent = deliver_digest(digest_items) if digest_items else 0
+    digest_not_sent = max(0, len(digest_items) - digest_sent)
     summary = (
         f"mode={'cash' if CASH_FILTER else 'value'} | Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | "
         f"already_alerted={already_alerted_skipped} | watch_unchanged={watch_unchanged_skipped} | uncertain_quarantined={uncertain_skipped} | "
         f"pending_recheck={len(pending_ids)} | qualified={len(opportunities)} | "
-        f"alerts={sent} | deferred={deferred}"
+        f"alerts={sent} | digest_items={digest_sent} | digest_not_sent={digest_not_sent}"
     )
     print(f"[summary] {summary}")
     write_step_summary(summary)

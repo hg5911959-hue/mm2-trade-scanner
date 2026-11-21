@@ -1433,7 +1433,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             self.assertEqual(len(set(alerted)), 5)
             self.assertEqual(len((root / "history.csv").read_text().splitlines()), 6)
 
-    def test_deferred_offers_are_retried_on_the_next_fast_scan(self):
+    def test_overflow_qualified_offers_are_sent_in_same_cycle_digest(self):
         cards = []
         for ad in ("defer-a", "defer-b", "defer-c", "defer-d", "defer-e"):
             cards.append(f"""
@@ -1470,17 +1470,20 @@ class ReliabilityTests(IsolatedDataTestCase):
             ):
                 with patch.dict(os.environ, {"MAX_ALERTS_PER_SCAN": "2"}):
                     scanner.main()
-                first_pending = json.loads((root / "pending.json").read_text(encoding="utf-8"))["pending"]
-                first_schedule = json.loads((root / "pending_schedule.json").read_text(encoding="utf-8"))["schedule"]
-                self.assertEqual(sum("CASH ROI:" in message for message in sent), 2)
-                self.assertEqual(len(first_pending), 3)
-                self.assertTrue(all(first_schedule[key]["reason"] == "deferred_offer" for key in first_pending))
+                pending = json.loads((root / "pending.json").read_text(encoding="utf-8"))["pending"]
+                self.assertEqual(pending, {})
+                individual = [message for message in sent if "💎 MM2 TRADE" in message and "DIGEST" not in message]
+                digests = [message for message in sent if "MM2 TRADE DIGEST" in message]
+                self.assertEqual(len(individual), 2)
+                self.assertEqual(len(digests), 1)
+                for ad in ("defer-c", "defer-d", "defer-e"):
+                    self.assertIn(ad, digests[0])
+                alerted = json.loads((root / "alerted.json").read_text(encoding="utf-8"))["alerted"]
+                self.assertEqual(len(alerted), 5)
+                sent_before = len(sent)
                 with patch.dict(os.environ, {"MAX_ALERTS_PER_SCAN": "5"}):
                     scanner.main()
-            self.assertEqual(sum("CASH ROI:" in message for message in sent), 5)
-            alerted = json.loads((root / "alerted.json").read_text(encoding="utf-8"))["alerted"]
-            self.assertEqual(len(alerted), 5)
-            self.assertEqual(json.loads((root / "pending.json").read_text(encoding="utf-8"))["pending"], {})
+                self.assertEqual(len(sent), sent_before)
 
     def test_main_alerts_visible_qualifying_offers_once(self):
         def html(ad_ids):
