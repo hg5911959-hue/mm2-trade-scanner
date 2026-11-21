@@ -81,6 +81,22 @@ class SupremeCacheMigrationTests(IsolatedDataTestCase):
             self.assertEqual(loaded["item 7"]["variants"][0]["stability"], "Stable")
             self.assertEqual(len(api), 5)
 
+    def test_future_cache_timestamp_is_rejected_as_untrusted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = root / "supreme_values.json"
+            base = 1_800_000_000.0
+            cache.write_text(json.dumps(self._schema3_cache(base + 3600)), encoding="utf-8")
+
+            with (
+                patch("scanner.VALUES_FILE", cache),
+                patch("scanner.time.time", return_value=base),
+            ):
+                values, age = scanner._read_values_cache()
+
+            self.assertIsNone(values)
+            self.assertIsNone(age)
+
     def test_expired_cache_and_blocked_key_fail_closed_without_network(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

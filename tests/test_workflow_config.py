@@ -36,6 +36,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertNotIn("repository_dispatch:", workflow)
         self.assertIn("group: mm2-trade-scanner", workflow)
         self.assertIn("cancel-in-progress: false", workflow)
+        self.assertIn('          BLOXSWAPS_URL: "https://bloxswaps.com/trade-mm2?trade-type=P2P"\n', workflow)
         self.assertIn('          MAX_PENDING_RECHECK_PER_SCAN: "50"\n', workflow)
         self.assertIn('      CASH_FILTER: "false" # set to true only after fresh verified prices exist\n', workflow)
         weekly = (ROOT / ".github/workflows/weekly-report.yml").read_text(encoding="utf-8")
