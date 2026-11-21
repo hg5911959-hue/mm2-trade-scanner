@@ -58,6 +58,33 @@ jobs:
           if catalog["verified_count"] < 8:
               raise SystemExit("ROBASE has fewer than 8 sufficiently traded items; live cash mode must remain disabled.")
           PY
+      - name: Probe ROBASE pagination over HTTP/2
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json
+          import subprocess
+
+          for page in (1, 2):
+              url = "https://robase.gg/api/list?r=&page=%s&v=1" % page
+              command = [
+                  "curl", "--http2", "--silent", "--show-error",
+                  "--user-agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36",
+                  "--header", "Accept: */*",
+                  "--header", "Referer: https://robase.gg/",
+                  "--write-out", "\\nHTTP_STATUS:%{http_code}",
+                  url,
+              ]
+              result = subprocess.run(command, capture_output=True, text=True, timeout=30)
+              body, _, status_text = result.stdout.rpartition("\\nHTTP_STATUS:")
+              status = status_text.strip() or "curl-error"
+              try:
+                  data = json.loads(body)
+                  rows = data.get("data", []) if isinstance(data, dict) else []
+                  print("[robase-api-h2] page=%s status=%s rows=%s" % (page, status, len(rows)))
+              except ValueError:
+                  print("[robase-api-h2] page=%s status=%s" % (page, status))
+          PY
       - name: Install Ruff
         run: python -m pip install --disable-pip-version-check ruff==0.17.5
       - name: Lint ROBASE pricing changes
