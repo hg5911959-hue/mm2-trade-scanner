@@ -132,7 +132,7 @@ if any(not math.isfinite(value) or value < 0 for value in (
 )):
     raise ValueError("Cash minimum-profit thresholds must be finite and non-negative")
 CASH_MIN_MARGIN_PERCENT = float(os.environ.get("CASH_MIN_MARGIN_PERCENT", "0"))
-CASH_MAX_AGE_DAYS = max(1, int(os.environ.get("CASH_MAX_AGE_DAYS", "14")))
+CASH_MAX_AGE_DAYS = max(1, int(os.environ.get("CASH_MAX_AGE_DAYS", "1")))
 CASH_PRICE_FILE = Path("data/cash_prices.csv")
 CASH_PRICE_SNAPSHOT_FILE = Path("data/cash_price_snapshot.json")
 TELEGRAM_MAX_CHARS = 4000
