@@ -21,9 +21,9 @@ class RobasePriceParserTests(unittest.TestCase):
         self.assertEqual(by_name["Chroma Bauble"]["status"], "unverified")
         self.assertEqual(snapshot["price_basis"], "seller_proceeds_after_marketplace_fees")
 
-    def test_rejects_incomplete_or_duplicate_table(self):
-        with self.assertRaisesRegex(ValueError, "incomplete"):
-            parse_robase_html("<table><tr><td>1</td><td>Harvester</td><td>$5</td></tr></table>")
+    def test_ignores_non_data_rows_and_rejects_duplicate_names(self):
+        partial = parse_robase_html("<table><tr><td>1</td><td>Harvester</td><td>$5</td></tr></table>")
+        self.assertEqual(partial["items"], [])
         duplicate = """
         <table>
         <tr><td>1</td><td>Harvester Ancient</td><td>$5</td><td>4</td><td>4</td><td>1</td><td>1</td><td>10 sold</td><td>1</td></tr>
