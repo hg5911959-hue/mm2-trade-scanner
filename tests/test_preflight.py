@@ -14,16 +14,18 @@ class PreflightTests(IsolatedDataTestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.now = datetime(2026, 11, 14, tzinfo=UTC)
-        rows = [
-            "name,cash_price_usd,tier,status,verified_at_utc,source,notes",
-        ]
-        for index in range(8):
-            rows.append(
-                "Item" + str(index) + ",1,test,verified,"
-                + (self.now - timedelta(hours=1)).isoformat().replace("+00:00", "Z")
-                + ",manual,"
-            )
-        (self.root / "cash_prices.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
+        snapshot = {
+            "schema_version": 1,
+            "source": "https://robase.gg/",
+            "fetched_at_utc": self.now.isoformat().replace("+00:00", "Z"),
+            "price_basis": "seller_proceeds_after_marketplace_fees",
+            "items": [
+                {"name": f"Item {index}", "cash_price_usd": 1.0, "sold_7d": 10,
+                 "status": "verified", "source": "https://robase.gg/", "notes": ""}
+                for index in range(100)
+            ],
+        }
+        (self.root / "robase_prices.json").write_text(json.dumps(snapshot), encoding="utf-8")
         (self.root / "supreme_values.json").write_text(json.dumps({
             "fetched_at": self.now.timestamp(),
         }), encoding="utf-8")
@@ -31,7 +33,7 @@ class PreflightTests(IsolatedDataTestCase):
             "permanent": False, "blocked_until_epoch": self.now.timestamp() - 1,
         }), encoding="utf-8")
         self.env = {"TELEGRAM_BOT_TOKEN": "not-a-real-token", "TELEGRAM_CHAT_ID": "123",
-                    "CASH_MIN_VERIFIED_ROWS": "8", "CASH_MAX_AGE_DAYS": "14", "CASH_FILTER": "true"}
+                    "CASH_MIN_VERIFIED_ROWS": "8", "CASH_MAX_AGE_DAYS": "1", "CASH_FILTER": "true"}
 
     def _checks(self, **kwargs):
         return collect_preflight_checks(
@@ -43,7 +45,7 @@ class PreflightTests(IsolatedDataTestCase):
         self.assertEqual(self._checks(), [])
 
     def test_each_required_preflight_failure_is_reported(self):
-        self.assertTrue(any("fresh verified cash prices" in x for x in self._checks(env={**self.env, "CASH_MIN_VERIFIED_ROWS": "9"})))
+        self.assertTrue(any("fresh verified ROBASE cash prices" in x for x in self._checks(env={**self.env, "CASH_MIN_VERIFIED_ROWS": "101"})))
         (self.root / "api_key_blocked.json").write_text(json.dumps({"permanent": True}), encoding="utf-8")
         self.assertTrue(any("API key is blocked" in x for x in self._checks()))
         (self.root / "api_key_blocked.json").write_text(json.dumps({"permanent": False}), encoding="utf-8")
