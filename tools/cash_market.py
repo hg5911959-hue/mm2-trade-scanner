@@ -292,7 +292,7 @@ def cash_profit_bounds(give_bounds, receive_bounds):
     return receive_min - give_max, receive_max - give_min
 
 
-def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=14, now=None):
+def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, now=None):
     """Load the latest ROBASE completed-sales snapshot as the sole cash catalogue.
 
     ROBASE prices are seller proceeds after marketplace fees. Rows with fewer
