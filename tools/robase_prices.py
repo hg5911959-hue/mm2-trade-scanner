@@ -119,8 +119,8 @@ def fetch_snapshot(output: Path = DEFAULT_OUTPUT, timeout: int = 25) -> dict:
     if len(snapshot["items"]) < 100:
         title_match = re.search(r"<title[^>]*>(.*?)</title>", document, flags=re.I | re.S)
         title = " ".join(title_match.group(1).split())[:100] if title_match else "missing"
-        tr_count = len(re.findall(r"<tr\\b", document, flags=re.I))
-        table_count = len(re.findall(r"<table\\b", document, flags=re.I))
+        tr_count = len(re.findall(r"<tr\b", document, flags=re.I))
+        table_count = len(re.findall(r"<table\b", document, flags=re.I))
         raise ValueError(
             "ROBASE table incomplete: parsed=%s tr_tags=%s table_tags=%s bytes=%s title=%r"
             % (len(snapshot["items"]), tr_count, table_count, len(raw), title)
