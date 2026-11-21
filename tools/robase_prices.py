@@ -119,11 +119,23 @@ def fetch_snapshot(output: Path = DEFAULT_OUTPUT, timeout: int = 25) -> dict:
     if len(snapshot["items"]) < 100:
         title_match = re.search(r"<title[^>]*>(.*?)</title>", document, flags=re.I | re.S)
         title = " ".join(title_match.group(1).split())[:100] if title_match else "missing"
+        diagnostic_parser = _TableParser()
+        diagnostic_parser.feed(document)
+        row_sizes = [len(row) for row in diagnostic_parser.rows[:3]]
+        numeric_rank_rows = sum(bool(row and row[0].strip().isdigit()) for row in diagnostic_parser.rows)
+        valid_price_rows = sum(
+            len(row) > 2 and bool(PRICE_RE.fullmatch(row[2].strip()))
+            for row in diagnostic_parser.rows
+        )
         tr_count = len(re.findall(r"<tr\b", document, flags=re.I))
         table_count = len(re.findall(r"<table\b", document, flags=re.I))
         raise ValueError(
-            "ROBASE table incomplete: parsed=%s tr_tags=%s table_tags=%s bytes=%s title=%r"
-            % (len(snapshot["items"]), tr_count, table_count, len(raw), title)
+            "ROBASE table incomplete: parsed=%s tr_tags=%s table_tags=%s bytes=%s "
+            "title=%r row_sizes=%s numeric_rank_rows=%s valid_price_rows=%s"
+            % (
+                len(snapshot["items"]), tr_count, table_count, len(raw), title,
+                row_sizes, numeric_rank_rows, valid_price_rows,
+            )
         )
     output.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=output.name + ".", suffix=".tmp", dir=output.parent)
