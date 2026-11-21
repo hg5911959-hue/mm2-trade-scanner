@@ -13,8 +13,8 @@ from typing import Any
 
 MAX_QUANTITY = 9999
 _SPLIT_ITEMS = re.compile(r"\s*(?:,|;|\n|\r|\s+\+\s+)\s*")
-_QTY_PREFIX = re.compile(r"^(?:(\d{1,4})\s*[x×]\s+|[x×]\s*(\d{1,4})\s+)(.+)$", re.IGNORECASE)
-_QTY_SUFFIX = re.compile(r"^(.+?)\s+(?:[x×]\s*(\d{1,4})|(\d{1,4})\s*[x×])$", re.IGNORECASE)
+_QTY_PREFIX = re.compile(r"^(?:(\d{1,8})\s*[x×]\s+|[x×]\s*(\d{1,8})\s+)(.+)$", re.IGNORECASE)
+_QTY_SUFFIX = re.compile(r"^(.+?)\s+(?:[x×]\s*(\d{1,8})|(\d{1,8})\s*[x×])$", re.IGNORECASE)
 _LABELLED = re.compile(
     r"(?is)^\s*(?:trading|offering|offer|giving|i\s+have)\s*[:\-]\s*(.+?)"
     r"\s*(?:\||;|\n)\s*(?:looking\s+for|lf|want|wants|seeking|for)\s*[:\-]\s*(.+?)\s*$"
