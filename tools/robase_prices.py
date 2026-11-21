@@ -71,6 +71,11 @@ def _parse_item_name(raw: str) -> str:
     return name
 
 
+def normalize_robase_item_name(raw: str) -> str:
+    """Normalize a BloxSwaps item label to ROBASE's canonical display name."""
+    return _parse_item_name(raw)
+
+
 def parse_robase_html(document: str, fetched_at_utc: str | None = None) -> dict:
     parser = _TableParser()
     parser.feed(document)
