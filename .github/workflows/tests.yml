@@ -12,6 +12,7 @@ jobs:
   tests:
     env:
       MM2_TESTING: "true"
+      CASH_MAX_AGE_DAYS: "14"
     # Regression tests are required before the production scanner can be re-enabled.
     runs-on: ubuntu-latest
     timeout-minutes: 5
