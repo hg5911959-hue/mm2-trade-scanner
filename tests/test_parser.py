@@ -1382,7 +1382,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             self.assertTrue((root / "alerted.json").exists())
             seen = json.loads((root / "seen_ads.json").read_text(encoding="utf-8"))["ad_ids"]
             unmatched = json.loads((root / "unmatched_names.json").read_text(encoding="utf-8"))
-            self.assertIn("knifeb", unmatched)
+            self.assertIn("knife b", unmatched)
             self.assertIn("retry-me", seen)
             self.assertFalse((root / "pending.json").exists())
 
@@ -1474,7 +1474,7 @@ class ReliabilityTests(IsolatedDataTestCase):
                     scanner.main()
                 self.assertEqual(scanner.load_pending_ids(), {})
                 individual = [message for message in sent if "💎 MM2 TRADE" in message and "DIGEST" not in message]
-                digests = [message for message in sent if "MM2 TRADE DIGEST" in message]
+                digests = [message for message in sent if "MM2 TRADE " in message and "<b>DIGEST</b>" in message]
                 self.assertEqual(len(individual), 2)
                 self.assertEqual(len(digests), 1)
                 for ad in ("defer-c", "defer-d", "defer-e"):
