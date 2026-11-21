@@ -23,13 +23,19 @@ from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 import rblxvalue_guard
 from tools.metrics import update_metrics
 from tools.alert_policy import rank_and_split
-from tools.cash_market import calculate_cash_side, cash_profit_bounds, normalize_cash_name, cash_price_is_fresh, strict_quantity, parse_haircut_tiers
+from tools.cash_market import calculate_cash_side, cash_profit_bounds, normalize_cash_name, cash_price_is_fresh, strict_quantity, parse_haircut_tiers, load_robase_price_catalog
 
 
 def load_cash_price_catalog(*args, **kwargs):
     """Lazily import the cash catalogue loader only when cash mode is enabled."""
     from tools.cash_market import load_cash_price_catalog as loader
     return loader(*args, **kwargs)
+
+def load_robase_cash_price_catalog(*args, **kwargs):
+    """Lazily load the ROBASE completed-sales catalogue only in cash mode."""
+    from tools.cash_market import load_robase_price_catalog as loader
+    return loader(*args, **kwargs)
+
 
 BLOXSWAPS_URL = os.environ.get(
     "BLOXSWAPS_URL",
@@ -4354,7 +4360,7 @@ def scan_once(include_backlog_rechecks=True):
     cash_catalog = None
     cash_prices_changed = False
     if CASH_FILTER:
-        cash_catalog = load_cash_price_catalog(CASH_PRICE_FILE)
+        cash_catalog = load_robase_cash_price_catalog()
         verified_cash_rows = sum(1 for row in cash_catalog["items"].values() if row["status"] == "verified" and cash_price_is_fresh(row, CASH_MAX_AGE_DAYS))
         expired_cash_rows = [row for row in cash_catalog["items"].values()
                              if row["status"] == "verified" and not cash_price_is_fresh(row, CASH_MAX_AGE_DAYS)]
