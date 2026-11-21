@@ -1,7 +1,9 @@
+import unittest
+from test_support import IsolatedDataTestCase
 from tools.robase_prices import parse_robase_html
 
 
-class RobasePriceParserTests(unittest.TestCase):
+class RobasePriceParserTests(IsolatedDataTestCase):
     def test_parses_public_table_and_marks_low_sample_unverified(self):
         html = """
         <table><tr><th>#</th><th>Item</th><th>Price</th><th>7d</th><th>30d</th>
