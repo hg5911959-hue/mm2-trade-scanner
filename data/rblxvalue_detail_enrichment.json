@@ -1,0 +1,55 @@
+{
+  "attempted": {
+    "gifted": {
+      "attempted_at": 1795255758.213461,
+      "fields": [],
+      "item_last_updated": "2026-11-21 00:02:40",
+      "retry_after": 1795277358.213461,
+      "source_version": "2026-11-21 00:02:40",
+      "status": "no_additional_metadata"
+    },
+    "hazard-gun": {
+      "attempted_at": 1795255758.213461,
+      "fields": [],
+      "item_last_updated": "2026-11-21 00:02:40",
+      "retry_after": 1795277358.213461,
+      "source_version": "2026-11-21 00:02:40",
+      "status": "no_additional_metadata"
+    },
+    "mummy-2017": {
+      "attempted_at": 1795255758.213461,
+      "fields": [],
+      "item_last_updated": "2026-11-21 00:02:40",
+      "retry_after": 1795277358.213461,
+      "source_version": "2026-11-21 00:02:40",
+      "status": "no_additional_metadata"
+    },
+    "skulls-2021": {
+      "attempted_at": 1795255758.213461,
+      "fields": [],
+      "item_last_updated": "2026-11-21 00:02:40",
+      "retry_after": 1795277358.213461,
+      "source_version": "2026-11-21 00:02:40",
+      "status": "no_additional_metadata"
+    },
+    "wrap-gun": {
+      "attempted_at": 1795255758.213461,
+      "fields": [],
+      "item_last_updated": "2026-11-21 00:02:40",
+      "retry_after": 1795277358.213461,
+      "source_version": "2026-11-21 00:02:40",
+      "status": "no_additional_metadata"
+    },
+    "wrap-knife": {
+      "attempted_at": 1795255758.213461,
+      "fields": [],
+      "item_last_updated": "2026-11-21 00:02:40",
+      "retry_after": 1795277358.213461,
+      "source_version": "2026-11-21 00:02:40",
+      "status": "no_additional_metadata"
+    }
+  },
+  "daily_lookups": 6,
+  "day": "2026-11-21",
+  "version": 1
+}
