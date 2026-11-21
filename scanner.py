@@ -4012,7 +4012,7 @@ def qualifies(result, min_diff=None, min_percent=None):
 
 
 def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=False):
-    """Evaluate cash resale profit only; Supreme is used for identity/stability gates."""
+    """Evaluate cash resale profit using Supreme identity where available and verified ROBASE fallback otherwise."""
     if not listing.get("give_items") or not listing.get("receive_items"):
         return None, ["one side has no items"]
 
@@ -4094,7 +4094,7 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
     if missing:
         return None, missing
     if not prepared["give"] or not prepared["receive"]:
-        return None, ["one side has no Supreme-catalogued items"]
+        return None, ["one side has no eligible cash-priced items"]
 
     give_min, give_max, give_lines, give_missing = calculate_cash_side(
         prepared["give"], cash_catalog, "give", 0, max_age_days=CASH_MAX_AGE_DAYS,
