@@ -117,6 +117,7 @@ jobs:
           python tools/merge_discord_imports.py
 
       - name: Refresh public ROBASE completed-sales prices
+        if: env.CASH_FILTER == '1' || env.CASH_FILTER == 'true' || env.CASH_FILTER == 'yes' || env.CASH_FILTER == 'on'
         continue-on-error: true
         run: |
           python -m tools.robase_prices --output data/robase_prices.json || {
