@@ -300,8 +300,6 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=14, n
     remain unverified and cannot qualify for live cash alerts.
     """
     import json
-    from datetime import datetime, timezone
-
     snapshot_path = Path(path)
     try:
         raw = snapshot_path.read_bytes()
