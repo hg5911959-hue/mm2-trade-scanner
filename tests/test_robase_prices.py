@@ -22,6 +22,22 @@ class RobasePriceParserTests(IsolatedDataTestCase):
         self.assertEqual(by_name["Chroma Bauble"]["status"], "unverified")
         self.assertEqual(snapshot["price_basis"], "seller_proceeds_after_marketplace_fees")
 
+    def test_parses_robase_rendered_rows_with_empty_edge_cells_and_joined_tier(self):
+        html = """
+        <table><tbody id="rb-rows">
+        <tr><td></td><td>1</td><td>HarvesterAncient</td><td>$5.02</td>
+        <td>4%</td><td>16%</td><td>$20 value 250</td><td>$499k</td>
+        <td>$10k 1,510 sold</td><td>99k</td><td></td></tr>
+        </tbody></table>
+        """
+        snapshot = parse_robase_html(html, "2026-11-21T12:00:00Z")
+        self.assertEqual(len(snapshot["items"]), 1)
+        item = snapshot["items"][0]
+        self.assertEqual(item["name"], "Harvester")
+        self.assertEqual(item["cash_price_usd"], 5.02)
+        self.assertEqual(item["sold_7d"], 1510)
+        self.assertEqual(item["status"], "verified")
+
     def test_ignores_non_data_rows_and_rejects_duplicate_names(self):
         partial = parse_robase_html("<table><tr><td>1</td><td>Harvester</td><td>$5</td></tr></table>")
         self.assertEqual(partial["items"], [])
