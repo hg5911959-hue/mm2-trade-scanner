@@ -1470,6 +1470,8 @@ def scan_checkpoint_requires_cold_start(last_success_ts, now=None):
         return True
     if not math.isfinite(last_success) or not math.isfinite(current) or last_success <= 0:
         return True
+    if last_success > current + 300:
+        return True
     return current - last_success > MAX_SUCCESS_GAP_SECONDS
 
 
