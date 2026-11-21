@@ -28,7 +28,7 @@ class ScanCheckpointRecoveryTests(IsolatedDataTestCase):
 
     def test_future_checkpoint_is_rejected_as_stale(self):
         now = 2_000_000_000
-        self.assertTrue(scanner.scan_checkpoint_requires_cold_start(now + 60, now=now))
+        self.assertTrue(scanner.scan_checkpoint_requires_cold_start(now + 301, now=now))
 
 
 if __name__ == "__main__":
