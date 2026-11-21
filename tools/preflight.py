@@ -6,18 +6,16 @@ import json
 import math
 import os
 import subprocess
-import tempfile
 import urllib.parse
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
-from tools.cash_market import cash_price_is_fresh, load_cash_price_catalog
+from tools.cash_market import load_robase_price_catalog
 
 MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
 SUPREME_FILE = Path("data/supreme_values.json")
 BREAKER_FILE = Path("data/api_key_blocked.json")
-CASH_FILE = Path("data/cash_prices.csv")
 
 
 def _read_json(path):
@@ -56,25 +54,16 @@ def collect_preflight_checks(data_dir="data", *, env=None, now=None,
     fresh = None
     if cash_filter:
         try:
-            private_csv = environment.get("CASH_PRICES_CSV", "")
-            if catalog_path is not None:
-                catalog = load_cash_price_catalog(catalog_path, int(environment.get("CASH_MAX_AGE_DAYS", "14")), now=current)
-            elif private_csv:
-                with tempfile.TemporaryDirectory() as tmp:
-                    path = Path(tmp) / "cash_prices.csv"
-                    path.write_text(private_csv, encoding="utf-8")
-                    catalog = load_cash_price_catalog(path, int(environment.get("CASH_MAX_AGE_DAYS", "14")), now=current)
-            else:
-                catalog = load_cash_price_catalog(root / "cash_prices.csv", int(environment.get("CASH_MAX_AGE_DAYS", "14")), now=current)
-            fresh = sum(
-                cash_price_is_fresh(row, int(environment.get("CASH_MAX_AGE_DAYS", "14")), now=current)
-                for row in catalog["items"].values()
+            snapshot_path = catalog_path or root / "robase_prices.json"
+            catalog = load_robase_price_catalog(
+                snapshot_path, int(environment.get("CASH_MAX_AGE_DAYS", "1")), now=current,
             )
+            fresh = catalog["verified_count"]
             if fresh < minimum:
-                checks.append("fresh verified cash prices: " + str(fresh) + " / " + str(minimum))
+                checks.append("fresh verified ROBASE cash prices: " + str(fresh) + " / " + str(minimum))
         except (OSError, ValueError, RuntimeError, TypeError):
             fresh = 0
-            checks.append("cash-price catalogue unavailable or invalid")
+            checks.append("ROBASE cash-price snapshot unavailable or invalid")
 
     breaker = _read_json(root / BREAKER_FILE.name)
     if breaker is not None:
