@@ -1,4 +1,3 @@
-import unittest
 from test_support import IsolatedDataTestCase
 from tools.robase_prices import parse_robase_html
 
