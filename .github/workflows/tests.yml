@@ -10,6 +10,8 @@ permissions:
 
 jobs:
   tests:
+    env:
+      MM2_TESTING: "true"
     # Regression tests are required before the production scanner can be re-enabled.
     runs-on: ubuntu-latest
     timeout-minutes: 5
