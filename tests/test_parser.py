@@ -3901,6 +3901,27 @@ class CashFirstEvaluatorTests(IsolatedDataTestCase):
         self.assertIsNone(result)
         self.assertTrue(any("cash price unverified" in value for value in missing))
 
+    def test_verified_robase_catalogue_resolves_items_missing_from_supreme(self):
+        result, missing = scanner.evaluate_cash_listing(
+            self.listing, {}, {}, self.catalog
+        )
+        self.assertEqual(missing, [])
+        self.assertIsNotNone(result)
+        self.assertAlmostEqual(result["cash_profit_worst"], 7.0)
+        self.assertTrue(any("ROBASE verification" in line for line in result["receive_lines"]))
+
+    def test_unverified_robase_item_without_supreme_record_is_rejected(self):
+        catalog = {"items": dict(self.catalog["items"])}
+        catalog["items"][scanner.normalize_cash_name("Chroma Gemstone")] = {
+            "name": "Chroma Gemstone", "cash_price_usd": 20.0, "status": "unverified",
+            "verified_at_utc": datetime.now(timezone.utc).isoformat(), "source": "test",
+        }
+        result, missing = scanner.evaluate_cash_listing(
+            self.listing, {}, {}, catalog
+        )
+        self.assertIsNone(result)
+        self.assertTrue(any("cash price unverified" in value for value in missing))
+
     def test_item_outside_supreme_catalogue_is_rejected(self):
         listing = dict(self.listing)
         listing["receive_items"] = [{
