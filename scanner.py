@@ -91,6 +91,7 @@ RBLXVALUE_META_POLL_ENABLED = os.environ.get("RBLXVALUE_META_POLL_ENABLED", "fal
 VALUES_TTL_SECONDS = min(VALUES_REVALIDATION_INTERVAL_SECONDS, max(60, int(os.environ.get("VALUES_TTL_SECONDS", str(VALUES_REVALIDATION_INTERVAL_SECONDS)))))
 BLOXSWAPS_ITEMS_TTL_SECONDS = max(300, int(os.environ.get("BLOXSWAPS_ITEMS_TTL_SECONDS", "3600")))
 PENDING_TTL_SECONDS = max(86400, int(os.environ.get("PENDING_TTL_SECONDS", str(7 * 86400))))
+MAX_SUCCESS_GAP_SECONDS = max(3600, int(os.environ.get("MAX_SUCCESS_GAP_SECONDS", str(24 * 3600))))
 UNCERTAIN_TTL_SECONDS = max(3600, int(os.environ.get("UNCERTAIN_TTL_SECONDS", str(24 * 3600))))
 BLOXSWAPS_ITEMS_FILE = Path("data/bloxswaps_items.json")
 SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "100"))
@@ -1456,6 +1457,20 @@ def _last_successful_scan_timestamp():
         return _parse_feed_timestamp(state.get("completed_at_utc"))
     except (OSError, ValueError, TypeError):
         raise RuntimeError("[state] Last-success checkpoint is unreadable; refusing unsafe pagination boundary.")
+
+
+def scan_checkpoint_requires_cold_start(last_success_ts, now=None):
+    """Avoid replaying a multi-day feed after a prolonged scanner outage."""
+    if last_success_ts is None:
+        return True
+    current = time.time() if now is None else float(now)
+    try:
+        last_success = float(last_success_ts)
+    except (TypeError, ValueError, OverflowError):
+        return True
+    if not math.isfinite(last_success) or not math.isfinite(current) or last_success <= 0:
+        return True
+    return current - last_success > MAX_SUCCESS_GAP_SECONDS
 
 
 def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None):
@@ -4271,6 +4286,15 @@ def scan_once(include_backlog_rechecks=True):
         if run_backlog_rechecks else {}
     )
     watch_state = load_watch_state()
+    last_success_ts = _last_successful_scan_timestamp()
+    if seen_ads is not None and not pending_ids and scan_checkpoint_requires_cold_start(last_success_ts):
+        age_seconds = max(0.0, time.time() - last_success_ts) if last_success_ts else None
+        age_label = f"{age_seconds / 3600:.1f}h" if age_seconds is not None else "unknown age"
+        print(
+            f"[state] Last successful scan is stale ({age_label}); "
+            "switching to a bounded 60-minute cold-start window instead of replaying old listings."
+        )
+        seen_ads = None
     # If the seen file was lost but pending items survive, do not cold-start:
     # search due unresolved IDs before establishing a baseline.
     if seen_ads is None and include_backlog_rechecks and (pending_ids or watch_state):
