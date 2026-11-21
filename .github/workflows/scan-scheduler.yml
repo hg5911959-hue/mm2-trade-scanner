@@ -3,6 +3,11 @@ name: MM2 Scanner Scheduler
 on:
   schedule:
     - cron: "*/10 * * * *"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/scan.yml"
+      - ".github/workflows/scan-scheduler.yml"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -28,6 +33,6 @@ jobs:
       contents: write
     uses: ./.github/workflows/scan.yml
     with:
-      dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
-      verify_rblxvalue_key: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_rblxvalue_key || false }}
+      dry_run: false
+      verify_rblxvalue_key: false
     secrets: inherit
