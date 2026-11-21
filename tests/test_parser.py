@@ -3170,7 +3170,7 @@ class WatchWindowRegressionTests(IsolatedDataTestCase):
         second = scanner.listing_watch_fingerprints(self._listing(3), {})
         self.assertNotEqual(first[0], second[0])
 
-    def test_watch_state_round_trips_and_expires_after_six_hours(self):
+    def test_watch_state_round_trips_and_expires_after_24_hours(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "watch.json"
             with patch("scanner.WATCH_FILE", path), patch("scanner.time.time", return_value=1000):
@@ -3178,7 +3178,7 @@ class WatchWindowRegressionTests(IsolatedDataTestCase):
                                       "created_at": 1000, "updated_at": 1000}}
                 scanner.save_watch_state(state)
                 self.assertEqual(scanner.load_watch_state(), state)
-            with patch("scanner.WATCH_FILE", path), patch("scanner.time.time", return_value=1000 + 6 * 3600 + 1):
+            with patch("scanner.WATCH_FILE", path), patch("scanner.time.time", return_value=1000 + 24 * 3600 + 1):
                 self.assertEqual(scanner.load_watch_state(), {})
 
 
