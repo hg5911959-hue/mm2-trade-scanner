@@ -93,8 +93,6 @@ def parse_robase_html(document: str, fetched_at_utc: str | None = None) -> dict:
             "source": "https://robase.gg/",
             "notes": "ROBASE completed-sales average; seller proceeds after fees",
         }
-    if len(items) < 100:
-        raise ValueError(f"ROBASE table incomplete: parsed only {len(items)} rows")
     stamp = fetched_at_utc or datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     return {
         "schema_version": 1,
@@ -117,6 +115,8 @@ def fetch_snapshot(output: Path = DEFAULT_OUTPUT, timeout: int = 25) -> dict:
     if len(raw) > 5_000_000:
         raise RuntimeError("ROBASE response exceeded 5 MB safety limit")
     snapshot = parse_robase_html(raw.decode("utf-8", errors="strict"))
+    if len(snapshot["items"]) < 100:
+        raise ValueError("ROBASE table incomplete: parsed only %s rows" % len(snapshot["items"]))
     output.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=output.name + ".", suffix=".tmp", dir=output.parent)
     try:
