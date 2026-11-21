@@ -39,6 +39,23 @@ jobs:
         run: python -m unittest discover -s tests -p "test_robase_prices.py"
       - name: Run cash valuation tests
         run: python -m unittest discover -s tests -p "test_cash_market.py"
+      - name: Validate live ROBASE snapshot
+        run: |
+          python -m tools.robase_prices --output "$RUNNER_TEMP/robase_prices.json"
+          python - <<'PY'
+          from tools.cash_market import load_robase_price_catalog
+          catalog = load_robase_price_catalog("$RUNNER_TEMP/robase_prices.json")
+          print(
+              "[robase-live] rows=%d verified=%d unverified=%d"
+              % (
+                  catalog["row_count"],
+                  catalog["verified_count"],
+                  catalog["row_count"] - catalog["verified_count"],
+              )
+          )
+          if catalog["verified_count"] < 8:
+              raise SystemExit("ROBASE has fewer than 8 sufficiently traded items; live cash mode must remain disabled.")
+          PY
       - name: Install Ruff
         run: python -m pip install --disable-pip-version-check ruff==0.17.5
       - name: Lint ROBASE pricing changes
