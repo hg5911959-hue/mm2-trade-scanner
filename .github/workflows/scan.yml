@@ -91,7 +91,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           CASH_PRICES_CSV: ${{ (env.CASH_FILTER == '1' || env.CASH_FILTER == 'true' || env.CASH_FILTER == 'yes' || env.CASH_FILTER == 'on') && secrets.CASH_PRICES_CSV || '' }}
-          CASH_MAX_AGE_DAYS: "14"
+          CASH_MAX_AGE_DAYS: "1"
           CASH_MIN_VERIFIED_ROWS: "8"
         run: python -m tools.preflight --warn
 
