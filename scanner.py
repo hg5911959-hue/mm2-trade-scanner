@@ -3106,6 +3106,7 @@ def _wait_for_telegram_rate_limit():
 
 
 RBLXVALUE_ATTRIBUTION = "Data from rblxvalue.com"
+ROBASE_ATTRIBUTION = "Cash price source: robase.gg (seller proceeds after fees)"
 
 
 class TelegramHTML(str):
@@ -3179,8 +3180,10 @@ def _format_telegram_items(items):
 def send_telegram(message):
     is_html = isinstance(message, TelegramHTML)
     message = str(message)
-    needs_attribution = not message.rstrip().endswith(RBLXVALUE_ATTRIBUTION)
-    footer = "\n\n" + RBLXVALUE_ATTRIBUTION if needs_attribution else ""
+    is_robase_cash_message = "CASH PROFIT" in message or "CASH ROI:" in message
+    attribution = ROBASE_ATTRIBUTION if is_robase_cash_message else RBLXVALUE_ATTRIBUTION
+    has_attribution = message.rstrip().endswith((RBLXVALUE_ATTRIBUTION, ROBASE_ATTRIBUTION))
+    footer = "\n\n" + attribution if not has_attribution else ""
     if len(message) + len(footer) > TELEGRAM_MAX_CHARS:
         chunk_limit = TELEGRAM_MAX_CHARS - 96
         chunks, current = [], ""
@@ -3205,7 +3208,8 @@ def send_telegram(message):
         for index, chunk in enumerate(chunks, start=1):
             try:
                 header = f"💎 MM2 TRADE DETAILS ({index}/{total_chunks})\n"
-                part = TelegramHTML(header + chunk) if is_html else header + chunk
+                part_text = header + chunk + footer
+                part = TelegramHTML(part_text) if is_html else part_text
                 send_telegram(part)
             except TelegramDeliveryUncertain:
                 raise
