@@ -184,7 +184,7 @@ class ParserTests(IsolatedDataTestCase):
         total, breakdown, missing = calculate_side(items, values)
         self.assertEqual(total, 250)
         self.assertEqual(missing, [])
-        self.assertEqual(breakdown, ["• Snowstorm — 250 each = 250 | Stability: N/A"])
+        self.assertEqual(breakdown, ["• Snowstorm x1 — 250 each = 250 | Stability: N/A"])
 
     def test_calculate_side_multiplies_quantities_and_groups_duplicates(self):
         items = [
@@ -1156,7 +1156,7 @@ class ReliabilityTests(IsolatedDataTestCase):
         message = scanner.format_trade_message(listing, 10, ["give"], 20, ["receive"], 10)
         self.assertIn('<a href="https://bloxswaps.com/fr/users/12345">Trader profile</a>', message)
         self.assertLess(message.index("👤 "), message.index("🔗 "))
-        self.assertLess(message.index("👤 "), message.index("📤 GIVE"))
+        self.assertLess(message.index("👤 "), message.index("📤 <b>YOU GIVE</b>"))
         self.assertNotIn("QUANTITY PROVENANCE", message)
         self.assertNotIn("raw=", message)
 

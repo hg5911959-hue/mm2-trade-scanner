@@ -3138,7 +3138,7 @@ def _format_telegram_item_line(line):
     identity_match = re.match(r"^(.*?)\s+\[([^\]]+)\]$", name)
     if identity_match:
         name = identity_match.group(1).strip()
-        identity = identity_match.group(2).replace("/", " · ").title()
+        identity = " · ".join(part.strip().title() for part in identity_match.group(2).split("/"))
     quantity = match.group("quantity")
     unit_value = match.group("unit").strip()
     total_value = match.group("total").strip()
@@ -3167,8 +3167,6 @@ def send_telegram(message):
     needs_attribution = not message.rstrip().endswith(RBLXVALUE_ATTRIBUTION)
     footer = "\n\n" + RBLXVALUE_ATTRIBUTION if needs_attribution else ""
     if len(message) + len(footer) > TELEGRAM_MAX_CHARS:
-        # Reserve room for the multipart header and the mandatory source credit
-        # in every Telegram message. Never truncate trade details.
         chunk_limit = TELEGRAM_MAX_CHARS - 96
         chunks, current = [], ""
         for line in message.splitlines():
@@ -3215,6 +3213,53 @@ def send_telegram(message):
     if is_html:
         payload["parse_mode"] = "HTML"
     body = json.dumps(payload).encode()
+    # sendMessage is non-idempotent. Never retry uncertain network/5xx outcomes.
+    for attempt in range(2):
+        _wait_for_telegram_rate_limit()
+        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as response:
+                raw = response.read()
+        except HTTPError as exc:
+            raw = exc.read(2000)
+            if exc.code == 429 and attempt < 1:
+                try:
+                    result = json.loads(raw.decode("utf-8"))
+                    retry_after = result.get("parameters", {}).get("retry_after", 2 ** (attempt + 1))
+                except (ValueError, UnicodeDecodeError):
+                    retry_after = 2 ** (attempt + 1)
+                delay = min(60, max(1, int(retry_after)))
+                print(f"[retry] Telegram explicitly rejected sendMessage with 429; waiting {delay}s")
+                time.sleep(delay)
+                continue
+            if exc.code >= 500:
+                raise TelegramDeliveryUncertain(
+                    f"[telegram] HTTP {exc.code}; delivery status is uncertain, not retrying."
+                ) from exc
+            raise RuntimeError(
+                f"[telegram] API rejected message: HTTP {exc.code}: "
+                f"{raw.decode('utf-8', errors='replace')[:300]}"
+            ) from exc
+        except (URLError, TimeoutError, OSError) as exc:
+            raise TelegramDeliveryUncertain(
+                "[telegram] Network response missing; delivery status is uncertain, not retrying."
+            ) from exc
+        try:
+            result = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise TelegramDeliveryUncertain(
+                "[telegram] Invalid response; delivery status is uncertain, not retrying."
+            ) from exc
+        if result.get("ok"):
+            return
+        if int(result.get("error_code", 0) or 0) == 429 and attempt < 1:
+            retry_after = result.get("parameters", {}).get("retry_after", 2 ** (attempt + 1))
+            delay = min(60, max(1, int(retry_after)))
+            print(f"[retry] Telegram explicitly rejected sendMessage with 429; waiting {delay}s")
+            time.sleep(delay)
+            continue
+        raise RuntimeError(f"[telegram] API rejected message: {result.get('description', 'unknown error')}")
+    raise RuntimeError("[telegram] Rate limit persisted after explicit 429 responses")
 
 
 def load_seen_ads():
@@ -3711,7 +3756,7 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
             f"Total: <b>{format_number(receive_total)}</b>",
             "",
             "━━━━━━━━━━━━━━━━",
-            f"💰 <b>GAME-VALUE PROFIT: {'+' if difference > 0 else ''}{format_number(difference)}</b>",
+            f"💰 <b>PROFIT (GAME VALUE): {'+' if difference > 0 else ''}{format_number(difference)}</b>",
             f"🏁 <b>RESULT: {result}</b>",
         ])
     return TelegramHTML("\n".join(lines))
