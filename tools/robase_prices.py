@@ -114,9 +114,17 @@ def fetch_snapshot(output: Path = DEFAULT_OUTPUT, timeout: int = 25) -> dict:
         raw = response.read(5_000_001)
     if len(raw) > 5_000_000:
         raise RuntimeError("ROBASE response exceeded 5 MB safety limit")
-    snapshot = parse_robase_html(raw.decode("utf-8", errors="strict"))
+    document = raw.decode("utf-8", errors="strict")
+    snapshot = parse_robase_html(document)
     if len(snapshot["items"]) < 100:
-        raise ValueError("ROBASE table incomplete: parsed only %s rows" % len(snapshot["items"]))
+        title_match = re.search(r"<title[^>]*>(.*?)</title>", document, flags=re.I | re.S)
+        title = " ".join(title_match.group(1).split())[:100] if title_match else "missing"
+        tr_count = len(re.findall(r"<tr\\b", document, flags=re.I))
+        table_count = len(re.findall(r"<table\\b", document, flags=re.I))
+        raise ValueError(
+            "ROBASE table incomplete: parsed=%s tr_tags=%s table_tags=%s bytes=%s title=%r"
+            % (len(snapshot["items"]), tr_count, table_count, len(raw), title)
+        )
     output.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=output.name + ".", suffix=".tmp", dir=output.parent)
     try:
