@@ -1215,6 +1215,7 @@ class ReliabilityTests(IsolatedDataTestCase):
                 "knife b": {"name": "Knife B", "value": 20},
             }
             with (
+                patch("scanner.CASH_FILTER", False),
                 patch("scanner.BOT_TOKEN", "test-token"),
                 patch("scanner.CHAT_ID", "123"),
                 patch("scanner.ALERTED_FILE", root / "alerted.json"),
@@ -1318,6 +1319,7 @@ class ReliabilityTests(IsolatedDataTestCase):
                 "knife b": {"name": "Knife B", "value": 20},
             }
             with (
+                patch("scanner.CASH_FILTER", False),
                 patch("scanner.BOT_TOKEN", "test-token"),
                 patch("scanner.CHAT_ID", "123"),
                 patch("scanner.ALERTED_FILE", root / "alerted.json"),
@@ -1358,7 +1360,7 @@ class ReliabilityTests(IsolatedDataTestCase):
                 {"knife a": {"name": "Knife A", "value": 10},
                  "knife b": {"name": "Knife B", "value": 20}},
             ]
-            with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), \
+            with patch("scanner.CASH_FILTER", False), patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), \
                  patch("scanner.ALERTED_FILE", root / "alerted.json"), \
                  patch("scanner.FAILURE_FILE", root / "failure.json"), \
                  patch("scanner.HISTORY_FILE", root / "history.csv"), \
@@ -1408,6 +1410,7 @@ class ReliabilityTests(IsolatedDataTestCase):
                 "knife b": {"name": "Knife B", "value": 20},
             }
             with (
+                patch("scanner.CASH_FILTER", False),
                 patch("scanner.BOT_TOKEN", "test-token"),
                 patch("scanner.CHAT_ID", "123"),
                 patch("scanner.ALERTED_FILE", root / "alerted.json"),
@@ -1454,6 +1457,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             root = Path(directory)
             sent = []
             with (
+                patch("scanner.CASH_FILTER", False),
                 patch("scanner.BOT_TOKEN", "test-token"),
                 patch("scanner.CHAT_ID", "123"),
                 patch("scanner.ALERTED_FILE", root / "alerted.json"),
@@ -1503,7 +1507,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             root = Path(directory)
             sent = []
             sequence = [html(["old"]), html(["old", "new"]), html(["old", "new"])]
-            with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), \
+            with patch("scanner.CASH_FILTER", False), patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), \
                  patch("scanner.ALERTED_FILE", root / "alerted.json"), \
                  patch("scanner.FAILURE_FILE", root / "failure.json"), \
                  patch("scanner.HISTORY_FILE", root / "history.csv"), \
