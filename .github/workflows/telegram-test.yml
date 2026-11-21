@@ -2,12 +2,15 @@ name: Telegram Connection Test
 
 on:
   workflow_dispatch:
+  pull_request:
+    types: [synchronize]
 
 permissions:
   contents: read
 
 jobs:
   telegram-test:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.body, '<!-- TELEGRAM_SMOKE_TEST -->')
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -31,8 +34,26 @@ jobs:
           url = "https://api.telegram.org/bot" + token + "/sendMessage"
           payload = {
               "chat_id": chat_id,
-              "text": "MM2 Trade Scanner: Telegram connection test successful.\nUTC: "
-                      + datetime.now(timezone.utc).isoformat(timespec="seconds")
+              "text": (
+                  "💎 MM2 TRADE <b>ALERT — TEST ONLY</b>\\n"
+                  "🟢 <b>TELEGRAM HTML DELIVERY CHECK</b>\\n\\n"
+                  "📤 <b>YOU GIVE</b> <i>(cash replacement cost)</i>\\n"
+                  "• <b>Test Item A</b> <code>×1</code>\\n"
+                  "  $1.00 each → <b>$1.00</b>\\n"
+                  "Total cost: <b>$1.00</b>\\n\\n"
+                  "📥 <b>YOU GET</b> <i>(net cash resale)</i>\\n"
+                  "• <b>Test Item B</b> <code>×1</code>\\n"
+                  "  $1.25 each → <b>$1.25</b>\\n"
+                  "Net resale: <b>$1.25</b>\\n\\n"
+                  "💵 <b>CASH PROFIT (CONSERVATIVE): +$0.25</b>\\n"
+                  "📊 CASH ROI: <b>25.00%</b>\\n"
+                  "🏁 <b>RESULT: CASH WIN</b>\\n\\n"
+                  "Cash price source: robase.gg (seller proceeds after fees)\\n"
+                  "🧪 TEST ONLY — this is not a live offer.\\n"
+                  "UTC: " + datetime.now(timezone.utc).isoformat(timespec="seconds")
+              ),
+              "parse_mode": "HTML",
+              "disable_web_page_preview": True,
           }
           request = urllib.request.Request(
               url,
