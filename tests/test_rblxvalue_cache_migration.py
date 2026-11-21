@@ -154,9 +154,9 @@ class SupremeCacheMigrationTests(IsolatedDataTestCase):
                     "scanner.api_get_json_conditional",
                     side_effect=rblxvalue_guard.RblxValueBudgetExceeded("daily budget exhausted"),
                 ) as api,
+                self.assertRaisesRegex(RuntimeError, "refusing stale-cache calculations"),
             ):
-                with self.assertRaisesRegex(RuntimeError, "refusing stale-cache calculations"):
-                    scanner.load_supreme_values()
+                scanner.load_supreme_values()
 
             self.assertEqual(api.call_count, 1)
 
