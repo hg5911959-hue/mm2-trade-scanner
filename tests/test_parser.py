@@ -1365,7 +1365,7 @@ class ReliabilityTests(IsolatedDataTestCase):
                  patch("scanner.SEEN_FILE", root / "seen_ads.json"), \
                  patch("scanner.PENDING_FILE", root / "pending.json"), \
                  patch("scanner.PENDING_RECHECK_SCHEDULE_FILE", root / "pending_schedule.json"), \
-                 patch("scanner.WATCH_FILE", root / "watch.json"),
+                 patch("scanner.WATCH_FILE", root / "watch.json"), \
                  patch("scanner.UNMATCHED_FILE", root / "unmatched_names.json"), \
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"), \
                  patch("scanner.load_supreme_values", side_effect=[cash_ready_values(value) for value in value_sets]), \
