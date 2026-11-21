@@ -24,6 +24,7 @@ import rblxvalue_guard
 from tools.metrics import update_metrics
 from tools.alert_policy import rank_and_split
 from tools.cash_market import calculate_cash_side, cash_profit_bounds, normalize_cash_name, cash_price_is_fresh, strict_quantity, parse_haircut_tiers
+from tools.robase_prices import normalize_robase_item_name
 
 
 def load_cash_price_catalog(*args, **kwargs):
@@ -4022,32 +4023,48 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
             record, match_source, candidates = resolve_value_record(
                 item.get("name", ""), values, aliases, item=item
             )
-            if not record:
-                suffix = f" (ambiguous: {', '.join(candidates)})" if candidates else " (not in Supreme catalogue)"
-                missing.append(f"{item.get('name', 'Unknown')}{suffix}")
-                continue
-            variants = record.get("variants") or [record]
-            if len(variants) != 1:
-                missing.append(f"{item.get('name')} (ambiguous Supreme identity)")
-                continue
-            selected = variants[0]
-            canonical_name = str(selected.get("name") or record.get("name") or item.get("name") or "").strip()
-            if not canonical_name:
-                missing.append(f"{item.get('name')} (Supreme identity missing)")
-                continue
+            robase_fallback = False
+            variants = record.get("variants") or [record] if record else []
+            if not record or len(variants) != 1:
+                raw_name = item.get("name", "Unknown")
+                try:
+                    cash_key = normalize_cash_name(normalize_robase_item_name(raw_name))
+                except ValueError:
+                    cash_key = ""
+                cash_record = (cash_catalog or {}).get("items", {}).get(cash_key)
+                if cash_record and cash_record.get("status") == "verified":
+                    canonical_name = str(cash_record.get("name") or normalize_robase_item_name(raw_name)).strip()
+                    stability = "ROBASE verified"
+                    match_source = "ROBASE"
+                    robase_fallback = True
+                else:
+                    if cash_record:
+                        missing.append(f"{raw_name} (cash price unverified)")
+                    elif not record:
+                        suffix = f" (ambiguous: {', '.join(candidates)})" if candidates else " (not in Supreme catalogue or verified ROBASE catalogue)"
+                        missing.append(f"{raw_name}{suffix}")
+                    else:
+                        missing.append(f"{raw_name} (ambiguous Supreme identity; no unique ROBASE match)")
+                    continue
+            else:
+                selected = variants[0]
+                canonical_name = str(selected.get("name") or record.get("name") or item.get("name") or "").strip()
+                if not canonical_name:
+                    missing.append(f"{item.get('name')} (Supreme identity missing)")
+                    continue
 
-            stability = _normalize_stability(selected.get("stability"))
-            stability_key = stability.casefold() if stability else ""
-            if stability_key == "untradeable":
-                missing.append(f"{canonical_name} (Untradeable)")
-                continue
-            if side == "receive":
-                if "stability" not in selected or stability_key not in RBLXVALUE_STABILITY_LABELS:
-                    missing.append(f"{canonical_name} (Stability unverified)")
+                stability = _normalize_stability(selected.get("stability"))
+                stability_key = stability.casefold() if stability else ""
+                if stability_key == "untradeable":
+                    missing.append(f"{canonical_name} (Untradeable)")
                     continue
-                if stability_key in BLOCKED_RECEIVE_STABILITY:
-                    missing.append(f"{canonical_name} (Stability: {stability}; excluded)")
-                    continue
+                if side == "receive":
+                    if "stability" not in selected or stability_key not in RBLXVALUE_STABILITY_LABELS:
+                        missing.append(f"{canonical_name} (Stability unverified)")
+                        continue
+                    if stability_key in BLOCKED_RECEIVE_STABILITY:
+                        missing.append(f"{canonical_name} (Stability: {stability}; excluded)")
+                        continue
 
             quantity = item.get("quantity")
             qmin = item.get("quantity_min")
@@ -4071,6 +4088,7 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
                 "quantity_max": qmax,
                 "stability": stability or "N/A",
                 "match_source": match_source,
+                "robase_fallback": robase_fallback,
             })
 
     if missing:
@@ -4092,11 +4110,19 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
         return None, missing
 
     give_lines = [
-        line + f" | RBLXValue Stability: {item['stability']}"
+        line + (
+            f" | ROBASE verification: {item['stability']}"
+            if item.get("robase_fallback")
+            else f" | RBLXValue Stability: {item['stability']}"
+        )
         for line, item in zip(give_lines, prepared["give"])
     ]
     receive_lines = [
-        line + f" | RBLXValue Stability: {item['stability']}"
+        line + (
+            f" | ROBASE verification: {item['stability']}"
+            if item.get("robase_fallback")
+            else f" | RBLXValue Stability: {item['stability']}"
+        )
         for line, item in zip(receive_lines, prepared["receive"])
     ]
     profit_worst, profit_best = cash_profit_bounds(
