@@ -1283,8 +1283,8 @@ class ReliabilityTests(IsolatedDataTestCase):
             trade_messages = [call.args[0] for call in send.call_args_list if "💎 MM2 TRADE" in call.args[0]]
             self.assertEqual(trade_messages, [])
             self.assertFalse(any("∞" in call.args[0] for call in send.call_args_list))
-            pending = json.loads((root / "pending.json").read_text(encoding="utf-8"))["pending"]
-            self.assertIn("manual-review-test", pending)
+            self.assertFalse((root / "pending.json").exists())
+            self.assertFalse((root / "alerted.json").exists())
 
     def test_unknown_receive_stack_does_not_produce_infinite_profit(self):
         listing = {
@@ -1365,7 +1365,8 @@ class ReliabilityTests(IsolatedDataTestCase):
                  patch("scanner.SEEN_FILE", root / "seen_ads.json"), \
                  patch("scanner.PENDING_FILE", root / "pending.json"), \
                  patch("scanner.PENDING_RECHECK_SCHEDULE_FILE", root / "pending_schedule.json"), \
-                 patch("scanner.WATCH_FILE", root / "watch.json"), \
+                 patch("scanner.WATCH_FILE", root / "watch.json"),
+                 patch("scanner.UNMATCHED_FILE", root / "unmatched_names.json"), \
                  patch("scanner.UNCERTAIN_FILE", root / "uncertain.json"), \
                  patch("scanner.load_supreme_values", side_effect=[cash_ready_values(value) for value in value_sets]), \
                  patch("scanner.fetch_bloxswaps", return_value=with_rsc(html)), \
@@ -1380,9 +1381,10 @@ class ReliabilityTests(IsolatedDataTestCase):
             self.assertNotIn("MANUAL VALUE CHECK", "".join(trade_messages))
             self.assertTrue((root / "alerted.json").exists())
             seen = json.loads((root / "seen_ads.json").read_text(encoding="utf-8"))["ad_ids"]
-            pending = json.loads((root / "pending.json").read_text(encoding="utf-8"))["pending"]
+            unmatched = json.loads((root / "unmatched_names.json").read_text(encoding="utf-8"))
+            self.assertIn("knifeb", unmatched)
             self.assertIn("retry-me", seen)
-            self.assertEqual(pending, {})
+            self.assertFalse((root / "pending.json").exists())
 
     def test_all_qualified_offers_send_without_per_run_cap(self):
         def html(ad_ids):
@@ -1470,8 +1472,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             ):
                 with patch.dict(os.environ, {"MAX_ALERTS_PER_SCAN": "2"}):
                     scanner.main()
-                pending = json.loads((root / "pending.json").read_text(encoding="utf-8"))["pending"]
-                self.assertEqual(pending, {})
+                self.assertEqual(scanner.load_pending_ids(), {})
                 individual = [message for message in sent if "💎 MM2 TRADE" in message and "DIGEST" not in message]
                 digests = [message for message in sent if "MM2 TRADE DIGEST" in message]
                 self.assertEqual(len(individual), 2)
