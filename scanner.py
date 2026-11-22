@@ -4571,25 +4571,31 @@ def scan_once(include_backlog_rechecks=True):
     pending_schedule = record_pending_recheck_attempts(
         due_pending_ids, pending_ids, pending_schedule
     )
-    # The collector writes a bounded local JSON file; parse it into the same
-    # normalized schema, but keep its IDs namespaced away from BloxSwaps cursors.
-    from discord_parser import load_discord_listings
-
-    try:
-        discord_listings, discord_rejected = load_discord_listings()
-    except Exception as discord_error:
-        discord_listings, discord_rejected = [], 0
-        print(f"[discord-parser] source skipped safely: {type(discord_error).__name__}; BloxSwaps scan continues")
-    if discord_listings:
-        existing_ids = {str(row.get("id") or "") for row in listings}
-        fresh_discord = [row for row in discord_listings if str(row.get("id") or "") not in existing_ids]
-        listings.extend(fresh_discord)
+    if CASH_FILTER:
+        # Cash opportunities are intentionally BloxSwaps-only; never mix Discord
+        # or manually imported listings into the ROBASE cash pipeline.
+        discord_listings, discord_rejected, fresh_discord = [], 0, []
+        print("[discord-parser] skipped: ROBASE cash mode accepts BloxSwaps offers only")
     else:
-        fresh_discord = []
-    print(
-        f"[discord-parser] parsed={len(discord_listings)} "
-        f"new_for_batch={len(fresh_discord)} rejected={discord_rejected}"
-    )
+        # The collector writes a bounded local JSON file; parse it into the same
+        # normalized schema, but keep its IDs namespaced away from BloxSwaps cursors.
+        from discord_parser import load_discord_listings
+
+        try:
+            discord_listings, discord_rejected = load_discord_listings()
+        except Exception as discord_error:
+            discord_listings, discord_rejected = [], 0
+            print(f"[discord-parser] source skipped safely: {type(discord_error).__name__}; BloxSwaps scan continues")
+        if discord_listings:
+            existing_ids = {str(row.get("id") or "") for row in listings}
+            fresh_discord = [row for row in discord_listings if str(row.get("id") or "") not in existing_ids]
+            listings.extend(fresh_discord)
+        else:
+            fresh_discord = []
+        print(
+            f"[discord-parser] parsed={len(discord_listings)} "
+            f"new_for_batch={len(fresh_discord)} rejected={discord_rejected}"
+        )
     first_seen_ads = load_first_seen_ads()
     first_seen_changed = False
     observed_at = datetime.now(timezone.utc).isoformat()
