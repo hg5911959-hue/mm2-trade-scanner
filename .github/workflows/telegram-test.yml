@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Send a safe Telegram test message
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -22,6 +24,7 @@ jobs:
           import urllib.error
           import urllib.request
           from datetime import datetime, timezone
+          from tools.telegram_transport import TELEGRAM_OPENER
 
           token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
           chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
@@ -59,7 +62,7 @@ jobs:
               method="POST",
           )
           try:
-              with urllib.request.urlopen(request, timeout=20) as response:
+              with TELEGRAM_OPENER.open(request, timeout=20) as response:
                   result = json.loads(response.read().decode("utf-8"))
           except urllib.error.HTTPError as exc:
               try:
