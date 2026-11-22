@@ -11,6 +11,7 @@ import re
 import sys
 import time
 import signal
+import tempfile
 import unicodedata
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -209,11 +210,21 @@ def install_redacting_streams():
         sys.stderr = RedactingStream(sys.stderr)
 
 def atomic_write_text(path, content):
+    """Atomically write text through a unique same-directory temporary file."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = path.with_name(path.name + ".tmp")
-    temp_path.write_text(content, encoding="utf-8")
-    os.replace(temp_path, path)
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=path.name + ".", suffix=".tmp", dir=path.parent
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 class Node:
