@@ -95,7 +95,7 @@ class CashTelegramAttributionTests(IsolatedDataTestCase):
             patch.object(scanner, "BOT_TOKEN", "test-token"),
             patch.object(scanner, "CHAT_ID", "123"),
             patch.object(scanner, "_wait_for_telegram_rate_limit"),
-            patch.object(scanner.urllib.request, "urlopen", return_value=Response()) as send,
+            patch.object(scanner.TELEGRAM_OPENER, "open", return_value=Response()) as send,
         ):
             scanner.send_telegram(message)
         request = send.call_args.args[0]
