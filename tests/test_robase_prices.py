@@ -1,5 +1,5 @@
 from test_support import IsolatedDataTestCase
-from tools.robase_prices import parse_robase_html
+from tools.robase_prices import _TableParser, _parse_item_detail, parse_robase_html
 
 
 class RobasePriceParserTests(IsolatedDataTestCase):
@@ -17,6 +17,7 @@ class RobasePriceParserTests(IsolatedDataTestCase):
         self.assertEqual(len(snapshot["items"]), 2)
         by_name = {item["name"]: item for item in snapshot["items"]}
         self.assertEqual(by_name["Harvester"]["cash_price_usd"], 5.01)
+        self.assertEqual(by_name["Harvester"]["price_display"], "$5.01")
         self.assertEqual(by_name["Harvester"]["sold_7d"], 1510)
         self.assertEqual(by_name["Harvester"]["status"], "verified")
         self.assertEqual(by_name["Chroma Bauble"]["status"], "unverified")
@@ -51,3 +52,42 @@ class RobasePriceParserTests(IsolatedDataTestCase):
             parse_robase_html(duplicate)
 
 
+
+
+    def test_extracts_all_public_item_links_from_homepage(self):
+        parser = _TableParser()
+        parser.feed(
+            '<a href="/item/harvester">Harvester</a>'
+            '<a href="https://robase.gg/item/chroma-emberscythe">Chroma Emberscythe</a>'
+            '<a href="https://example.com/item/fake">ignore</a>'
+        )
+        self.assertEqual(
+            parser.item_links,
+            {"https://robase.gg/item/harvester", "https://robase.gg/item/chroma-emberscythe"},
+        )
+
+    def test_item_detail_preserves_displayed_price_and_bloxswaps_metadata(self):
+        html = """
+        <main>
+          <p>Harvester is an Ancient item in Roblox Murder Mystery 2 (MM2).
+          Over the last 7 days it sold for $4.99 on average after the marketplace fee,
+          and buyers paid $6.78.</p>
+          <p>1,403 copies changed hands in the last 7 days for $9,611 (7,722 in 30 days).</p>
+          <p>Its value is 250, so 1,000 value in Harvester costs $19.96.
+          BloxSwaps counts 99,868 copies in the game, held by 70,527 players, a market cap of $498.2k.</p>
+        </main>
+        """
+        item = _parse_item_detail(
+            "https://robase.gg/item/harvester", html, "2026-11-22T09:00:00Z",
+            '"etag-1"', "Sat, 22 Nov 2026 09:00:00 GMT",
+        )
+        self.assertEqual(item["name"], "Harvester")
+        self.assertEqual(item["robase_category"], "Ancient")
+        self.assertEqual(item["price_display"], "$4.99")
+        self.assertEqual(item["cash_price_usd"], 4.99)
+        self.assertEqual(item["sold_7d"], 1403)
+        self.assertEqual(item["sold_30d"], 7722)
+        self.assertEqual(item["bloxswaps_value"], 250)
+        self.assertEqual(item["bloxswaps_copies"], 99868)
+        self.assertEqual(item["bloxswaps_holders"], 70527)
+        self.assertEqual(item["status"], "verified")
