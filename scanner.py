@@ -2118,6 +2118,23 @@ def resolve_value_record(name, values, aliases=None, item=None):
             for row in filtered_prefix[:8]
         ]
 
+    # Some BloxSwaps display names omit a source prefix (for example, "Laser"
+    # for the RBLXValue "Vintage Laser"). Only accept a suffix candidate when
+    # rarity, type, chroma, and year metadata reduce it to one exact variant.
+    suffix_candidates = [
+        row for row in all_variants
+        if name_key and normalize_name(row[2].get("name") or row[0]).endswith(" " + name_key)
+    ]
+    filtered_suffix = _filter_variants_by_catalog(suffix_candidates, metadata_item)
+    if len(filtered_suffix) == 1:
+        return _record_for_variant(filtered_suffix[0][2]), "metadata", []
+    if len(filtered_suffix) > 1:
+        return None, "ambiguous", [
+            str(row[2].get("name") or row[0])
+            + (f" [{row[2].get('category')}/{row[2].get('type')}]" if row[2].get("category") or row[2].get("type") else "")
+            for row in filtered_suffix[:8]
+        ]
+
     aliases = aliases or {}
     canonical = aliases.get(name_key)
     if canonical:

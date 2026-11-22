@@ -568,6 +568,37 @@ class ReliabilityTests(IsolatedDataTestCase):
 
 
 
+    def test_metadata_resolves_bloxswaps_short_name_to_unique_rblx_suffix_variant(self):
+        values = {
+            "laser": {"name": "Laser", "variants": [{
+                "id": "laser", "slug": "laser", "name": "Laser",
+                "category": "godly", "type": "gun", "value": 22,
+            }]},
+            "vintage laser": {"name": "Vintage Laser", "variants": [{
+                "id": "vintage-laser", "slug": "vintage-laser", "name": "Vintage Laser",
+                "category": "vintage", "type": "gun", "value": 8,
+            }]},
+        }
+        disint = {
+            "name": "Laser", "catalog_slug": "disint",
+            "catalog_rarity": "VINTAGE", "catalog_type": "Gun",
+            "catalog_chroma": False,
+        }
+        record, source, candidates = scanner.resolve_value_record("Laser", values, item=disint)
+        self.assertEqual(source, "metadata")
+        self.assertEqual(candidates, [])
+        self.assertEqual(record["variants"][0]["slug"], "vintage-laser")
+        self.assertEqual(record["value"], 8)
+
+        godly_laser = {
+            "name": "Laser", "catalog_slug": "laser",
+            "catalog_rarity": "GODLY", "catalog_type": "Gun",
+            "catalog_chroma": False,
+        }
+        record, source, _ = scanner.resolve_value_record("Laser", values, item=godly_laser)
+        self.assertEqual(source, "slug")
+        self.assertEqual(record["variants"][0]["slug"], "laser")
+
     def test_chroma_catalogue_flag_selects_chroma_variant_without_corrupting_rarity(self):
         values = {
             "chroma fire bear": {"name": "Chroma Fire Bear", "variants": [{
