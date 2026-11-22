@@ -22,7 +22,16 @@ class MetricsReportTests(IsolatedDataTestCase):
         self.assertIn("fresh",report)
     def test_report_with_empty_metrics(self):
         self.assertIn("Scan success: 0.0%",build_report({},now=datetime(2026,11,13,tzinfo=timezone.utc)))
-    def test_report_missing_metrics_file_is_represented_as_empty(self):
+
+    def test_report_optional_sections_use_real_line_breaks(self):
+        report = build_report(
+            {}, now=datetime(2026, 11, 13, tzinfo=timezone.utc),
+            blocker_summary="Blockers", preflight_checks=["PASS"],
+        )
+        self.assertIn("\\n\\nBlockers", report)
+        self.assertIn("\\n\\nPreflight checks: PASS", report)
+        self.assertNotIn("\\\\n", report)
+\n    def test_report_missing_metrics_file_is_represented_as_empty(self):
         with tempfile.TemporaryDirectory() as d:
             missing=Path(d)/"missing.json"
             self.assertFalse(missing.exists())
