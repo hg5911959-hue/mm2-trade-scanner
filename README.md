@@ -184,7 +184,7 @@ Retention is 90 days for listing observations and 180 days for value snapshots/o
 
 ### GitHub Pages dashboard
 
-The static dashboard is in `docs/index.html`. After each successful **MM2 Trade Scanner** workflow, `.github/workflows/dashboard-pages.yml` restores the SQLite database from `state`, exports a public-safe `dashboard-data.json`, and deploys it with GitHub Pages. It shows recent public listings, qualified opportunities, Supreme/secondary value comparisons, and historical value changes.
+The static dashboard is in `docs/index.html`. After each successful **MM2 Trade Scanner** workflow, `.github/workflows/dashboard-pages.yml` restores the SQLite database from `state`, exports a public-safe `dashboard-data.json`, and deploys it with GitHub Pages. It shows a searchable ROBASE catalogue with verified USD prices, 7-day/30-day completed sales, BloxSwaps copies/holders where published, recent public listings, and cash-mode USD opportunities only. Supreme-derived value lists and histories are not included in the public export unless redistribution permission is explicitly obtained.
 
 One-time repository setting required:
 1. Open **Settings → Pages**.

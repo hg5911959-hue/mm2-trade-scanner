@@ -102,9 +102,9 @@ def build_dashboard_data(db_path: str | Path, robase_path: str | Path | None = N
     empty = {
         "generatedAt": generated,
         "summary": {
-            "trackedListings": 0, "opportunities7d": 0, "trackedItems": 0,
-            "crossChecked": 0, "conflicts": 0, "estimated": 0,
-            "latestSnapshot": None,
+            "trackedListings": 0, "opportunities7d": 0,
+            "trackedItems": robase_summary["verifiedCount"],
+            "latestSnapshot": robase_summary["lastCheckedAt"],
         },
         "opportunities": [],
         "recentListings": [],
@@ -123,7 +123,7 @@ def build_dashboard_data(db_path: str | Path, robase_path: str | Path | None = N
                 "SELECT name FROM sqlite_master WHERE type='table'"
             ).fetchall()
         }
-        if not {"market_snapshots", "market_values", "listings", "opportunities"}.issubset(tables):
+        if not {"listings", "opportunities"}.issubset(tables):
             return empty
 
         since = (datetime.now(UTC) - timedelta(days=7)).isoformat()
@@ -131,27 +131,10 @@ def build_dashboard_data(db_path: str | Path, robase_path: str | Path | None = N
             "trackedListings": db.execute(
                 "SELECT COUNT(*) FROM listings WHERE lower(source) != 'discord'"
             ).fetchone()[0],
-            "opportunities7d": db.execute(
-                "SELECT COUNT(*) FROM opportunities WHERE lower(source) != 'discord' AND detected_at_utc >= ?",
-                (since,),
-            ).fetchone()[0],
-            "trackedItems": db.execute(
-                "SELECT COUNT(DISTINCT item_key) FROM market_values"
-            ).fetchone()[0],
-            "crossChecked": db.execute(
-                "SELECT COUNT(*) FROM market_values WHERE snapshot_id=(SELECT MAX(id) FROM market_snapshots) AND confidence='cross_checked'"
-            ).fetchone()[0],
-            "conflicts": db.execute(
-                "SELECT COUNT(*) FROM market_values WHERE snapshot_id=(SELECT MAX(id) FROM market_snapshots) AND confidence='conflict'"
-            ).fetchone()[0],
-            "estimated": db.execute(
-                "SELECT COUNT(*) FROM market_values WHERE snapshot_id=(SELECT MAX(id) FROM market_snapshots) AND confidence='estimated'"
-            ).fetchone()[0],
-            "latestSnapshot": db.execute(
-                "SELECT captured_at_utc FROM market_snapshots ORDER BY id DESC LIMIT 1"
-            ).fetchone(),
+            "opportunities7d": 0,
+            "trackedItems": robase_summary["verifiedCount"],
+            "latestSnapshot": robase_summary["lastCheckedAt"],
         }
-        summary["latestSnapshot"] = summary["latestSnapshot"][0] if summary["latestSnapshot"] else None
 
         opportunity_rows = db.execute(
             """
@@ -159,13 +142,19 @@ def build_dashboard_data(db_path: str | Path, robase_path: str | Path | None = N
                    profit, margin_percent, listing_url, details_json
             FROM opportunities
             WHERE lower(source) != 'discord'
-            ORDER BY margin_percent DESC, detected_at_utc DESC
-            LIMIT 30
+            ORDER BY profit DESC, detected_at_utc DESC
             """
         ).fetchall()
         opportunities = []
+        cash_opportunities_7d = 0
         for row in opportunity_rows:
             details = _decode_json(row["details_json"], {})
+            if not isinstance(details, dict) or details.get("valuation_mode") != "cash":
+                continue
+            if row["detected_at_utc"] >= since:
+                cash_opportunities_7d += 1
+            if len(opportunities) >= 30:
+                continue
             opportunities.append({
                 "listingId": row["listing_id"],
                 "source": row["source"],
@@ -179,6 +168,7 @@ def build_dashboard_data(db_path: str | Path, robase_path: str | Path | None = N
                 "receiveItems": details.get("receive_items", []),
                 "manualReview": bool(details.get("manual_review")),
             })
+        summary["opportunities7d"] = cash_opportunities_7d
 
         listing_rows = db.execute(
             """
@@ -201,66 +191,13 @@ def build_dashboard_data(db_path: str | Path, robase_path: str | Path | None = N
             "receiveItems": _decode_json(row["receive_items_json"], []),
         } for row in listing_rows]
 
-        latest_values = db.execute(
-            """
-            SELECT item_name, category, item_type, supreme_value, secondary_value,
-                   difference_percent, confidence, stability
-            FROM market_values
-            WHERE snapshot_id=(SELECT MAX(id) FROM market_snapshots)
-              AND (supreme_value IS NOT NULL OR secondary_value IS NOT NULL)
-            ORDER BY CASE confidence WHEN 'conflict' THEN 0 WHEN 'cross_checked' THEN 1 ELSE 2 END,
-                     difference_percent DESC
-            LIMIT 100
-            """
-        ).fetchall()
-        value_checks = [{
-            "name": row["item_name"], "category": row["category"],
-            "type": row["item_type"], "supreme": row["supreme_value"],
-            "secondary": row["secondary_value"], "differencePercent": row["difference_percent"],
-            "confidence": row["confidence"], "stability": row["stability"],
-        } for row in latest_values]
-
-        trending = db.execute(
-            """
-            SELECT item_key
-            FROM market_values
-            GROUP BY item_key
-            HAVING COUNT(DISTINCT snapshot_id) > 1
-            ORDER BY COUNT(DISTINCT snapshot_id) DESC
-            LIMIT 12
-            """
-        ).fetchall()
-        price_history = []
-        for item in trending:
-            rows = db.execute(
-                """
-                SELECT v.item_name, v.supreme_value, v.secondary_value,
-                       v.confidence, s.captured_at_utc
-                FROM market_values v
-                JOIN market_snapshots s ON s.id=v.snapshot_id
-                WHERE v.item_key=?
-                ORDER BY s.id DESC
-                LIMIT 12
-                """,
-                (item["item_key"],),
-            ).fetchall()
-            price_history.append({
-                "name": rows[0]["item_name"] if rows else item["item_key"],
-                "points": [{
-                    "at": row["captured_at_utc"],
-                    "supreme": row["supreme_value"],
-                    "secondary": row["secondary_value"],
-                    "confidence": row["confidence"],
-                } for row in reversed(rows)],
-            })
-
     return {
         "generatedAt": generated,
         "summary": summary,
         "opportunities": opportunities,
         "recentListings": recent_listings,
-        "valueChecks": value_checks,
-        "priceHistory": price_history,
+        "valueChecks": [],
+        "priceHistory": [],
         "robaseSummary": robase_summary,
         "robaseItems": robase_items,
     }

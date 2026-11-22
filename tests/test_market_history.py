@@ -41,7 +41,7 @@ class MarketHistoryTests(IsolatedDataTestCase):
     @staticmethod
     def listing(source="bloxswaps", listing_id="listing-public"):
         return {
-            "id": listing_id, "source": source, "source_ad_id": "ad-123",
+            "id": listing_id, "source": source, "valuation_mode": "cash", "source_ad_id": "ad-123",
             "owner_name": "PublicTrader", "owner_url": "https://bloxswaps.com/fr/users/123",
             "url": "https://bloxswaps.com/fr/trade-mm2?ad=123",
             "first_seen_at_utc": "2026-11-13T10:00:00+00:00",
@@ -139,6 +139,15 @@ class MarketHistoryTests(IsolatedDataTestCase):
         self.assertEqual(payload["robaseSummary"]["missingSupplyCount"], 1)
         self.assertEqual(payload["robaseItems"][1]["priceWindowDays"], 30)
         self.assertEqual(payload["robaseItems"][1]["url"], "https://robase.gg/item/cowboy")
+
+    def test_public_export_excludes_supreme_mode_opportunities(self):
+        cash = self.listing("bloxswaps", "cash-opportunity")
+        supreme = self.listing("bloxswaps", "value-opportunity")
+        supreme["valuation_mode"] = "supreme"
+        self.store.record_opportunity(cash, {"difference": 1.25, "margin": 20, "give_total": 5, "receive_total": 6.25})
+        self.store.record_opportunity(supreme, {"difference": 99, "margin": 99, "give_total": 1, "receive_total": 100})
+        payload = build_dashboard_data(self.db_path)
+        self.assertEqual([row["listingId"] for row in payload["opportunities"]], ["cash-opportunity"])
 
     def test_incomplete_robase_catalogue_is_not_published(self):
         robase_path = Path(self.tmp.name) / "robase_prices.json"
