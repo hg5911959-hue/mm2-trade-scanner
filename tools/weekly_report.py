@@ -1,5 +1,6 @@
 """Build a compact weekly Telegram health report using standard library only."""
 from __future__ import annotations
+
 import json
 import os
 import tempfile
