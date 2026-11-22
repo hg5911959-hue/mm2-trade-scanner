@@ -1305,7 +1305,7 @@ def fetch_pending_posts_by_id(pending_ids):
     for index, pending_id in enumerate(pending_batch):
         if index:
             # Keep bounded detail lookups gentle on the public BloxSwaps API.
-            time.sleep(0.1)
+            time.sleep(0.2)
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", pending_id):
             raise RuntimeError("[pending] Refusing an invalid pending listing ID.")
         try:
