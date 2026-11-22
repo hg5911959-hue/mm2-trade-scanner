@@ -4550,6 +4550,13 @@ def scan_once(include_backlog_rechecks=True):
     listings, stats, discovered_ids = fetch_bloxswaps_all(
         seen_ads, due_pending_ids.keys(), bloxswaps_watch_ids
     )
+    if CASH_FILTER:
+        try:
+            audit_robase_rblxvalue_mapping(
+                values, aliases, cash_catalog, fetch_bloxswaps_items_map()
+            )
+        except Exception as audit_error:
+            print(f"[robase-rblxvalue] coverage audit unavailable: {type(audit_error).__name__}")
     pending_schedule = record_pending_recheck_attempts(
         due_pending_ids, pending_ids, pending_schedule
     )
