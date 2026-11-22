@@ -284,7 +284,7 @@ Run `python tools/next_to_verify.py` to see the 15 most frequent blockers, their
 Production cash-price routine:
 1. The scheduled workflow refreshes the ROBASE completed-sales snapshot automatically before scanning.
 2. Confirm the preflight passes and the snapshot is complete and no older than one day.
-3. Use `python tools/next_to_verify.py` only to review legacy/manual catalogue blockers; it does not replace the live ROBASE price source.
+3. Run `python tools/next_to_verify.py` to rank current ROBASE cash-price blockers using the same snapshot as the scanner; duplicate item names are shown as ambiguous rather than assigned a potentially wrong price.
 
 Supreme numeric values are never converted into cash prices; the USD catalogue remains a separate, manually verified source.
 
