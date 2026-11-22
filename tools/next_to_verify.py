@@ -90,7 +90,7 @@ def main(argv=None):
     try:
         metrics = json.loads(args.metrics.read_text(encoding="utf-8")) if args.metrics.exists() else {}
         catalog = load_robase_price_catalog(args.snapshot)
-    except (OSError, ValueError, RuntimeError) as exc:
+    except (OSError, ValueError, RuntimeError, TypeError, KeyError, OverflowError) as exc:
         print(f"[next-to-verify] Could not read blocker data ({type(exc).__name__}).")
         return 0
     print(format_blockers(metrics, catalog))
