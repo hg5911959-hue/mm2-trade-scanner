@@ -1787,7 +1787,9 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                 additions += 1
                 addition_ids.append(post_id)
                 continue
-            if api_only and _api_post_is_single_sided(raw):
+            if _api_post_is_single_sided(raw):
+                # Single-sided posts are intentionally non-actionable, not malformed.
+                # Classify them consistently on RSC+API and API-only scans.
                 single_sided_count += 1
                 single_sided_ids.append(post_id)
                 continue
