@@ -21,6 +21,19 @@ from urllib.request import Request, urlopen
 
 URL = "https://robase.gg/"
 DEFAULT_OUTPUT = Path("data/robase_prices.json")
+
+# Exact name-based identity bridges for legacy vintage weapons whose ROBASE
+# pages omit the BloxSwaps OG image. Confirmed against BloxSwaps /items and
+# the RBLXValue vintage category/type; never used as fuzzy matching.
+ROBASE_BLOXSWAPS_SLUG_OVERRIDES = {
+    "cowboy": "cowboy",       # Vintage gun
+    "ghost": "ghostknife",    # Vintage knife (not the Legendary Ghost gun)
+    "golden": "golden",       # Vintage gun
+    "laser": "disint",        # Vintage Laser gun (not the Godly Laser gun)
+    "phaser": "phaser",       # Vintage gun
+    "prince": "prince",       # Vintage knife
+    "shadow": "shadow",       # Vintage knife (not the Legendary Shadow gun)
+}
 CATEGORIES = {
     "Ancient", "Godly", "Chroma", "Legendary", "Rare",
     "Uncommon", "Common", "Unique", "Classic",
@@ -248,7 +261,7 @@ def _parse_item_detail(url: str, document: str, fetched_at_utc: str, etag="", la
         "robase_category": category,
         "og_image_url": og_image_url,
         "og_image_slug": image_slug,
-        "bloxswaps_slug": image_slug,
+        "bloxswaps_slug": image_slug or ROBASE_BLOXSWAPS_SLUG_OVERRIDES.get(name.casefold(), ""),
         "cash_price_usd": price,
         "price_display": price_display,
         "price_window_days": int(price_match.group("days")),
