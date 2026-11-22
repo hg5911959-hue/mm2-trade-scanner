@@ -2755,6 +2755,15 @@ class PendingDirectLookupTests(IsolatedDataTestCase):
             with self.assertRaisesRegex(RuntimeError, "HTTP 429"):
                 scanner.fetch_pending_posts_by_id(["pending-post"])
 
+    def test_direct_lookup_preserves_mismatched_ids_for_cursor_fallback(self):
+        with patch(
+            "scanner.bloxswaps_api_get_json",
+            return_value={"id": "different-post"},
+        ):
+            posts, missing = scanner.fetch_pending_posts_by_id(["pending-post"])
+        self.assertEqual(posts, [])
+        self.assertEqual(missing, [])
+
     def test_fetch_bloxswaps_all_resolves_single_sided_and_missing_pending_posts_directly(self):
         single = self._post("single-post", [("OFFERED", "Harvester")])
         trade = self._post("trade-post", [("OFFERED", "Harvester"), ("REQUESTED", "Cane")])
