@@ -81,6 +81,22 @@ class RobasePriceParserTests(IsolatedDataTestCase):
         self.assertEqual(item["robase_category"], "Ancient")
         self.assertEqual(item["price_display"], "$4.99")
 
+    def test_item_detail_parses_multiword_chroma_heading_without_splitting_name(self):
+        html = """
+        <main>
+          <h2>About Chroma Alienbeam</h2>
+          <p>Chroma Alienbeam is a Chroma item in Roblox Murder Mystery 2 (MM2).
+          Over the last 7 days it sold for $332.50 on average after the marketplace fee.</p>
+          <p>1 copy changed hands in the last 7 days for $350 (5 in 30 days).</p>
+        </main>
+        """
+        item = _parse_item_detail(
+            "https://robase.gg/item/chroma-alienbeam", html, "2026-11-22T10:00:00Z"
+        )
+        self.assertEqual(item["name"], "Chroma Alienbeam")
+        self.assertEqual(item["robase_category"], "Chroma")
+        self.assertEqual(item["price_display"], "$332.50")
+
     def test_item_detail_anchors_name_and_extracts_exact_bloxswaps_image_slug(self):
         html = """
         <html><head>
