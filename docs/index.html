@@ -44,8 +44,6 @@
       <div class="metric"><div class="label">Two-source cross-checks</div><div class="value" id="crosschecked">—</div><div class="hint">Latest snapshot, within 15%</div></div>
     </section>
 
-    </section>
-
     <section class="panel" style="margin-bottom:14px" aria-label="ROBASE prices and item quantities">
       <div class="panel-head">
         <div><h2>ROBASE prices & market activity</h2><div class="small">Seller proceeds after marketplace fees · completed sales · BloxSwaps supply where published</div></div>
@@ -158,7 +156,7 @@
       sort === "price" ? b.priceUsd-a.priceUsd :
       sort === "sold30d" ? b.sold30d-a.sold30d : b.sold7d-a.sold7d);
     $("robase-count").textContent = summary.available
-      ? rows.length + " / " + summary.verifiedCount + " verified · " + number(summary.totalSold7d) + " sold 7d · " + number(summary.missingSupplyCount) + " without supply data"
+      ? rows.length + " / " + summary.verifiedCount + " verified · " + number(summary.totalSold7d) + " sold 7d · " + number(summary.missingSupplyCount) + " without supply data · checked " + date(summary.lastCheckedAt)
       : "Verified catalogue unavailable";
     if (!summary.available || !rows.length) {
       $("robase-table").innerHTML = '<div class="empty">' + (summary.available ? "No items match this search." : "A complete verified ROBASE snapshot is not available.") + '</div>';
