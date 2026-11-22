@@ -84,7 +84,7 @@ PRIORITY_PENDING_REASONS = frozenset({
 })
 MAX_PENDING_RECHECK_PER_SCAN = max(1, int(os.environ.get('MAX_PENDING_RECHECK_PER_SCAN', '50')))
 MAX_BACKLOG_RECHECK_PAGES = max(1, int(os.environ.get('MAX_BACKLOG_RECHECK_PAGES', '25')))
-BACKLOG_RECHECK_EVERY_CYCLES = max(1, int(os.environ.get('BACKLOG_RECHECK_EVERY_CYCLES', '4')))
+BACKLOG_RECHECK_EVERY_CYCLES = max(1, int(os.environ.get('BACKLOG_RECHECK_EVERY_CYCLES', '1')))
 FIRST_SEEN_FILE = Path("data/first_seen_ads.json")
 LAST_SUCCESS_FILE = Path("data/last_successful_scan.json")
 WATCH_FILE = Path("data/watch_ads.json")
@@ -1346,6 +1346,18 @@ def fetch_bloxswaps_items_map(force_refresh=False):
     return mapping
 
 
+def _api_post_is_single_sided(post):
+    """True when a structured post has only one side and cannot be valued as a trade."""
+    rows = post.get("tradePostItems") if isinstance(post, dict) else None
+    if not isinstance(rows, list) or not rows:
+        return False
+    roles = {
+        str(row.get("tradeRole") or "").upper()
+        for row in rows if isinstance(row, dict)
+    }
+    return not {"OFFERED", "REQUESTED"}.issubset(roles)
+
+
 def _api_trade_post_to_listing(post, item_map):
     post_id = str(post.get("id") or "")
     user = post.get("user") if isinstance(post.get("user"), dict) else {}
@@ -1510,6 +1522,8 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     )
     initial_item_map = fetch_bloxswaps_items_map() if needs_catalogue else {}
     raw_first_items = initial_page.get("items") or [] if initial_page else []
+    single_sided_ids = []
+    single_sided_count = 0
     first_page_unknown_ids = {
         str(row.get("itemDetailsId") or "")
         for post in raw_first_items if isinstance(post, dict)
@@ -1643,6 +1657,10 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                     additions += 1
                     addition_ids.append(post_id)
                     continue
+                if api_only and _api_post_is_single_sided(post):
+                    single_sided_count += 1
+                    single_sided_ids.append(post_id)
+                    continue
                 refresh_catalogue_for_post(post)
                 listing = _api_trade_post_to_listing(post, initial_item_map)
                 if listing:
@@ -1685,6 +1703,8 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
             'addition_count': additions,
             'malformed_count': malformed,
             'addition_ids': addition_ids,
+            'single_sided_count': single_sided_count,
+            'single_sided_ids': single_sided_ids,
             'unparsed_ad_ids': unparsed_ids,
             'pending_remaining_ids': [],
             'watch_remaining_ids': [],
@@ -1721,7 +1741,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     item_map = initial_item_map
 
     def consume_raw_posts(raw_posts, compare_html=False):
-        nonlocal boundary_reached, seen_streak, additions, malformed, api_listings_added, candidate_count, item_map, watch_remaining
+        nonlocal boundary_reached, seen_streak, additions, malformed, api_listings_added, candidate_count, item_map, watch_remaining, single_sided_count
         for raw in raw_posts:
             if not isinstance(raw, dict) or not raw.get("id"):
                 malformed += 1
@@ -1766,6 +1786,10 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
             if post_id in html_addition_ids or any(str(value).casefold() in {"add", "ajout", "ajouts"} for value in wildcards):
                 additions += 1
                 addition_ids.append(post_id)
+                continue
+            if api_only and _api_post_is_single_sided(raw):
+                single_sided_count += 1
+                single_sided_ids.append(post_id)
                 continue
             if item_map is None:
                 needs_catalogue = any(
@@ -1886,6 +1910,8 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
         "backlog_page_limit_reached": backlog_page_limit_reached,
         "api_listings_added": api_listings_added,
         "addition_ids": addition_ids,
+        "single_sided_count": single_sided_count,
+        "single_sided_ids": single_sided_ids,
         "unparsed_ad_ids": unparsed_ids,
         "malformed_samples": (stats.get("malformed_samples", []) + unparsed_samples)[:5],
     })
@@ -4936,15 +4962,22 @@ def scan_once(include_backlog_rechecks=True):
         save_pending_ids(pending_ids)
         save_pending_recheck_schedule(pending_schedule)
     addition_ids = set(stats.get("addition_ids", []))
-    if addition_ids:
-        seen_ads.update(addition_ids)
-        for ad_id in addition_ids:
+    single_sided_ids = set(stats.get("single_sided_ids", []))
+    non_actionable_ids = addition_ids | single_sided_ids
+    if non_actionable_ids:
+        seen_ads.update(non_actionable_ids)
+        for ad_id in non_actionable_ids:
             key = str(ad_id)
             pending_ids.pop(key, None)
             pending_schedule.pop(key, None)
         save_seen_ads(seen_ads)
         save_pending_ids(pending_ids)
         save_pending_recheck_schedule(pending_schedule)
+    if single_sided_ids:
+        print(
+            f"[bloxswaps] Excluded {len(single_sided_ids)} single-sided posts; "
+            "they are not trade opportunities and will not be retried as parser failures."
+        )
     if stats.get("watch_remaining_ids") and stats.get("watch_search_complete", False):
         missing_watch_ids = set(stats.get("watch_remaining_ids", []))
         for ad_id in missing_watch_ids:

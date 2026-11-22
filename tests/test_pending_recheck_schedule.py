@@ -101,6 +101,13 @@ class PendingRecheckScheduleTests(IsolatedDataTestCase):
         )
         self.assertFalse(scanner.should_run_backlog_recheck(0, every=4))
 
+    def test_backlog_recheck_can_run_on_every_cycle_when_due_items_exist(self):
+        self.assertEqual(
+            [cycle for cycle in range(1, 9) if scanner.should_run_backlog_recheck(cycle, every=1)],
+            list(range(1, 9)),
+        )
+        self.assertFalse(scanner.should_run_backlog_recheck(0, every=1))
+
     def test_value_snapshot_refresh_can_force_a_bounded_pending_recheck(self):
         pending = {"older": 100.0, "newer": 200.0}
         schedule = {

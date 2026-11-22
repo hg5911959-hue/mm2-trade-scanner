@@ -2614,6 +2614,38 @@ class LiveBloxSwapsFixtureTests(IsolatedDataTestCase):
         self.assertTrue(any(re.search(r"\d+\.\d{1,2}", item.get("raw_excerpt", "")) for item in all_items))
 
 
+class SingleSidedApiPostTests(IsolatedDataTestCase):
+    def test_single_sided_api_posts_are_excluded_without_unparsed_retry(self):
+        post = {
+            "id": "single-sided-post",
+            "user": {"robloxUserId": "123", "robloxUsername": "trader", "robloxDisplayName": "Trader"},
+            "lastRefreshedAt": datetime.now(timezone.utc).isoformat(),
+            "tradePostItems": [
+                {"itemDetailsId": "offered-id", "quantity": 1, "tradeRole": "OFFERED"},
+            ],
+            "requestedWildcards": ["OFFER"],
+        }
+        page = {"items": [post], "meta": {"cursor": None}}
+        item_map = {
+            "offered-id": {
+                "displayName": "Harvester", "slug": "harvester",
+                "rarity": "ANCIENT", "type": "Knife", "chroma": False,
+            }
+        }
+        with (
+            patch.dict(os.environ, {"BLOXSWAPS_API_ONLY": "true"}),
+            patch("scanner.bloxswaps_api_get_json", return_value=page),
+            patch("scanner.fetch_bloxswaps_items_map", return_value=item_map),
+        ):
+            listings, stats, discovered = scanner.fetch_bloxswaps_all(set())
+        self.assertEqual(listings, [])
+        self.assertEqual(discovered, ["single-sided-post"])
+        self.assertEqual(stats["single_sided_count"], 1)
+        self.assertEqual(stats["single_sided_ids"], ["single-sided-post"])
+        self.assertEqual(stats["unparsed_ad_ids"], [])
+        self.assertEqual(stats["malformed_count"], 0)
+
+
 class StructuredQuantityTests(IsolatedDataTestCase):
     @staticmethod
     def _html_with_rsc(trade_items, wildcards=None, visible_badge=""):
