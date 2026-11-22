@@ -1,4 +1,4 @@
-"""Rank cash-catalogue items that block the most listings (stdlib only)."""
+"""Rank ROBASE cash-price blockers by listing impact (stdlib only)."""
 from __future__ import annotations
 
 import argparse
@@ -6,10 +6,10 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from tools.cash_market import load_cash_price_catalog
+from tools.cash_market import load_robase_price_catalog
 
 METRICS_FILE = Path("data/metrics.json")
-CATALOG_FILE = Path("data/cash_prices.csv")
+ROBASE_SNAPSHOT_FILE = Path("data/robase_prices.json")
 
 
 def rank_blockers(metrics, catalog, *, now=None, limit=15):
@@ -28,13 +28,15 @@ def rank_blockers(metrics, catalog, *, now=None, limit=15):
     ordered = sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))[:limit]
     total_blocked = sum(groups.values())
     items = catalog.get("items", {})
+    duplicate_names = set(catalog.get("duplicate_name_keys", []))
     ranked = []
     selected = set()
     for name, count in ordered:
         selected.add(name)
-        entry = items.get(name)
+        entry = None if name in duplicate_names else items.get(name)
         price = entry.get("cash_price_usd") if entry else None
         verified_at = entry.get("verified_at_utc") if entry else None
+        status = entry.get("status", "verified") if entry else ("ambiguous" if name in duplicate_names else "missing")
         age_days = None
         if verified_at:
             try:
@@ -49,7 +51,7 @@ def rank_blockers(metrics, catalog, *, now=None, limit=15):
         )
         ranked.append({
             "name": name, "count": count, "price": price,
-            "age_days": age_days, "unlocked": unlocked,
+            "age_days": age_days, "status": status, "unlocked": unlocked,
             "unlocked_percent": (100.0 * unlocked / total_blocked) if total_blocked else 0.0,
         })
     return ranked, total_blocked
@@ -58,28 +60,32 @@ def rank_blockers(metrics, catalog, *, now=None, limit=15):
 def format_blockers(metrics, catalog, *, now=None, limit=15):
     ranked, total = rank_blockers(metrics, catalog, now=now, limit=limit)
     if not ranked:
-        return "No cash-price blockers recorded in the last 14 days."
-    lines = [f"Top cash-price blockers ({total} blocked listing instances / 14 days):"]
+        return "No ROBASE cash-price blockers recorded in the last 14 days."
+    lines = [f"Top ROBASE cash-price blockers ({total} blocked listing instances / 14 days):"]
     for index, item in enumerate(ranked, 1):
-        price = f"${item['price']:.2f}" if isinstance(item["price"], (int, float)) else "not in catalogue"
+        if item["status"] == "ambiguous":
+            price_label = "ambiguous ROBASE name"
+        elif isinstance(item["price"], (int, float)):
+            price_label = f"ROBASE ${item['price']:.2f}"
+        else:
+            price_label = "no unique ROBASE price"
         age = f"{item['age_days']:.1f}d" if item["age_days"] is not None else "unknown"
         lines.append(
-            f"{index}. {item['name']} — {item['count']} listings; catalogue {price}; age {age}"
+            f"{index}. {item['name']} — {item['count']} listings; {price_label}; checked {age} ago"
         )
         lines.append(
-            f"   If top {index} verified: {item['unlocked_percent']:.1f}% of blocked listings unlocked"
+            f"   If top {index} blockers are resolved: {item['unlocked_percent']:.1f}% of blocked listings unlocked"
         )
     return "\n".join(lines)
-
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--metrics", type=Path, default=METRICS_FILE)
-    parser.add_argument("--csv", type=Path, default=CATALOG_FILE)
+    parser.add_argument("--snapshot", type=Path, default=ROBASE_SNAPSHOT_FILE)
     args = parser.parse_args(argv)
     try:
         metrics = json.loads(args.metrics.read_text(encoding="utf-8")) if args.metrics.exists() else {}
-        catalog = load_cash_price_catalog(args.csv)
+        catalog = load_robase_price_catalog(args.snapshot)
     except (OSError, ValueError, RuntimeError) as exc:
         print(f"[next-to-verify] Could not read blocker data ({type(exc).__name__}).")
         return 0
