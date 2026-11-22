@@ -1301,7 +1301,11 @@ def fetch_pending_posts_by_id(pending_ids):
     """Resolve a bounded pending batch directly instead of crawling old feed cursors."""
     posts = []
     missing_ids = []
-    for pending_id in sorted({str(value) for value in (pending_ids or ())}):
+    pending_batch = sorted({str(value) for value in (pending_ids or ())})
+    for index, pending_id in enumerate(pending_batch):
+        if index:
+            # Keep bounded detail lookups gentle on the public BloxSwaps API.
+            time.sleep(0.1)
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", pending_id):
             raise RuntimeError("[pending] Refusing an invalid pending listing ID.")
         try:
