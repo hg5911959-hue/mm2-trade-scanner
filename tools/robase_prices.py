@@ -221,7 +221,6 @@ def _parse_item_detail(url: str, document: str, fetched_at_utc: str, etag="", la
 
 
 def _fetch_item_detail(url: str, cached: dict | None):
-    now = _utc_now()
     headers = {
         "User-Agent": "MM2-Trade-Scanner/1.0 (public ROBASE price sync; contact repository owner)",
         "Accept": "text/html",
