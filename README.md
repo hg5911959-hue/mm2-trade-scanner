@@ -35,17 +35,17 @@ From the scanner user's perspective:
 - The scanner never uses BloxSwaps' own Win/Loss label, never uses the visible listing price as an item value, and never invents a missing item value or quantity.
 - A listing is excluded if any item on the received (`Propose`) side has a risky RBLXValue stability label: `Decreasing`, `Receding`, `Unsafe`, `Untradeable`, `Unstable`, or `Volatile`. If the RBLXValue source provides a missing or unrecognized stability label for a received item, the listing is held back rather than assumed safe. Telegram labels the field `Stability (RBLXValue)` to avoid implying direct verification against the Supreme website; exact Supreme-specific `Decreasing` verification requires an authorized data source.
 
-### Cash-price freshness and bulk verification
+### Legacy manual CSV catalogue (not used by production)
 
-Cash prices are a separate marketplace estimate, not a conversion of Supreme value. Only rows marked `verified` with a UTC timestamp no older than `CASH_MAX_AGE_DAYS` (default 14) may qualify. Future timestamps are rejected. Expired rows are held out of calculations and trigger one maintenance notice per day listing the count and up to five oldest entries. The weekly report includes the current verified-row count, rows expiring within three days, and the oldest active verification timestamp.
+The following rules apply only to the legacy `data/cash_prices.csv` and its offline verification tool. This CSV is not read by the production scanner, does not update ROBASE prices, and does not affect live alert eligibility. Production uses the complete, fresh ROBASE snapshot described above. Supreme numeric values remain separate from all cash prices.
 
-To update prices safely:
+To review the legacy CSV for an offline experiment:
 
-1. Paste a fresh marketplace list into a UTF-8 text file, one item per line.
-2. Preview with `python tools/verify_cash_prices.py --input prices.txt --dry-run`, then run without `--dry-run` after reviewing the skipped-name summary. Large price changes are refused by default; use `--force` only after manual review.
-3. Check the scanner's cash-price maintenance notice and the weekly report.
+1. Paste a marketplace list into a UTF-8 text file, one item per line.
+2. Preview with `python tools/verify_cash_prices.py --input prices.txt --dry-run`, then run without `--dry-run` after reviewing skipped names. Large price changes are refused by default; use `--force` only after manual review.
+3. Treat the result as a manual reference only; it does not change the production ROBASE snapshot.
 
-For a private catalogue in this public repository, add a GitHub Actions repository secret named `CASH_PRICES_CSV` containing the complete CSV text. The scan workflow validates its header and atomically uses it only for that run; the secret is redacted from logs and the CSV is excluded from state artifacts. When the secret is absent, the tracked `data/cash_prices.csv` remains the fallback. The bulk verifier changes the local/repository CSV only; after reviewing it, update the GitHub secret separately if you use the private option.\n\nThe verifier matches exact normalized names first and only then tries removing a trailing `knife`, `gun`, or `sword`. Unknown and ambiguous names are skipped. It never creates or deletes catalogue entries, never divides a multi-quantity total into a guessed unit price, and writes atomically. Keep the CSV private if marketplace prices are commercially sensitive; the repository fallback is visible to repository readers.
+The verifier matches exact normalized names first and only then tries removing a trailing `knife`, `gun`, or `sword`. Unknown and ambiguous names are skipped. It never creates or deletes catalogue entries, never divides a multi-quantity total into a guessed unit price, and writes atomically. The tracked CSV is visible to repository readers. The production workflows no longer consume a `CASH_PRICES_CSV` secret.
 
 ### Quantity handling
 
