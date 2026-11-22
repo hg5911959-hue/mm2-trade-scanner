@@ -21,6 +21,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 
 import rblxvalue_guard
+from tools.telegram_transport import TELEGRAM_OPENER
 from tools.metrics import update_metrics
 from tools.alert_policy import rank_and_split
 from tools.cash_market import calculate_cash_side, cash_profit_bounds, normalize_cash_name, cash_price_is_fresh, strict_quantity
@@ -59,7 +60,7 @@ FAILURE_THRESHOLD = int(os.environ.get("FAILURE_ALERT_THRESHOLD", "3"))
 MAX_ALERTS_PER_RUN = max(0, int(os.environ.get("MAX_ALERTS_PER_RUN", "0")))
 _SESSION_ALERTS_SENT = 0
 _SESSION_ALERT_LIMIT = MAX_ALERTS_PER_RUN
-ALERT_DELAY_SECONDS = max(0.0, float(os.environ.get("ALERT_DELAY_SECONDS", "1.1")) )
+ALERT_DELAY_SECONDS = max(0.0, float(os.environ.get("ALERT_DELAY_SECONDS", "3.2")) )
 VALUES_FILE = Path("data/supreme_values.json")
 VALUES_AUDIT_FILE = Path("data/supreme_values_audit.json")
 RBLXVALUE_KEY_HEALTH_FILE = Path("data/rblxvalue_key_health.json")
@@ -3363,7 +3364,7 @@ def send_telegram(message):
         _wait_for_telegram_rate_limit()
         req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=20) as response:
+            with TELEGRAM_OPENER.open(req, timeout=20) as response:
                 raw = response.read()
         except HTTPError as exc:
             raw = exc.read(2000)
@@ -3373,7 +3374,7 @@ def send_telegram(message):
                     retry_after = result.get("parameters", {}).get("retry_after", 2 ** (attempt + 1))
                 except (ValueError, UnicodeDecodeError):
                     retry_after = 2 ** (attempt + 1)
-                delay = min(60, max(1, int(retry_after)))
+                delay = min(180, max(1, int(retry_after) + 2))
                 print(f"[retry] Telegram explicitly rejected sendMessage with 429; waiting {delay}s")
                 time.sleep(delay)
                 continue
@@ -3399,7 +3400,7 @@ def send_telegram(message):
             return
         if int(result.get("error_code", 0) or 0) == 429 and attempt < 1:
             retry_after = result.get("parameters", {}).get("retry_after", 2 ** (attempt + 1))
-            delay = min(60, max(1, int(retry_after)))
+            delay = min(180, max(1, int(retry_after) + 2))
             print(f"[retry] Telegram explicitly rejected sendMessage with 429; waiting {delay}s")
             time.sleep(delay)
             continue

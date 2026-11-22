@@ -4,8 +4,9 @@ import unittest
 from test_support import IsolatedDataTestCase
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
-from tools.preflight import collect_preflight_checks
+from tools.preflight import collect_preflight_checks, send_daily_notice
 
 
 class PreflightTests(IsolatedDataTestCase):
@@ -48,6 +49,49 @@ class PreflightTests(IsolatedDataTestCase):
             self.root, env=kwargs.pop("env", self.env), now=self.now,
             state_checker=kwargs.pop("state_checker", lambda: True), **kwargs,
         )["checks"]
+
+
+    def test_daily_notice_failure_is_not_recorded_and_can_retry(self):
+        with patch("tools.preflight.TELEGRAM_OPENER.open", side_effect=OSError("network down")):
+            sent = send_daily_notice(
+                ["API key warning"], data_dir=self.root,
+                env={"TELEGRAM_BOT_TOKEN": "placeholder", "TELEGRAM_CHAT_ID": "123"},
+                now=self.now,
+            )
+        self.assertFalse(sent)
+        self.assertFalse((self.root / "maintenance_alerts.json").exists())
+
+    def test_daily_notice_is_recorded_only_after_successful_delivery(self):
+        class Response:
+            status = 200
+            def read(self, limit):
+                return b'{"ok":true}'
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+
+        with patch("tools.preflight.TELEGRAM_OPENER.open", return_value=Response()):
+            sent = send_daily_notice(
+                ["API key warning"], data_dir=self.root,
+                env={"TELEGRAM_BOT_TOKEN": "placeholder", "TELEGRAM_CHAT_ID": "123"},
+                now=self.now,
+            )
+        self.assertTrue(sent)
+        state = json.loads((self.root / "maintenance_alerts.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["preflight-daily"], self.now.timestamp())
+
+    def test_preflight_telegram_redirect_handler_rejects_redirects(self):
+        from tools.telegram_transport import RejectTelegramRedirects
+        import urllib.request
+
+        handler = RejectTelegramRedirects()
+        request = urllib.request.Request(
+            "https://api.telegram.org/botplaceholder/sendMessage", data=b"chat_id=123"
+        )
+        self.assertIsNone(handler.redirect_request(
+            request, None, 302, "Found", {}, "https://attacker.example/collect"
+        ))
 
     def test_healthy_fixture_passes(self):
         self.assertEqual(self._checks(), [])

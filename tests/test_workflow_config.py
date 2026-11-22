@@ -67,12 +67,29 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn('      - "tools/**"\n', scheduler)
         self.assertIn("workflow_dispatch:", scheduler)
         self.assertIn("uses: ./.github/workflows/scan.yml", scheduler)
-        self.assertIn("secrets: inherit", scheduler)
+        self.assertNotIn("secrets: inherit", scheduler)
+        for secret in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "RBLXVALUE_API_KEY", "HEALTHCHECKS_PING_URL"):
+            self.assertIn(f"{secret}: ${{{{ secrets.{secret} }}}}", scheduler)
         self.assertIn("contents: write", scheduler)
         self.assertIn("actions: read", scheduler)
         self.assertNotIn("workflow_run:", scheduler)
         self.assertNotIn("enable-schedules:", scheduler)
 
+
+
+    def test_reusable_workflows_declare_explicit_optional_secrets(self):
+        scan = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        watchdog = (ROOT / ".github/workflows/watchdog.yml").read_text(encoding="utf-8")
+        scan_call = scan.split("  workflow_call:", 1)[1].split("  workflow_dispatch:", 1)[0]
+        watchdog_call = watchdog.split("  workflow_call:", 1)[1].split("  workflow_dispatch:", 1)[0]
+        scan_secrets = (
+            "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
+            "RBLXVALUE_API_KEY", "HEALTHCHECKS_PING_URL",
+        )
+        for secret in scan_secrets:
+            self.assertIn(f"{secret}:\n        required: false", scan_call)
+        for secret in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
+            self.assertIn(f"{secret}:\n        required: false", watchdog_call)
 
     def test_manual_scan_dispatch_defaults_to_dry_run(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
@@ -110,7 +127,9 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertNotIn("  schedule:", workflow)
         self.assertIn('cron: "*/5 * * * *"', scheduler)
         self.assertIn("uses: ./.github/workflows/watchdog.yml", scheduler)
-        self.assertIn("secrets: inherit", scheduler)
+        self.assertNotIn("secrets: inherit", scheduler)
+        self.assertIn("TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}", scheduler)
+        self.assertIn("TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}", scheduler)
         self.assertIn("actions: write", scheduler)
         self.assertIn('workflows: ["MM2 Scanner Scheduler"]', scheduler)
         self.assertIn("types: [completed]", scheduler)
@@ -123,6 +142,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
             with self.subTest(workflow=path.name):
                 text = path.read_text(encoding="utf-8")
                 self.assertNotIn("write-all", text)
+                self.assertNotIn("secrets: inherit", text)
                 for line in text.splitlines():
                     match = re.match(r"\s*uses:\s*([^\s#]+)", line)
                     if match and not match.group(1).startswith("./"):

@@ -6,12 +6,14 @@ import json
 import math
 import os
 import subprocess
+import tempfile
 import urllib.parse
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
 from tools.cash_market import load_robase_price_catalog
+from tools.telegram_transport import TELEGRAM_OPENER
 
 MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
 SUPREME_FILE = Path("data/supreme_values.json")
@@ -108,13 +110,19 @@ def collect_preflight_checks(data_dir="data", *, env=None, now=None,
 def _atomic_json(path, data):
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    temp = target.with_name(target.name + ".tmp")
-    with temp.open("w", encoding="utf-8") as handle:
-        json.dump(data, handle, sort_keys=True, indent=2)
-        handle.write("\n")
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(temp, target)
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=target.name + ".", suffix=".tmp", dir=target.parent
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, sort_keys=True, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def send_daily_notice(checks, *, data_dir="data", env=None, now=None):
@@ -134,16 +142,21 @@ def send_daily_notice(checks, *, data_dir="data", env=None, now=None):
     if isinstance(last, (int, float)) and not isinstance(last, bool):
         if datetime.fromtimestamp(last, UTC).date() == current.date():
             return False
-    state["preflight-daily"] = current.timestamp()
-    _atomic_json(path, state)
     message = "MM2 PREFLIGHT WARNING\n" + "\n".join("- " + check for check in checks)
     body = urllib.parse.urlencode({"chat_id": chat, "text": message}).encode()
     request = urllib.request.Request(
         "https://api.telegram.org/bot" + token + "/sendMessage", data=body
     )
     try:
-        with urllib.request.urlopen(request, timeout=15) as response:
-            return response.status == 200
+        with TELEGRAM_OPENER.open(request, timeout=15) as response:
+            if response.status != 200:
+                return False
+            result = json.loads(response.read(4096).decode("utf-8"))
+            if not isinstance(result, dict) or result.get("ok") is not True:
+                return False
+        state["preflight-daily"] = current.timestamp()
+        _atomic_json(path, state)
+        return True
     except Exception as exc:
         print("[preflight] Telegram notice failed: " + type(exc).__name__)
         return False

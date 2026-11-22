@@ -70,7 +70,7 @@ class WeeklyReportValueModeTests(IsolatedDataTestCase):
                              side_effect=AssertionError("cash blockers must not load")),
                 patch.object(weekly_report, "collect_preflight_checks",
                              return_value={"checks": []}),
-                patch.object(weekly_report.urllib.request, "urlopen", return_value=response),
+                patch.object(weekly_report.TELEGRAM_OPENER, "open", return_value=response),
                 contextlib.redirect_stdout(output),
             ):
                 weekly_report.main()
@@ -95,7 +95,7 @@ class CashTelegramAttributionTests(IsolatedDataTestCase):
             patch.object(scanner, "BOT_TOKEN", "test-token"),
             patch.object(scanner, "CHAT_ID", "123"),
             patch.object(scanner, "_wait_for_telegram_rate_limit"),
-            patch.object(scanner.urllib.request, "urlopen", return_value=Response()) as send,
+            patch.object(scanner.TELEGRAM_OPENER, "open", return_value=Response()) as send,
         ):
             scanner.send_telegram(message)
         request = send.call_args.args[0]

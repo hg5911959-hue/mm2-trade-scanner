@@ -64,7 +64,7 @@ class TelegramFormattingTests(IsolatedDataTestCase):
             payloads.append(json.loads(req.data.decode("utf-8")))
             return BytesIO(b'{"ok": true}')
         with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
-            "scanner.urllib.request.urlopen", side_effect=fake_open
+            "scanner.TELEGRAM_OPENER.open", side_effect=fake_open
         ), patch("scanner._wait_for_telegram_rate_limit"):
             scanner.send_telegram(scanner.TelegramHTML("<b>safe</b>"))
             scanner.send_telegram("plain <unsafe> text")

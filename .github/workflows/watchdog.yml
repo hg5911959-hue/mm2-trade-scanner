@@ -2,6 +2,11 @@ name: MM2 Scanner Watchdog
 
 on:
   workflow_call:
+    secrets:
+      TELEGRAM_BOT_TOKEN:
+        required: false
+      TELEGRAM_CHAT_ID:
+        required: false
   workflow_dispatch:
 
 permissions:
