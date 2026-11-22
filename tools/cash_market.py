@@ -292,14 +292,15 @@ def cash_profit_bounds(give_bounds, receive_bounds):
     return receive_min - give_max, receive_max - give_min
 
 
-def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, now=None):
-    """Load the latest ROBASE completed-sales snapshot as the sole cash catalogue.
+def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, now=None, max_age_seconds=20 * 60):
+    """Load the complete, freshly checked ROBASE item catalogue.
 
-    ROBASE prices are seller proceeds after marketplace fees. Rows with fewer
-    than three sales in the reported seven-day volume, or an expired snapshot,
-    remain unverified and cannot qualify for live cash alerts.
+    The public ROBASE item-page price is already the seller-proceeds price
+    after marketplace fees. This loader never applies a second resale haircut.
     """
     import json
+    from datetime import UTC, datetime
+
     snapshot_path = Path(path)
     try:
         raw = snapshot_path.read_bytes()
@@ -307,45 +308,92 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RuntimeError("[cash] ROBASE price snapshot is missing or invalid.") from exc
 
-    if snapshot.get("schema_version") != 1 or snapshot.get("price_basis") != "seller_proceeds_after_marketplace_fees":
-        raise RuntimeError("[cash] Unsupported ROBASE price snapshot schema or price basis.")
-    fetched_at = str(snapshot.get("fetched_at_utc") or "")
-    stamp_entry = {"status": "verified", "verified_at_utc": fetched_at}
-    snapshot_fresh = cash_price_is_fresh(stamp_entry, max_age_days=max_age_days, now=now)
+    if snapshot.get("schema_version") != 2 or snapshot.get("price_basis") != "seller_proceeds_after_marketplace_fees":
+        raise RuntimeError("[cash] ROBASE snapshot is not the complete item-detail schema.")
+    expected = snapshot.get("catalog_expected_count")
+    if (
+        type(expected) is not int or expected < 200
+        or snapshot.get("catalog_complete") is not True
+        or not isinstance(snapshot.get("items"), list)
+        or len(snapshot["items"]) != expected
+    ):
+        raise RuntimeError("[cash] ROBASE full catalogue is incomplete; refusing cash alerts.")
+
+    current = now.timestamp() if isinstance(now, datetime) else datetime.now(UTC).timestamp()
     items = {}
-    for row in snapshot.get("items", []):
+    for row in snapshot["items"]:
+        if not isinstance(row, dict):
+            raise RuntimeError("[cash] Invalid ROBASE item row.")
         name = str(row.get("name") or "").strip()
         key = normalize_cash_name(name)
+        display = str(row.get("price_display") or "").strip()
+        source = str(row.get("source") or "")
         try:
             price = float(row.get("cash_price_usd"))
-            sold_7d = int(row.get("sold_7d"))
-        except (TypeError, ValueError):
-            raise RuntimeError("[cash] Invalid ROBASE price row.")
-        if not name or not key or not math.isfinite(price) or price <= 0 or sold_7d < 0:
-            raise RuntimeError("[cash] Invalid ROBASE price row.")
+            display_price = float(display.removeprefix("$").replace(",", ""))
+            checked_at = datetime.fromisoformat(
+                str(row.get("last_checked_at_utc") or "").replace("Z", "+00:00")
+            ).timestamp()
+        except (TypeError, ValueError, OverflowError):
+            raise RuntimeError("[cash] Invalid ROBASE price or verification timestamp.")
+        age = current - checked_at
+        fresh = 0 <= age <= max_age_seconds
+        if (
+            not name or not key or not math.isfinite(price) or price <= 0
+            or not math.isfinite(display_price) or abs(display_price - price) > 0.0000001
+            or not display.startswith("$")
+            or not source.startswith("https://robase.gg/item/")
+            or not row.get("robase_slug")
+        ):
+            raise RuntimeError(f"[cash] Invalid ROBASE item identity or displayed price: {name or 'unknown'}")
         if key in items:
             raise RuntimeError(f"[cash] Duplicate normalized ROBASE item name: {name}")
-        verified = snapshot_fresh and row.get("status") == "verified" and sold_7d >= 3
+        verified = row.get("status") == "verified" and fresh
         items[key] = {
             "name": name,
             "cash_price_usd": price,
             "price_low_usd": price,
             "price_high_usd": price,
+            "price_display": display,
             "tier": "robase",
             "status": "verified" if verified else "unverified",
-            "verified_at_utc": fetched_at if verified else "",
-            "source": "https://robase.gg/",
-            "notes": f"Completed-sales average; seller proceeds after fees; 7d sales={sold_7d}",
-            "sold_7d": sold_7d,
+            "verified_at_utc": row.get("last_checked_at_utc") if verified else "",
+            "last_checked_at_utc": row.get("last_checked_at_utc"),
+            "price_updated_at_utc": row.get("price_updated_at_utc"),
+            "robase_slug": row.get("robase_slug"),
+            "robase_category": row.get("robase_category"),
+            "bloxswaps_value": row.get("bloxswaps_value"),
+            "bloxswaps_copies": row.get("bloxswaps_copies"),
+            "bloxswaps_holders": row.get("bloxswaps_holders"),
+            "sold_7d": int(row.get("sold_7d") or 0),
+            "sold_30d": int(row.get("sold_30d") or 0),
+            "source": source,
+            "notes": "Exact ROBASE displayed seller-proceeds price",
         }
-    if len(items) < 100:
-        raise RuntimeError(f"[cash] ROBASE snapshot incomplete: only {len(items)} items.")
+    if len(items) != expected:
+        raise RuntimeError(f"[cash] ROBASE catalogue count mismatch: {len(items)}/{expected}.")
+
+    price_rows = [
+        (key, row["price_display"], row["status"])
+        for key, row in sorted(items.items())
+    ]
+    price_digest = hashlib.sha256(
+        json.dumps(price_rows, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
     fresh_rows = [row for row in items.values() if row["status"] == "verified"]
+    stale_rows = [row["name"] for row in items.values() if row["status"] != "verified"]
+    if stale_rows:
+        raise RuntimeError(
+            f"[cash] ROBASE item pages are not all freshly verified: {len(stale_rows)} stale/unverified rows."
+        )
     return {
         "items": items,
-        "sha256": hashlib.sha256(raw).hexdigest(),
+        "sha256": price_digest,
+        "snapshot_sha256": hashlib.sha256(raw).hexdigest(),
         "row_count": len(items),
         "verified_count": len(fresh_rows),
+        "expected_count": expected,
+        "catalog_complete": True,
         "expiring_within_3_days": 0,
-        "oldest_verified_at": fetched_at if fresh_rows else None,
+        "oldest_verified_at": min(row["verified_at_utc"] for row in fresh_rows),
     }
