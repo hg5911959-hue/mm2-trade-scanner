@@ -3,6 +3,8 @@ import contextlib
 import io
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -12,6 +14,30 @@ from unittest.mock import patch
 import scanner
 from tools import weekly_report
 from test_support import IsolatedDataTestCase
+
+
+
+class CashConfigurationValidationTests(IsolatedDataTestCase):
+    def test_negative_and_non_finite_margin_thresholds_fail_at_startup(self):
+        for value in ("-0.01", "nan", "inf", "-inf"):
+            with self.subTest(value=value):
+                environment = os.environ.copy()
+                environment["CASH_MIN_MARGIN_PERCENT"] = value
+                result = subprocess.run(
+                    [sys.executable, "-c", "import scanner"],
+                    env=environment, capture_output=True, text=True, timeout=10,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("CASH_MIN_MARGIN_PERCENT must be finite and non-negative", result.stderr)
+
+    def test_zero_margin_threshold_remains_valid(self):
+        environment = os.environ.copy()
+        environment["CASH_MIN_MARGIN_PERCENT"] = "0"
+        result = subprocess.run(
+            [sys.executable, "-c", "import scanner"],
+            env=environment, capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class CashFilterFlagTests(IsolatedDataTestCase):
