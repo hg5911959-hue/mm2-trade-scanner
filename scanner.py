@@ -3400,7 +3400,7 @@ def send_telegram(message):
             return
         if int(result.get("error_code", 0) or 0) == 429 and attempt < 1:
             retry_after = result.get("parameters", {}).get("retry_after", 2 ** (attempt + 1))
-            delay = min(60, max(1, int(retry_after)))
+            delay = min(180, max(1, int(retry_after) + 2))
             print(f"[retry] Telegram explicitly rejected sendMessage with 429; waiting {delay}s")
             time.sleep(delay)
             continue
