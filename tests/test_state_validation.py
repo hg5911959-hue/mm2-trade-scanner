@@ -85,6 +85,13 @@ class StateValidationTests(IsolatedDataTestCase):
         errors = validate_api_safety_state(self.root)
         self.assertTrue(any("oversized" in error for error in errors))
 
+
+    def test_public_state_rejects_symlink_only_directory(self):
+        with tempfile.TemporaryDirectory() as outside:
+            (self.root / "linked-directory").symlink_to(outside, target_is_directory=True)
+            errors = validate_state(self.root)
+        self.assertTrue(any("symlink paths" in error for error in errors))
+
     def test_full_state_rejects_symlink_paths(self):
         target = self.root / "outside.json"
         target.write_text("{}", encoding="utf-8")
