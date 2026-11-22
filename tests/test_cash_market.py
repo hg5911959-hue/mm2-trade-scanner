@@ -310,7 +310,7 @@ class CashMarketTests(IsolatedDataTestCase):
                 "bloxswaps_holders": 500,
             })
         return {
-            "schema_version": 2,
+            "schema_version": 3,
             "source": "https://robase.gg/",
             "fetched_at_utc": checked,
             "price_basis": "seller_proceeds_after_marketplace_fees",
@@ -345,7 +345,7 @@ class CashMarketTests(IsolatedDataTestCase):
         with self.assertRaisesRegex(RuntimeError, "not all freshly verified"):
             load_robase_price_catalog(path, now=now)
 
-    def test_robase_catalog_rejects_incomplete_catalogue_and_duplicate_names(self):
+    def test_robase_catalog_rejects_incomplete_catalogue_and_duplicate_slugs(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         path = Path(tmp.name) / "robase.json"
@@ -356,10 +356,45 @@ class CashMarketTests(IsolatedDataTestCase):
         with self.assertRaisesRegex(RuntimeError, "catalogue is incomplete"):
             load_robase_price_catalog(path, now=now)
         snapshot["catalog_complete"] = True
-        snapshot["items"][1]["name"] = snapshot["items"][0]["name"]
+        snapshot["items"][1]["robase_slug"] = snapshot["items"][0]["robase_slug"]
+        snapshot["items"][1]["source"] = snapshot["items"][0]["source"]
         path.write_text(json.dumps(snapshot), encoding="utf-8")
-        with self.assertRaisesRegex(RuntimeError, "Duplicate normalized"):
+        with self.assertRaisesRegex(RuntimeError, "Duplicate ROBASE source slug"):
             load_robase_price_catalog(path, now=now)
+
+    def test_robase_catalog_preserves_duplicate_names_by_unique_slug(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / "robase.json"
+        now = datetime(2026, 11, 21, tzinfo=UTC)
+        snapshot = self._robase_snapshot(now)
+        snapshot["items"][0]["name"] = "Latte"
+        snapshot["items"][1]["name"] = "Latte"
+        path.write_text(json.dumps(snapshot), encoding="utf-8")
+        catalog = load_robase_price_catalog(path, now=now)
+        key = normalize_cash_name("Latte")
+        self.assertEqual(catalog["row_count"], 222)
+        self.assertEqual(len(catalog["items_by_slug"]), 222)
+        self.assertIn(key, catalog["duplicate_name_keys"])
+        self.assertNotIn(key, catalog["items"])
+
+    def test_cash_side_uses_exact_robase_slug_for_duplicate_names(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / "robase.json"
+        now = datetime(2026, 11, 21, tzinfo=UTC)
+        snapshot = self._robase_snapshot(now)
+        snapshot["items"][0].update({"name": "Latte", "robase_slug": "latte-gun", "source": "https://robase.gg/item/latte-gun", "cash_price_usd": 3.03, "price_display": "$3.03"})
+        snapshot["items"][1].update({"name": "Latte", "robase_slug": "latte-knife", "source": "https://robase.gg/item/latte-knife", "cash_price_usd": 3.30, "price_display": "$3.30"})
+        path.write_text(json.dumps(snapshot), encoding="utf-8")
+        catalog = load_robase_price_catalog(path, now=now)
+        result = calculate_cash_side(
+            [{"canonical_name": "Latte", "robase_slug": "latte-knife", "quantity_min": 1, "quantity_max": 1}],
+            catalog, "give", 0, now=now,
+        )
+        self.assertEqual(result[0], 3.30)
+        self.assertEqual(result[1], 3.30)
+        self.assertEqual(result[3], [])
 
 
 if __name__ == "__main__":
