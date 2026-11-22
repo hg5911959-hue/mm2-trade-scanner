@@ -33,7 +33,7 @@ DETAIL_PRICE_RE = re.compile(
     re.I,
 )
 DETAIL_ABOUT_HEADER_RE = re.compile(
-    r"\bAbout\s+(?P<header_name>[^.]+?)\s+(?P<name>[^.]+?)\s+is\s+(?:a|an)\s+"
+    r"\bAbout\s+(?P<name>.+?)\s+(?P=name)\s+is\s+(?:a|an)\s+"
     r"(?P<category>.+?)\s+item in Roblox Murder Mystery 2\s+\(MM2\)",
     re.I,
 )
@@ -221,9 +221,6 @@ def _parse_item_detail(url: str, document: str, fetched_at_utc: str, etag="", la
     about = DETAIL_ABOUT_HEADER_RE.search(text)
     if about:
         name = " ".join(about.group("name").split())
-        header_name = " ".join(about.group("header_name").split())
-        if header_name.casefold() != name.casefold():
-            raise ValueError(f"ROBASE item heading and description disagree: {url}")
     else:
         about = DETAIL_ABOUT_PLAIN_RE.search(text)
         name = " ".join(about.group("name").split()) if about else ""
