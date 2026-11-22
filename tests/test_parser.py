@@ -3287,10 +3287,8 @@ class WatchValueReevaluationTests(IsolatedDataTestCase):
     def test_watched_unprofitable_offer_becomes_profitable_after_supreme_value_change(self):
         listing = {
             "id": "stable-ad-id", "source_ad_id": "same-ad",
-            "give_items": [{"name": "Knife A", "quantity": 1, "quantity_source": "structured",
-                            "quantity_min": 1, "quantity_max": 1}],
-            "receive_items": [{"name": "Knife B", "quantity": 1, "quantity_source": "structured",
-                               "quantity_min": 1, "quantity_max": 1}],
+            "give_items": [{"name": "Knife A", "catalog_slug": "knife-a", "catalog_rarity": "Godly", "catalog_type": "Knife", "catalog_chroma": False, "quantity": 1, "quantity_source": "structured", "quantity_min": 1, "quantity_max": 1}],
+            "receive_items": [{"name": "Knife B", "catalog_slug": "knife-b", "catalog_rarity": "Godly", "catalog_type": "Knife", "catalog_chroma": False, "quantity": 1, "quantity_source": "structured", "quantity_min": 1, "quantity_max": 1}],
         }
         values_before = {
             "knife a": {"name": "Knife A", "value": 20},
@@ -3523,7 +3521,7 @@ class ColdStartPaginationTests(IsolatedDataTestCase):
 class RealAlertReevaluationIntegrationTests(IsolatedDataTestCase):
     def test_previously_alerted_ad_realerts_when_cash_prices_make_it_profitable(self):
         listing = {
-            "id": "stable-ad-id", "source_ad_id": "same-source-ad",
+            "id": "stable-ad-id", "source_ad_id": "same-source-ad", "source": "bloxswaps",
             "owner_url": "https://bloxswaps.com/fr/users/123",
             "url": "https://bloxswaps.com/fr/trade-mm2?ad=same-source-ad",
             "give_items": [{"name": "Knife A", "quantity": 1, "quantity_source": "structured",
@@ -3532,22 +3530,22 @@ class RealAlertReevaluationIntegrationTests(IsolatedDataTestCase):
                                "quantity_min": 1, "quantity_max": 1}],
         }
         values_before = {
-            "knife a": {"name": "Knife A", "value": 20, "stability": "Stable"},
-            "knife b": {"name": "Knife B", "value": 10, "stability": "Stable"},
+            "knife a": {"name": "Knife A", "slug": "knife-a", "value_source_b": 20, "stability": "Stable", "category": "Godly", "type": "Knife"},
+            "knife b": {"name": "Knife B", "slug": "knife-b", "value_source_b": 10, "stability": "Stable", "category": "Godly", "type": "Knife"},
         }
-        values_after = {
-            "knife a": {"name": "Knife A", "value": 20, "stability": "Stable"},
-            "knife b": {"name": "Knife B", "value": 30, "stability": "Stable"},
-        }
+        values_after = dict(values_before)
         def catalog(knife_b_price):
             return {"items": {
                 scanner.normalize_cash_name("Knife A"): {
-                    "name": "Knife A", "cash_price_usd": 10.0, "status": "verified",
-                    "verified_at_utc": "2026-11-14T00:00:00Z",
+                    "name": "Knife A", "cash_price_usd": 10.0, "price_display": "$10.00",
+                    "status": "verified", "verified_at_utc": datetime.now(timezone.utc).isoformat(),
+                    "source": "https://robase.gg/item/knife-a", "robase_slug": "knife-a",
                 },
                 scanner.normalize_cash_name("Knife B"): {
-                    "name": "Knife B", "cash_price_usd": knife_b_price, "status": "verified",
-                    "verified_at_utc": "2026-11-14T00:00:00Z",
+                    "name": "Knife B", "cash_price_usd": knife_b_price,
+                    "price_display": "$" + "{:.2f}".format(knife_b_price),
+                    "status": "verified", "verified_at_utc": datetime.now(timezone.utc).isoformat(),
+                    "source": "https://robase.gg/item/knife-b", "robase_slug": "knife-b",
                 },
             }, "sha256": str(knife_b_price), "row_count": 2}
         old_catalog = catalog(10)
@@ -3585,7 +3583,7 @@ class RealAlertReevaluationIntegrationTests(IsolatedDataTestCase):
                 stack.enter_context(patch("scanner.FIRST_SEEN_FILE", root / "first-seen.json"))
                 stack.enter_context(patch("scanner.FAILURE_FILE", root / "failure.json"))
                 stack.enter_context(patch("scanner.load_supreme_values", return_value=values_after))
-                stack.enter_context(patch("scanner.load_cash_price_catalog", return_value=new_catalog))
+                stack.enter_context(patch("scanner.load_robase_cash_price_catalog", return_value=new_catalog))
                 stack.enter_context(patch("scanner.CASH_PRICE_SNAPSHOT_FILE", root / "cash-price-snapshot.json"))
                 stack.enter_context(patch("scanner.load_aliases", return_value={}))
                 stack.enter_context(patch("scanner.load_seen_ads", return_value={"same-source-ad"}))
@@ -3605,7 +3603,7 @@ class RealAlertReevaluationIntegrationTests(IsolatedDataTestCase):
                 scanner.main()
         trade_messages = [message for message in sent if "💎 MM2 TRADE" in message]
         self.assertEqual(len(trade_messages), 1)
-        self.assertIn("CASH PROFIT (CONSERVATIVE): +$15.5", trade_messages[0])
+        self.assertIn("CASH PROFIT: +$20", trade_messages[0])
 
 
 
