@@ -177,5 +177,63 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         self.assertFalse(scanner.qualifies_cash(generic_only))
 
 
+    def test_digest_delivery_quarantines_only_uncertain_offer_and_continues(self):
+        items = ["uncertain", "delivered"]
+        prepared = []
+        sent = []
+
+        def prepare(item):
+            prepared.append(item)
+
+        def send(item):
+            sent.append(item)
+            if item == "uncertain":
+                raise scanner.TelegramDeliveryUncertain("network response missing")
+
+        outcomes = scanner.deliver_digest_items_individually(items, prepare, send)
+        self.assertEqual(prepared, items)
+        self.assertEqual(sent, items)
+        self.assertEqual([row[0] for row in outcomes], ["uncertain", "sent"])
+        self.assertEqual([row[1] for row in outcomes], items)
+
+    def test_digest_delivery_stops_after_definite_rejection_and_queues_rest(self):
+        items = ["delivered", "rejected", "not-attempted"]
+        prepared = []
+        sent = []
+
+        def prepare(item):
+            prepared.append(item)
+
+        def send(item):
+            sent.append(item)
+            if item == "rejected":
+                raise RuntimeError("Telegram rejected request")
+
+        outcomes = scanner.deliver_digest_items_individually(items, prepare, send)
+        self.assertEqual(prepared, ["delivered", "rejected"])
+        self.assertEqual(sent, ["delivered", "rejected"])
+        self.assertEqual(
+            [(status, item) for status, item, _error in outcomes],
+            [("sent", "delivered"), ("failed", "rejected"), ("not_attempted", "not-attempted")],
+        )
+
+    def test_digest_delivery_prepares_each_offer_before_its_send(self):
+        events = []
+        items = ["a", "b"]
+
+        def prepare(item):
+            events.append(("prepare", item))
+
+        def send(item):
+            events.append(("send", item))
+
+        outcomes = scanner.deliver_digest_items_individually(items, prepare, send)
+        self.assertEqual(
+            events,
+            [("prepare", "a"), ("send", "a"), ("prepare", "b"), ("send", "b")],
+        )
+        self.assertTrue(all(status == "sent" for status, _item, _error in outcomes))
+
+
 if __name__ == "__main__":
     unittest.main()
