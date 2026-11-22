@@ -2324,10 +2324,15 @@ def _fetch_rblxvalue_meta(force=False):
 
 
 def _supreme_numeric_value(item):
-    """Return scalar Supreme value; small Common/Uncommon/Rare xN counts are not scalar values."""
+    """Return scalar Supreme value from either the raw API row or its normalized cache record."""
+    raw_value = item.get("value_source_b")
+    if raw_value is None:
+        raw_value = item.get("raw_source_value")
+    if raw_value is None:
+        raw_value = item.get("value")
     try:
-        value = float(item.get("value_source_b"))
-    except (TypeError, ValueError):
+        value = float(raw_value)
+    except (TypeError, ValueError, OverflowError):
         return None, "not_numeric"
     if not math.isfinite(value) or value <= 0:
         return None, "not_listed"
@@ -4063,6 +4068,7 @@ def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
             "rblx_name": row.get("name"),
             "value": _supreme_numeric_value(row)[0],
             "stability": row.get("stability"),
+            "demand": _optional_bounded_int(row.get("demand"), 0, 10),
             "category": row.get("category"),
             "type": row.get("type"),
         }
@@ -4180,6 +4186,7 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
                 "stability": stability or "N/A",
                 "rblx_value": value,
                 "rblx_value_status": value_status,
+                "rblx_demand": _optional_bounded_int(selected.get("demand"), 0, 10),
                 "rblx_category": category,
                 "rblx_type": item_type,
                 "rblx_slug": catalog_slug,
@@ -4216,6 +4223,8 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
                 details.append(f"RBLXValue: {format_number(item['rblx_value'])}")
             if item["stability"] != "N/A":
                 details.append(f"Stability: {item['stability']}")
+            if item.get("rblx_demand") is not None:
+                details.append(f"Demand: {item['rblx_demand']}/10")
             enriched.append(line + " | " + " · ".join(details))
         return enriched
 
