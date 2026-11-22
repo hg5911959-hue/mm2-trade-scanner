@@ -4082,7 +4082,6 @@ def _match_robase_row_to_bloxswaps(row, item_map):
         if not isinstance(details, dict) or normalize_slug(details.get("slug") or "") not in direct_slugs:
             continue
         direct_name = normalize_name(details.get("displayName") or "")
-        direct_type = str(details.get("type") or "").strip().casefold()
         direct_rarity = str(details.get("rarity") or "").strip().casefold()
         direct_chroma = details.get("chroma")
         if (
