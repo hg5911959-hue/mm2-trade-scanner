@@ -4662,6 +4662,7 @@ def qualifies_cash(result):
         math.isfinite(profit) and math.isfinite(margin) and math.isfinite(give_total)
         and give_total >= 0
         and profit >= threshold
+        and margin >= CASH_MIN_MARGIN_PERCENT
     )
 
 
