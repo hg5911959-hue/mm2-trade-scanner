@@ -146,8 +146,12 @@ class MarketHistoryTests(IsolatedDataTestCase):
         supreme["valuation_mode"] = "supreme"
         self.store.record_opportunity({"listing": cash, "difference": 1.25, "margin": 20, "give_total": 5, "receive_total": 6.25})
         self.store.record_opportunity({"listing": supreme, "difference": 99, "margin": 99, "give_total": 1, "receive_total": 100})
+        self.store.record_values_snapshot(self.values())
         payload = build_dashboard_data(self.db_path)
         self.assertEqual([row["listingId"] for row in payload["opportunities"]], ["cash-opportunity"])
+        self.assertEqual(payload["summary"]["opportunities7d"], 1)
+        self.assertEqual(payload["valueChecks"], [])
+        self.assertEqual(payload["priceHistory"], [])
 
     def test_incomplete_robase_catalogue_is_not_published(self):
         robase_path = Path(self.tmp.name) / "robase_prices.json"
