@@ -46,7 +46,12 @@ jobs:
             echo "::error::Persistent RBLXValue request ledger is missing; refusing API access."
             exit 1
           fi
-          python tools/validate_state.py --directory data --api-safety-only
+          mkdir -p api-safety-check
+          cp data/rblxvalue_request_budget.json api-safety-check/
+          if [ -f data/api_key_blocked.json ]; then
+            cp data/api_key_blocked.json api-safety-check/
+          fi
+          python tools/validate_state.py --directory api-safety-check --api-safety-only
 
       - name: Test API authentication within the shared request budget
         env:
