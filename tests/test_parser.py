@@ -2543,6 +2543,7 @@ class CursorPaginationTests(IsolatedDataTestCase):
             }),
             patch("scanner._last_successful_scan_timestamp", return_value=2_000_000_000),
             patch("scanner.MAX_BACKLOG_RECHECK_PAGES", 2),
+            patch("scanner.fetch_pending_posts_by_id", return_value=([], [])),
             patch("scanner.bloxswaps_api_get_json", side_effect=responses) as api,
         ):
             listings, stats, _ = scanner.fetch_bloxswaps_all(
@@ -2570,6 +2571,7 @@ class CursorPaginationTests(IsolatedDataTestCase):
                 "b-id": {"id": "b-id", "displayName": "Knife B"},
             }),
             patch("scanner._last_successful_scan_timestamp", return_value=2_000_000_000),
+            patch("scanner.fetch_pending_posts_by_id", return_value=([], [])),
             patch("scanner.bloxswaps_api_get_json", side_effect=responses),
         ):
             listings, stats, _ = scanner.fetch_bloxswaps_all(
