@@ -42,6 +42,10 @@ jobs:
             echo "::error::State artifact contains symlink paths; refusing API access."
             exit 1
           fi
+          if [ ! -f data/rblxvalue_request_budget.json ]; then
+            echo "::error::Persistent RBLXValue request ledger is missing; refusing API access."
+            exit 1
+          fi
           python tools/validate_state.py --directory data --api-safety-only
 
       - name: Test API authentication within the shared request budget
