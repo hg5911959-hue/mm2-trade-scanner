@@ -4057,7 +4057,19 @@ def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
     exact = {key: rows[0] for key, rows in matches.items() if len(rows) == 1}
     ambiguous = sorted(robase_items[key]["name"] for key, rows in matches.items() if len(rows) != 1)
     missing = sorted(row["name"] for key, row in robase_items.items() if key not in exact and key not in matches)
-    numeric = sum(_supreme_numeric_value(row)[0] is not None for row in exact.values())
+    exact_map = {
+        key: {
+            "slug": normalize_slug(row.get("slug") or ""),
+            "rblx_name": row.get("name"),
+            "value": _supreme_numeric_value(row)[0],
+            "stability": row.get("stability"),
+            "category": row.get("category"),
+            "type": row.get("type"),
+        }
+        for key, row in exact.items()
+    }
+    cash_catalog["rblx_exact_map"] = exact_map
+    numeric = sum(row["value"] is not None for row in exact_map.values())
     no_numeric = len(exact) - numeric
     print(
         f"[robase-rblxvalue] exact={len(exact)}/{len(robase_items)} "
@@ -4127,6 +4139,12 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
             if cash_record.get("status") != "verified":
                 missing.append(f"{raw_name} (ROBASE price not freshly verified)")
                 continue
+            exact_map = cash_catalog.get("rblx_exact_map")
+            if isinstance(exact_map, dict):
+                exact_identity = exact_map.get(normalize_cash_name(canonical_name))
+                if not exact_identity or exact_identity.get("slug") != catalog_slug:
+                    missing.append(f"{raw_name} (not uniquely mapped in the ROBASE/RBLXValue audit)")
+                    continue
 
             stability = _normalize_stability(selected.get("stability"))
             if stability and stability.casefold() == "untradeable":
