@@ -166,6 +166,42 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         )
         self.assertEqual(result["cash_sell_haircut_pct"], 0.0)
 
+        # The received-side Stability gate is mandatory in cash mode too.
+        invalid_stability_values = (
+            None, "unrecognized-status", "Decreasing", "Receding", "Unsafe",
+            "Untradeable", "Unstable", "Volatile", "Fluctuating",
+        )
+        for stability in invalid_stability_values:
+            with self.subTest(received_stability=stability):
+                case_values = {
+                    key: dict(value) for key, value in values.items()
+                }
+                for name in names:
+                    case_values[name.casefold()]["stability"] = stability
+                rejected, reasons = scanner.evaluate_cash_listing(
+                    listing, case_values, {}, {
+                        "items": cash_items_by_name,
+                        "items_by_slug": cash_items_by_slug,
+                        "rblx_exact_map": rblx_exact_map,
+                    },
+                )
+                self.assertIsNone(rejected)
+                self.assertTrue(any("Stability" in reason for reason in reasons))
+
+        # Missing the field entirely must not be treated as a healthy label.
+        case_values = {key: dict(value) for key, value in values.items()}
+        for name in names:
+            case_values[name.casefold()].pop("stability", None)
+        rejected, reasons = scanner.evaluate_cash_listing(
+            listing, case_values, {}, {
+                "items": cash_items_by_name,
+                "items_by_slug": cash_items_by_slug,
+                "rblx_exact_map": rblx_exact_map,
+            },
+        )
+        self.assertIsNone(rejected)
+        self.assertTrue(any("Stability" in reason for reason in reasons))
+
     def test_malformed_cash_profit_or_margin_fails_closed(self):
         for field, value in (
             ("cash_profit_worst", None),
