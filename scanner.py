@@ -5631,6 +5631,8 @@ def minimum_cycle_start_window(duration_seconds):
     short sessions reserve 25% with a 30s floor.
     """
     duration = max(0.1, float(duration_seconds))
+    if duration <= 30:
+        return max(0.1, duration * 0.25)
     if duration <= 300:
         return max(30.0, duration * 0.25)
     return min(180.0, max(120.0, duration * 0.25))

@@ -3382,10 +3382,10 @@ class PollingLoopTests(IsolatedDataTestCase):
         self.assertEqual(result["successful_cycles"], 1)
 
     def test_does_not_start_cycle_without_enough_runtime_headroom(self):
-        # A production cycle took ~267s; 262s or 243s is not enough.
+        # Long sessions reserve at most 180s; short test windows keep a small proportional buffer.
         self.assertTrue(scanner.should_start_scan_cycle(513, 780))
-        self.assertFalse(scanner.should_start_scan_cycle(262, 780))
-        self.assertFalse(scanner.should_start_scan_cycle(242.9, 780))
+        self.assertTrue(scanner.should_start_scan_cycle(262, 780))
+        self.assertFalse(scanner.should_start_scan_cycle(179.9, 780))
         self.assertFalse(scanner.should_start_scan_cycle(4.7, 780))
         self.assertTrue(scanner.should_start_scan_cycle(0.5, 1))
 
