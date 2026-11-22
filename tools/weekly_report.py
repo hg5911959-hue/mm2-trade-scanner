@@ -7,6 +7,7 @@ import tempfile
 from tools.cash_market import cash_price_is_fresh, load_cash_price_catalog
 from tools.next_to_verify import format_blockers
 from tools.preflight import collect_preflight_checks
+from tools.telegram_transport import TELEGRAM_OPENER
 
 DATA_DIR = Path("data")
 
@@ -85,7 +86,7 @@ def main():
     if token and chat:
         body = urllib.parse.urlencode({"chat_id": chat, "text": report}).encode()
         request = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=body)
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with TELEGRAM_OPENER.open(request, timeout=20) as response:
             if response.status != 200: raise RuntimeError("Telegram report delivery failed")
     else:
         raise RuntimeError("Telegram credentials are not configured")
