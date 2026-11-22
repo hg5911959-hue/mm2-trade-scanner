@@ -3291,12 +3291,12 @@ class WatchValueReevaluationTests(IsolatedDataTestCase):
             "receive_items": [{"name": "Knife B", "catalog_slug": "knife-b", "catalog_rarity": "Godly", "catalog_type": "Knife", "catalog_chroma": False, "quantity": 1, "quantity_source": "structured", "quantity_min": 1, "quantity_max": 1}],
         }
         values_before = {
-            "knife a": {"name": "Knife A", "value": 20},
-            "knife b": {"name": "Knife B", "value": 10},
+            "knife a": {"name": "Knife A", "slug": "knife-a", "value_source_b": 20, "stability": "Stable", "category": "Godly", "type": "Knife"},
+            "knife b": {"name": "Knife B", "slug": "knife-b", "value_source_b": 10, "stability": "Stable", "category": "Godly", "type": "Knife"},
         }
         values_after = {
-            "knife a": {"name": "Knife A", "value": 20},
-            "knife b": {"name": "Knife B", "value": 30},
+            "knife a": dict(values_before["knife a"]),
+            "knife b": dict(values_before["knife b"], value_source_b=30),
         }
         before, _ = scanner.evaluate_listing(listing, values_before)
         self.assertFalse(scanner.qualifies(before))
@@ -3524,10 +3524,8 @@ class RealAlertReevaluationIntegrationTests(IsolatedDataTestCase):
             "id": "stable-ad-id", "source_ad_id": "same-source-ad", "source": "bloxswaps",
             "owner_url": "https://bloxswaps.com/fr/users/123",
             "url": "https://bloxswaps.com/fr/trade-mm2?ad=same-source-ad",
-            "give_items": [{"name": "Knife A", "quantity": 1, "quantity_source": "structured",
-                            "quantity_min": 1, "quantity_max": 1}],
-            "receive_items": [{"name": "Knife B", "quantity": 1, "quantity_source": "structured",
-                               "quantity_min": 1, "quantity_max": 1}],
+            "give_items": [{"name": "Knife A", "catalog_slug": "knife-a", "catalog_rarity": "Godly", "catalog_type": "Knife", "catalog_chroma": False, "quantity": 1, "quantity_source": "structured", "quantity_min": 1, "quantity_max": 1}],
+            "receive_items": [{"name": "Knife B", "catalog_slug": "knife-b", "catalog_rarity": "Godly", "catalog_type": "Knife", "catalog_chroma": False, "quantity": 1, "quantity_source": "structured", "quantity_min": 1, "quantity_max": 1}],
         }
         values_before = {
             "knife a": {"name": "Knife A", "slug": "knife-a", "value_source_b": 20, "stability": "Stable", "category": "Godly", "type": "Knife"},
@@ -3595,6 +3593,10 @@ class RealAlertReevaluationIntegrationTests(IsolatedDataTestCase):
                     "same-source-ad": datetime.now(timezone.utc).isoformat()
                 }))
                 stack.enter_context(patch("scanner.fetch_bloxswaps_all", return_value=([listing], stats, ["same-source-ad"])))
+                stack.enter_context(patch("scanner.fetch_bloxswaps_items_map", return_value={
+                    "knife-a": {"displayName": "Knife A", "slug": "knife-a", "rarity": "Godly", "type": "Knife", "chroma": False},
+                    "knife-b": {"displayName": "Knife B", "slug": "knife-b", "rarity": "Godly", "type": "Knife", "chroma": False},
+                }))
                 stack.enter_context(patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)))
                 stack.enter_context(patch("scanner.compare_secondary_values", return_value=""))
                 stack.enter_context(patch("scanner.record_success"))
@@ -3951,12 +3953,12 @@ class CashFirstEvaluatorTests(IsolatedDataTestCase):
     def test_profit_threshold_is_one_dollar_not_less(self):
         catalog = {"items": dict(self.catalog["items"])}
         key = scanner.normalize_cash_name("Chroma Gemstone")
-        catalog["items"][key] = dict(catalog["items"][key], cash_price_usd=11.0, price_display="$11.00")
+        catalog["items"][key] = dict(catalog["items"][key], cash_price_usd=11.0, price_low_usd=11.0, price_high_usd=11.0, price_display="$11.00")
         result, missing = scanner.evaluate_cash_listing(self.listing, self.values, {}, catalog)
         self.assertEqual(missing, [])
         self.assertEqual(result["cash_profit_worst"], 1.0)
         self.assertTrue(scanner.qualifies_cash(result))
-        catalog["items"][key] = dict(catalog["items"][key], cash_price_usd=10.99, price_display="$10.99")
+        catalog["items"][key] = dict(catalog["items"][key], cash_price_usd=10.99, price_low_usd=10.99, price_high_usd=10.99, price_display="$10.99")
         result, missing = scanner.evaluate_cash_listing(self.listing, self.values, {}, catalog)
         self.assertEqual(missing, [])
         self.assertEqual(result["cash_profit_worst"], 0.99)
