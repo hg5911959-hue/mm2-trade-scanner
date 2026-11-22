@@ -4525,7 +4525,9 @@ def listing_watch_fingerprints(listing, values, aliases=None, cash_catalog=None)
                 or name
             )
             if cash_catalog:
-                cash_row = cash_catalog.get("items", {}).get(normalize_cash_name(cash_name))
+                cash_row, _cash_identity_source = _resolve_robase_cash_record(
+                    normalize_slug(item.get("catalog_slug") or ""), cash_catalog
+                )
                 stability = _normalize_stability((cash_selected or {}).get("stability")) if record else None
                 valuation.append((
                     side, normalize_name(name), match_source,
@@ -4664,11 +4666,12 @@ def scan_once(include_backlog_rechecks=True):
     cash_prices_changed = False
     if CASH_FILTER:
         cash_catalog = load_robase_cash_price_catalog()
-        verified_cash_rows = sum(1 for row in cash_catalog["items"].values() if row["status"] == "verified" and cash_price_is_fresh(row, CASH_MAX_AGE_DAYS))
-        expired_cash_rows = [row for row in cash_catalog["items"].values()
+        all_cash_rows = list(cash_catalog.get("items_by_slug", {}).values())
+        verified_cash_rows = sum(1 for row in all_cash_rows if row["status"] == "verified" and cash_price_is_fresh(row, CASH_MAX_AGE_DAYS))
+        expired_cash_rows = [row for row in all_cash_rows
                              if row["status"] == "verified" and not cash_price_is_fresh(row, CASH_MAX_AGE_DAYS)]
         expired_cash_rows.sort(key=lambda row: row.get("verified_at_utc") or "")
-        unverified_cash_rows = sum(1 for row in cash_catalog["items"].values() if row["status"] == "unverified")
+        unverified_cash_rows = sum(1 for row in all_cash_rows if row["status"] == "unverified")
         alert_cash_price_runway(cash_catalog, verified_cash_rows)
         previous_cash_hash = cash_catalog_snapshot_hash()
         cash_prices_changed = previous_cash_hash != cash_catalog["sha256"]
