@@ -116,7 +116,7 @@ def _atomic_json(path, data):
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             json.dump(data, handle, sort_keys=True, indent=2)
-            handle.write("\\n")
+            handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, target)
@@ -142,7 +142,7 @@ def send_daily_notice(checks, *, data_dir="data", env=None, now=None):
     if isinstance(last, (int, float)) and not isinstance(last, bool):
         if datetime.fromtimestamp(last, UTC).date() == current.date():
             return False
-    message = "MM2 PREFLIGHT WARNING\\n" + "\\n".join("- " + check for check in checks)
+    message = "MM2 PREFLIGHT WARNING\n" + "\n".join("- " + check for check in checks)
     body = urllib.parse.urlencode({"chat_id": chat, "text": message}).encode()
     request = urllib.request.Request(
         "https://api.telegram.org/bot" + token + "/sendMessage", data=body
