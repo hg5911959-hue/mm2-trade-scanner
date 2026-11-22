@@ -320,7 +320,12 @@ def _load_previous_snapshot(path: Path):
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError):
         return {}
-    if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+    if (
+        not isinstance(data, dict)
+        or data.get("schema_version") != 3
+        or data.get("catalog_complete") is not True
+        or not isinstance(data.get("items"), list)
+    ):
         return {}
     return data
 
@@ -373,9 +378,9 @@ def fetch_snapshot(output: Path = DEFAULT_OUTPUT, timeout: int = REQUEST_TIMEOUT
             slug = urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1]
             try:
                 row, status = future.result()
-                key = row["name"].casefold()
+                key = row["robase_slug"].casefold()
                 if key in results:
-                    raise ValueError(f"duplicate canonical ROBASE item name: {row['name']}")
+                    raise ValueError(f"duplicate ROBASE source slug: {key}")
                 results[key] = row
                 if status == "updated":
                     updated += 1
@@ -384,22 +389,25 @@ def fetch_snapshot(output: Path = DEFAULT_OUTPUT, timeout: int = REQUEST_TIMEOUT
             except Exception as exc:
                 failures.append(f"{slug}:{type(exc).__name__}")
                 cached = cached_by_slug.get(slug)
-                if cached and cached.get("name"):
-                    results[cached["name"].casefold()] = dict(cached)
+                if cached and cached.get("name") and cached.get("robase_slug") == slug:
+                    results[slug] = dict(cached)
 
-    rows = sorted(results.values(), key=lambda item: item["name"].casefold())
+    rows = sorted(results.values(), key=lambda item: (item["name"].casefold(), item["robase_slug"]))
     now = _utc_now()
     complete = (
         len(rows) == expected_count
+        and len({row.get("robase_slug") for row in rows}) == expected_count
         and all(
-            row.get("status") == "verified"
+            row.get("name")
+            and len(str(row.get("name"))) <= 100
+            and row.get("status") == "verified"
             and _parse_time(row.get("last_checked_at_utc")) > 0
             and time.time() - _parse_time(row.get("last_checked_at_utc")) <= MAX_ITEM_AGE_SECONDS
             for row in rows
         )
     )
     snapshot = {
-        "schema_version": 2,
+        "schema_version": 3,
         "source": URL,
         "fetched_at_utc": now,
         "price_basis": "seller_proceeds_after_marketplace_fees",
