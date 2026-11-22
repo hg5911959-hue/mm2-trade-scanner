@@ -105,7 +105,7 @@ class WeeklyReportValueModeTests(IsolatedDataTestCase):
             ):
                 weekly_report.main()
                 load.assert_not_called()
-            self.assertIn("Cash prices: disabled (value-based mode)", output.getvalue())
+            self.assertIn("Cash prices: not included in this weekly report (production scanner remains cash-first)", output.getvalue())
 
 
 
