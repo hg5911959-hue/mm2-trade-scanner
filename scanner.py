@@ -4519,19 +4519,9 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
                 continue
 
             stability = _normalize_stability(selected.get("stability"))
-            stability_key = stability.casefold() if stability else ""
-            if stability_key == "untradeable":
+            if stability and stability.casefold() == "untradeable":
                 missing.append(f"{canonical_name} (RBLXValue marks item untradeable)")
                 continue
-            if side == "receive":
-                if stability_key not in RBLXVALUE_STABILITY_LABELS:
-                    missing.append(f"{canonical_name} (RBLXValue Stability unverified)")
-                    continue
-                if stability_key in BLOCKED_RECEIVE_STABILITY:
-                    missing.append(
-                        f"{canonical_name} (RBLXValue Stability: {stability}; excluded)"
-                    )
-                    continue
 
             quantity = item.get("quantity")
             qmin = item.get("quantity_min")
