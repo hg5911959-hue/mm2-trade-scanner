@@ -3,13 +3,12 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 import urllib.parse
 import urllib.request
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from tools.cash_market import cash_price_is_fresh, load_cash_price_catalog
+from tools.cash_market import load_robase_price_catalog
 from tools.next_to_verify import format_blockers
 from tools.preflight import collect_preflight_checks
 from tools.telegram_transport import TELEGRAM_OPENER
@@ -80,18 +79,11 @@ def main():
         cash_summary = "disabled (value-based mode)"
     else:
         try:
-            max_age = int(os.environ.get("CASH_MAX_AGE_DAYS", "14"))
-            private_csv = os.environ.get("CASH_PRICES_CSV", "")
-            if private_csv:
-                with tempfile.TemporaryDirectory() as tmp:
-                    private_path = Path(tmp) / "cash_prices.csv"
-                    private_path.write_text(private_csv, encoding="utf-8")
-                    cash = load_cash_price_catalog(private_path, max_age_days=max_age)
-            else:
-                cash = load_cash_price_catalog(data / "cash_prices.csv", max_age_days=max_age)
-            fresh = [row for row in cash["items"].values() if cash_price_is_fresh(row, max_age)]
+            cash = load_robase_price_catalog(
+                data / "robase_prices.json", max_age_seconds=24 * 60 * 60
+            )
             cash_summary = (
-                f"verified={len(fresh)}, expiring<=3d={cash['expiring_within_3_days']}, "
+                f"verified={cash['verified_count']}/{cash['expected_count']}, "
                 f"oldest_verified_at={cash['oldest_verified_at'] or 'none'}"
             )
             blocker_summary = format_blockers(metrics, cash, limit=10)
