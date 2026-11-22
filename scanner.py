@@ -1985,20 +1985,25 @@ def _filter_variants_by_catalog(candidates, item):
         if slug_matches:
             candidates = slug_matches
     if rarity:
-        candidates = [row for row in candidates if str(row[2].get("category") or "").strip().casefold() == rarity]
+        allowed_categories = {rarity}
+        if chroma is True:
+            allowed_categories.add("chroma")
+        candidates = [
+            row for row in candidates
+            if str(row[2].get("category") or "").strip().casefold() in allowed_categories
+        ]
     if item_type:
-        candidates = [row for row in candidates if str(row[2].get("type") or "").strip().casefold() == item_type]
+        candidates = [
+            row for row in candidates
+            if str(row[2].get("type") or "").strip().casefold() == item_type
+        ]
     if chroma is not None:
         def is_chroma_variant(row):
             name = normalize_name(row[2].get("name") or "")
-            slug = normalize_slug(row[2].get("slug") or "")
-            return name.startswith("chroma ") or slug.startswith("chroma-")
-        has_chroma_metadata = any(is_chroma_variant(row) for row in candidates)
+            source_slug = normalize_slug(row[2].get("slug") or "")
+            return name.startswith("chroma ") or source_slug.startswith("chroma-")
         chroma_matches = [row for row in candidates if is_chroma_variant(row) is chroma]
-        # Apply chroma identity only when the Supreme catalogue exposes it in
-        # either the canonical name or slug. A conflicting explicit flag must
-        # not silently select the opposite variant.
-        if has_chroma_metadata:
+        if chroma is True or any(is_chroma_variant(row) for row in candidates):
             candidates = chroma_matches
     if year is not None:
         year_pattern = re.compile(rf"(?<!\\d){year}(?!\\d)")
@@ -2007,11 +2012,11 @@ def _filter_variants_by_catalog(candidates, item):
             if year_pattern.search(str(row[2].get("name") or ""))
             or year_pattern.search(str(row[2].get("slug") or ""))
         ]
-        # A year is a disambiguator only when the source catalogue year is
-        # explicitly represented by a Supreme variant. Never guess a nearby year.
+        # Year is only a disambiguator when the source explicitly carries it.
         if year_matches:
             candidates = year_matches
     return candidates
+
 
 
 def _record_for_variant(variant):
@@ -2021,60 +2026,80 @@ def _record_for_variant(variant):
 
 
 def resolve_value_record(name, values, aliases=None, item=None):
-    """Resolve by exact source slug/name, catalogue identity or reviewed alias; never fuzzy-guess."""
+    """Resolve exact slug/name first, then unique metadata-compatible variants."""
     if isinstance(item, dict) and item.get("unmatched_item_id"):
         return None, "unmatched", []
     name_key = normalize_name(name)
     all_variants = list(_iter_value_variants(values))
     metadata_item = dict(item) if isinstance(item, dict) else {}
     metadata_item["name"] = name
-    catalog_slug, catalog_rarity, catalog_type, _, _, _ = _catalog_value_metadata(metadata_item)
+    catalog_slug, catalog_rarity, catalog_type, _, _, catalog_chroma = _catalog_value_metadata(metadata_item)
 
     if catalog_slug:
-        slug_candidates = [row for row in all_variants if normalize_slug(row[2].get("slug")) == catalog_slug]
-        if slug_candidates:
-            filtered = _filter_variants_by_catalog(slug_candidates, metadata_item)
-            if len(filtered) == 1:
-                return _record_for_variant(filtered[0][2]), "slug", []
-            unresolved = filtered or slug_candidates
-            return None, "ambiguous", [str(row[2].get("name") or row[0]) for row in unresolved[:8]]
+        slug_candidates = [
+            row for row in all_variants
+            if normalize_slug(row[2].get("slug")) == catalog_slug
+        ]
+        filtered = _filter_variants_by_catalog(slug_candidates, metadata_item)
+        if len(filtered) == 1:
+            return _record_for_variant(filtered[0][2]), "slug", []
+        if len(filtered) > 1:
+            return None, "ambiguous", [
+                str(row[2].get("name") or row[0]) for row in filtered[:8]
+            ]
 
-    candidates = [
+    exact_candidates = [
         row for row in all_variants
         if normalize_name(row[2].get("name") or row[0]) == name_key
     ]
-    source = "exact"
-    if not candidates and (catalog_rarity or catalog_type):
-        candidates = [
-            row for row in all_variants
-            if normalize_name(row[2].get("name") or row[0]).startswith(name_key + " ")
+    filtered_exact = _filter_variants_by_catalog(exact_candidates, metadata_item)
+    if len(filtered_exact) == 1:
+        source = "metadata" if len(exact_candidates) > 1 else "exact"
+        return _record_for_variant(filtered_exact[0][2]), source, []
+    if len(filtered_exact) > 1:
+        return None, "ambiguous", [
+            str(row[2].get("name") or row[0])
+            + (f" [{row[2].get('category')}/{row[2].get('type')}]" if row[2].get("category") or row[2].get("type") else "")
+            for row in filtered_exact[:8]
         ]
-        source = "metadata"
+
+    prefix_names = {name_key + " "}
+    if catalog_chroma is True:
+        prefix_names.add("chroma " + name_key)
+    prefix_candidates = [
+        row for row in all_variants
+        if any(
+            normalize_name(row[2].get("name") or row[0]).startswith(prefix)
+            for prefix in prefix_names
+        )
+    ]
+    filtered_prefix = _filter_variants_by_catalog(prefix_candidates, metadata_item)
+    if len(filtered_prefix) == 1:
+        return _record_for_variant(filtered_prefix[0][2]), "metadata", []
+    if len(filtered_prefix) > 1:
+        return None, "ambiguous", [
+            str(row[2].get("name") or row[0])
+            + (f" [{row[2].get('category')}/{row[2].get('type')}]" if row[2].get("category") or row[2].get("type") else "")
+            for row in filtered_prefix[:8]
+        ]
 
     aliases = aliases or {}
-    if not candidates:
-        canonical = aliases.get(name_key)
-        if canonical:
-            canonical_key = normalize_name(canonical)
-            candidates = [
-                row for row in all_variants
-                if normalize_name(row[2].get("name") or row[0]) == canonical_key
+    canonical = aliases.get(name_key)
+    if canonical:
+        canonical_key = normalize_name(canonical)
+        alias_candidates = [
+            row for row in all_variants
+            if normalize_name(row[2].get("name") or row[0]) == canonical_key
+        ]
+        filtered_alias = _filter_variants_by_catalog(alias_candidates, metadata_item)
+        if len(filtered_alias) == 1:
+            return _record_for_variant(filtered_alias[0][2]), "alias", []
+        if len(filtered_alias) > 1:
+            return None, "ambiguous", [
+                str(row[2].get("name") or row[0]) for row in filtered_alias[:8]
             ]
-            source = "alias"
-    if not candidates:
-        return None, "unmatched", []
+    return None, "unmatched", []
 
-    filtered = _filter_variants_by_catalog(candidates, metadata_item)
-    if len(filtered) == 1:
-        if len(candidates) > 1 and source == "exact":
-            source = "metadata"
-        return _record_for_variant(filtered[0][2]), source, []
-    unresolved = filtered or candidates
-    return None, "ambiguous", [
-        str(row[2].get("name") or row[0])
-        + (f" [{row[2].get('category')}/{row[2].get('type')}]" if row[2].get("category") or row[2].get("type") else "")
-        for row in unresolved[:8]
-    ]
 
 
 def _normalize_stability(value):
