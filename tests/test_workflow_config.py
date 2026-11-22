@@ -12,7 +12,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         workflow = (ROOT / ".github/workflows/telegram-test.yml").read_text(encoding="utf-8")
         self.assertIn('ALERT — TEST ONLY</b>\\n"', workflow)
         self.assertIn('DELIVERY CHECK</b>\\n\\n"', workflow)
-        self.assertNotIn(r"\\\\n", workflow)
+        self.assertNotIn(r"\\n", workflow)
 
     def test_ci_linter_version_is_pinned(self):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
