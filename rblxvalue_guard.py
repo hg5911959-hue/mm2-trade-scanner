@@ -3,8 +3,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import random
+import stat
+import tempfile
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,6 +25,7 @@ PERMANENT_BLOCK_AFTER = 3
 ALERT_INTERVAL_SECONDS = 24 * 60 * 60
 ALERT_RETRY_SECONDS = 5 * 60
 REQUESTS_THIS_RUN = 0
+MAX_GUARD_STATE_BYTES = 256 * 1024
 
 
 class RblxValueGuardError(RuntimeError):
@@ -46,15 +50,46 @@ def key_fingerprint(key: str | None = None) -> str:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    """Read guard state without silently resetting a corrupt safety ledger."""
+    """Read a bounded regular file without following symlinks or resetting corruption."""
     try:
-        raw = path.read_text(encoding="utf-8")
+        flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0))
+        descriptor = os.open(path, flags)
     except FileNotFoundError:
         return {}
     except OSError as exc:
         raise RblxValueGuardError(
+            f"[rblxvalue-state] cannot safely open safety state file {path.name}; refusing API request"
+        ) from exc
+
+    try:
+        with os.fdopen(descriptor, "rb") as handle:
+            metadata = os.fstat(handle.fileno())
+            if not stat.S_ISREG(metadata.st_mode):
+                raise RblxValueGuardError(
+                    f"[rblxvalue-state] safety state file {path.name} is not a regular file; refusing API request"
+                )
+            if metadata.st_size > MAX_GUARD_STATE_BYTES:
+                raise RblxValueGuardError(
+                    f"[rblxvalue-state] safety state file {path.name} exceeds the size limit; refusing API request"
+                )
+            raw_bytes = handle.read(MAX_GUARD_STATE_BYTES + 1)
+        if len(raw_bytes) > MAX_GUARD_STATE_BYTES:
+            raise RblxValueGuardError(
+                f"[rblxvalue-state] safety state file {path.name} exceeds the size limit; refusing API request"
+            )
+        try:
+            raw = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise RblxValueGuardError(
+                f"[rblxvalue-state] safety state file {path.name} is not valid UTF-8; refusing API request"
+            ) from exc
+    except RblxValueGuardError:
+        raise
+    except OSError as exc:
+        raise RblxValueGuardError(
             f"[rblxvalue-state] cannot read safety state file {path.name}; refusing API request"
         ) from exc
+
     try:
         value = json.loads(raw)
     except (ValueError, TypeError) as exc:
@@ -69,10 +104,21 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
+    """Atomically replace state without following a predictable temporary path."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_name(path.name + ".tmp")
-    temp.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    os.replace(temp, path)
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=path.name + ".", suffix=".tmp", dir=path.parent
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(value, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def _validated_block_state(path: Path) -> dict[str, Any]:
@@ -246,12 +292,43 @@ def mark_block_alert_sent(*, now: float | None = None, key: str | None = None,
     return True
 
 
-def reserve_request(*, now: float | None = None, key: str | None = None,
-                    budget_path: Path | None = None, block_path: Path | None = None,
-                    limit: int | None = None) -> int:
+def reserve_request(
+    *, now: float | None = None, key: str | None = None,
+    budget_path: Path | None = None, block_path: Path | None = None,
+    limit: int | None = None, workflow: str | None = None,
+) -> int:
     """Persist one attempted HTTP request before network I/O; retries count too."""
     global REQUESTS_THIS_RUN
-    current = time.time() if now is None else float(now)
+    if isinstance(now, bool):
+        raise RblxValueGuardError(
+            "[rblxvalue-state] request budget clock is invalid; refusing API request"
+        )
+    try:
+        current = time.time() if now is None else float(now)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise RblxValueGuardError(
+            "[rblxvalue-state] request budget clock is invalid; refusing API request"
+        ) from exc
+    if not math.isfinite(current) or current <= 0:
+        raise RblxValueGuardError(
+            "[rblxvalue-state] request budget clock is non-finite or non-positive; refusing API request"
+        )
+    try:
+        datetime.fromtimestamp(current, UTC)
+    except (OverflowError, OSError, ValueError) as exc:
+        raise RblxValueGuardError(
+            "[rblxvalue-state] request budget clock is outside the supported range; refusing API request"
+        ) from exc
+
+    current_workflow = str(workflow or os.environ.get("GITHUB_WORKFLOW") or "local").strip()
+    if (
+        not current_workflow or len(current_workflow) > 100
+        or any(ord(char) < 32 for char in current_workflow)
+    ):
+        raise RblxValueGuardError(
+            "[rblxvalue-state] workflow identifier is invalid; refusing API request"
+        )
+
     secret = os.environ.get("RBLXVALUE_API_KEY", "") if key is None else key
     path = budget_path or BUDGET_FILE
     active = _active_block(current, secret, block_path or BLOCK_FILE)
@@ -266,19 +343,39 @@ def reserve_request(*, now: float | None = None, key: str | None = None,
         raise RblxValueGuardError(
             "[rblxvalue-state] request budget timestamps are not a list; refusing API request"
         )
-    timestamps = []
-    for value in raw_timestamps:
+
+    # Missing workflow metadata identifies a legacy ledger. An explicitly
+    # present but empty/malformed list is corruption, not a legacy migration.
+    if "request_workflows" not in state:
+        raw_workflows = ["legacy/unknown"] * len(raw_timestamps)
+    else:
+        raw_workflows = state["request_workflows"]
+        if not isinstance(raw_workflows, list) or len(raw_workflows) != len(raw_timestamps):
+            raise RblxValueGuardError(
+                "[rblxvalue-state] request budget timestamps/workflows are invalid; refusing API request"
+            )
+
+    timestamps: list[float] = []
+    workflows: list[str] = []
+    for value, workflow_name in zip(raw_timestamps, raw_workflows):
+        if not isinstance(workflow_name, str) or (
+            not workflow_name.strip() or len(workflow_name) > 100
+            or any(ord(char) < 32 for char in workflow_name)
+        ):
+            raise RblxValueGuardError(
+                "[rblxvalue-state] request budget workflow identifier is invalid; refusing API request"
+            )
         if isinstance(value, bool):
             raise RblxValueGuardError(
                 "[rblxvalue-state] request budget contains a boolean timestamp; refusing API request"
             )
         try:
             stamp = float(value)
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, OverflowError) as exc:
             raise RblxValueGuardError(
                 "[rblxvalue-state] request budget contains an invalid timestamp; refusing API request"
             ) from exc
-        if not (stamp > 0 and stamp < float("inf")):
+        if not math.isfinite(stamp) or stamp <= 0:
             raise RblxValueGuardError(
                 "[rblxvalue-state] request budget contains a non-finite timestamp; refusing API request"
             )
@@ -286,6 +383,8 @@ def reserve_request(*, now: float | None = None, key: str | None = None,
         # not silently grant extra requests until wall-clock time catches up.
         if stamp > cutoff:
             timestamps.append(stamp)
+            workflows.append(workflow_name)
+
     if limit is None:
         cap = DAILY_REQUEST_LIMIT
     else:
@@ -294,28 +393,30 @@ def reserve_request(*, now: float | None = None, key: str | None = None,
                 "[rblxvalue-state] request budget limit must be an integer; refusing API request"
             )
         cap = min(HARD_DAILY_REQUEST_LIMIT, max(1, limit))
-    if len(timestamps) >= cap:
+
+    def _persist() -> None:
         _atomic_json(path, {
             "schema_version": 1,
             "window": "rolling_24_hours",
             "limit": cap,
             "request_timestamps_epoch": timestamps,
+            "request_workflows": workflows,
+            "request_counts_by_workflow": {
+                name: workflows.count(name) for name in sorted(set(workflows))
+            },
             "updated_at_utc": _now_iso(current),
         })
+
+    if len(timestamps) >= cap:
+        _persist()
         raise RblxValueBudgetExceeded(
             f"[rblxvalue-budget-exhausted] rolling 24-hour request budget reached ({len(timestamps)}/{cap}); refusing API call"
         )
     timestamps.append(current)
-    _atomic_json(path, {
-        "schema_version": 1,
-        "window": "rolling_24_hours",
-        "limit": cap,
-        "request_timestamps_epoch": timestamps,
-        "updated_at_utc": _now_iso(current),
-    })
+    workflows.append(current_workflow)
+    _persist()
     REQUESTS_THIS_RUN += 1
     return len(timestamps)
-
 
 def requests_this_run() -> int:
     return REQUESTS_THIS_RUN
