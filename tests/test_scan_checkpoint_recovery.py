@@ -36,6 +36,12 @@ class ScanCheckpointRecoveryTests(IsolatedDataTestCase):
         self.assertTrue(scanner.should_start_scan_cycle(135.0, 540))
         self.assertFalse(scanner.should_start_scan_cycle(134.9, 540))
 
+    def test_backlog_recheck_is_scheduled_every_fourth_cycle(self):
+        self.assertFalse(scanner.should_run_backlog_recheck(1, every=4))
+        self.assertFalse(scanner.should_run_backlog_recheck(2, every=4))
+        self.assertFalse(scanner.should_run_backlog_recheck(3, every=4))
+        self.assertTrue(scanner.should_run_backlog_recheck(4, every=4))
+
     def test_short_scan_window_keeps_a_proportional_buffer(self):
         self.assertEqual(scanner.minimum_cycle_start_window(240), 60.0)
         self.assertEqual(scanner.minimum_cycle_start_window(60), 30.0)

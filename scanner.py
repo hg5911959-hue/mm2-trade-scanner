@@ -84,7 +84,7 @@ PRIORITY_PENDING_REASONS = frozenset({
 })
 MAX_PENDING_RECHECK_PER_SCAN = max(1, int(os.environ.get('MAX_PENDING_RECHECK_PER_SCAN', '50')))
 MAX_BACKLOG_RECHECK_PAGES = max(1, int(os.environ.get('MAX_BACKLOG_RECHECK_PAGES', '25')))
-BACKLOG_RECHECK_EVERY_CYCLES = max(1, int(os.environ.get('BACKLOG_RECHECK_EVERY_CYCLES', '1')))
+BACKLOG_RECHECK_EVERY_CYCLES = max(1, int(os.environ.get('BACKLOG_RECHECK_EVERY_CYCLES', '4')))
 FIRST_SEEN_FILE = Path("data/first_seen_ads.json")
 LAST_SUCCESS_FILE = Path("data/last_successful_scan.json")
 WATCH_FILE = Path("data/watch_ads.json")
