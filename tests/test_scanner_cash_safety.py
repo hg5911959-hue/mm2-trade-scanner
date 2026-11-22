@@ -68,7 +68,9 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         )
         now = datetime.now(UTC).isoformat()
         values = {}
-        cash_items = {}
+        cash_items_by_slug = {}
+        cash_items_by_name = {}
+        rblx_exact_map = {}
         give_items = []
         receive_items = []
         for index, name in enumerate(names):
@@ -77,11 +79,19 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
                 "name": name, "slug": slug, "value_source_b": index + 1,
                 "stability": "Stable", "category": "Godly", "type": "Knife",
             }
-            cash_items[scanner.normalize_cash_name(name)] = {
+            cash_row = {
                 "name": name, "cash_price_usd": 5.0, "price_low_usd": 5.0,
                 "price_high_usd": 5.0, "price_display": "$5.00",
                 "status": "verified", "verified_at_utc": now,
                 "source": "https://robase.gg/item/" + slug, "robase_slug": slug,
+                "robase_category": "Godly",
+            }
+            cash_items_by_slug[slug] = cash_row
+            cash_items_by_name[scanner.normalize_cash_name(name)] = cash_row
+            rblx_exact_map[slug] = {
+                "bloxswaps_slug": slug, "robase_slug": slug,
+                "robase_name": name, "robase_identity_source": "test",
+                "rblx_slug": slug, "category": "godly", "type": "knife",
             }
             item = {
                 "name": name, "catalog_slug": slug, "catalog_rarity": "Godly",
@@ -96,7 +106,11 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
             "give_items": give_items, "receive_items": receive_items,
         }
         result, missing = scanner.evaluate_cash_listing(
-            listing, values, {}, {"items": cash_items},
+            listing, values, {}, {
+                "items": cash_items_by_name,
+                "items_by_slug": cash_items_by_slug,
+                "rblx_exact_map": rblx_exact_map,
+            },
         )
         self.assertEqual(missing, [])
         self.assertIsNotNone(result)
