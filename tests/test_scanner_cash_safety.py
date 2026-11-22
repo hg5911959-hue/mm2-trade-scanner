@@ -1,6 +1,7 @@
 """Regression tests for strict ROBASE cash-alert safety gates."""
 
 import unittest
+from unittest.mock import patch
 from datetime import UTC, datetime
 
 from test_support import IsolatedDataTestCase
@@ -95,6 +96,16 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
             "cash_profit_worst": 1.0, "margin": 0.01, "give_total_max": 10000.0,
         }
         self.assertTrue(scanner.qualifies_cash(result))
+
+    def test_cash_minimum_margin_threshold_is_enforced(self):
+        base = {
+            "cash_estimate_only": False, "manual_review": False,
+            "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "cash_profit_worst": 1.0, "margin": 0.01, "give_total_max": 10000.0,
+        }
+        with patch.object(scanner, "CASH_MIN_MARGIN_PERCENT", 0.5):
+            self.assertFalse(scanner.qualifies_cash(base))
+            self.assertTrue(scanner.qualifies_cash({**base, "margin": 0.5}))
 
     def test_robase_items_resolve_through_exact_rblxvalue_slugs(self):
         names = (
