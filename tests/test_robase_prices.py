@@ -127,32 +127,32 @@ class RobasePriceParserTests(IsolatedDataTestCase):
         self.assertEqual(item["sold_30d"], 15)
 
 
-    def test_legacy_vintage_items_without_og_images_use_exact_bloxswaps_identities(self):
+    def test_2026_variants_without_og_images_use_exact_page_slug_identities(self):
         expected = {
-            "Cowboy": "cowboy",
-            "Ghost": "ghostknife",
-            "Golden": "golden",
-            "Laser": "disint",
-            "Phaser": "phaser",
-            "Prince": "prince",
-            "Shadow": "shadow",
+            "cowboy-1150": ("Cowboy", "Rare", "cowboy-k-2026"),
+            "ghost-1149": ("Ghost", "Uncommon", "ghost-g-2026"),
+            "golden-1146": ("Golden", "Legendary", "golden-k-2026"),
+            "laser-1148": ("Laser", "Rare", "laser-k-2026"),
+            "phaser-1151": ("Phaser", "Rare", "phaser-k-2026"),
+            "prince-1152": ("Prince", "Rare", "prince-g-2026"),
+            "shadow-1147": ("Shadow", "Legendary", "shadow-g-2026"),
         }
-        for name, slug in expected.items():
-            with self.subTest(name=name):
+        for page_slug, (name, category, bloxswaps_slug) in expected.items():
+            with self.subTest(page_slug=page_slug):
                 html = f"""
                 <main>
                   <h2>About {name}</h2>
-                  <p>{name} is a Rare item in Roblox Murder Mystery 2 (MM2).
+                  <p>{name} is a {category} item in Roblox Murder Mystery 2 (MM2).
                   Over the last 7 days it sold for $0.34 on average after the marketplace fee.</p>
                 </main>
                 """
                 item = _parse_item_detail(
-                    f"https://robase.gg/item/{name.casefold()}-legacy",
+                    f"https://robase.gg/item/{page_slug}",
                     html,
                     "2026-11-22T12:00:00Z",
                 )
                 self.assertEqual(item["og_image_slug"], "")
-                self.assertEqual(item["bloxswaps_slug"], slug)
+                self.assertEqual(item["bloxswaps_slug"], bloxswaps_slug)
 
 
     def test_item_detail_preserves_displayed_price_and_bloxswaps_metadata(self):
