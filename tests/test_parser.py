@@ -2677,6 +2677,39 @@ class SingleSidedApiPostTests(IsolatedDataTestCase):
         self.assertEqual(stats["malformed_count"], 0)
 
 
+    def test_single_sided_posts_are_not_marked_unparsed_in_rsc_api_mode(self):
+        post = {
+            "id": "single-sided-rsc-post",
+            "user": {"robloxUserId": "123", "robloxUsername": "trader", "robloxDisplayName": "Trader"},
+            "lastRefreshedAt": datetime.now(timezone.utc).isoformat(),
+            "tradePostItems": [
+                {"itemDetailsId": "offered-id", "quantity": 1, "tradeRole": "OFFERED"},
+            ],
+            "requestedWildcards": ["OFFER"],
+        }
+        page = {"items": [post], "meta": {"cursor": None}}
+        payload = json.dumps({"initialPage": page}, ensure_ascii=False, separators=(",", ":"))
+        html = '<script>self.__next_f.push([1,' + json.dumps(payload, ensure_ascii=False) + ']);</script>'
+        item_map = {
+            "offered-id": {
+                "displayName": "Harvester", "slug": "harvester",
+                "rarity": "ANCIENT", "type": "Knife", "chroma": False,
+            }
+        }
+        with (
+            patch.dict(os.environ, {"BLOXSWAPS_API_ONLY": "false"}),
+            patch("scanner.fetch_bloxswaps", return_value=html),
+            patch("scanner.fetch_bloxswaps_items_map", return_value=item_map),
+        ):
+            listings, stats, discovered = scanner.fetch_bloxswaps_all(set())
+        self.assertEqual(listings, [])
+        self.assertEqual(discovered, ["single-sided-rsc-post"])
+        self.assertEqual(stats["single_sided_count"], 1)
+        self.assertEqual(stats["single_sided_ids"], ["single-sided-rsc-post"])
+        self.assertEqual(stats["unparsed_ad_ids"], [])
+        self.assertEqual(stats["malformed_count"], 0)
+
+
 class StructuredQuantityTests(IsolatedDataTestCase):
     @staticmethod
     def _html_with_rsc(trade_items, wildcards=None, visible_badge=""):
