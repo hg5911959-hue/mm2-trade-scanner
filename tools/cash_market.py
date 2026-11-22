@@ -350,7 +350,7 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
             price = float(row.get("cash_price_usd"))
             display_price = float(display.removeprefix("$").replace(",", ""))
             checked_at = datetime.fromisoformat(
-                str(row.get("last_checked_at_utc") or "").replace("Z", "+00:00")
+                str(row.get("last_checked_at_utc") or "")
             ).timestamp()
         except (TypeError, ValueError, OverflowError):
             raise RuntimeError("[cash] Invalid ROBASE price or verification timestamp.")
