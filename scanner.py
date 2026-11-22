@@ -1316,10 +1316,11 @@ def fetch_pending_posts_by_id(pending_ids):
                 continue
             raise
         if not isinstance(payload, dict) or str(payload.get("id") or "") != pending_id:
-            raise RuntimeError(
+            print(
                 f"[pending] Direct lookup returned an invalid or mismatched record for {pending_id}; "
-                "the pending ID is retained."
+                "retaining it for bounded cursor fallback."
             )
+            continue
         posts.append(payload)
     return posts, missing_ids
 
