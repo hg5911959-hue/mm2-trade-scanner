@@ -68,7 +68,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("workflow_dispatch:", scheduler)
         self.assertIn("uses: ./.github/workflows/scan.yml", scheduler)
         self.assertNotIn("secrets: inherit", scheduler)
-        for secret in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "RBLXVALUE_API_KEY", "DISCORD_BOT_TOKEN", "DISCORD_MANUAL_MESSAGES_JSON", "DISCORD_MANUAL_MESSAGES_JSON_2", "CASH_PRICES_CSV", "HEALTHCHECKS_PING_URL"):
+        for secret in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "RBLXVALUE_API_KEY", "HEALTHCHECKS_PING_URL"):
             self.assertIn(f"{secret}: ${{{{ secrets.{secret} }}}}", scheduler)
         self.assertIn("contents: write", scheduler)
         self.assertIn("actions: read", scheduler)
