@@ -3979,3 +3979,81 @@ class CashFirstEvaluatorTests(IsolatedDataTestCase):
         self.assertEqual(result["cash_profit_worst"], 0.99)
         self.assertFalse(scanner.qualifies_cash(result))
 
+
+
+class RobaseIdentityCrosswalkTests(IsolatedDataTestCase):
+    def test_robase_duplicate_names_map_by_image_slug_and_rblx_metadata(self):
+        values = {
+            "latte gun": {"name": "Latte gun", "variants": [{
+                "slug": "latte-gun", "name": "Latte gun", "category": "legendary",
+                "type": "gun", "value": 140, "stability": "Stable", "demand": 2,
+            }]},
+            "latte knife": {"name": "Latte Knife", "variants": [{
+                "slug": "latte-knife", "name": "Latte Knife", "category": "legendary",
+                "type": "knife", "value": 140, "stability": "Stable", "demand": 2,
+            }]},
+            "cane knife 2018": {"name": "Cane Knife 2018", "variants": [{
+                "slug": "cane-knife-2018", "name": "Cane Knife 2018", "category": "rare",
+                "type": "knife", "value": 500, "stability": "Stable", "demand": 4,
+            }]},
+            "chroma elderwood blade": {"name": "Chroma Elderwood Blade", "variants": [{
+                "slug": "chroma-ew-blade", "name": "Chroma Elderwood Blade", "category": "chroma",
+                "type": "knife", "value": 37, "stability": "Stable", "demand": 1,
+            }]},
+        }
+        rows = {
+            "latte": {
+                "name": "Latte", "robase_slug": "latte", "robase_category": "Legendary",
+                "og_image_slug": "latte-g-2023",
+            },
+            "latte-915": {
+                "name": "Latte", "robase_slug": "latte-915", "robase_category": "Legendary",
+                "og_image_slug": "latte-k-2023",
+            },
+            "cane-562": {
+                "name": "Cane", "robase_slug": "cane-562", "robase_category": "Rare",
+                "og_image_slug": "cane-k-2018",
+            },
+            "chroma-elderwood-blade": {
+                "name": "Chroma Elderwood Blade", "robase_slug": "chroma-elderwood-blade",
+                "robase_category": "Chroma", "og_image_slug": "elderwoodknifechroma",
+            },
+            "3": {
+                "name": "<3", "robase_slug": "3", "robase_category": "Common",
+                "og_image_slug": "",
+            },
+        }
+        item_map = {
+            "latte-gun": {"slug": "latte", "displayName": "Latte", "rarity": "LEGENDARY", "type": "Gun", "chroma": False},
+            "latte-knife": {"slug": "latte-k-2023", "displayName": "Latte", "rarity": "LEGENDARY", "type": "Knife", "chroma": False},
+            "cane-knife": {"slug": "cane-k-2018", "displayName": "Cane", "rarity": "RARE", "type": "Knife", "chroma": False, "year": 2018},
+            "chroma-elderwood": {"slug": "chroma-elderwood-blade", "displayName": "Elderwood Blade", "rarity": "GODLY", "type": "Knife", "chroma": True},
+            "heart-pet": {"slug": "3", "displayName": "<3", "rarity": "COMMON", "type": "Pet", "chroma": False},
+        }
+        cash_catalog = {"items_by_slug": rows}
+        result = scanner.audit_robase_rblxvalue_mapping(values, {}, cash_catalog, item_map)
+        self.assertEqual(result["robase_total"], 5)
+        self.assertEqual(result["expected"], 4)
+        self.assertEqual(result["exact"], 4)
+        self.assertEqual(result["non_weapons"], ["<3"])
+        self.assertEqual(cash_catalog["rblx_exact_map"]["latte"]["robase_slug"], "latte")
+        self.assertEqual(cash_catalog["rblx_exact_map"]["latte-k-2023"]["robase_slug"], "latte-915")
+        self.assertEqual(cash_catalog["rblx_exact_map"]["cane-k-2018"]["rblx_slug"], "cane-knife-2018")
+        self.assertEqual(cash_catalog["rblx_exact_map"]["chroma-elderwood-blade"]["value"], 37)
+
+    def test_ambiguous_duplicate_robase_name_is_not_guessed_without_image_identity(self):
+        rows = {
+            "latte": {
+                "name": "Latte", "robase_slug": "latte", "robase_category": "Legendary",
+                "og_image_slug": "",
+            },
+        }
+        item_map = {
+            "latte-gun": {"slug": "latte", "displayName": "Latte", "rarity": "LEGENDARY", "type": "Gun", "chroma": False},
+            "latte-knife": {"slug": "latte-k-2023", "displayName": "Latte", "rarity": "LEGENDARY", "type": "Knife", "chroma": False},
+        }
+        matched, source = scanner._match_robase_row_to_bloxswaps(rows["latte"], item_map)
+        self.assertIsNone(matched)
+        self.assertEqual(source, "ambiguous")
+
+
