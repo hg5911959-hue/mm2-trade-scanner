@@ -126,6 +126,22 @@ class WatchdogRepositoryTests(IsolatedDataTestCase):
             with self.assertRaisesRegex(RuntimeError, "no successful completed"):
                 watchdog.latest_success_age_minutes("test-token")
 
+    def test_success_lookup_ignores_pull_request_successes(self):
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        payload = {"workflow_runs": [
+            {"id": 99, "conclusion": "success", "completed_at": now,
+             "head_branch": "feature/pr", "event": "pull_request"},
+        ]}
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "example/mm2-test"}), patch(
+            "watchdog.scanner.request_with_retry",
+            side_effect=[
+                json.dumps(payload).encode("utf-8"),
+                json.dumps({"workflow_runs": []}).encode("utf-8"),
+            ],
+        ):
+            with self.assertRaisesRegex(RuntimeError, "no successful completed"):
+                watchdog.latest_success_age_minutes("test-token")
+
 
 class WatchdogPollingWindowTests(IsolatedDataTestCase):
     def test_stale_threshold_matches_faster_scan_schedule(self):
@@ -152,20 +168,4 @@ class WatchdogActiveRunGraceTests(IsolatedDataTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-    def test_success_lookup_ignores_pull_request_successes(self):
-        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        payload = {"workflow_runs": [
-            {"id": 99, "conclusion": "success", "completed_at": now,
-             "head_branch": "feature/pr", "event": "pull_request"},
-        ]}
-        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "example/mm2-test"}), patch(
-            "watchdog.scanner.request_with_retry",
-            side_effect=[
-                json.dumps(payload).encode("utf-8"),
-                json.dumps({"workflow_runs": []}).encode("utf-8"),
-            ],
-        ):
-            with self.assertRaisesRegex(RuntimeError, "no successful completed"):
-                watchdog.latest_success_age_minutes("test-token")
 
