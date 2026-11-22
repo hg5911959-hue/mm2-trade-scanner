@@ -86,27 +86,6 @@ jobs:
                   print(f"[state-audit] supreme_cache_present=true bytes={len(raw)} parse_error={type(exc).__name__}")
           PY
 
-      - name: Collect authorized Discord trade channels
-        env:
-          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
-          DISCORD_GUILD_IDS: "1125462206151143464,482699890741477376"
-          DISCORD_MANUAL_MESSAGES_JSON: ${{ secrets.DISCORD_MANUAL_MESSAGES_JSON }}
-          DISCORD_MANUAL_MESSAGES_JSON_2: ${{ secrets.DISCORD_MANUAL_MESSAGES_JSON_2 }}
-        run: |
-          if [ -n "$DISCORD_BOT_TOKEN" ]; then
-            if python -m pip install --disable-pip-version-check "discord.py==2.6.4"; then
-              if ! python -u discord_collector.py --output data/discord_messages.json --limit 100 --retention-days 7; then
-                echo "Discord collector failed; continuing with BloxSwaps and any manual import."
-              fi
-            else
-              echo "discord.py install failed; continuing with BloxSwaps and any manual import."
-            fi
-          else
-            echo "Discord bot collection skipped: DISCORD_BOT_TOKEN is not configured."
-          fi
-          # message contents are not logged or persisted to public state
-          python tools/merge_discord_imports.py
-
       - name: Refresh public ROBASE completed-sales prices
         if: env.CASH_FILTER == '1' || env.CASH_FILTER == 'true' || env.CASH_FILTER == 'yes' || env.CASH_FILTER == 'on'
         continue-on-error: true
