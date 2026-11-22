@@ -99,6 +99,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("group: mm2-trade-scanner", workflow)
         self.assertIn("rblxvalue_guard.reserve_request(key=key)", workflow)
         self.assertIn("rblxvalue_guard.mark_key_success(key=key)", workflow)
+        self.assertIn("if [ ! -f data/rblxvalue_request_budget.json ]; then", workflow)
         self.assertIn("python tools/validate_state.py --directory data --api-safety-only", workflow)
         self.assertIn("Persist shared API safety ledger", workflow)
         self.assertIn("git push origin HEAD:state", workflow)
