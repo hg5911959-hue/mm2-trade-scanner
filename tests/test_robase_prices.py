@@ -126,6 +126,35 @@ class RobasePriceParserTests(IsolatedDataTestCase):
         self.assertEqual(item["sold_7d"], 0)
         self.assertEqual(item["sold_30d"], 15)
 
+
+    def test_legacy_vintage_items_without_og_images_use_exact_bloxswaps_identities(self):
+        expected = {
+            "Cowboy": "cowboy",
+            "Ghost": "ghostknife",
+            "Golden": "golden",
+            "Laser": "disint",
+            "Phaser": "phaser",
+            "Prince": "prince",
+            "Shadow": "shadow",
+        }
+        for name, slug in expected.items():
+            with self.subTest(name=name):
+                html = f"""
+                <main>
+                  <h2>About {name}</h2>
+                  <p>{name} is a Rare item in Roblox Murder Mystery 2 (MM2).
+                  Over the last 7 days it sold for $0.34 on average after the marketplace fee.</p>
+                </main>
+                """
+                item = _parse_item_detail(
+                    f"https://robase.gg/item/{name.casefold()}-legacy",
+                    html,
+                    "2026-11-22T12:00:00Z",
+                )
+                self.assertEqual(item["og_image_slug"], "")
+                self.assertEqual(item["bloxswaps_slug"], slug)
+
+
     def test_item_detail_preserves_displayed_price_and_bloxswaps_metadata(self):
         html = """
         <main>
