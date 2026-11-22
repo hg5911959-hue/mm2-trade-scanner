@@ -76,6 +76,11 @@ def cash_price_is_fresh(entry, max_age_days=14, now=None):
         return False
 
 
+def _normalize_robase_slug(value):
+    slug = str(value or "").strip().casefold()
+    return slug if re.fullmatch(r"[a-z0-9-]{1,100}", slug) else ""
+
+
 def normalize_cash_name(value: str) -> str:
     text = unicodedata.normalize("NFKD", str(value or "").casefold())
     text = "".join(char for char in text if not unicodedata.combining(char))
@@ -201,10 +206,12 @@ def calculate_cash_side(
     low_total = high_total = 0.0
     lines, missing = [], []
     items_by_name = catalog.get("items", {})
+    items_by_slug = catalog.get("items_by_slug", {})
     for item in items:
         name = str(item.get("canonical_name") or item.get("name") or "").strip()
         key = normalize_cash_name(name)
-        entry = items_by_name.get(key)
+        robase_slug = _normalize_robase_slug(item.get("robase_slug"))
+        entry = items_by_slug.get(robase_slug) if robase_slug else items_by_name.get(key)
         if not entry:
             missing.append(f"{name} (cash price missing)")
             continue
@@ -301,11 +308,7 @@ def cash_profit_bounds(give_bounds, receive_bounds):
 
 
 def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, now=None, max_age_seconds=20 * 60):
-    """Load the complete, freshly checked ROBASE item catalogue.
-
-    The public ROBASE item-page price is already the seller-proceeds price
-    after marketplace fees. This loader never applies a second resale haircut.
-    """
+    """Load ROBASE rows by immutable source slug; display names are not unique."""
     import json
     from datetime import UTC, datetime
 
@@ -316,48 +319,55 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RuntimeError("[cash] ROBASE price snapshot is missing or invalid.") from exc
 
-    if snapshot.get("schema_version") != 2 or snapshot.get("price_basis") != "seller_proceeds_after_marketplace_fees":
-        raise RuntimeError("[cash] ROBASE snapshot is not the complete item-detail schema.")
+    if snapshot.get("schema_version") != 3 or snapshot.get("price_basis") != "seller_proceeds_after_marketplace_fees":
+        raise RuntimeError("[cash] ROBASE snapshot is not the verified item-identity schema.")
     expected = snapshot.get("catalog_expected_count")
+    rows = snapshot.get("items")
     if (
         type(expected) is not int or expected < 200
         or snapshot.get("catalog_complete") is not True
-        or not isinstance(snapshot.get("items"), list)
-        or len(snapshot["items"]) != expected
+        or not isinstance(rows, list)
+        or len(rows) != expected
     ):
         raise RuntimeError("[cash] ROBASE full catalogue is incomplete; refusing cash alerts.")
 
     current = now.timestamp() if isinstance(now, datetime) else datetime.now(UTC).timestamp()
-    items = {}
-    for row in snapshot["items"]:
+    items_by_slug = {}
+    name_groups = {}
+    for row in rows:
         if not isinstance(row, dict):
             raise TypeError("[cash] Invalid ROBASE item row.")
         name = str(row.get("name") or "").strip()
+        slug = str(row.get("robase_slug") or "").strip().casefold()
         key = normalize_cash_name(name)
         display = str(row.get("price_display") or "").strip()
         source = str(row.get("source") or "")
+        if not slug or not re.fullmatch(r"[a-z0-9-]{1,100}", slug):
+            raise RuntimeError(f"[cash] Invalid ROBASE source slug: {name or 'unknown'}")
+        if source != f"https://robase.gg/item/{slug}":
+            raise RuntimeError(f"[cash] ROBASE item URL/slug mismatch: {name or slug}")
         try:
             price = float(row.get("cash_price_usd"))
             display_price = float(display.removeprefix("$").replace(",", ""))
             checked_at = datetime.fromisoformat(
-                str(row.get("last_checked_at_utc") or "")
+                str(row.get("last_checked_at_utc") or "").replace("Z", "+00:00")
             ).timestamp()
         except (TypeError, ValueError, OverflowError):
             raise RuntimeError("[cash] Invalid ROBASE price or verification timestamp.")
         age = current - checked_at
         fresh = 0 <= age <= max_age_seconds
         if (
-            not name or not key or not math.isfinite(price) or price <= 0
+            not name or len(name) > 100 or not key
+            or not math.isfinite(price) or price <= 0
             or not math.isfinite(display_price) or abs(display_price - price) > 0.0000001
             or not display.startswith("$")
-            or not source.startswith("https://robase.gg/item/")
-            or not row.get("robase_slug")
+            or not row.get("robase_category")
         ):
-            raise RuntimeError(f"[cash] Invalid ROBASE item identity or displayed price: {name or 'unknown'}")
-        if key in items:
-            raise RuntimeError(f"[cash] Duplicate normalized ROBASE item name: {name}")
+            raise RuntimeError(f"[cash] Invalid ROBASE item identity or displayed price: {name or slug}")
+        if slug in items_by_slug:
+            raise RuntimeError(f"[cash] Duplicate ROBASE source slug: {slug}")
         verified = row.get("status") == "verified" and fresh
-        items[key] = {
+        entry = {
             "name": name,
             "cash_price_usd": price,
             "price_low_usd": price,
@@ -368,8 +378,11 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
             "verified_at_utc": row.get("last_checked_at_utc") if verified else "",
             "last_checked_at_utc": row.get("last_checked_at_utc"),
             "price_updated_at_utc": row.get("price_updated_at_utc"),
-            "robase_slug": row.get("robase_slug"),
+            "robase_slug": slug,
             "robase_category": row.get("robase_category"),
+            "og_image_url": row.get("og_image_url"),
+            "og_image_slug": row.get("og_image_slug"),
+            "bloxswaps_slug": row.get("bloxswaps_slug"),
             "bloxswaps_value": row.get("bloxswaps_value"),
             "bloxswaps_copies": row.get("bloxswaps_copies"),
             "bloxswaps_holders": row.get("bloxswaps_holders"),
@@ -378,30 +391,41 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
             "source": source,
             "notes": "Exact ROBASE displayed seller-proceeds price",
         }
-    if len(items) != expected:
-        raise RuntimeError(f"[cash] ROBASE catalogue count mismatch: {len(items)}/{expected}.")
+        items_by_slug[slug] = entry
+        name_groups.setdefault(key, []).append(entry)
 
+    if len(items_by_slug) != expected:
+        raise RuntimeError(f"[cash] ROBASE catalogue count mismatch: {len(items_by_slug)}/{expected}.")
+
+    # Name lookup remains only for unique labels; duplicate names resolve by slug.
+    items = {key: group[0] for key, group in name_groups.items() if len(group) == 1}
+    duplicate_name_keys = sorted(key for key, group in name_groups.items() if len(group) > 1)
     price_rows = [
-        (key, row["price_display"], row["status"])
-        for key, row in sorted(items.items())
+        (slug, row["price_display"], row["status"])
+        for slug, row in sorted(items_by_slug.items())
     ]
     price_digest = hashlib.sha256(
         json.dumps(price_rows, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
-    fresh_rows = [row for row in items.values() if row["status"] == "verified"]
-    stale_rows = [row["name"] for row in items.values() if row["status"] != "verified"]
+    stale_rows = [
+        row["name"] for row in items_by_slug.values()
+        if row["status"] != "verified"
+    ]
     if stale_rows:
         raise RuntimeError(
             f"[cash] ROBASE item pages are not all freshly verified: {len(stale_rows)} stale/unverified rows."
         )
+    verified_rows = list(items_by_slug.values())
     return {
         "items": items,
+        "items_by_slug": items_by_slug,
+        "duplicate_name_keys": duplicate_name_keys,
         "sha256": price_digest,
         "snapshot_sha256": hashlib.sha256(raw).hexdigest(),
-        "row_count": len(items),
-        "verified_count": len(fresh_rows),
+        "row_count": len(items_by_slug),
+        "verified_count": len(verified_rows),
         "expected_count": expected,
         "catalog_complete": True,
         "expiring_within_3_days": 0,
-        "oldest_verified_at": min(row["verified_at_utc"] for row in fresh_rows),
+        "oldest_verified_at": min(row["verified_at_utc"] for row in verified_rows),
     }
