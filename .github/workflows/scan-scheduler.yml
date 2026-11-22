@@ -9,6 +9,9 @@ on:
       - ".github/workflows/scan.yml"
       - ".github/workflows/scan-scheduler.yml"
       - "scanner.py"
+      - "discord_parser.py"
+      - "rblxvalue_guard.py"
+      - "market_history.py"
       - "tools/**"
   workflow_dispatch:
     inputs:
