@@ -4,7 +4,7 @@ Automated scanner for public **BloxSwaps MM2 P2P listings**, with concise Telegr
 
 ## Production mode and alert eligibility
 
-The production scanner workflow currently runs with `CASH_FILTER: "true"`. The weekly health-report workflow intentionally uses `CASH_FILTER: "false"` and therefore reports cash pricing as disabled; it does not change the scanner's production mode. Do not infer the live scanner mode from the weekly-report setting.
+The production scanner workflow currently runs with `CASH_FILTER: "true"`. The weekly health report intentionally omits the cash-price summary (`CASH_FILTER: "false"`); this does not change the scanner's production mode. Do not infer the live scanner mode from the weekly-report setting.
 
 Production cash alerts require a complete, fresh ROBASE snapshot and verified item prices. The workflow refreshes the public ROBASE completed-sales catalogue before scanning, accepts only a still-fresh cached snapshot if refresh fails, and requires the snapshot and each item check to be no older than 20 minutes; `CASH_MAX_AGE_DAYS=1` is an additional upper bound, not a relaxation of that stricter gate. The preflight requires at least eight verified rows. A listing is eligible only when all items needed for the calculation can be priced safely and the conservative cash-profit threshold is met.
 
@@ -26,7 +26,6 @@ From the scanner user's perspective:
 - **BloxSwaps Propose** = items you receive.
 - **BloxSwaps Recherche** = items you give.
 - Any listing containing **Ajout / Ajouts** is excluded. The filter is applied to the individual card and also checks the structured `requestedWildcards` data for `ADD`.
-- **Production mode = cash-first**. The scheduled scanner sets `CASH_FILTER=true` and qualifies offers using fresh verified ROBASE cash prices and conservative cash-profit rules. The weekly report separately sets `CASH_FILTER=false`; this affects reporting only, not the production scanner.
 - Supreme Values is used for game-value comparison and item identity/stability validation. Items that cannot be matched or valued remain excluded; uncertain listings retain the existing manual-review/recheck protections.
 - Production cash-first mode uses the refreshed ROBASE completed-sales snapshot, with conservative profit bounds. The tracked `data/cash_prices.csv` is a legacy/manual catalogue retained for compatibility; it is not the production scanner's price source. Supreme numeric values are never converted into cash prices.
 - Any received item with missing/unrecognized Stability or a blocked status (Decreasing, Receding, Unsafe, Untradeable, Unstable, Volatile, Fluctuating) is excluded. The Stability field is sourced from RBLXValue and is not represented as a direct Supreme website verification.
