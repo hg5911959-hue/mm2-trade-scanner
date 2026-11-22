@@ -166,6 +166,56 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         )
         self.assertEqual(result["cash_sell_haircut_pct"], 0.0)
 
+        # Cash profit is based on current ROBASE seller-proceeds prices.
+        # Non-tradability Stability labels are informational here; only an
+        # explicit Untradeable label blocks a cash offer.
+        for stability in (
+            None, "unrecognized-status", "Decreasing", "Receding", "Unsafe",
+            "Unstable", "Volatile", "Fluctuating", "Stable",
+        ):
+            with self.subTest(received_stability=stability):
+                case_values = {key: dict(value) for key, value in values.items()}
+                for name in names:
+                    case_values[name.casefold()]["stability"] = stability
+                accepted, reasons = scanner.evaluate_cash_listing(
+                    listing, case_values, {}, {
+                        "items": cash_items_by_name,
+                        "items_by_slug": cash_items_by_slug,
+                        "rblx_exact_map": rblx_exact_map,
+                    },
+                )
+                self.assertIsNotNone(accepted)
+                self.assertEqual(reasons, [])
+
+        # A missing Stability field is displayed as N/A, not treated as a
+        # missing cash price or a reason to discard a verified cash trade.
+        case_values = {key: dict(value) for key, value in values.items()}
+        for name in names:
+            case_values[name.casefold()].pop("stability", None)
+        accepted, reasons = scanner.evaluate_cash_listing(
+            listing, case_values, {}, {
+                "items": cash_items_by_name,
+                "items_by_slug": cash_items_by_slug,
+                "rblx_exact_map": rblx_exact_map,
+            },
+        )
+        self.assertIsNotNone(accepted)
+        self.assertEqual(reasons, [])
+
+        # Explicitly untradeable items are rejected on either side.
+        case_values = {key: dict(value) for key, value in values.items()}
+        for name in names:
+            case_values[name.casefold()]["stability"] = "Untradeable"
+        rejected, reasons = scanner.evaluate_cash_listing(
+            listing, case_values, {}, {
+                "items": cash_items_by_name,
+                "items_by_slug": cash_items_by_slug,
+                "rblx_exact_map": rblx_exact_map,
+            },
+        )
+        self.assertIsNone(rejected)
+        self.assertTrue(any("untradeable" in reason.casefold() for reason in reasons))
+
     def test_malformed_cash_profit_or_margin_fails_closed(self):
         for field, value in (
             ("cash_profit_worst", None),
