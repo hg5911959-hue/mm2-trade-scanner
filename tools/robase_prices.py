@@ -121,6 +121,31 @@ class _VisibleTextParser(HTMLParser):
             self.parts.append(" ".join(data.split()))
 
 
+class _MetaParser(HTMLParser):
+    """Extract only public Open Graph image metadata used for exact catalogue matching."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.og_image = ""
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() != "meta":
+            return
+        attributes = {str(key or "").lower(): str(value or "") for key, value in attrs}
+        if attributes.get("property", "").lower() == "og:image":
+            self.og_image = attributes.get("content", "").strip()
+
+
+def _bloxswaps_image_slug(image_url: str) -> str:
+    """Return a BloxSwaps-style image asset slug when ROBASE exposes one."""
+    parsed = urlsplit(str(image_url or ""))
+    if parsed.hostname != "cdn.bloxluck.com" or not parsed.path.startswith("/item-images/"):
+        return ""
+    filename = parsed.path.rsplit("/", 1)[-1]
+    slug = filename.rsplit(".", 1)[0].casefold()
+    return slug if re.fullmatch(r"[a-z0-9-]{1,100}", slug) else ""
+
+
 def _parse_item_name(raw: str) -> str:
     name = " ".join(str(raw or "").split())
     parts = name.rsplit(" ", 1)
@@ -189,6 +214,10 @@ def _parse_item_detail(url: str, document: str, fetched_at_utc: str, etag="", la
     parser = _VisibleTextParser()
     parser.feed(document)
     text = " ".join(parser.parts)
+    meta = _MetaParser()
+    meta.feed(document)
+    og_image_url = meta.og_image
+    image_slug = _bloxswaps_image_slug(og_image_url)
     about = DETAIL_ABOUT_HEADER_RE.search(text)
     if about:
         name = " ".join(about.group("name").split())
@@ -215,6 +244,9 @@ def _parse_item_detail(url: str, document: str, fetched_at_utc: str, etag="", la
         "name": name,
         "robase_slug": slug,
         "robase_category": category,
+        "og_image_url": og_image_url,
+        "og_image_slug": image_slug,
+        "bloxswaps_slug": image_slug,
         "cash_price_usd": price,
         "price_display": price_display,
         "price_window_days": int(price_match.group("days")),
