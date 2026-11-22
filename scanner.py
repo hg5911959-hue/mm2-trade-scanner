@@ -24,7 +24,6 @@ import rblxvalue_guard
 from tools.metrics import update_metrics
 from tools.alert_policy import rank_and_split
 from tools.cash_market import calculate_cash_side, cash_profit_bounds, normalize_cash_name, cash_price_is_fresh, strict_quantity, parse_haircut_tiers
-from tools.robase_prices import normalize_robase_item_name
 
 
 def load_cash_price_catalog(*args, **kwargs):
@@ -127,8 +126,8 @@ CASH_SELL_HAIRCUT_TIERS = parse_haircut_tiers(
 )
 if not math.isfinite(CASH_SELL_HAIRCUT_PCT) or not 0 <= CASH_SELL_HAIRCUT_PCT <= 99:
     raise ValueError("CASH_SELL_HAIRCUT_PCT must be between 0 and 99")
-CASH_MIN_PROFIT_USD = float(os.environ.get("CASH_MIN_PROFIT_USD", "0.50"))
-CASH_MIN_PROFIT_USD_SMALL = float(os.environ.get("CASH_MIN_PROFIT_USD_SMALL", "0.25"))
+CASH_MIN_PROFIT_USD = max(1.0, float(os.environ.get("CASH_MIN_PROFIT_USD", "1.00")))
+CASH_MIN_PROFIT_USD_SMALL = max(1.0, float(os.environ.get("CASH_MIN_PROFIT_USD_SMALL", "1.00")))
 CASH_MIN_VERIFIED_ROWS = max(0, int(os.environ.get("CASH_MIN_VERIFIED_ROWS", "8")))
 if any(not math.isfinite(value) or value < 0 for value in (
     CASH_MIN_PROFIT_USD, CASH_MIN_PROFIT_USD_SMALL
@@ -4012,59 +4011,55 @@ def qualifies(result, min_diff=None, min_percent=None):
 
 
 def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=False):
-    """Evaluate cash resale profit using Supreme identity where available and verified ROBASE fallback otherwise."""
+    """Evaluate BloxSwaps-only offers using exact RBLXValue identity and ROBASE prices."""
+    if str(listing.get("source") or "bloxswaps").strip().casefold() not in {"bloxswaps", "bloxswaps.com"}:
+        return None, ["cash mode accepts BloxSwaps offers only"]
+    if listing.get("requested_wildcards"):
+        return None, ["wildcard requests are not exact ROBASE-only offers"]
     if not listing.get("give_items") or not listing.get("receive_items"):
         return None, ["one side has no items"]
 
+    robase_items = (cash_catalog or {}).get("items", {})
     prepared = {"give": [], "receive": []}
     missing = []
     for side, field in (("give", "give_items"), ("receive", "receive_items")):
         for item in listing.get(field, []):
-            record, match_source, candidates = resolve_value_record(
-                item.get("name", ""), values, aliases, item=item
-            )
-            robase_fallback = False
-            variants = record.get("variants") or [record] if record else []
-            if not record or len(variants) != 1:
-                raw_name = item.get("name", "Unknown")
-                try:
-                    cash_key = normalize_cash_name(normalize_robase_item_name(raw_name))
-                except ValueError:
-                    cash_key = ""
-                cash_record = (cash_catalog or {}).get("items", {}).get(cash_key)
-                if cash_record and cash_record.get("status") == "verified":
-                    canonical_name = str(cash_record.get("name") or normalize_robase_item_name(raw_name)).strip()
-                    stability = "ROBASE verified"
-                    match_source = "ROBASE"
-                    robase_fallback = True
-                else:
-                    if cash_record:
-                        missing.append(f"{raw_name} (cash price unverified)")
-                    elif not record:
-                        suffix = f" (ambiguous: {', '.join(candidates)})" if candidates else " (not in Supreme catalogue or verified ROBASE catalogue)"
-                        missing.append(f"{raw_name}{suffix}")
-                    else:
-                        missing.append(f"{raw_name} (ambiguous Supreme identity; no unique ROBASE match)")
-                    continue
-            else:
-                selected = variants[0]
-                canonical_name = str(selected.get("name") or record.get("name") or item.get("name") or "").strip()
-                if not canonical_name:
-                    missing.append(f"{item.get('name')} (Supreme identity missing)")
-                    continue
+            raw_name = str(item.get("name") or "Unknown")
+            catalog_slug = normalize_slug(item.get("catalog_slug") or "")
+            if not catalog_slug:
+                missing.append(f"{raw_name} (BloxSwaps catalogue slug missing)")
+                continue
 
-                stability = _normalize_stability(selected.get("stability"))
-                stability_key = stability.casefold() if stability else ""
-                if stability_key == "untradeable":
-                    missing.append(f"{canonical_name} (Untradeable)")
-                    continue
-                if side == "receive":
-                    if "stability" not in selected or stability_key not in RBLXVALUE_STABILITY_LABELS:
-                        missing.append(f"{canonical_name} (Stability unverified)")
-                        continue
-                    if stability_key in BLOCKED_RECEIVE_STABILITY:
-                        missing.append(f"{canonical_name} (Stability: {stability}; excluded)")
-                        continue
+            record, match_source, candidates = resolve_value_record(
+                raw_name, values, aliases, item=item
+            )
+            variants = record.get("variants") or [record] if record else []
+            if (
+                not record or match_source != "slug" or len(variants) != 1
+                or normalize_slug(variants[0].get("slug") or "") != catalog_slug
+            ):
+                suffix = f": {', '.join(candidates)}" if candidates else ""
+                missing.append(f"{raw_name} (no unique exact RBLXValue slug match{suffix})")
+                continue
+
+            selected = variants[0]
+            canonical_name = str(selected.get("name") or "").strip()
+            if not canonical_name:
+                missing.append(f"{raw_name} (RBLXValue canonical name missing)")
+                continue
+            cash_key = normalize_cash_name(canonical_name)
+            cash_record = robase_items.get(cash_key)
+            if not cash_record:
+                missing.append(f"{raw_name} (not listed on ROBASE)")
+                continue
+            if cash_record.get("status") != "verified":
+                missing.append(f"{raw_name} (ROBASE price not freshly verified)")
+                continue
+
+            stability = _normalize_stability(selected.get("stability"))
+            if stability and stability.casefold() == "untradeable":
+                missing.append(f"{canonical_name} (RBLXValue marks item untradeable)")
+                continue
 
             quantity = item.get("quantity")
             qmin = item.get("quantity_min")
@@ -4077,65 +4072,71 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
                 qmax = strict_quantity(qmax) if qmax is not None else None
             except (TypeError, ValueError):
                 qmin, qmax = 1, None
-            if qmax is None or qmax < qmin:
-                missing.append(f"{canonical_name} (quantity uncertain/unbounded)")
+            if source == "uncertain" or qmax is None or qmax != qmin:
+                missing.append(f"{canonical_name} (quantity not confirmed exactly)")
                 continue
 
+            value, value_status = _supreme_numeric_value(selected)
+            category = str(selected.get("category") or item.get("catalog_rarity") or "").strip()
+            item_type = str(selected.get("type") or item.get("catalog_type") or "").strip()
+            identity = "/".join(part for part in (category, item_type) if part)
+            display_name = f"{canonical_name} [{identity}]" if identity else canonical_name
             prepared[side].append({
                 "name": canonical_name,
                 "canonical_name": canonical_name,
+                "display_name": display_name,
                 "quantity_min": qmin,
                 "quantity_max": qmax,
                 "stability": stability or "N/A",
-                "match_source": match_source,
-                "robase_fallback": robase_fallback,
+                "rblx_value": value,
+                "rblx_value_status": value_status,
+                "rblx_category": category,
+                "rblx_type": item_type,
+                "rblx_slug": catalog_slug,
+                "robase_price_display": cash_record.get("price_display"),
             })
 
     if missing:
         return None, missing
     if not prepared["give"] or not prepared["receive"]:
-        return None, ["one side has no eligible cash-priced items"]
+        return None, ["one side has no ROBASE-priced RBLXValue-matched weapons"]
 
+    # ROBASE already displays seller proceeds after marketplace fees. Apply no
+    # second resale haircut or tier adjustment to either side.
     give_min, give_max, give_lines, give_missing = calculate_cash_side(
         prepared["give"], cash_catalog, "give", 0, max_age_days=CASH_MAX_AGE_DAYS,
-        allow_unverified_estimates=estimate_mode,
+        allow_unverified_estimates=False,
     )
     receive_min, receive_max, receive_lines, receive_missing = calculate_cash_side(
-        prepared["receive"], cash_catalog, "receive", CASH_SELL_HAIRCUT_PCT,
-        max_age_days=CASH_MAX_AGE_DAYS, allow_unverified_estimates=estimate_mode,
-        sell_haircut_tiers=None if CASH_SELL_HAIRCUT_OVERRIDE else CASH_SELL_HAIRCUT_TIERS,
+        prepared["receive"], cash_catalog, "receive", 0, max_age_days=CASH_MAX_AGE_DAYS,
+        allow_unverified_estimates=False, sell_haircut_tiers=None,
     )
     missing = give_missing + receive_missing
     if missing:
         return None, missing
 
-    give_lines = [
-        line + (
-            f" | ROBASE verification: {item['stability']}"
-            if item.get("robase_fallback")
-            else f" | RBLXValue Stability: {item['stability']}"
-        )
-        for line, item in zip(give_lines, prepared["give"])
-    ]
-    receive_lines = [
-        line + (
-            f" | ROBASE verification: {item['stability']}"
-            if item.get("robase_fallback")
-            else f" | RBLXValue Stability: {item['stability']}"
-        )
-        for line, item in zip(receive_lines, prepared["receive"])
-    ]
+    def add_rblx_details(lines, items):
+        enriched = []
+        for line, item in zip(lines, items):
+            details = []
+            if item["rblx_value"] is None:
+                details.append("RBLXValue: not listed")
+            else:
+                details.append(f"RBLXValue: {format_number(item['rblx_value'])}")
+            if item["stability"] != "N/A":
+                details.append(f"Stability: {item['stability']}")
+            enriched.append(line + " | " + " · ".join(details))
+        return enriched
+
+    give_lines = add_rblx_details(give_lines, prepared["give"])
+    receive_lines = add_rblx_details(receive_lines, prepared["receive"])
     profit_worst, profit_best = cash_profit_bounds(
         (give_min, give_max), (receive_min, receive_max)
     )
-    uncertain_items = [
-        {"side": side, "name": item["canonical_name"], "quantity_min": item["quantity_min"],
-         "quantity_max": item["quantity_max"]}
-        for side in ("give", "receive")
-        for item in prepared[side]
-        if item["quantity_min"] != item["quantity_max"]
-    ]
-    manual_review = bool(uncertain_items and profit_worst <= 0 < profit_best)
+    # Round profit down to cents so a borderline floating-point result never
+    # crosses the $1.00 alert threshold by rounding up.
+    profit_worst = math.floor((profit_worst + 1e-9) * 100) / 100
+    profit_best = math.floor((profit_best + 1e-9) * 100) / 100
     margin = (profit_worst / give_max * 100.0) if give_max > 0 else 0.0
     listing["valuation_mode"] = "cash"
     return {
@@ -4152,18 +4153,17 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
         "profit_worst": profit_worst,
         "profit_best": profit_best,
         "margin": margin,
-        "manual_review": manual_review,
-        "uncertain_items": uncertain_items,
-        "cash_sell_haircut_pct": CASH_SELL_HAIRCUT_PCT if CASH_SELL_HAIRCUT_OVERRIDE else None,
-        "cash_sell_haircut_mode": "fixed" if CASH_SELL_HAIRCUT_OVERRIDE else "tiered",
+        "manual_review": False,
+        "uncertain_items": [],
+        "cash_sell_haircut_pct": 0.0,
+        "cash_sell_haircut_mode": "none",
         "cash_profit_worst": profit_worst,
         "cash_profit_best": profit_best,
-        "cash_price_basis": "unverified legacy estimate only" if estimate_mode else "verified manual USD resale catalogue",
-        "cash_estimate_only": bool(estimate_mode),
+        "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+        "cash_estimate_only": False,
         "receive_demand_score": None,
         "receive_stability_score": None,
     }, []
-
 
 def qualifies_cash(result):
     """Cash-only alert gate; missing provenance and uncertain results fail closed."""
@@ -4172,7 +4172,7 @@ def qualifies_cash(result):
     if (
         result.get("manual_review") is not False
         or result.get("cash_estimate_only") is not False
-        or result.get("cash_price_basis") != "verified manual USD resale catalogue"
+        or result.get("cash_price_basis") != "verified ROBASE displayed seller-proceeds price"
     ):
         return False
     if "cash_profit_worst" not in result or "margin" not in result or "give_total_max" not in result:
@@ -4186,12 +4186,11 @@ def qualifies_cash(result):
         profit, margin, give_total = float(raw_profit), float(raw_margin), float(raw_give)
     except (TypeError, ValueError, OverflowError):
         return False
-    threshold = CASH_MIN_PROFIT_USD_SMALL if give_total < 5.0 else CASH_MIN_PROFIT_USD
+    threshold = max(1.0, CASH_MIN_PROFIT_USD_SMALL if give_total < 5.0 else CASH_MIN_PROFIT_USD)
     return (
         math.isfinite(profit) and math.isfinite(margin) and math.isfinite(give_total)
         and give_total >= 0
         and profit >= threshold
-        and margin >= CASH_MIN_MARGIN_PERCENT
     )
 
 
@@ -4267,9 +4266,11 @@ def listing_watch_fingerprints(listing, values, aliases=None, cash_catalog=None)
                 stability = _normalize_stability((cash_selected or {}).get("stability")) if record else None
                 valuation.append((
                     side, normalize_name(name), match_source,
-                    cash_row.get("cash_price_usd") if cash_row else None,
+                    cash_row.get("price_display") if cash_row else None,
                     cash_row.get("status") if cash_row else "missing",
-                    cash_row.get("verified_at_utc") if cash_row else "",
+                    (cash_selected or {}).get("value_source_b") if cash_selected else None,
+                    (cash_selected or {}).get("category") if cash_selected else None,
+                    (cash_selected or {}).get("type") if cash_selected else None,
                     stability,
                 ))
             else:
