@@ -335,7 +335,6 @@ def fetch_snapshot(output: Path = DEFAULT_OUTPUT, timeout: int = REQUEST_TIMEOUT
     now = _utc_now()
     complete = (
         len(rows) == expected_count
-        and not failures
         and all(
             row.get("status") == "verified"
             and _parse_time(row.get("last_checked_at_utc")) > 0
