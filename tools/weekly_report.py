@@ -38,6 +38,27 @@ def build_report(metrics, discord_status=None, key_state=None, daily_limit=60, n
             + (f"\n\n{blocker_summary}" if blocker_summary else "")
             + ("\n\nPreflight checks: " + "; ".join(preflight_checks) if preflight_checks else "\n\nPreflight checks: PASS"))
 
+
+def send_report(report, *, token, chat):
+    """Send a weekly report and require Telegram's explicit API success."""
+    if not token or not chat:
+        raise RuntimeError("Telegram credentials are not configured")
+    body = urllib.parse.urlencode({"chat_id": chat, "text": report}).encode()
+    request = urllib.request.Request(
+        f"https://api.telegram.org/bot{token}/sendMessage", data=body
+    )
+    with TELEGRAM_OPENER.open(request, timeout=20) as response:
+        if response.status != 200:
+            raise RuntimeError("Telegram report delivery failed")
+        try:
+            result = json.loads(response.read(65536).decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            raise RuntimeError("Telegram report returned an invalid response") from None
+        if not isinstance(result, dict) or result.get("ok") is not True:
+            raise RuntimeError("Telegram API rejected weekly report delivery")
+    return True
+
+
 def main():
     data = DATA_DIR
     try: metrics = json.loads((data / "metrics.json").read_text(encoding="utf-8"))
@@ -83,13 +104,7 @@ def main():
     )
     print("[weekly-report] " + report.replace("\n", " | "))
     token, chat = os.environ.get("TELEGRAM_BOT_TOKEN", ""), os.environ.get("TELEGRAM_CHAT_ID", "")
-    if token and chat:
-        body = urllib.parse.urlencode({"chat_id": chat, "text": report}).encode()
-        request = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=body)
-        with TELEGRAM_OPENER.open(request, timeout=20) as response:
-            if response.status != 200: raise RuntimeError("Telegram report delivery failed")
-    else:
-        raise RuntimeError("Telegram credentials are not configured")
+    send_report(report, token=token, chat=chat)
 
 if __name__ == "__main__":
     main()
