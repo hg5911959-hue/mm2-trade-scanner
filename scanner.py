@@ -3776,12 +3776,23 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
 
 def format_opportunity_digest(opportunities):
     """One same-cycle digest for all qualified offers beyond the individual-alert budget."""
-    lines = [
-        "💎 MM2 ROBASE <b>OPPORTUNITIES</b>",
-        f"<b>{len(opportunities)} verified offers · profit $1.00+</b>",
-        "All item prices are copied from ROBASE. Every offer is open now.",
-        "",
-    ]
+    cash_only = bool(opportunities) and all(
+        op.get("listing", {}).get("valuation_mode") == "cash" for op in opportunities
+    )
+    if cash_only:
+        lines = [
+            "💎 MM2 ROBASE <b>OPPORTUNITIES</b>",
+            f"<b>{len(opportunities)} verified offers · profit $1.00+</b>",
+            "Item prices are copied from ROBASE. Every offer is open now.",
+            "",
+        ]
+    else:
+        lines = [
+            "💎 MM2 TRADE <b>DIGEST</b>",
+            f"<b>{len(opportunities)} additional verified opportunities</b>",
+            "Ranked by conservative profit. Every offer is available now; none is deferred.",
+            "",
+        ]
     for index, op in enumerate(opportunities, start=1):
         listing = op.get("listing", {})
         source = str(listing.get("source", "bloxswaps")).upper()
