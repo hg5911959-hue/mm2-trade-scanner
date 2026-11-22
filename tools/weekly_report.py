@@ -80,7 +80,7 @@ def main():
     else:
         try:
             cash = load_robase_price_catalog(
-                data / "robase_prices.json", max_age_seconds=24 * 60 * 60
+                data / "robase_prices.json"
             )
             cash_summary = (
                 f"verified={cash['verified_count']}/{cash['expected_count']}, "
