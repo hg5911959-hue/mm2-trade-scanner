@@ -118,8 +118,10 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
         return ["state directory is missing"] if require_cache else []
     paths = list(root.rglob("*"))
     symlinks = [path for path in paths if path.is_symlink()]
-    files = [path for path in paths if not path.is_symlink() and path.is_file()]
-    if not files and not symlinks:
+    if symlinks:
+        return ["state contains symlink paths"]
+    files = [path for path in paths if path.is_file()]
+    if not files:
         if require_cache:
             return [
                 "successful scan is missing supreme_values.json",
@@ -128,8 +130,6 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
         return []
 
     errors: list[str] = []
-    if symlinks:
-        errors.append("state contains symlink paths")
     if any(path.name == "discord_messages.json" for path in files):
         errors.append("private Discord message file must not enter durable public state")
     temporary = [path for path in files if path.name.endswith(".tmp")]
