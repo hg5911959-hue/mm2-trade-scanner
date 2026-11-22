@@ -13,6 +13,7 @@ from tools.cash_market import (
     load_cash_price_catalog,
     load_robase_price_catalog,
     normalize_cash_name,
+    strict_quantity,
 )
 
 
@@ -198,6 +199,11 @@ class CashMarketTests(IsolatedDataTestCase):
 
     def test_cash_profit_uses_worst_case_not_supreme_value(self):
         self.assertEqual(cash_profit_bounds((5, 8), (12, 15)), (4, 10))
+
+    def test_full_bloxswaps_stack_quantity_limit_is_supported(self):
+        self.assertEqual(strict_quantity(9999), 9999)
+        with self.assertRaises(ValueError):
+            strict_quantity(10000)
 
     def test_fractional_quantity_is_rejected_instead_of_truncated(self):
         catalog = self._catalog([self._row(price="10")])
