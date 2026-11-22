@@ -297,6 +297,7 @@ class CashMarketTests(IsolatedDataTestCase):
             rows.append({
                 "name": f"Item {i}",
                 "robase_slug": f"item-{i}",
+                "robase_category": "Godly",
                 "cash_price_usd": 2.5,
                 "price_display": "$2.50",
                 "sold_7d": 1 if i == 1 else 10,
