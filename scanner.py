@@ -4033,91 +4033,213 @@ def qualifies(result, min_diff=None, min_percent=None):
     return metric > 0 and metric >= min_diff and result["margin"] >= min_percent
 
 
-def _resolve_robase_cash_record(canonical_name, catalog_slug, robase_items):
-    """Resolve a ROBASE row by exact canonical name, then exact source slug only."""
-    key = normalize_cash_name(canonical_name)
-    if key and key in robase_items:
-        return robase_items[key], "name"
-    slug = normalize_slug(catalog_slug)
-    if not slug:
-        return None, "missing"
-    matches = [
-        row for row in robase_items.values()
-        if normalize_slug(row.get("robase_slug") or "") == slug
-    ]
-    if len(matches) == 1:
-        return matches[0], "slug"
-    return None, "ambiguous" if matches else "missing"
+ROBASE_CATEGORY_TO_RBLX = {"classic": "vintage"}
 
 
-def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
-    """Report exact BloxSwaps-slug to RBLXValue coverage for every ROBASE weapon."""
-    robase_items = (cash_catalog or {}).get("items", {})
-    matches = {}
+def _robase_base_identity(row):
+    name = str(row.get("name") or "").strip()
+    category = str(row.get("robase_category") or "").strip().casefold()
+    chroma = category == "chroma" or name.casefold().startswith("chroma ")
+    if name.casefold().startswith("chroma "):
+        name = name[7:].strip()
+    return normalize_name(name), chroma
+
+
+def _robase_image_hints(row):
+    image_slug = normalize_slug(row.get("og_image_slug") or row.get("bloxswaps_slug") or "")
+    item_type = None
+    year = None
+    if image_slug:
+        if re.search(r"(?:^|[-_])(?:g|gun)(?:[-_]|$)", image_slug):
+            item_type = "gun"
+        elif re.search(r"(?:^|[-_])(?:k|knife)(?:[-_]|$)", image_slug) or "knife" in image_slug:
+            item_type = "knife"
+        year_match = re.search(r"(?<!\\d)(20\\d{2})(?!\\d)", image_slug)
+        if year_match:
+            year = int(year_match.group(1))
+    return image_slug, item_type, year
+
+
+def _match_robase_row_to_bloxswaps(row, item_map):
+    """Match a ROBASE page to one BloxSwaps weapon using its image ID or unique metadata."""
+    base_name, chroma = _robase_base_identity(row)
+    category = str(row.get("robase_category") or "").strip().casefold()
+    expected_rarity = ROBASE_CATEGORY_TO_RBLX.get(category, category)
+    image_slug, image_type, image_year = _robase_image_hints(row)
+    candidates = []
     for details in (item_map or {}).values():
         if not isinstance(details, dict):
             continue
-        name = str(details.get("displayName") or "").strip()
         slug = normalize_slug(details.get("slug") or "")
-        if not name or not slug:
+        display_name = normalize_name(details.get("displayName") or "")
+        item_type = str(details.get("type") or "").strip().casefold()
+        rarity = str(details.get("rarity") or "").strip().casefold()
+        item_chroma = details.get("chroma")
+        if not slug or display_name != base_name or item_type not in {"knife", "gun"}:
             continue
+        if chroma:
+            if item_chroma is not True:
+                continue
+        else:
+            if item_chroma is True or rarity != expected_rarity:
+                continue
+        if image_type and item_type != image_type:
+            continue
+        if image_year is not None and details.get("year") is not None:
+            try:
+                if int(details.get("year")) != image_year:
+                    continue
+            except (TypeError, ValueError):
+                continue
+        candidates.append(details)
+
+    if image_slug:
+        exact_image = [
+            details for details in candidates
+            if normalize_slug(details.get("slug") or "") == image_slug
+        ]
+        if len(exact_image) == 1:
+            return exact_image[0], "robase_og_image_slug"
+    robase_slug = normalize_slug(row.get("robase_slug") or "")
+    direct_slug = [
+        details for details in candidates
+        if normalize_slug(details.get("slug") or "") == robase_slug
+    ]
+    if len(direct_slug) == 1:
+        return direct_slug[0], "robase_item_slug"
+    if len(candidates) == 1:
+        return candidates[0], "unique_name_rarity_type"
+    return None, "ambiguous" if candidates else "missing"
+
+
+def _resolve_robase_cash_record(catalog_slug, cash_catalog):
+    """Resolve cash by the audited BloxSwaps slug -> ROBASE source-slug crosswalk."""
+    slug = normalize_slug(catalog_slug)
+    mapping = (cash_catalog or {}).get("rblx_exact_map", {}).get(slug)
+    if not isinstance(mapping, dict):
+        return None, "missing"
+    row = (cash_catalog or {}).get("items_by_slug", {}).get(mapping.get("robase_slug"))
+    return (row, mapping.get("robase_identity_source", "exact")) if row else (None, "missing")
+
+
+def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
+    """Build exact ROBASE -> BloxSwaps -> RBLXValue crosswalk for weapon variants."""
+    robase_rows = list((cash_catalog or {}).get("items_by_slug", {}).values())
+    weapon_rows = []
+    non_weapons = []
+    missing_robase = []
+    ambiguous_robase = []
+    seen_blox_slugs = {}
+    for row in robase_rows:
+        matched, identity_source = _match_robase_row_to_bloxswaps(row, item_map)
+        if not matched:
+            if identity_source == "ambiguous":
+                ambiguous_robase.append(row.get("name") or row.get("robase_slug"))
+            else:
+                missing_robase.append(row.get("name") or row.get("robase_slug"))
+            continue
+        item_type = str(matched.get("type") or "").strip().casefold()
+        if item_type not in {"knife", "gun"}:
+            non_weapons.append(row.get("name") or row.get("robase_slug"))
+            continue
+        catalog_slug = normalize_slug(matched.get("slug") or "")
+        if catalog_slug in seen_blox_slugs:
+            ambiguous_robase.extend([
+                seen_blox_slugs[catalog_slug].get("name") or seen_blox_slugs[catalog_slug].get("robase_slug"),
+                row.get("name") or row.get("robase_slug"),
+            ])
+            continue
+        seen_blox_slugs[catalog_slug] = row
+        weapon_rows.append((row, matched, identity_source))
+
+    exact_map = {}
+    rblx_ambiguous = []
+    rblx_missing = []
+    for row, details, identity_source in weapon_rows:
+        name = str(details.get("displayName") or "").strip()
+        catalog_slug = normalize_slug(details.get("slug") or "")
         item = {
             "name": name,
-            "catalog_slug": slug,
+            "catalog_slug": catalog_slug,
             "catalog_rarity": details.get("rarity"),
             "catalog_type": details.get("type"),
             "catalog_chroma": details.get("chroma"),
             "catalog_year": details.get("year"),
         }
-        record, source, _candidates = resolve_value_record(name, values, aliases, item=item)
+        record, source, candidates = resolve_value_record(name, values, aliases, item=item)
         variants = record.get("variants") or [record] if record else []
-        if source != "slug" or len(variants) != 1:
+        if not record or source not in {"slug", "metadata", "exact"} or len(variants) != 1:
+            label = f"{row.get('name')} [{catalog_slug}]"
+            if source == "ambiguous" or candidates:
+                rblx_ambiguous.append(label)
+            else:
+                rblx_missing.append(label)
             continue
         selected = variants[0]
-        if normalize_slug(selected.get("slug") or "") != slug:
+        selected_slug = normalize_slug(selected.get("slug") or "")
+        selected_type = str(selected.get("type") or "").strip().casefold()
+        selected_category = str(selected.get("category") or "").strip().casefold()
+        expected_type = str(details.get("type") or "").strip().casefold()
+        expected_rarity = str(details.get("rarity") or "").strip().casefold()
+        chroma = details.get("chroma") is True
+        expected_category = "chroma" if chroma else ROBASE_CATEGORY_TO_RBLX.get(expected_rarity, expected_rarity)
+        if (
+            not selected_slug or selected_type != expected_type
+            or selected_category != expected_category
+        ):
+            rblx_missing.append(f"{row.get('name')} [{catalog_slug}: metadata mismatch]")
             continue
-        cash_row, _identity_source = _resolve_robase_cash_record(
-            selected.get("name") or "", slug, robase_items
-        )
-        if cash_row:
-            key = normalize_cash_name(cash_row.get("name") or "")
-            if key:
-                matches.setdefault(key, []).append(selected)
-
-    exact = {key: rows[0] for key, rows in matches.items() if len(rows) == 1}
-    ambiguous = sorted(robase_items[key]["name"] for key, rows in matches.items() if len(rows) != 1)
-    missing = sorted(row["name"] for key, row in robase_items.items() if key not in exact and key not in matches)
-    exact_map = {
-        key: {
-            "slug": normalize_slug(row.get("slug") or ""),
-            "rblx_name": row.get("name"),
-            "value": _supreme_numeric_value(row)[0],
-            "stability": row.get("stability"),
-            "demand": _optional_bounded_int(row.get("demand"), 0, 10),
-            "category": row.get("category"),
-            "type": row.get("type"),
+        exact_map[catalog_slug] = {
+            "bloxswaps_slug": catalog_slug,
+            "robase_slug": normalize_slug(row.get("robase_slug") or ""),
+            "robase_name": row.get("name"),
+            "robase_category": row.get("robase_category"),
+            "robase_identity_source": identity_source,
+            "rblx_slug": selected_slug,
+            "rblx_name": selected.get("name"),
+            "rblx_match_source": source,
+            "value": _supreme_numeric_value(selected)[0],
+            "value_status": _supreme_numeric_value(selected)[1],
+            "stability": _normalize_stability(selected.get("stability")),
+            "demand": _optional_bounded_int(selected.get("demand"), 0, 10),
+            "category": selected.get("category"),
+            "type": selected.get("type"),
         }
-        for key, row in exact.items()
-    }
-    cash_catalog["rblx_exact_map"] = exact_map
+
+    expected_weapons = len(weapon_rows) + len(rblx_ambiguous) + len(rblx_missing)
     numeric = sum(row["value"] is not None for row in exact_map.values())
-    no_numeric = len(exact) - numeric
+    missing_value = sum(row["value"] is None for row in exact_map.values())
+    missing_stability = sum(row["stability"] is None for row in exact_map.values())
+    missing_demand = sum(row["demand"] is None for row in exact_map.values())
+    cash_catalog["rblx_exact_map"] = exact_map
     print(
-        f"[robase-rblxvalue] exact={len(exact)}/{len(robase_items)} "
-        f"numeric={numeric} non_numeric={no_numeric} ambiguous={len(ambiguous)} missing={len(missing)}"
+        f"[robase-rblxvalue] weapons={expected_weapons} exact={len(exact_map)} "
+        f"numeric={numeric} value_missing={missing_value} stability_missing={missing_stability} "
+        f"demand_missing={missing_demand} rblx_ambiguous={len(rblx_ambiguous)} "
+        f"rblx_missing={len(rblx_missing)} robase_ambiguous={len(ambiguous_robase)} "
+        f"robase_missing={len(missing_robase)} non_weapons={len(non_weapons)}"
     )
-    if ambiguous:
-        print("[robase-rblxvalue] ambiguous_names=" + ", ".join(ambiguous[:20]))
-    if missing:
-        print("[robase-rblxvalue] missing_names=" + ", ".join(missing[:30]))
+    if ambiguous_robase:
+        print("[robase-rblxvalue] robase_ambiguous=" + ", ".join(sorted(set(ambiguous_robase))[:20]))
+    if missing_robase:
+        print("[robase-rblxvalue] robase_missing=" + ", ".join(sorted(set(missing_robase))[:20]))
+    if rblx_ambiguous:
+        print("[robase-rblxvalue] rblx_ambiguous=" + ", ".join(sorted(set(rblx_ambiguous))[:20]))
+    if rblx_missing:
+        print("[robase-rblxvalue] rblx_missing=" + ", ".join(sorted(set(rblx_missing))[:20]))
     return {
-        "expected": len(robase_items),
-        "exact": len(exact),
+        "robase_total": len(robase_rows),
+        "expected": expected_weapons,
+        "exact": len(exact_map),
         "numeric": numeric,
-        "non_numeric": no_numeric,
-        "ambiguous": ambiguous,
-        "missing": missing,
+        "missing_value": missing_value,
+        "missing_stability": missing_stability,
+        "missing_demand": missing_demand,
+        "ambiguous": sorted(set(ambiguous_robase + rblx_ambiguous)),
+        "missing": sorted(set(missing_robase + rblx_missing)),
+        "non_weapons": sorted(set(non_weapons)),
     }
+
 
 
 def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=False):
