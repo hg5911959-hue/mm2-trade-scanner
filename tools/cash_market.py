@@ -287,8 +287,8 @@ def strict_quantity(value):
         quantity = int(value.strip())
     else:
         raise ValueError("quantity must be a whole number")
-    if not 1 <= quantity <= 100:
-        raise ValueError("quantity must be between 1 and 100")
+    if not 1 <= quantity <= 9999:
+        raise ValueError("quantity must be between 1 and 9999")
     return quantity
 
 
