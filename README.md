@@ -2,16 +2,22 @@
 
 Automated scanner for public **BloxSwaps MM2 P2P listings**, with concise Telegram alerts. GitHub Actions schedules a scan every 10 minutes; each scan polls the feed every 30 seconds for up to 540 seconds (9 minutes), leaving a short persistence window. GitHub cron can be delayed, so this is a target cadence, not a real-time guarantee.
 
-## Cash mode is OFF by default
+## Production mode and alert eligibility
 
-`CASH_FILTER` defaults to `false`. The scanner uses the value-based filter and does not load the cash-price catalogue, inspect the private cash-price secret, update cash snapshots, or emit cash-price maintenance notices while this flag is off. Cash code, data, and verification tools remain available.
+The production scanner workflow currently runs with `CASH_FILTER: "true"`. The weekly health-report workflow intentionally uses `CASH_FILTER: "false"` and therefore reports cash pricing as disabled; it does not change the scanner's production mode. Do not infer the live scanner mode from the weekly-report setting.
 
-Re-enable cash mode only after reliable fresh verified prices exist:
+Production cash alerts require a complete, fresh ROBASE snapshot and verified item prices. The workflow refreshes the public ROBASE completed-sales catalogue before scanning, accepts only a still-fresh cached snapshot if refresh fails, and uses a one-day freshness limit. The preflight requires at least eight verified rows. A listing is eligible only when all items needed for the calculation can be priced safely and the conservative cash-profit threshold is met.
 
-1. Verify fresh prices with `python tools/verify_cash_prices.py` and review every skipped or ambiguous entry.
-2. Set `CASH_FILTER: "true"` in `.github/workflows/scan.yml` (and the matching weekly-report environment when enabling cash reporting).
-3. Run the scheduler with `dry_run=true` to preview the results without sending live alerts.
-4. Check the preview alerts and catalogue coverage carefully before enabling live mode.
+Key production thresholds configured in `.github/workflows/scan.yml`:
+- `CASH_MAX_AGE_DAYS=1`
+- `CASH_MIN_VERIFIED_ROWS=8`
+- `CASH_MIN_PROFIT_USD=1.00` (the small-offer threshold is also $1.00)
+- `CASH_MIN_MARGIN_PERCENT=0`
+- `MIN_PROFIT_PERCENT=5`
+
+The scheduled scanner runs every 10 minutes as a GitHub Actions target cadence, not a real-time guarantee. Each scan polls for up to nine minutes; GitHub may delay scheduled workflows. Manual scheduler dispatch defaults to dry-run.
+
+The tracked `data/cash_prices.csv` and its verifier are legacy/manual-catalogue support. They are not the production ROBASE price snapshot source. The weekly report remains separately configured and does not enable cash pricing by changing scanner settings.
 
 ## Trade evaluation
 
@@ -20,7 +26,7 @@ From the scanner user's perspective:
 - **BloxSwaps Propose** = items you receive.
 - **BloxSwaps Recherche** = items you give.
 - Any listing containing **Ajout / Ajouts** is excluded. The filter is applied to the individual card and also checks the structured `requestedWildcards` data for `ADD`.
-- **Default mode = game-value profit**. When cash mode is disabled, offers are evaluated with the Supreme game-value difference and the configured `MIN_VALUE_DIFFERENCE` / `MIN_PROFIT_PERCENT` thresholds.
+- **Production mode = cash-first**. The scheduled scanner sets `CASH_FILTER=true` and qualifies offers using fresh verified ROBASE cash prices and conservative cash-profit rules. The weekly report separately sets `CASH_FILTER=false`; this affects reporting only, not the production scanner.
 - Supreme Values is used for game-value comparison and item identity/stability validation. Items that cannot be matched or valued remain excluded; uncertain listings retain the existing manual-review/recheck protections.
 - Optional cash mode compares verified manual resale prices, with configurable resale haircuts and conservative profit bounds. Supreme numeric values are never converted into cash prices.
 - Any received item with missing/unrecognized Stability or a blocked status (Decreasing, Receding, Unsafe, Untradeable, Unstable, Volatile, Fluctuating) is excluded. The Stability field is sourced from RBLXValue and is not represented as a direct Supreme website verification.
