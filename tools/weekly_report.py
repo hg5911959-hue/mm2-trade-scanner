@@ -8,6 +8,7 @@ import urllib.parse
 import urllib.request
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
 from tools.cash_market import cash_price_is_fresh, load_cash_price_catalog
 from tools.next_to_verify import format_blockers
 from tools.preflight import collect_preflight_checks
