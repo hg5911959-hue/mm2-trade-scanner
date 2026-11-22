@@ -4,7 +4,9 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sqlite3
+import stat
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +50,33 @@ def _finite_positive(value: Any) -> bool:
         return False
 
 
+MAX_STATE_JSON_BYTES = 20 * 1024 * 1024
+MAX_API_SAFETY_FILE_BYTES = 256 * 1024
+
+
+def _read_json_bounded(path: Path, *, max_bytes: int) -> Any:
+    """Read a bounded regular JSON file without following symlinks or blocking on FIFOs."""
+    if path.is_symlink():
+        raise ValueError("state file is a symlink")
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
+    descriptor = os.open(path, flags)
+    with os.fdopen(descriptor, "rb") as handle:
+        metadata = os.fstat(handle.fileno())
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError("state path is not a regular file")
+        if metadata.st_size > max_bytes:
+            raise ValueError("state file exceeds the configured size limit")
+        raw = handle.read(max_bytes + 1)
+    if len(raw) > max_bytes:
+        raise ValueError("state file exceeds the configured size limit")
+    return json.loads(raw.decode("utf-8"))
+
+
 def _validate_api_key_block_document(block: Any) -> list[str]:
     errors: list[str] = []
     if not isinstance(block, dict):
@@ -83,10 +112,14 @@ def _validate_api_key_block_document(block: Any) -> list[str]:
 def validate_state(directory: str | Path, *, require_cache: bool = False) -> list[str]:
     """Return validation errors; never mutate the supplied state directory."""
     root = Path(directory)
+    if root.is_symlink():
+        return ["state directory is a symlink"]
     if not root.exists():
         return ["state directory is missing"] if require_cache else []
-    files = [path for path in root.rglob("*") if path.is_file()]
-    if not files:
+    paths = list(root.rglob("*"))
+    symlinks = [path for path in paths if path.is_symlink()]
+    files = [path for path in paths if not path.is_symlink() and path.is_file()]
+    if not files and not symlinks:
         if require_cache:
             return [
                 "successful scan is missing supreme_values.json",
@@ -95,6 +128,8 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
         return []
 
     errors: list[str] = []
+    if symlinks:
+        errors.append("state contains symlink paths")
     if any(path.name == "discord_messages.json" for path in files):
         errors.append("private Discord message file must not enter durable public state")
     temporary = [path for path in files if path.name.endswith(".tmp")]
@@ -106,9 +141,9 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
         if path.suffix.lower() != ".json":
             continue
         try:
-            documents[path.name] = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-            errors.append(f"invalid JSON state file: {path.name}")
+            documents[path.name] = _read_json_bounded(path, max_bytes=MAX_STATE_JSON_BYTES)
+        except (OSError, UnicodeDecodeError, ValueError):
+            errors.append(f"invalid, oversized, or unsafe JSON state file: {path.name}")
 
     cache_path = root / "supreme_values.json"
     cache = documents.get("supreme_values.json")
@@ -266,13 +301,19 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
 
 
 def validate_api_safety_state(directory: str | Path) -> list[str]:
-    """Validate only the small API safety ledger used after failed scans."""
+    """Validate the small API safety ledger using bounded, no-follow reads."""
     root = Path(directory)
+    if root.is_symlink():
+        return ["API safety state directory is a symlink"]
     if not root.exists():
         return []
-    files = [path for path in root.rglob("*") if path.is_file()]
+    paths = list(root.rglob("*"))
+    symlinks = [path for path in paths if path.is_symlink()]
+    files = [path for path in paths if not path.is_symlink() and path.is_file()]
     allowed = {"rblxvalue_request_budget.json", "api_key_blocked.json"}
     errors: list[str] = []
+    if symlinks:
+        errors.append("API safety artifact contains symlink paths")
     unexpected = [path.name for path in files if path.name not in allowed]
     if unexpected:
         errors.append("API safety artifact contains unexpected files")
@@ -280,12 +321,12 @@ def validate_api_safety_state(directory: str | Path) -> list[str]:
         errors.append("API safety artifact contains an unfinished temporary file")
 
     budget_path = root / "rblxvalue_request_budget.json"
-    if budget_path.exists():
+    if budget_path.exists() or budget_path.is_symlink():
         try:
-            budget = json.loads(budget_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            budget = _read_json_bounded(budget_path, max_bytes=MAX_API_SAFETY_FILE_BYTES)
+        except (OSError, UnicodeDecodeError, ValueError):
             budget = None
-            errors.append("RBLXValue request budget JSON is invalid")
+            errors.append("RBLXValue request budget JSON is invalid, oversized, or unsafe")
         if not isinstance(budget, dict):
             errors.append("RBLXValue request budget root must be an object")
         else:
@@ -306,12 +347,12 @@ def validate_api_safety_state(directory: str | Path) -> list[str]:
                 errors.append("RBLXValue request budget timestamps are invalid")
 
     block_path = root / "api_key_blocked.json"
-    if block_path.exists():
+    if block_path.exists() or block_path.is_symlink():
         try:
-            block = json.loads(block_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            block = _read_json_bounded(block_path, max_bytes=MAX_API_SAFETY_FILE_BYTES)
+        except (OSError, UnicodeDecodeError, ValueError):
             block = None
-            errors.append("RBLXValue breaker JSON is invalid")
+            errors.append("RBLXValue breaker JSON is invalid, oversized, or unsafe")
         errors.extend(_validate_api_key_block_document(block))
     return errors
 
