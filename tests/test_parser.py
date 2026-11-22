@@ -2543,6 +2543,7 @@ class CursorPaginationTests(IsolatedDataTestCase):
             }),
             patch("scanner._last_successful_scan_timestamp", return_value=2_000_000_000),
             patch("scanner.MAX_BACKLOG_RECHECK_PAGES", 2),
+            patch("scanner.fetch_pending_posts_by_id", return_value=([], [])),
             patch("scanner.bloxswaps_api_get_json", side_effect=responses) as api,
         ):
             listings, stats, _ = scanner.fetch_bloxswaps_all(
@@ -2570,6 +2571,7 @@ class CursorPaginationTests(IsolatedDataTestCase):
                 "b-id": {"id": "b-id", "displayName": "Knife B"},
             }),
             patch("scanner._last_successful_scan_timestamp", return_value=2_000_000_000),
+            patch("scanner.fetch_pending_posts_by_id", return_value=([], [])),
             patch("scanner.bloxswaps_api_get_json", side_effect=responses),
         ):
             listings, stats, _ = scanner.fetch_bloxswaps_all(
@@ -2708,6 +2710,91 @@ class SingleSidedApiPostTests(IsolatedDataTestCase):
         self.assertEqual(stats["single_sided_ids"], ["single-sided-rsc-post"])
         self.assertEqual(stats["unparsed_ad_ids"], [])
         self.assertEqual(stats["malformed_count"], 0)
+
+
+class PendingDirectLookupTests(IsolatedDataTestCase):
+    @staticmethod
+    def _post(post_id, roles):
+        rows = []
+        for role, name in roles:
+            rows.append({
+                "displayName": name,
+                "quantity": 1,
+                "tradeRole": role,
+            })
+        return {
+            "id": post_id,
+            "user": {
+                "robloxUserId": "123",
+                "robloxUsername": "trader",
+                "robloxDisplayName": "Trader",
+            },
+            "lastRefreshedAt": datetime.now(timezone.utc).isoformat(),
+            "tradePostItems": rows,
+            "requestedWildcards": [],
+        }
+
+    def test_direct_lookup_returns_active_posts_and_separates_authoritative_404s(self):
+        active = self._post("active-post", [("OFFERED", "Harvester"), ("REQUESTED", "Cane")])
+
+        def lookup(path, params=None):
+            if path == "/trade-posts/active-post":
+                return active
+            if path == "/trade-posts/gone-post":
+                raise RuntimeError("BloxSwaps API: HTTP 404: Not Found")
+            raise AssertionError(path)
+
+        with patch("scanner.bloxswaps_api_get_json", side_effect=lookup):
+            posts, missing = scanner.fetch_pending_posts_by_id(["gone-post", "active-post"])
+        self.assertEqual([post["id"] for post in posts], ["active-post"])
+        self.assertEqual(missing, ["gone-post"])
+
+    def test_direct_lookup_keeps_pending_batch_on_non_404_errors(self):
+        with patch(
+            "scanner.bloxswaps_api_get_json",
+            side_effect=RuntimeError("BloxSwaps API: HTTP 429: rate limited"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "HTTP 429"):
+                scanner.fetch_pending_posts_by_id(["pending-post"])
+
+    def test_direct_lookup_preserves_mismatched_ids_for_cursor_fallback(self):
+        with patch(
+            "scanner.bloxswaps_api_get_json",
+            return_value={"id": "different-post"},
+        ):
+            posts, missing = scanner.fetch_pending_posts_by_id(["pending-post"])
+        self.assertEqual(posts, [])
+        self.assertEqual(missing, [])
+
+    def test_fetch_bloxswaps_all_resolves_single_sided_and_missing_pending_posts_directly(self):
+        single = self._post("single-post", [("OFFERED", "Harvester")])
+        trade = self._post("trade-post", [("OFFERED", "Harvester"), ("REQUESTED", "Cane")])
+
+        def lookup(path, params=None):
+            if path == "/trade-posts":
+                return {"items": [], "meta": {"cursor": None}}
+            if path == "/trade-posts/gone-post":
+                raise RuntimeError("BloxSwaps API: HTTP 404: Not Found")
+            if path == "/trade-posts/single-post":
+                return single
+            if path == "/trade-posts/trade-post":
+                return trade
+            raise AssertionError(path)
+
+        with (
+            patch.dict(os.environ, {"BLOXSWAPS_API_ONLY": "true"}),
+            patch("scanner.bloxswaps_api_get_json", side_effect=lookup),
+            patch("scanner.fetch_bloxswaps_items_map", return_value={}),
+        ):
+            listings, stats, discovered = scanner.fetch_bloxswaps_all(
+                set(), pending_ad_ids=["gone-post", "single-post", "trade-post"]
+            )
+        self.assertEqual([listing["source_ad_id"] for listing in listings], ["trade-post"])
+        self.assertEqual(set(discovered), {"single-post", "trade-post"})
+        self.assertEqual(stats["single_sided_ids"], ["single-post"])
+        self.assertEqual(stats["pending_not_found_ids"], ["gone-post"])
+        self.assertEqual(stats["pending_remaining_ids"], [])
+        self.assertEqual(stats["unparsed_ad_ids"], [])
 
 
 class StructuredQuantityTests(IsolatedDataTestCase):

@@ -1297,6 +1297,34 @@ def bloxswaps_api_get_json(path, params=None):
     return payload.get("data", payload) if isinstance(payload, dict) else payload
 
 
+def fetch_pending_posts_by_id(pending_ids):
+    """Resolve a bounded pending batch directly instead of crawling old feed cursors."""
+    posts = []
+    missing_ids = []
+    pending_batch = sorted({str(value) for value in (pending_ids or ())})
+    for index, pending_id in enumerate(pending_batch):
+        if index:
+            # Keep bounded detail lookups gentle on the public BloxSwaps API.
+            time.sleep(0.2)
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", pending_id):
+            raise RuntimeError("[pending] Refusing an invalid pending listing ID.")
+        try:
+            payload = bloxswaps_api_get_json(f"/trade-posts/{pending_id}")
+        except RuntimeError as exc:
+            if "HTTP 404:" in str(exc):
+                missing_ids.append(pending_id)
+                continue
+            raise
+        if not isinstance(payload, dict) or str(payload.get("id") or "") != pending_id:
+            print(
+                f"[pending] Direct lookup returned an invalid or mismatched record for {pending_id}; "
+                "retaining it for bounded cursor fallback."
+            )
+            continue
+        posts.append(payload)
+    return posts, missing_ids
+
+
 def fetch_bloxswaps_items_map(force_refresh=False):
     global _LAST_ITEMS_FORCE_REFRESH_AT
     force_allowed = True
@@ -1718,6 +1746,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     watch_ids = set(str(value) for value in (watch_ad_ids or []))
     watch_remaining = set(watch_ids)
     pending_found_ids = []
+    pending_not_found_ids = []
     by_ad_id = {
         str(listing.get("source_ad_id")): listing
         for listing in first_listings if listing.get("source_ad_id")
@@ -1844,7 +1873,22 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                 unparsed_ids.append(post_id)
                 unparsed_samples.append(json.dumps(raw, ensure_ascii=False)[:240])
 
+    first_page_ids = {
+        str(post.get("id")) for post in raw_first_items
+        if isinstance(post, dict) and post.get("id")
+    }
+    pending_to_fetch = pending_remaining - first_page_ids
+    direct_pending_posts, pending_not_found_ids = fetch_pending_posts_by_id(pending_to_fetch)
+    pending_remaining.difference_update(pending_not_found_ids)
+    if direct_pending_posts or pending_not_found_ids:
+        print(
+            f"[pending] Direct lookup resolved {len(direct_pending_posts)} active post(s) "
+            f"and {len(pending_not_found_ids)} unavailable post(s)."
+        )
+
     consume_raw_posts(raw_first_items, compare_html=not api_only)
+    if direct_pending_posts:
+        consume_raw_posts(direct_pending_posts, compare_html=False)
     cursor = (initial_page.get("meta") or {}).get("cursor")
     pages_scanned = 1
     seen_cursors = {str(cursor)} if cursor else set()
@@ -1905,6 +1949,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
         "seen_ids_skipped": seen_ids_skipped,
         "watch_remaining_ids": sorted(watch_remaining),
         "pending_found_ids": pending_found_ids,
+        "pending_not_found_ids": pending_not_found_ids,
         "pending_remaining_ids": sorted(pending_remaining),
         "pending_complete": not pending_remaining,
         "watch_search_complete": watch_search_complete,
@@ -5013,7 +5058,8 @@ def scan_once(include_backlog_rechecks=True):
         save_pending_recheck_schedule(pending_schedule)
     addition_ids = set(stats.get("addition_ids", []))
     single_sided_ids = set(stats.get("single_sided_ids", []))
-    non_actionable_ids = addition_ids | single_sided_ids
+    pending_not_found_ids = set(stats.get("pending_not_found_ids", []))
+    non_actionable_ids = addition_ids | single_sided_ids | pending_not_found_ids
     if non_actionable_ids:
         seen_ads.update(non_actionable_ids)
         for ad_id in non_actionable_ids:
@@ -5023,6 +5069,11 @@ def scan_once(include_backlog_rechecks=True):
         save_seen_ads(seen_ads)
         save_pending_ids(pending_ids)
         save_pending_recheck_schedule(pending_schedule)
+    if pending_not_found_ids:
+        print(
+            f"[pending] Removed {len(pending_not_found_ids)} unavailable listing(s) "
+            "after authoritative direct 404 lookups."
+        )
     if single_sided_ids:
         print(
             f"[bloxswaps] Excluded {len(single_sided_ids)} single-sided posts; "
