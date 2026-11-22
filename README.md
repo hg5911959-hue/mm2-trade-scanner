@@ -28,9 +28,9 @@ From the scanner user's perspective:
 - Any listing containing **Ajout / Ajouts** is excluded. The filter is applied to the individual card and also checks the structured `requestedWildcards` data for `ADD`.
 - **Production mode = cash-first**. The scheduled scanner sets `CASH_FILTER=true` and qualifies offers using fresh verified ROBASE cash prices and conservative cash-profit rules. The weekly report separately sets `CASH_FILTER=false`; this affects reporting only, not the production scanner.
 - Supreme Values is used for game-value comparison and item identity/stability validation. Items that cannot be matched or valued remain excluded; uncertain listings retain the existing manual-review/recheck protections.
-- Optional cash mode compares verified manual resale prices, with configurable resale haircuts and conservative profit bounds. Supreme numeric values are never converted into cash prices.
+- Production cash-first mode uses the refreshed ROBASE completed-sales snapshot, with conservative profit bounds. The tracked `data/cash_prices.csv` is a legacy/manual catalogue retained for compatibility; it is not the production scanner's price source. Supreme numeric values are never converted into cash prices.
 - Any received item with missing/unrecognized Stability or a blocked status (Decreasing, Receding, Unsafe, Untradeable, Unstable, Volatile, Fluctuating) is excluded. The Stability field is sourced from RBLXValue and is not represented as a direct Supreme website verification.
-- Cash prices must be fresh and explicitly verified before they can qualify. The current catalogue contains **190 rows**: 11 user-confirmed USD selling prices and 179 historical references that remain unverified. The 11 confirmed entries are user-attested inputs, not independent marketplace cross-checks; they expire after 1 day under the production workflow (`CASH_MAX_AGE_DAYS=1`), unless reconfirmed. In cash mode only, any listing containing an item with a missing, unverified, or expired price is held back.
+- Production cash alerts require a complete, fresh ROBASE snapshot (222 catalogue entries) and a verified price for every item in the listing. The workflow refreshes this snapshot before scanning, uses a one-day freshness limit, and holds back any offer with missing, unverified, or expired item prices. The legacy `data/cash_prices.csv` contains **190 manual rows** (11 user-confirmed USD prices and 179 historical references); those entries are user-attested rather than independently cross-checked and are not used by the production scanner.
 - **Estimate-only dry run:** when `DRY_RUN=true`, the scanner may use unverified legacy references for exploratory calculations, applying a ±30% uncertainty band and the resale haircut. Every dry-run cash result is labelled as estimate-only and is hard-blocked from the live alert eligibility gate. This uncertainty band is an engineering assumption, not a statistically measured confidence interval or proof of current market prices. Normal production runs continue to reject unverified rows.
 - The scanner never uses BloxSwaps' own Win/Loss label, never uses the visible listing price as an item value, and never invents a missing item value or quantity.
 - A listing is excluded if any item on the received (`Propose`) side has a risky RBLXValue stability label: `Decreasing`, `Receding`, `Unsafe`, `Untradeable`, `Unstable`, or `Volatile`. If the RBLXValue source provides a missing or unrecognized stability label for a received item, the listing is held back rather than assumed safe. Telegram labels the field `Stability (RBLXValue)` to avoid implying direct verification against the Supreme website; exact Supreme-specific `Decreasing` verification requires an authorized data source.
@@ -65,11 +65,11 @@ If a quantity is uncertain, the scanner computes a conservative best/worst profi
 - If only the best-case profit is positive, it is held for recheck/manual review and is not advertised as a WIN.
 - If even the best-case profit is not positive, it does not send a trade alert.
 
-When cash mode is enabled, Telegram cash alerts show owner/listing links, every item, verified USD reference price, net resale estimate, Stability label, cash replacement cost, net resale proceeds, conservative USD profit and cash ROI. Demand is informational only in cash-first mode. Uncertain quantities are calculated with worst-case bounds; a listing is not alerted if the worst-case cash profit is not positive. Parser provenance, raw excerpts, and HTML/API diagnostics stay in GitHub Actions logs.
+In production cash-first mode, Telegram cash alerts show owner/listing links, every item, verified ROBASE USD reference price, net resale estimate, Stability label, cash replacement cost, net resale proceeds, conservative USD profit and cash ROI. Demand is informational only in cash-first mode. Uncertain quantities are calculated with worst-case bounds; a listing is not alerted if the worst-case cash profit is not positive. Parser provenance, raw excerpts, and HTML/API diagnostics stay in GitHub Actions logs.
 
-### Manual cash-price maintenance
+### Legacy manual cash-price catalogue
 
-Edit data/cash_prices.csv in the repository. Keep each item name aligned with its canonical Supreme catalogue name. Update cash_price_usd to the cash price you have checked, set status to verified, enter an ISO-8601 UTC timestamp in verified_at_utc, and provide a non-empty source field (for example, 2026-11-14T12:00:00Z). Use status=unverified for estimates and status=disabled to suppress an item. Invalid prices, duplicate normalized names, or verified rows without a timestamp fail validation. On the next successful scan, a changed catalogue hash triggers rechecks of watched and pending offers so previously seen listings can become eligible after a price update. The initial 190 prices are preserved as historical user-provided references, not current market facts.
+`data/cash_prices.csv` is retained for compatibility and offline/manual verification only. Editing it does not update the production ROBASE snapshot or change production alert eligibility. The live scanner refreshes `data/robase_prices.json` from ROBASE before scanning and uses only fresh, verified item prices. If you maintain the legacy CSV for a separate experiment, keep names canonical, mark unverified estimates as `unverified`, and never treat historical rows as current market facts.
 
 The default resale haircut is controlled by CASH_SELL_HAIRCUT_PCT (15%), the minimum net cash profit by CASH_MIN_PROFIT_USD ($1.00), and the minimum cash ROI by CASH_MIN_MARGIN_PERCENT (0% by default). These are conservative starting thresholds and should be calibrated after verified completed-sale data is available.
 
@@ -281,10 +281,10 @@ The scanner records each listing held for a missing, unverified, or expired cash
 
 Run `python tools/next_to_verify.py` to see the 15 most frequent blockers, their current catalogue price and verification age, and the cumulative share of blocked listings that would become evaluable if the top N items were verified. The weekly Telegram report includes the top 10. It prints only the ranked subset, never the full catalogue.
 
-Weekly cash maintenance routine:
-1. Paste the current marketplace list into a text file.
-2. Run `python tools/verify_cash_prices.py --input marketplace-list.txt` and review skipped/ambiguous lines.
-3. Read the preflight message and `python tools/next_to_verify.py` output before enabling cash mode and relying on its alerts.
+Production cash-price routine:
+1. The scheduled workflow refreshes the ROBASE completed-sales snapshot automatically before scanning.
+2. Confirm the preflight passes and the snapshot is complete and no older than one day.
+3. Use `python tools/next_to_verify.py` only to review legacy/manual catalogue blockers; it does not replace the live ROBASE price source.
 
 Supreme numeric values are never converted into cash prices; the USD catalogue remains a separate, manually verified source.
 
