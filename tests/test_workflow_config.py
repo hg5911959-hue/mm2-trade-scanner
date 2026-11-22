@@ -50,7 +50,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn('          RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY: "6"\n', workflow)
         self.assertIn('          MM2_SCAN_DURATION_SECONDS: "540"\n', workflow)
         self.assertIn('          MM2_SCAN_INTERVAL_SECONDS: "30"\n', workflow)
-        self.assertIn('          MAX_BACKLOG_RECHECK_PAGES: "25"\n', workflow)
+        self.assertIn('          MAX_BACKLOG_RECHECK_PAGES: "1000"\n', workflow)
         self.assertIn('          BACKLOG_RECHECK_EVERY_CYCLES: "4"\n', workflow)
         self.assertNotIn('\n      MAX_PENDING_RECHECK_PER_SCAN:', workflow)
         self.assertIn("python tools/validate_state.py --directory state-artifact/data --require-cache", workflow)
