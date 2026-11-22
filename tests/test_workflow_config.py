@@ -198,6 +198,12 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("run: python -m tools.weekly_report", weekly)
         self.assertNotIn("run: python tools/weekly_report.py", weekly)
 
+    def test_weekly_report_keeps_cash_summary_separate_from_scanner_production_mode(self):
+        workflow = (ROOT / ".github/workflows/weekly-report.yml").read_text(encoding="utf-8")
+        self.assertIn('CASH_FILTER: "false"', workflow)
+        self.assertNotIn("CASH_PRICES_CSV", workflow)
+        self.assertNotIn("CASH_MAX_AGE_DAYS", workflow)
+
     def test_bloxswaps_scanner_step_has_no_duplicate_environment_keys(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         step = workflow.split("      - name: Run BloxSwaps scanner", 1)[1].split("      - name:", 1)[0]
