@@ -3101,7 +3101,7 @@ def _wait_for_telegram_rate_limit():
 
 
 RBLXVALUE_ATTRIBUTION = "Data from rblxvalue.com"
-ROBASE_ATTRIBUTION = "ROBASE prices: robase.gg"
+ROBASE_ATTRIBUTION = "Prices: robase.gg · Item values: rblxvalue.com"
 
 
 class TelegramHTML(str):
@@ -3175,7 +3175,7 @@ def _format_telegram_items(items):
 def send_telegram(message):
     is_html = isinstance(message, TelegramHTML)
     message = str(message)
-    is_robase_cash_message = "CASH PROFIT" in message or "ROBASE PRICE" in message
+    is_robase_cash_message = "CASH PROFIT" in message or "ROBASE PRICE" in message or "MM2 ROBASE" in message
     attribution = ROBASE_ATTRIBUTION if is_robase_cash_message else RBLXVALUE_ATTRIBUTION
     has_attribution = message.rstrip().endswith((RBLXVALUE_ATTRIBUTION, ROBASE_ATTRIBUTION))
     footer = "\n\n" + attribution if not has_attribution else ""
