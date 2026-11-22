@@ -3534,19 +3534,32 @@ class RealAlertReevaluationIntegrationTests(IsolatedDataTestCase):
         }
         values_after = dict(values_before)
         def catalog(knife_b_price):
-            return {"items": {
-                scanner.normalize_cash_name("Knife A"): {
+            rows = {
+                "knife-a": {
                     "name": "Knife A", "cash_price_usd": 10.0, "price_display": "$10.00",
                     "status": "verified", "verified_at_utc": datetime.now(timezone.utc).isoformat(),
                     "source": "https://robase.gg/item/knife-a", "robase_slug": "knife-a",
                 },
-                scanner.normalize_cash_name("Knife B"): {
+                "knife-b": {
                     "name": "Knife B", "cash_price_usd": knife_b_price,
                     "price_display": "$" + "{:.2f}".format(knife_b_price),
                     "status": "verified", "verified_at_utc": datetime.now(timezone.utc).isoformat(),
                     "source": "https://robase.gg/item/knife-b", "robase_slug": "knife-b",
                 },
-            }, "sha256": str(knife_b_price), "row_count": 2}
+            }
+            return {
+                "items": {scanner.normalize_cash_name(row["name"]): row for row in rows.values()},
+                "items_by_slug": rows,
+                "rblx_exact_map": {
+                    slug: {
+                        "bloxswaps_slug": slug, "robase_slug": slug,
+                        "robase_name": row["name"], "robase_identity_source": "test",
+                        "rblx_slug": slug, "category": "godly", "type": "knife",
+                    }
+                    for slug, row in rows.items()
+                },
+                "sha256": str(knife_b_price), "row_count": 2,
+            }
         old_catalog = catalog(10)
         new_catalog = catalog(30)
         old_content, old_values = scanner.listing_watch_fingerprints(
@@ -4043,8 +4056,8 @@ class RobaseIdentityCrosswalkTests(IsolatedDataTestCase):
 
     def test_ambiguous_duplicate_robase_name_is_not_guessed_without_image_identity(self):
         rows = {
-            "latte": {
-                "name": "Latte", "robase_slug": "latte", "robase_category": "Legendary",
+            "latte-915": {
+                "name": "Latte", "robase_slug": "latte-915", "robase_category": "Legendary",
                 "og_image_slug": "",
             },
         }
