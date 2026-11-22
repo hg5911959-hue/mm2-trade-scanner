@@ -1,3 +1,4 @@
+import os
 import json
 import tempfile
 import unittest
@@ -6,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from tools.preflight import collect_preflight_checks, send_daily_notice
+from tools.preflight import collect_preflight_checks, send_daily_notice, main
 
 
 class PreflightTests(IsolatedDataTestCase):
@@ -92,6 +93,16 @@ class PreflightTests(IsolatedDataTestCase):
         self.assertIsNone(handler.redirect_request(
             request, None, 302, "Found", {}, "https://attacker.example/collect"
         ))
+
+
+    def test_dry_run_suppresses_preflight_telegram_notice(self):
+        with (
+            patch.dict(os.environ, {"PREFLIGHT_SEND_NOTICES": "false"}),
+            patch("tools.preflight.collect_preflight_checks", return_value={"checks": ["test warning"]}),
+            patch("tools.preflight.send_daily_notice") as notice,
+        ):
+            self.assertEqual(main(["--warn"]), 0)
+        notice.assert_not_called()
 
     def test_healthy_fixture_passes(self):
         self.assertEqual(self._checks(), [])
