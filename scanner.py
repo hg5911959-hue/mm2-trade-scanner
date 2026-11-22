@@ -4054,7 +4054,7 @@ def _robase_image_hints(row):
             item_type = "gun"
         elif re.search(r"(?:^|[-_])(?:k|knife)(?:[-_]|$)", image_slug) or "knife" in image_slug:
             item_type = "knife"
-        year_match = re.search(r"(?<!\d)(20\\d{2})(?!\d)", image_slug)
+        year_match = re.search(r"(?<!\d)(20\d{2})(?!\d)", image_slug)
         if year_match:
             year = int(year_match.group(1))
     return image_slug, item_type, year
@@ -4243,7 +4243,7 @@ def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
 
 
 def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=False):
-    """Evaluate BloxSwaps-only offers using exact RBLXValue identity and ROBASE prices."""
+    """Evaluate only exact BloxSwaps weapon variants present in ROBASE and RBLXValue."""
     if str(listing.get("source") or "bloxswaps").strip().casefold() not in {"bloxswaps", "bloxswaps.com"}:
         return None, ["cash mode accepts BloxSwaps offers only"]
     if listing.get("requested_wildcards"):
@@ -4251,53 +4251,64 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
     if not listing.get("give_items") or not listing.get("receive_items"):
         return None, ["one side has no items"]
 
-    robase_items = (cash_catalog or {}).get("items", {})
+    exact_map = (cash_catalog or {}).get("rblx_exact_map")
+    if not isinstance(exact_map, dict) or not exact_map:
+        return None, ["ROBASE/RBLXValue exact identity audit is unavailable"]
+    items_by_slug = (cash_catalog or {}).get("items_by_slug", {})
     prepared = {"give": [], "receive": []}
     missing = []
     for side, field in (("give", "give_items"), ("receive", "receive_items")):
         for item in listing.get(field, []):
             raw_name = str(item.get("name") or "Unknown")
             catalog_slug = normalize_slug(item.get("catalog_slug") or "")
+            catalog_type = str(item.get("catalog_type") or "").strip().casefold()
             if not catalog_slug:
                 missing.append(f"{raw_name} (BloxSwaps catalogue slug missing)")
                 continue
+            if catalog_type not in {"knife", "gun"}:
+                missing.append(f"{raw_name} (not a ROBASE weapon)")
+                continue
 
+            mapping = exact_map.get(catalog_slug)
+            if not isinstance(mapping, dict):
+                missing.append(f"{raw_name} (no exact ROBASE/RBLXValue weapon mapping)")
+                continue
             record, match_source, candidates = resolve_value_record(
                 raw_name, values, aliases, item=item
             )
             variants = record.get("variants") or [record] if record else []
             if (
-                not record or match_source != "slug" or len(variants) != 1
-                or normalize_slug(variants[0].get("slug") or "") != catalog_slug
+                not record or match_source not in {"slug", "metadata", "exact"}
+                or len(variants) != 1
+                or normalize_slug(variants[0].get("slug") or "") != mapping.get("rblx_slug")
             ):
                 suffix = f": {', '.join(candidates)}" if candidates else ""
-                missing.append(f"{raw_name} (no unique exact RBLXValue slug match{suffix})")
+                missing.append(f"{raw_name} (RBLXValue identity mismatch{suffix})")
                 continue
 
             selected = variants[0]
-            rblx_name = str(selected.get("name") or "").strip()
-            if not rblx_name:
-                missing.append(f"{raw_name} (RBLXValue canonical name missing)")
+            selected_type = str(selected.get("type") or "").strip().casefold()
+            selected_category = str(selected.get("category") or "").strip().casefold()
+            expected_type = str(mapping.get("type") or "").strip().casefold()
+            expected_category = str(mapping.get("category") or "").strip().casefold()
+            if selected_type not in {"knife", "gun"} or selected_type != expected_type or selected_category != expected_category:
+                missing.append(f"{raw_name} (RBLXValue type/rarity mismatch)")
                 continue
-            cash_record, robase_identity_source = _resolve_robase_cash_record(
-                rblx_name, catalog_slug, robase_items
-            )
+
+            robase_slug = str(mapping.get("robase_slug") or "").strip().casefold()
+            cash_record = items_by_slug.get(robase_slug)
             if not cash_record:
-                missing.append(f"{raw_name} (not listed on ROBASE by exact name or slug)")
+                missing.append(f"{raw_name} (ROBASE source slug missing)")
                 continue
-            canonical_name = str(cash_record.get("name") or "").strip()
+            canonical_name = str(mapping.get("robase_name") or cash_record.get("name") or "").strip()
             if not canonical_name:
                 missing.append(f"{raw_name} (ROBASE canonical name missing)")
                 continue
-            if cash_record.get("status") != "verified":
-                missing.append(f"{raw_name} (ROBASE price not freshly verified)")
+            if cash_record.get("status") != "verified" or not cash_price_is_fresh(
+                cash_record, max_age_days=CASH_MAX_AGE_DAYS
+            ):
+                missing.append(f"{canonical_name} (ROBASE price not freshly verified)")
                 continue
-            exact_map = cash_catalog.get("rblx_exact_map")
-            if isinstance(exact_map, dict):
-                exact_identity = exact_map.get(normalize_cash_name(canonical_name))
-                if not exact_identity or exact_identity.get("slug") != catalog_slug:
-                    missing.append(f"{raw_name} (not uniquely mapped in the ROBASE/RBLXValue audit)")
-                    continue
 
             stability = _normalize_stability(selected.get("stability"))
             if stability and stability.casefold() == "untradeable":
@@ -4307,27 +4318,30 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
             quantity = item.get("quantity")
             qmin = item.get("quantity_min")
             qmax = item.get("quantity_max")
-            source = item.get("quantity_source", "implicit_single")
+            quantity_source = item.get("quantity_source", "implicit_single")
             try:
-                qmin = strict_quantity(qmin if qmin is not None else (quantity if quantity is not None else 1))
-                if qmax is None and quantity is not None and source != "uncertain":
+                qmin = strict_quantity(
+                    qmin if qmin is not None else (quantity if quantity is not None else 1)
+                )
+                if qmax is None and quantity is not None and quantity_source != "uncertain":
                     qmax = quantity
                 qmax = strict_quantity(qmax) if qmax is not None else None
             except (TypeError, ValueError):
                 qmin, qmax = 1, None
-            if source == "uncertain" or qmax is None or qmax != qmin:
+            if quantity_source == "uncertain" or qmax is None or qmax != qmin:
                 missing.append(f"{canonical_name} (quantity not confirmed exactly)")
                 continue
 
             value, value_status = _supreme_numeric_value(selected)
-            category = str(selected.get("category") or item.get("catalog_rarity") or "").strip()
-            item_type = str(selected.get("type") or item.get("catalog_type") or "").strip()
+            category = str(selected.get("category") or "").strip()
+            item_type = str(selected.get("type") or "").strip()
             identity = "/".join(part for part in (category, item_type) if part)
             display_name = f"{canonical_name} [{identity}]" if identity else canonical_name
             prepared[side].append({
                 "name": canonical_name,
                 "canonical_name": canonical_name,
                 "display_name": display_name,
+                "robase_slug": robase_slug,
                 "quantity_min": qmin,
                 "quantity_max": qmax,
                 "stability": stability or "N/A",
@@ -4336,8 +4350,8 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
                 "rblx_demand": _optional_bounded_int(selected.get("demand"), 0, 10),
                 "rblx_category": category,
                 "rblx_type": item_type,
-                "rblx_slug": catalog_slug,
-                "robase_identity_source": robase_identity_source,
+                "rblx_slug": normalize_slug(selected.get("slug") or ""),
+                "robase_identity_source": mapping.get("robase_identity_source"),
                 "robase_price_display": cash_record.get("price_display"),
             })
 
@@ -4349,12 +4363,13 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
     # ROBASE already displays seller proceeds after marketplace fees. Apply no
     # second resale haircut or tier adjustment to either side.
     give_min, give_max, give_lines, give_missing = calculate_cash_side(
-        prepared["give"], cash_catalog, "give", 0, max_age_days=CASH_MAX_AGE_DAYS,
-        allow_unverified_estimates=False,
+        prepared["give"], cash_catalog, "give", 0,
+        max_age_days=CASH_MAX_AGE_DAYS, allow_unverified_estimates=False,
     )
     receive_min, receive_max, receive_lines, receive_missing = calculate_cash_side(
-        prepared["receive"], cash_catalog, "receive", 0, max_age_days=CASH_MAX_AGE_DAYS,
-        allow_unverified_estimates=False, sell_haircut_tiers=None,
+        prepared["receive"], cash_catalog, "receive", 0,
+        max_age_days=CASH_MAX_AGE_DAYS, allow_unverified_estimates=False,
+        sell_haircut_tiers=None,
     )
     missing = give_missing + receive_missing
     if missing:
@@ -4363,15 +4378,15 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
     def add_rblx_details(lines, items):
         enriched = []
         for line, item in zip(lines, items):
-            details = []
-            if item["rblx_value"] is None:
-                details.append("RBLXValue: not listed")
-            else:
-                details.append(f"RBLXValue: {format_number(item['rblx_value'])}")
-            if item["stability"] != "N/A":
-                details.append(f"Stability: {item['stability']}")
-            if item.get("rblx_demand") is not None:
-                details.append(f"Demand: {item['rblx_demand']}/10")
+            details = [
+                f"RBLXValue: {format_number(item['rblx_value'])}"
+                if item["rblx_value"] is not None else "RBLXValue: not listed"
+            ]
+            details.append(f"Stability: {item['stability']}")
+            details.append(
+                f"Demand: {item['rblx_demand']}/10"
+                if item.get("rblx_demand") is not None else "Demand: not listed"
+            )
             enriched.append(line + " | " + " · ".join(details))
         return enriched
 
@@ -4380,8 +4395,7 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
     profit_worst, profit_best = cash_profit_bounds(
         (give_min, give_max), (receive_min, receive_max)
     )
-    # Round profit down to cents so a borderline floating-point result never
-    # crosses the $1.00 alert threshold by rounding up.
+    # Round down to cents so a borderline result never crosses the $1.00 gate by rounding up.
     profit_worst = math.floor((profit_worst + 1e-9) * 100) / 100
     profit_best = math.floor((profit_best + 1e-9) * 100) / 100
     margin = (profit_worst / give_max * 100.0) if give_max > 0 else 0.0
@@ -4411,6 +4425,8 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
         "receive_demand_score": None,
         "receive_stability_score": None,
     }, []
+
+
 
 def qualifies_cash(result):
     """Cash-only alert gate; missing provenance and uncertain results fail closed."""
