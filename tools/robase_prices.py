@@ -32,8 +32,13 @@ DETAIL_PRICE_RE = re.compile(
     r"on average after the marketplace fee",
     re.I,
 )
-DETAIL_ABOUT_RE = re.compile(
-    r"(?:\bAbout\s+(?P<header_name>[^.]+?)\s+)?(?P<name>[^.]+?)\s+is\s+(?:a|an)\s+"
+DETAIL_ABOUT_HEADER_RE = re.compile(
+    r"\bAbout\s+(?P<header_name>[^.]+?)\s+(?P<name>[^.]+?)\s+is\s+(?:a|an)\s+"
+    r"(?P<category>.+?)\s+item in Roblox Murder Mystery 2\s+\(MM2\)",
+    re.I,
+)
+DETAIL_ABOUT_PLAIN_RE = re.compile(
+    r"^\s*(?P<name>[^.]+?)\s+is\s+(?:a|an)\s+"
     r"(?P<category>.+?)\s+item in Roblox Murder Mystery 2\s+\(MM2\)",
     re.I,
 )
@@ -184,15 +189,19 @@ def _parse_item_detail(url: str, document: str, fetched_at_utc: str, etag="", la
     parser = _VisibleTextParser()
     parser.feed(document)
     text = " ".join(parser.parts)
-    about = DETAIL_ABOUT_RE.search(text)
+    about = DETAIL_ABOUT_HEADER_RE.search(text)
+    if about:
+        name = " ".join(about.group("name").split())
+        header_name = " ".join(about.group("header_name").split())
+        if header_name.casefold() != name.casefold():
+            raise ValueError(f"ROBASE item heading and description disagree: {url}")
+    else:
+        about = DETAIL_ABOUT_PLAIN_RE.search(text)
+        name = " ".join(about.group("name").split()) if about else ""
     price_match = DETAIL_PRICE_RE.search(text)
     if not about or not price_match:
         raise ValueError(f"ROBASE item detail did not expose a canonical name and price: {url}")
-    name = " ".join(about.group("name").split())
-    header_name = " ".join((about.group("header_name") or name).split())
     category = " ".join(about.group("category").split())
-    if header_name.casefold() != name.casefold():
-        raise ValueError(f"ROBASE item heading and description disagree: {url}")
     price_display = "$" + price_match.group("price")
     price = float(price_match.group("price").replace(",", ""))
     if not name or not category or price <= 0:
