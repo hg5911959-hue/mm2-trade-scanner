@@ -70,7 +70,7 @@ class WeeklyReportValueModeTests(IsolatedDataTestCase):
                              side_effect=AssertionError("cash blockers must not load")),
                 patch.object(weekly_report, "collect_preflight_checks",
                              return_value={"checks": []}),
-                patch.object(weekly_report.urllib.request, "urlopen", return_value=response),
+                patch.object(weekly_report.TELEGRAM_OPENER, "open", return_value=response),
                 contextlib.redirect_stdout(output),
             ):
                 weekly_report.main()
