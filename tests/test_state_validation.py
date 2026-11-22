@@ -59,6 +59,42 @@ class StateValidationTests(IsolatedDataTestCase):
                 );
             """)
 
+
+    def test_api_safety_ledger_rejects_symlinked_file(self):
+        from tools.validate_state import validate_api_safety_state
+        target = self.root / "outside.json"
+        target.write_text(json.dumps({
+            "schema_version": 1,
+            "window": "rolling_24_hours",
+            "limit": 60,
+            "request_timestamps_epoch": [],
+        }), encoding="utf-8")
+        (self.root / "rblxvalue_request_budget.json").symlink_to(target)
+        errors = validate_api_safety_state(self.root)
+        self.assertTrue(any("symlink paths" in error for error in errors))
+        self.assertTrue(any("unsafe" in error for error in errors))
+
+    def test_api_safety_ledger_rejects_oversized_file_before_json_parse(self):
+        from tools.validate_state import MAX_API_SAFETY_FILE_BYTES, validate_api_safety_state
+        path = self.root / "rblxvalue_request_budget.json"
+        with path.open("wb") as handle:
+            handle.truncate(MAX_API_SAFETY_FILE_BYTES + 1)
+        errors = validate_api_safety_state(self.root)
+        self.assertTrue(any("oversized" in error for error in errors))
+
+    def test_full_state_rejects_symlink_paths(self):
+        target = self.root / "outside.json"
+        target.write_text("{}", encoding="utf-8")
+        (self.root / "linked.json").symlink_to(target)
+        self.assertTrue(any("symlink paths" in error for error in validate_state(self.root)))
+
+    def test_full_state_rejects_oversized_json(self):
+        from tools.validate_state import MAX_STATE_JSON_BYTES
+        path = self.root / "oversized.json"
+        with path.open("wb") as handle:
+            handle.truncate(MAX_STATE_JSON_BYTES + 1)
+        self.assertTrue(any("oversized" in error for error in validate_state(self.root)))
+
     def test_api_safety_ledger_validates_independently_of_scan_cache(self):
         (self.root / "rblxvalue_request_budget.json").write_text(json.dumps({
             "schema_version": 1,
