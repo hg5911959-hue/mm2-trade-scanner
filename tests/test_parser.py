@@ -3804,148 +3804,163 @@ class UpstreamForbiddenDiagnosticsTests(IsolatedDataTestCase):
 class CashFirstEvaluatorTests(IsolatedDataTestCase):
     def setUp(self):
         self.values = {
-            "chroma laser": {"name": "Chroma Laser", "value": 100, "stability": "Stable", "demand": 0},
-            "chroma gemstone": {"name": "Chroma Gemstone", "value": None, "stability": "Stable", "demand": 0},
-            "chroma heat": {"name": "Chroma Heat", "value": 2, "stability": "Decreasing", "demand": 10},
+            "chroma laser": {
+                "name": "Chroma Laser", "slug": "chroma-laser", "value_source_b": 100,
+                "stability": "Stable", "demand": 0, "category": "Godly", "type": "Knife",
+            },
+            "chroma gemstone": {
+                "name": "Chroma Gemstone", "slug": "chroma-gemstone", "value_source_b": None,
+                "stability": "Stable", "demand": 0, "category": "Godly", "type": "Knife",
+            },
+            "chroma heat": {
+                "name": "Chroma Heat", "slug": "chroma-heat", "value_source_b": 2,
+                "stability": "Decreasing", "demand": 10, "category": "Godly", "type": "Knife",
+            },
         }
         verified_at = datetime.now(timezone.utc).isoformat()
         self.catalog = {
             "items": {
-                scanner.normalize_cash_name("Chroma Laser"): {
-                    "name": "Chroma Laser", "cash_price_usd": 10.0, "status": "verified", "verified_at_utc": verified_at, "source": "test"
-                },
-                scanner.normalize_cash_name("Chroma Gemstone"): {
-                    "name": "Chroma Gemstone", "cash_price_usd": 20.0, "status": "verified", "verified_at_utc": verified_at, "source": "test"
-                },
-                scanner.normalize_cash_name("Chroma Heat"): {
-                    "name": "Chroma Heat", "cash_price_usd": 100.0, "status": "verified", "verified_at_utc": verified_at, "source": "test"
-                },
+                scanner.normalize_cash_name(name): {
+                    "name": name, "cash_price_usd": price, "price_low_usd": price,
+                    "price_high_usd": price, "price_display": "$" + "{:.2f}".format(price),
+                    "status": "verified", "verified_at_utc": verified_at,
+                    "source": "https://robase.gg/item/" + slug, "robase_slug": slug,
+                }
+                for name, price, slug in (
+                    ("Chroma Laser", 10.0, "chroma-laser"),
+                    ("Chroma Gemstone", 20.0, "chroma-gemstone"),
+                    ("Chroma Heat", 100.0, "chroma-heat"),
+                )
             }
         }
         self.listing = {
             "id": "cash-test",
+            "source": "bloxswaps",
             "give_items": [{
-                "name": "Chroma Laser", "quantity": 1, "quantity_min": 1,
-                "quantity_max": 1, "quantity_source": "implicit_single",
+                "name": "Chroma Laser", "catalog_slug": "chroma-laser",
+                "catalog_rarity": "Godly", "catalog_type": "Knife", "catalog_chroma": True,
+                "quantity": 1, "quantity_min": 1, "quantity_max": 1,
+                "quantity_source": "structured",
             }],
             "receive_items": [{
-                "name": "Chroma Gemstone", "quantity": 1, "quantity_min": 1,
-                "quantity_max": 1, "quantity_source": "implicit_single",
+                "name": "Chroma Gemstone", "catalog_slug": "chroma-gemstone",
+                "catalog_rarity": "Godly", "catalog_type": "Knife", "catalog_chroma": True,
+                "quantity": 1, "quantity_min": 1, "quantity_max": 1,
+                "quantity_source": "structured",
             }],
         }
 
-    def test_cash_profit_overrides_opposite_supreme_value_spread_and_low_demand(self):
+    def test_profit_uses_exact_robase_price_without_any_resale_haircut(self):
         result, missing = scanner.evaluate_cash_listing(
             self.listing.copy(), self.values, {}, self.catalog
         )
         self.assertEqual(missing, [])
         self.assertIsNotNone(result)
-        self.assertAlmostEqual(result["cash_profit_worst"], 7.0)
+        self.assertAlmostEqual(result["cash_profit_worst"], 10.0)
         self.assertTrue(scanner.qualifies_cash(result))
-        self.assertEqual(result["receive_demand_score"], None)
+        self.assertEqual(result["cash_sell_haircut_pct"], 0.0)
+        self.assertIn("$20.00 each", result["receive_lines"][0])
+        self.assertIn("RBLXValue: not listed", result["receive_lines"][0])
+        self.assertNotIn("haircut", result["receive_lines"][0].casefold())
 
-    def test_cash_price_fingerprint_changes_for_non_numeric_supreme_items(self):
+    def test_cash_price_fingerprint_changes_when_robase_price_changes(self):
         listing = self.listing
         catalog_a = {"items": dict(self.catalog["items"])}
         catalog_b = {"items": dict(self.catalog["items"])}
-        catalog_a["items"][scanner.normalize_cash_name("Chroma Gemstone")] = {
-            "name": "Chroma Gemstone", "cash_price_usd": 20.0, "status": "verified"
-        }
-        catalog_b["items"][scanner.normalize_cash_name("Chroma Gemstone")] = {
-            "name": "Chroma Gemstone", "cash_price_usd": 25.0, "status": "verified"
-        }
-        _content_a, values_a = scanner.listing_watch_fingerprints(
-            listing, self.values, {}, catalog_a
-        )
-        _content_b, values_b = scanner.listing_watch_fingerprints(
-            listing, self.values, {}, catalog_b
-        )
+        key = scanner.normalize_cash_name("Chroma Gemstone")
+        catalog_a["items"][key] = dict(catalog_a["items"][key], price_display="$20.00")
+        catalog_b["items"][key] = dict(catalog_b["items"][key], price_display="$25.00")
+        _content_a, values_a = scanner.listing_watch_fingerprints(listing, self.values, {}, catalog_a)
+        _content_b, values_b = scanner.listing_watch_fingerprints(listing, self.values, {}, catalog_b)
         self.assertNotEqual(values_a, values_b)
 
-    def test_bad_receive_stability_remains_blocked_even_with_high_cash_price(self):
+    def test_decreasing_stability_is_displayed_but_does_not_override_cash_profit(self):
         listing = dict(self.listing)
         listing["receive_items"] = [{
-            "name": "Chroma Heat", "quantity": 1, "quantity_min": 1,
-            "quantity_max": 1, "quantity_source": "implicit_single",
+            "name": "Chroma Heat", "catalog_slug": "chroma-heat",
+            "catalog_rarity": "Godly", "catalog_type": "Knife", "catalog_chroma": True,
+            "quantity": 1, "quantity_min": 1, "quantity_max": 1, "quantity_source": "structured",
         }]
-        result, missing = scanner.evaluate_cash_listing(
-            listing, self.values, {}, self.catalog
-        )
-        self.assertIsNone(result)
-        self.assertTrue(any("Decreasing" in value for value in missing))
-
-    def test_receding_receive_stability_is_also_blocked(self):
-        values = dict(self.values)
-        values["chroma heat"] = {
-            "name": "Chroma Heat", "value": 1000, "stability": "Receding"
-        }
-        listing = dict(self.listing)
-        listing["receive_items"] = [{
-            "name": "Chroma Heat", "quantity": 1, "quantity_min": 1,
-            "quantity_max": 1, "quantity_source": "implicit_single",
-        }]
-        result, missing = scanner.evaluate_cash_listing(
-            listing, values, {}, self.catalog
-        )
-        self.assertIsNone(result)
-        self.assertTrue(any("Receding" in value for value in missing))
-
-    def test_unverified_cash_price_is_never_used(self):
-        catalog = {"items": dict(self.catalog["items"])}
-        catalog["items"][scanner.normalize_cash_name("Chroma Gemstone")] = {
-            "name": "Chroma Gemstone", "cash_price_usd": 20.0, "status": "unverified"
-        }
-        result, missing = scanner.evaluate_cash_listing(
-            self.listing, self.values, {}, catalog
-        )
-        self.assertIsNone(result)
-        self.assertTrue(any("cash price unverified" in value for value in missing))
-
-    def test_verified_robase_catalogue_resolves_items_missing_from_supreme(self):
-        result, missing = scanner.evaluate_cash_listing(
-            self.listing, {}, {}, self.catalog
-        )
+        result, missing = scanner.evaluate_cash_listing(listing, self.values, {}, self.catalog)
         self.assertEqual(missing, [])
         self.assertIsNotNone(result)
-        self.assertAlmostEqual(result["cash_profit_worst"], 7.0)
-        self.assertTrue(any("ROBASE verification" in line for line in result["receive_lines"]))
+        self.assertIn("Stability: Decreasing", result["receive_lines"][0])
 
-    def test_unverified_robase_item_without_supreme_record_is_rejected(self):
+    def test_untradeable_rblxvalue_identity_is_rejected(self):
+        values = dict(self.values)
+        values["chroma heat"] = dict(self.values["chroma heat"], stability="Untradeable")
+        listing = dict(self.listing)
+        listing["receive_items"] = [{
+            "name": "Chroma Heat", "catalog_slug": "chroma-heat",
+            "catalog_rarity": "Godly", "catalog_type": "Knife", "catalog_chroma": True,
+            "quantity": 1, "quantity_min": 1, "quantity_max": 1, "quantity_source": "structured",
+        }]
+        result, missing = scanner.evaluate_cash_listing(listing, values, {}, self.catalog)
+        self.assertIsNone(result)
+        self.assertTrue(any("untradeable" in value.casefold() for value in missing))
+
+    def test_unverified_robase_price_is_never_used(self):
         catalog = {"items": dict(self.catalog["items"])}
-        catalog["items"][scanner.normalize_cash_name("Chroma Gemstone")] = {
-            "name": "Chroma Gemstone", "cash_price_usd": 20.0, "status": "unverified",
-            "verified_at_utc": datetime.now(timezone.utc).isoformat(), "source": "test",
+        key = scanner.normalize_cash_name("Chroma Gemstone")
+        catalog["items"][key] = dict(catalog["items"][key], status="unverified")
+        result, missing = scanner.evaluate_cash_listing(self.listing, self.values, {}, catalog)
+        self.assertIsNone(result)
+        self.assertTrue(any("not freshly verified" in value for value in missing))
+
+    def test_item_without_exact_rblxvalue_slug_match_is_rejected(self):
+        values = dict(self.values)
+        values["chroma laser"] = dict(self.values["chroma laser"], slug="wrong-slug")
+        result, missing = scanner.evaluate_cash_listing(self.listing, values, {}, self.catalog)
+        self.assertIsNone(result)
+        self.assertTrue(any("exact RBLXValue slug match" in value for value in missing))
+
+    def test_items_not_present_in_robase_are_rejected(self):
+        values = dict(self.values)
+        values["unknown knife"] = {
+            "name": "Unknown Knife", "slug": "unknown-knife", "value_source_b": 10,
+            "stability": "Stable", "category": "Godly", "type": "Knife",
         }
-        result, missing = scanner.evaluate_cash_listing(
-            self.listing, {}, {}, catalog
-        )
-        self.assertIsNone(result)
-        self.assertTrue(any("cash price unverified" in value for value in missing))
-
-    def test_item_outside_supreme_catalogue_is_rejected(self):
         listing = dict(self.listing)
         listing["receive_items"] = [{
-            "name": "Unknown Knife", "quantity": 1, "quantity_min": 1,
-            "quantity_max": 1, "quantity_source": "implicit_single",
+            "name": "Unknown Knife", "catalog_slug": "unknown-knife",
+            "catalog_rarity": "Godly", "catalog_type": "Knife", "catalog_chroma": False,
+            "quantity": 1, "quantity_min": 1, "quantity_max": 1, "quantity_source": "structured",
         }]
-        result, missing = scanner.evaluate_cash_listing(
-            listing, self.values, {}, self.catalog
-        )
+        result, missing = scanner.evaluate_cash_listing(listing, values, {}, self.catalog)
         self.assertIsNone(result)
-        self.assertTrue(any("not in Supreme catalogue" in value for value in missing))
+        self.assertTrue(any("not listed on ROBASE" in value for value in missing))
 
-    def test_quantity_uncertainty_uses_worst_case_cash_profit(self):
+    def test_discord_and_wildcard_offers_are_excluded(self):
+        discord = dict(self.listing, source="discord")
+        result, missing = scanner.evaluate_cash_listing(discord, self.values, {}, self.catalog)
+        self.assertIsNone(result)
+        self.assertTrue(any("BloxSwaps offers only" in value for value in missing))
+        wildcard = dict(self.listing, requested_wildcards=["Any Godly"])
+        result, missing = scanner.evaluate_cash_listing(wildcard, self.values, {}, self.catalog)
+        self.assertIsNone(result)
+        self.assertTrue(any("wildcard" in value for value in missing))
+
+    def test_quantity_must_be_exact(self):
         listing = dict(self.listing)
-        listing["receive_items"] = [{
-            "name": "Chroma Gemstone", "quantity": None, "quantity_min": 1,
-            "quantity_max": 2, "quantity_source": "uncertain",
-        }]
-        result, missing = scanner.evaluate_cash_listing(
-            listing, self.values, {}, self.catalog
-        )
+        listing["receive_items"] = [dict(
+            self.listing["receive_items"][0], quantity=None,
+            quantity_min=1, quantity_max=2, quantity_source="uncertain",
+        )]
+        result, missing = scanner.evaluate_cash_listing(listing, self.values, {}, self.catalog)
+        self.assertIsNone(result)
+        self.assertTrue(any("quantity not confirmed exactly" in value for value in missing))
+
+    def test_profit_threshold_is_one_dollar_not_less(self):
+        catalog = {"items": dict(self.catalog["items"])}
+        key = scanner.normalize_cash_name("Chroma Gemstone")
+        catalog["items"][key] = dict(catalog["items"][key], cash_price_usd=11.0, price_display="$11.00")
+        result, missing = scanner.evaluate_cash_listing(self.listing, self.values, {}, catalog)
         self.assertEqual(missing, [])
-        self.assertAlmostEqual(result["cash_profit_worst"], 7.0)
-        self.assertAlmostEqual(result["cash_profit_best"], 24.0)
+        self.assertEqual(result["cash_profit_worst"], 1.0)
         self.assertTrue(scanner.qualifies_cash(result))
-
+        catalog["items"][key] = dict(catalog["items"][key], cash_price_usd=10.99, price_display="$10.99")
+        result, missing = scanner.evaluate_cash_listing(self.listing, self.values, {}, catalog)
+        self.assertEqual(missing, [])
+        self.assertEqual(result["cash_profit_worst"], 0.99)
+        self.assertFalse(scanner.qualifies_cash(result))
 
