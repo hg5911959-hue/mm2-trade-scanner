@@ -239,11 +239,9 @@ def calculate_cash_side(
         if side == "receive":
             unit_low = price_low * (1.0 - uncertainty_factor) * (1.0 - applied_haircut / 100.0)
             unit_high = price_high * (1.0 + uncertainty_factor) * (1.0 - applied_haircut / 100.0)
-            basis = "estimated price" if estimate_only else ("ROBASE price" if applied_haircut == 0 else "net resale")
         else:
             unit_low = price_low * (1.0 - uncertainty_factor)
             unit_high = price_high * (1.0 + uncertainty_factor)
-            basis = "estimated price" if estimate_only else "ROBASE price"
         line_low = unit_low * qmin
         line_high = unit_high * qmax
         low_total += line_low
