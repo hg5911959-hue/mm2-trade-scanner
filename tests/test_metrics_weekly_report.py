@@ -31,7 +31,8 @@ class MetricsReportTests(IsolatedDataTestCase):
         self.assertIn("\\n\\nBlockers", report)
         self.assertIn("\\n\\nPreflight checks: PASS", report)
         self.assertNotIn("\\\\n", report)
-\n    def test_report_missing_metrics_file_is_represented_as_empty(self):
+
+    def test_report_missing_metrics_file_is_represented_as_empty(self):
         with tempfile.TemporaryDirectory() as d:
             missing=Path(d)/"missing.json"
             self.assertFalse(missing.exists())
