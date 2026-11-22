@@ -2034,6 +2034,7 @@ def resolve_value_record(name, values, aliases=None, item=None):
     metadata_item = dict(item) if isinstance(item, dict) else {}
     metadata_item["name"] = name
     catalog_slug, catalog_rarity, catalog_type, _, _, catalog_chroma = _catalog_value_metadata(metadata_item)
+    identity_conflicts = []
 
     if catalog_slug:
         slug_candidates = [
@@ -2047,6 +2048,10 @@ def resolve_value_record(name, values, aliases=None, item=None):
             return None, "ambiguous", [
                 str(row[2].get("name") or row[0]) for row in filtered[:8]
             ]
+        if slug_candidates:
+            identity_conflicts.extend(
+                str(row[2].get("name") or row[0]) for row in slug_candidates[:8]
+            )
 
     exact_candidates = [
         row for row in all_variants
@@ -2062,6 +2067,10 @@ def resolve_value_record(name, values, aliases=None, item=None):
             + (f" [{row[2].get('category')}/{row[2].get('type')}]" if row[2].get("category") or row[2].get("type") else "")
             for row in filtered_exact[:8]
         ]
+    if exact_candidates and not filtered_exact:
+        identity_conflicts.extend(
+            str(row[2].get("name") or row[0]) for row in exact_candidates[:8]
+        )
 
     prefix_names = {name_key + " "}
     if catalog_chroma is True:
@@ -2098,6 +2107,8 @@ def resolve_value_record(name, values, aliases=None, item=None):
             return None, "ambiguous", [
                 str(row[2].get("name") or row[0]) for row in filtered_alias[:8]
             ]
+    if identity_conflicts:
+        return None, "ambiguous", sorted(set(identity_conflicts))[:8]
     return None, "unmatched", []
 
 
