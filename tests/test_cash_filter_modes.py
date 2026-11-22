@@ -110,15 +110,15 @@ class CashTelegramAttributionTests(IsolatedDataTestCase):
         }
         message = scanner.format_trade_message(
             listing, 5.02,
-            ["Harvester x1 — $5.02 each (replacement cost) = $5.02"],
+            ["Harvester x1 — $5.02 each = $5.02"],
             221.22,
-            ["Gingerscope x1 — $260.26 each (net resale, haircut 15%) = $221.22"],
+            ["Gingerscope x1 — $260.26 each = $260.26"],
             216.20,
         )
         payload = self._deliver_and_read_payload(message)
         self.assertEqual(payload["parse_mode"], "HTML")
         self.assertIn("CASH PROFIT", payload["text"])
-        self.assertIn("Cash price source: robase.gg", payload["text"])
+        self.assertIn("Prices: robase.gg · Item values: rblxvalue.com", payload["text"])
         self.assertNotIn("Data from rblxvalue.com", payload["text"])
 
     def test_cash_digest_uses_robase_attribution(self):
@@ -134,7 +134,7 @@ class CashTelegramAttributionTests(IsolatedDataTestCase):
             "cash_profit_best": 216.20, "margin": 4302.79,
         }])
         payload = self._deliver_and_read_payload(message)
-        self.assertIn("DIGEST", payload["text"])
+        self.assertIn("ROBASE OPPORTUNITIES", payload["text"])
         self.assertIn("Cash price source: robase.gg", payload["text"])
         self.assertNotIn("Data from rblxvalue.com", payload["text"])
 
