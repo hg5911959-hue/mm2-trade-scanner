@@ -45,7 +45,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         weekly = (ROOT / ".github/workflows/weekly-report.yml").read_text(encoding="utf-8")
         self.assertIn('      CASH_FILTER: "false" # weekly report is separate from the cash-first production scanner\n', weekly)
         self.assertIn("env.CASH_FILTER == '1' || env.CASH_FILTER == 'true'", workflow)
-        self.assertIn("env.CASH_FILTER == '1' || env.CASH_FILTER == 'true'", weekly)
+        self.assertNotIn("env.CASH_FILTER", weekly)
         self.assertNotIn('          RBLXVALUE_META_POLL_ENABLED: "true"\n', workflow)
         self.assertIn('          RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY: "6"\n', workflow)
         self.assertIn('          MM2_SCAN_DURATION_SECONDS: "540"\n', workflow)
