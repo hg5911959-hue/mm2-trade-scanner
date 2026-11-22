@@ -50,7 +50,7 @@ DETAIL_SUPPLY_RE = re.compile(
     re.I,
 )
 MAX_ITEM_AGE_SECONDS = 15 * 60
-DETAIL_WORKERS = 8
+DETAIL_WORKERS = 3
 REQUEST_TIMEOUT_SECONDS = 25
 
 
@@ -387,11 +387,14 @@ def fetch_snapshot(output: Path = DEFAULT_OUTPUT, timeout: int = REQUEST_TIMEOUT
                 else:
                     unchanged += 1
             except Exception as exc:
-                failures.append(f"{slug}:{type(exc).__name__}")
+                reason = " ".join(str(exc).split())[:160]
+                failures.append(f"{slug}:{type(exc).__name__}:{reason}")
                 cached = cached_by_slug.get(slug)
                 if cached and cached.get("name") and cached.get("robase_slug") == slug:
                     results[slug] = dict(cached)
 
+    if failures:
+        print("[robase] item-page failure samples: " + " | ".join(failures[:20]))
     rows = sorted(results.values(), key=lambda item: (item["name"].casefold(), item["robase_slug"]))
     now = _utc_now()
     complete = (
