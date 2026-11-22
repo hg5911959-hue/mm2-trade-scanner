@@ -32,16 +32,16 @@
       <div>
         <div class="eyebrow">Independent market signals · Murder Mystery 2</div>
         <h1 class="title">MM2 Market Intelligence</h1>
-        <p class="sub">ROBASE completed-sale prices qualify USD opportunities. BloxSwaps item data and RBLXValue valuation and stability checks add context; source values are kept distinct rather than blended to invent a price.</p>
+        <p class="sub">ROBASE completed-sale prices qualify USD opportunities. BloxSwaps supplies public listing and quantity context. Third-party game-value lists are not republished in this dashboard.</p>
       </div>
       <div class="status" id="status">Loading market data…</div>
     </header>
 
     <section class="grid" aria-label="Market summary">
       <div class="metric"><div class="label">Tracked public listings</div><div class="value" id="listings">—</div><div class="hint">Recently observed</div></div>
-      <div class="metric"><div class="label">Qualified opportunities</div><div class="value" id="opportunities">—</div><div class="hint">Last 7 days</div></div>
-      <div class="metric"><div class="label">Items tracked</div><div class="value" id="items">—</div><div class="hint">Across value snapshots</div></div>
-      <div class="metric"><div class="label">Two-source cross-checks</div><div class="value" id="crosschecked">—</div><div class="hint">Latest snapshot, within 15%</div></div>
+      <div class="metric"><div class="label">Qualified USD opportunities</div><div class="value" id="opportunities">—</div><div class="hint">Last 7 days</div></div>
+      <div class="metric"><div class="label">ROBASE verified items</div><div class="value" id="items">—</div><div class="hint">Complete price catalogue</div></div>
+      <div class="metric"><div class="label">ROBASE sales · 7d</div><div class="value" id="crosschecked">—</div><div class="hint">Completed sales volume</div></div>
     </section>
 
     <section class="panel" style="margin-bottom:14px" aria-label="ROBASE prices and item quantities">
@@ -63,28 +63,17 @@
     </section>
 
     <section class="panel">
-      <div class="panel-head"><h2>Highest-margin opportunities</h2><span class="count" id="opp-count">—</span></div>
+      <div class="panel-head"><h2>Best USD opportunities</h2><span class="count" id="opp-count">—</span></div>
       <div id="opportunity-table" class="table-wrap"><div class="empty">Waiting for the first market-history snapshot.</div></div>
     </section>
 
-    <div class="columns">
-      <section class="panel">
-        <div class="panel-head"><h2>Recent public listings</h2><span class="count" id="listing-count">—</span></div>
-        <div class="list" id="recent-listings"><div class="empty">No listings stored yet.</div></div>
-      </section>
-      <section class="panel">
-        <div class="panel-head"><h2>Value source comparison</h2><span class="count" id="value-count">—</span></div>
-        <div id="value-table" class="table-wrap"><div class="empty">No value comparison available.</div></div>
-      </section>
-    </div>
-
     <section class="panel" style="margin-top:14px">
-      <div class="panel-head"><h2>Supreme value history</h2><span class="count">Latest stored snapshots</span></div>
-      <div id="price-history" class="list"><div class="empty">Historical snapshots will appear here as values change.</div></div>
+      <div class="panel-head"><h2>Recent public listings</h2><span class="count" id="listing-count">—</span></div>
+      <div class="list" id="recent-listings"><div class="empty">No listings stored yet.</div></div>
     </section>
 
     <footer class="foot">
-      <span>Sources: ROBASE.gg · BloxSwaps · RBLXValue</span>
+      <span>Data from rblxvalue.com (stability checks) · ROBASE.gg · BloxSwaps</span>
       <span>Public dashboard excludes private Discord message content and private-server listings.</span>
       <span id="updated">Data timestamp unavailable</span>
     </footer>
@@ -106,7 +95,7 @@
         const title=url?'<a href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open listing ↗</a>':'<span class="small">Link unavailable</span>';
         const give=(row.giveItems||[]).map(x=>(x.quantity||1)+'× '+x.name).join(', ');
         const receive=(row.receiveItems||[]).map(x=>(x.quantity||1)+'× '+x.name).join(', ');
-        return '<tr><td><div class="item">'+esc(row.listingId).slice(0,12)+'</div><div class="small">'+title+'</div></td><td>'+esc(give)+'</td><td>'+esc(receive)+'</td><td class="num profit">'+number(row.profit)+'</td><td class="num margin">'+number(row.margin)+'%</td><td>'+pill('good',row.source)+'</td></tr>';
+        return '<tr><td><div class="item">'+esc(row.listingId).slice(0,12)+'</div><div class="small">'+title+'</div></td><td>'+esc(give)+'</td><td>'+esc(receive)+'</td><td class="num profit">'+usd(row.profit)+'</td><td class="num margin">'+number(row.margin)+'%</td><td>'+pill('good',row.source)+'</td></tr>';
       }).join('')+'</tbody></table>';
   }
 
@@ -118,27 +107,6 @@
       const give=(row.giveItems||[]).map(x=>(x.quantity||1)+'× '+x.name).join(', ');
       const receive=(row.receiveItems||[]).map(x=>(x.quantity||1)+'× '+x.name).join(', ');
       return '<article class="listing"><div class="listing-top"><strong>'+esc(row.owner||row.source||"Public listing")+'</strong><span class="pill">'+esc(row.source)+'</span></div><div class="items">Gives: '+esc(give||"—")+'<br>Wants: '+esc(receive||"—")+'</div><div class="small">'+(url?'<a href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">View listing ↗</a>':'')+(owner?' · <a href="'+esc(owner)+'" target="_blank" rel="noopener noreferrer">Owner ↗</a>':'')+' · Seen '+esc(date(row.lastSeen))+'</div></article>';
-    }).join('');
-  }
-
-  function renderValues(rows) {
-    $("value-count").textContent=rows.length+" items";
-    if(!rows.length){$("value-table").innerHTML='<div class="empty">No value comparison available.</div>';return;}
-    $("value-table").innerHTML='<table style="min-width:440px"><thead><tr><th>Item</th><th>Supreme</th><th>Secondary</th><th>Check</th></tr></thead><tbody>'+
-      rows.slice(0,30).map(row=>{
-        const confidence=row.confidence==="cross_checked"?pill("good","Cross-checked"):row.confidence==="conflict"?pill("bad","Conflict"):pill("warn","Estimated");
-        return '<tr><td><div class="item">'+esc(row.name)+'</div><div class="small">'+esc(row.category)+' '+esc(row.type)+'</div></td><td class="num">'+number(row.supreme)+'</td><td class="num">'+number(row.secondary)+'</td><td>'+confidence+(row.differencePercent!=null?'<div class="small">'+number(row.differencePercent)+'% diff</div>':'')+'</td></tr>';
-      }).join('')+'</tbody></table>';
-  }
-
-  function renderHistory(rows) {
-    if(!rows.length){$("price-history").innerHTML='<div class="empty">Historical snapshots will appear here as values change.</div>';return;}
-    $("price-history").innerHTML=rows.map(row=>{
-      const vals=(row.points||[]).map(p=>Number(p.supreme)||0), max=Math.max(1,...vals);
-      const bars=vals.map(v=>'<span class="bar" title="'+esc(number(v))+'" style="height:'+Math.max(5,Math.round(v/max*100))+'%"></span>').join('');
-      const latest=vals.length?vals[vals.length-1]:null, prior=vals.length>1?vals[vals.length-2]:null;
-      const change=latest!=null&&prior!=null?latest-prior:null;
-      return '<article class="listing"><div class="listing-top"><strong>'+esc(row.name)+'</strong><span class="num">'+number(latest)+'</span></div><div class="spark">'+bars+'</div><div class="small">'+(change==null?'One snapshot':(change>=0?'+':'')+number(change)+' since previous snapshot')+'</div></article>';
     }).join('');
   }
 
@@ -189,14 +157,12 @@
       $("listings").textContent=number(s.trackedListings);
       $("opportunities").textContent=number(s.opportunities7d);
       $("items").textContent=number(s.trackedItems);
-      $("crosschecked").textContent=number(s.crossChecked);
+      $("crosschecked").textContent=number((data.robaseSummary||{}).totalSold7d);
       $("status").textContent="Market data loaded";
       $("updated").textContent="Snapshot: "+date(s.latestSnapshot)+" · Exported: "+date(data.generatedAt);
       renderOpportunities(data.opportunities||[]);
       renderListings(data.recentListings||[]);
-      renderValues(data.valueChecks||[]);
-      renderHistory(data.priceHistory||[]);
-      robaseRows = data.robaseItems || [];
+remove value calls      robaseRows = data.robaseItems || [];
       window.__robaseSummary = data.robaseSummary || {};
       setupRobaseFilters(robaseRows);
       renderRobaseItems(window.__robaseSummary);
