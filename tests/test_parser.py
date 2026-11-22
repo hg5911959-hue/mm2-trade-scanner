@@ -1094,6 +1094,7 @@ class ReliabilityTests(IsolatedDataTestCase):
                 scanner.send_telegram("test")
         self.assertEqual(len(calls), 2)
         self.assertEqual(sleep.call_count, 1)
+        self.assertEqual(sleep.call_args.args[0], 3)
 
     def test_telegram_send_does_not_retry_uncertain_network_failure(self):
         calls = []
@@ -3606,7 +3607,7 @@ class WorkflowSecurityTests(IsolatedDataTestCase):
         self.assertIn('MAX_ALERTS_PER_RUN: "0"', scan_job)
         self.assertIn('MAX_ALERTS_PER_SESSION: "0"', scan_job)
         self.assertIn('MAX_FEED_PAGES: "1000"', scan_job)
-        self.assertIn('ALERT_DELAY_SECONDS: "1.1"', scan_job)
+        self.assertIn('ALERT_DELAY_SECONDS: "3.2"', scan_job)
         job_defaults = scan_job.split("    steps:", 1)[0]
         self.assertNotIn("MM2_SCAN_DURATION_SECONDS", job_defaults)
         self.assertNotIn("MM2_SCAN_INTERVAL_SECONDS", job_defaults)
