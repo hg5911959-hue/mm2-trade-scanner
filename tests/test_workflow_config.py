@@ -91,6 +91,19 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         for secret in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
             self.assertIn(f"{secret}:\n        required: false", watchdog_call)
 
+
+    def test_rblxvalue_connection_test_uses_shared_budget_and_never_runs_on_push(self):
+        workflow = (ROOT / ".github/workflows/rblxvalue-connection-test.yml").read_text(encoding="utf-8")
+        self.assertIn("  workflow_dispatch:", workflow)
+        self.assertNotIn("  push:", workflow)
+        self.assertIn("group: mm2-trade-scanner", workflow)
+        self.assertIn("rblxvalue_guard.reserve_request(key=key)", workflow)
+        self.assertIn("rblxvalue_guard.mark_key_success(key=key)", workflow)
+        self.assertIn("python tools/validate_state.py --directory data --api-safety-only", workflow)
+        self.assertIn("Persist shared API safety ledger", workflow)
+        self.assertIn("git push origin HEAD:state", workflow)
+        self.assertNotIn("urllib.request.urlopen(request", workflow)
+
     def test_manual_scan_dispatch_defaults_to_dry_run(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         scheduler = (ROOT / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
