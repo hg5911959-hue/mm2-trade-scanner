@@ -3291,12 +3291,12 @@ class WatchValueReevaluationTests(IsolatedDataTestCase):
             "receive_items": [{"name": "Knife B", "catalog_slug": "knife-b", "catalog_rarity": "Godly", "catalog_type": "Knife", "catalog_chroma": False, "quantity": 1, "quantity_source": "structured", "quantity_min": 1, "quantity_max": 1}],
         }
         values_before = {
-            "knife a": {"name": "Knife A", "slug": "knife-a", "value_source_b": 20, "stability": "Stable", "category": "Godly", "type": "Knife", "chroma": False},
-            "knife b": {"name": "Knife B", "slug": "knife-b", "value_source_b": 10, "stability": "Stable", "category": "Godly", "type": "Knife", "chroma": False},
+            "knife a": {"name": "Knife A", "slug": "knife-a", "value": 20, "value_source_b": 20, "stability": "Stable", "category": "Godly", "type": "Knife", "chroma": False},
+            "knife b": {"name": "Knife B", "slug": "knife-b", "value": 10, "value_source_b": 10, "stability": "Stable", "category": "Godly", "type": "Knife", "chroma": False},
         }
         values_after = {
             "knife a": dict(values_before["knife a"]),
-            "knife b": dict(values_before["knife b"], value_source_b=30),
+            "knife b": dict(values_before["knife b"], value=30, value_source_b=30),
         }
         before, _ = scanner.evaluate_listing(listing, values_before)
         self.assertFalse(scanner.qualifies(before))
