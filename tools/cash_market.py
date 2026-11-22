@@ -261,8 +261,9 @@ def calculate_cash_side(
         else:
             unit_label = "$" + f"{unit_low:.2f}.." + "$" + f"{unit_high:.2f}"
             total_label = "$" + f"{line_low:.2f}.." + "$" + f"{line_high:.2f}"
+        haircut_label = f" (haircut {applied_haircut:.0f}%)" if side == "receive" and applied_haircut > 0 else ""
         lines.append(
-            f"• {display_name} {quantity_label} — {unit_label} each = {total_label}{estimate_label}"
+            f"• {display_name} {quantity_label} — {unit_label} each = {total_label}{haircut_label}{estimate_label}"
         )
     return low_total, high_total, lines, missing
 
