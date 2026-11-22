@@ -3108,7 +3108,7 @@ def _wait_for_telegram_rate_limit():
 
 
 RBLXVALUE_ATTRIBUTION = "Data from rblxvalue.com"
-ROBASE_ATTRIBUTION = "Cash price source: robase.gg (seller proceeds after fees)"
+ROBASE_ATTRIBUTION = "ROBASE prices: robase.gg"
 
 
 class TelegramHTML(str):
@@ -3182,7 +3182,7 @@ def _format_telegram_items(items):
 def send_telegram(message):
     is_html = isinstance(message, TelegramHTML)
     message = str(message)
-    is_robase_cash_message = "CASH PROFIT" in message or "CASH ROI:" in message
+    is_robase_cash_message = "CASH PROFIT" in message or "ROBASE PRICE" in message
     attribution = ROBASE_ATTRIBUTION if is_robase_cash_message else RBLXVALUE_ATTRIBUTION
     has_attribution = message.rstrip().endswith((RBLXVALUE_ATTRIBUTION, ROBASE_ATTRIBUTION))
     footer = "\n\n" + attribution if not has_attribution else ""
@@ -3753,20 +3753,16 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
         lines.append(f"🔗 {_telegram_link(trade_url, trade_label)}")
     lines.extend(["", "━━━━━━━━━━━━━━━━"])
     if listing.get("valuation_mode") == "cash":
-        roi = (difference / give_total * 100.0) if give_total else 0.0
         lines.extend([
-            "📤 <b>YOU GIVE</b> <i>(cash replacement cost)</i>",
+            "📤 <b>YOU GIVE</b> <i>· ROBASE price</i>",
             *_format_telegram_items(give_lines),
-            f"Total cost: <b>{chr(36)}{format_number(give_total)}</b>",
+            f"Total: <b>{chr(36)}{format_number(give_total)}</b>",
             "",
-            "📥 <b>YOU GET</b> <i>(net cash resale)</i>",
+            "📥 <b>YOU GET</b> <i>· ROBASE price</i>",
             *_format_telegram_items(receive_lines),
-            f"Net resale: <b>{chr(36)}{format_number(receive_total)}</b>",
+            f"Total: <b>{chr(36)}{format_number(receive_total)}</b>",
             "",
-            f"💵 <b>CASH PROFIT (CONSERVATIVE): {'+' if difference > 0 else ''}{chr(36)}{format_number(difference)}</b>",
-            f"📊 CASH ROI: <b>{roi:.2f}%</b>",
-            f"Resale haircut: {_telegram_escape(f'{CASH_SELL_HAIRCUT_PCT:.1f}%')}",
-            f"🏁 <b>RESULT: {'CASH WIN' if difference > 0 else 'NO CASH PROFIT'}</b>",
+            f"💵 <b>CASH PROFIT: +{chr(36)}{format_number(difference)}</b>",
         ])
     else:
         lines.extend([
@@ -3788,9 +3784,9 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
 def format_opportunity_digest(opportunities):
     """One same-cycle digest for all qualified offers beyond the individual-alert budget."""
     lines = [
-        "💎 MM2 TRADE <b>DIGEST</b>",
-        f"<b>{len(opportunities)} additional verified opportunities</b>",
-        "Ranked by conservative profit. Every offer is available now; none is deferred.",
+        "💎 MM2 ROBASE <b>OPPORTUNITIES</b>",
+        f"<b>{len(opportunities)} verified offers · profit $1.00+</b>",
+        "All item prices are copied from ROBASE. Every offer is open now.",
         "",
     ]
     for index, op in enumerate(opportunities, start=1):
@@ -3800,19 +3796,12 @@ def format_opportunity_digest(opportunities):
         if trade_url.startswith("/"):
             trade_url = "https://bloxswaps.com" + trade_url
         link = _telegram_link(trade_url, "Open trade" if source != "DISCORD" else "Open Discord message")
-        give_summary = " + ".join(
-            str(line).lstrip("•").split(" — ", 1)[0].strip()
-            for line in op.get("give_lines", [])
-        ) or "—"
-        receive_summary = " + ".join(
-            str(line).lstrip("•").split(" — ", 1)[0].strip()
-            for line in op.get("receive_lines", [])
-        ) or "—"
+        give_summary = "\n".join(_format_telegram_items(op.get("give_lines", []))) or "—"
+        receive_summary = "\n".join(_format_telegram_items(op.get("receive_lines", []))) or "—"
         if listing.get("valuation_mode") == "cash":
             low = float(op.get("cash_profit_worst", op.get("difference", 0)) or 0)
-            high = float(op.get("cash_profit_best", low) or low)
-            profit_label = f"{chr(36)}{low:.2f} to {chr(36)}{high:.2f}"
-            quality_label = f"CASH ROI: {float(op.get('margin', 0) or 0):.2f}%"
+            profit_label = f"+{chr(36)}{low:.2f}"
+            quality_label = "ROBASE verified"
             totals = f"{chr(36)}{float(op.get('give_total', 0) or 0):.2f} → {chr(36)}{float(op.get('receive_total', 0) or 0):.2f}"
         else:
             conservative = float(op.get("profit_worst", op.get("difference", 0)) or 0)
@@ -3824,8 +3813,8 @@ def format_opportunity_digest(opportunities):
             f"{index}. {warning}<b>{_telegram_escape(profit_label)}</b> · "
             f"{_telegram_escape(quality_label)} · {link}"
         )
-        lines.append(f"   GIVE: {_telegram_escape(give_summary)}")
-        lines.append(f"   GET: {_telegram_escape(receive_summary)}")
+        lines.append(f"   GIVE:\n{give_summary}")
+        lines.append(f"   GET:\n{receive_summary}")
         lines.append(f"   TOTAL: {_telegram_escape(totals)}")
         lines.append("")
     return TelegramHTML("\n".join(lines).rstrip())
@@ -4841,16 +4830,17 @@ def scan_once(include_backlog_rechecks=True):
                 or int(item.get("quantity_min") or 0) >= 5
             )
         ]
-        if large_stacks:
-            message += "\nWARNING: quantity 5+ — verify the stack in BloxSwaps."
-        ignored_names = ignored_item_names(listing)
-        if ignored_names:
-            message += "\nNOTE: not valued (no numeric Supreme value): " + ", ".join(ignored_names)
-        if op["margin"] >= SUSPICIOUS_PROFIT_PERCENT:
-            message += "\nWARNING: unusually high profit - verify item names and values before trading."
-        secondary_note = compare_secondary_values(listing["give_items"] + listing["receive_items"], values)
-        if secondary_note:
-            message += "\nSECOND-SOURCE CHECK (MM2Values): " + secondary_note
+        if listing.get("valuation_mode") != "cash":
+            if large_stacks:
+                message += "\nWARNING: quantity 5+ — verify the stack in BloxSwaps."
+            ignored_names = ignored_item_names(listing)
+            if ignored_names:
+                message += "\nNOTE: not valued (no numeric Supreme value): " + ", ".join(ignored_names)
+            if op["margin"] >= SUSPICIOUS_PROFIT_PERCENT:
+                message += "\nWARNING: unusually high profit - verify item names and values before trading."
+            secondary_note = compare_secondary_values(listing["give_items"] + listing["receive_items"], values)
+            if secondary_note:
+                message += "\nSECOND-SOURCE CHECK (MM2Values): " + secondary_note
         trade_id = listing["id"]
         if send:
             if listing.get("valuation_mode") == "cash":
