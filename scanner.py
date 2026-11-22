@@ -4435,6 +4435,8 @@ def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
         print("[robase-rblxvalue] rblx_ambiguous=" + ", ".join(sorted(set(rblx_ambiguous))[:20]))
     if rblx_missing:
         print("[robase-rblxvalue] rblx_missing=" + ", ".join(sorted(set(rblx_missing))[:20]))
+    if non_weapons:
+        print("[robase-rblxvalue] non_weapons=" + ", ".join(sorted(set(non_weapons))[:20]))
     return {
         "robase_total": len(robase_rows),
         "expected": expected_weapons,
@@ -5157,7 +5159,11 @@ def scan_once(include_backlog_rechecks=True):
     duplicate_count = parsed_count - len(listings)
     if duplicate_count:
         print(f"[dedupe] Ignored {duplicate_count} duplicate listing row(s) in this scan batch.")
-    print(f"[bloxswaps] Eligible listings after Ajouts filter: {len(listings)}")
+    print(
+        f"[bloxswaps] candidate_cards={stats.get('candidate_count', 0)} "
+        f"excluded_ajouts={stats.get('addition_count', 0)} "
+        f"eligible_after_ajout_filter={len(listings)}"
+    )
     print(f"[bloxswaps] Direct owner profiles parsed: {stats.get('owner_link_count', 0)}/{len(listings)}")
     print(
         f"[pagination] pages={stats.get('pagination_pages', 1)} "
