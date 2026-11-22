@@ -239,21 +239,30 @@ def calculate_cash_side(
         if side == "receive":
             unit_low = price_low * (1.0 - uncertainty_factor) * (1.0 - applied_haircut / 100.0)
             unit_high = price_high * (1.0 + uncertainty_factor) * (1.0 - applied_haircut / 100.0)
-            basis = "estimated net resale" if estimate_only else "net resale"
+            basis = "estimated price" if estimate_only else ("ROBASE price" if applied_haircut == 0 else "net resale")
         else:
             unit_low = price_low * (1.0 - uncertainty_factor)
             unit_high = price_high * (1.0 + uncertainty_factor)
-            basis = "estimated replacement cost" if estimate_only else "replacement cost"
+            basis = "estimated price" if estimate_only else "ROBASE price"
         line_low = unit_low * qmin
         line_high = unit_high * qmax
         low_total += line_low
         high_total += line_high
         quantity_label = f"x{qmin}" if qmin == qmax else f"x? ({qmin}..{qmax})"
         estimate_label = " [ESTIMATE — UNVERIFIED LEGACY PRICE]" if estimate_only else ""
-        haircut_label = f", haircut {applied_haircut:.0f}%" if side == "receive" else ""
+        display_name = str(item.get("display_name") or name)
+        price_display = str(entry.get("price_display") or "")
+        if (
+            not estimate_only and qmin == qmax and unit_low == unit_high
+            and price_display.startswith("$") and applied_haircut == 0
+        ):
+            unit_label = price_display
+            total_label = "$" + f"{line_low:.2f}"
+        else:
+            unit_label = "$" + f"{unit_low:.2f}.." + "$" + f"{unit_high:.2f}"
+            total_label = "$" + f"{line_low:.2f}.." + "$" + f"{line_high:.2f}"
         lines.append(
-            f"• {name} {quantity_label} — " + "$" + f"{unit_low:.2f}.." + "$" + f"{unit_high:.2f} each "
-            f"({basis}{haircut_label}) = " + "$" + f"{line_low:.2f}.." + "$" + f"{line_high:.2f}{estimate_label}"
+            f"• {display_name} {quantity_label} — {unit_label} each = {total_label}{estimate_label}"
         )
     return low_total, high_total, lines, missing
 
