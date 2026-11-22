@@ -43,7 +43,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn('          CASH_MIN_PROFIT_USD: "1.00"\n', workflow)
         self.assertIn('      CASH_FILTER: "true" # only fully priced, fresh ROBASE-verified offers are eligible\n', workflow)
         weekly = (ROOT / ".github/workflows/weekly-report.yml").read_text(encoding="utf-8")
-        self.assertIn('      CASH_FILTER: "false" # set to true only after fresh verified prices exist\n', weekly)
+        self.assertIn('      CASH_FILTER: "false" # weekly report is separate from the cash-first production scanner\n', weekly)
         self.assertIn("env.CASH_FILTER == '1' || env.CASH_FILTER == 'true'", workflow)
         self.assertIn("env.CASH_FILTER == '1' || env.CASH_FILTER == 'true'", weekly)
         self.assertNotIn('          RBLXVALUE_META_POLL_ENABLED: "true"\n', workflow)
