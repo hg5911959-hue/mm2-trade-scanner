@@ -21,6 +21,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 
 import rblxvalue_guard
+from tools.telegram_transport import TELEGRAM_OPENER
 from tools.metrics import update_metrics
 from tools.alert_policy import rank_and_split
 from tools.cash_market import calculate_cash_side, cash_profit_bounds, normalize_cash_name, cash_price_is_fresh, strict_quantity
@@ -3363,7 +3364,7 @@ def send_telegram(message):
         _wait_for_telegram_rate_limit()
         req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=20) as response:
+            with TELEGRAM_OPENER.open(req, timeout=20) as response:
                 raw = response.read()
         except HTTPError as exc:
             raw = exc.read(2000)
