@@ -40,4 +40,12 @@ jobs:
     with:
       dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
       verify_rblxvalue_key: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_rblxvalue_key || false }}
-    secrets: inherit
+    secrets:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      RBLXVALUE_API_KEY: ${{ secrets.RBLXVALUE_API_KEY }}
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+      DISCORD_MANUAL_MESSAGES_JSON: ${{ secrets.DISCORD_MANUAL_MESSAGES_JSON }}
+      DISCORD_MANUAL_MESSAGES_JSON_2: ${{ secrets.DISCORD_MANUAL_MESSAGES_JSON_2 }}
+      CASH_PRICES_CSV: ${{ secrets.CASH_PRICES_CSV }}
+      HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
