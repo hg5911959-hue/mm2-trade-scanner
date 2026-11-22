@@ -1,42 +1,49 @@
-# MM2 Market Intelligence — free-first data and AI architecture
+# Optional Market Intelligence Extensions
 
-This extension is additive. The existing BloxSwaps scanner, Supreme valuation, Telegram delivery, state persistence, and fail-closed trade qualification remain authoritative.
+This document describes optional research and import utilities. **None of these extensions is part of the production trade-qualification path unless a workflow explicitly invokes it.** The production scanner remains deterministic: BloxSwaps listings are parsed, ROBASE cash prices are refreshed, conservative calculations are applied, and Telegram handles alerts.
 
-## Primary data sources
+## Current production status
 
-### BloxSwaps
-The existing production scanner continues to collect BloxSwaps listings and calculate trade values using the existing verified Supreme Values pipeline. No AI model is allowed to invent or replace these values.
+- The production scheduler calls the reusable scanner workflow.
+- The production scan workflow does not invoke discord_collector.py, tools/collect_public_feeds.py, or the market_intelligence package.
+- No Discord bot token is passed to the production scanner workflow. The Discord collector is not an automatic source for current alerts.
+- Gemini and DeepSeek integrations are advisory/manual utilities only. They do not supply prices, determine profitability, or approve offers.
+- Reddit/RSS collection is a separate optional utility and is not part of the scheduled scanner.
 
-### Discord (authorized read-only bot)
-The repository now includes `discord_collector.py`, an official Discord bot client that discovers readable text channels and active threads only inside the two server IDs configured in the workflow. It does not send messages, moderate, join voice, access other servers, or use a personal account token/self-bot.
+## Optional Discord collection
 
-Configure:
-- GitHub Actions Secret: `DISCORD_BOT_TOKEN` — the bot token from Discord Developer Portal.
-- The two approved server IDs are configured directly in `.github/workflows/scan.yml` (they are public identifiers, not secrets).
+discord_collector.py is a standalone, read-only collector designed for a Discord bot installed in servers where the operator has permission to read the relevant channels. It must use an official bot token, not a personal account token or self-bot.
 
-In Discord Developer Portal, enable **Message Content Intent**. Invite the bot into each server with only **View Channels** and **Read Message History**, and ensure those permissions are granted on the trading channels the bot should read. Do not grant Administrator, Send Messages, Manage Messages, or other write permissions.
+To use it outside the production workflow:
 
-The workflow discovers text channels and active threads visible to the bot only within the configured servers, fetches up to 100 recent messages per readable channel on each scheduled scan, and stores a bounded seven-day deduplicated history in `data/discord_messages.json`. Channels without read permissions are skipped; access errors are reported rather than treated as empty results. Forum archived threads and channels hidden from the bot are not collected.
+1. Create/configure an official Discord bot and enable the required Message Content Intent.
+2. Invite it only to servers where you have authorization, granting only View Channels and Read Message History on the intended channels.
+3. Set DISCORD_BOT_TOKEN and an explicit DISCORD_GUILD_IDS allowlist in the local execution environment.
+4. Install the discord.py dependency in that environment and run python discord_collector.py --help to inspect the supported options before collecting.
+5. Keep raw message exports private. Do not commit private channel contents or upload them to the public dashboard.
 
-### Alternative public sources
-Public RSS sources may supplement the primary sources later, but they are not a substitute for authorized Discord channel access. The Reddit RSS adapter is optional and remains separate.
+The collector does not send messages, moderate, join voice, bypass permissions, or use personal account sessions. Channels the bot cannot read are not collected.
 
-## AI providers and zero-budget operation
+## Manual import and parsing utilities
 
-- **Gemini:** a tested API adapter exists for the official Gemini Developer API, but it is **not currently called by the production scanner or scheduled workflow**. No automatic AI commentary is running. Free models and quotas can change. Wiring it into production would require a separate reviewed change, a bounded payload, and a strict advisory-only result path.
-- **DeepSeek:** use the free DeepSeek chat website for manual second-opinion reviews. The API is not assumed to have a permanent free tier. The repository can export a prompt with `build_deepseek_manual_prompt(payload)`; no paid API call is made.
+- discord_parser.py parses supplied Discord message records into normalized listing candidates.
+- tools/check_discord_import.py validates a prepared import.
+- tools/merge_discord_imports.py merges explicitly supplied import files.
+- tools/collect_public_feeds.py is a separate public-feed/RSS utility.
 
-Only public listing text, message links, and normalized trade details should be sent to an AI model. Do not send bot tokens, account credentials, private DMs, or unrelated personal data.
+These are operator-run helpers. They are not invoked by the scheduled production scanner, and their output must not be treated as verified price data without the normal identity, freshness, and valuation checks.
 
-## Deterministic safety rules
+## AI adapters
 
-1. Supreme Values and the existing Python engine remain the sole source of trade arithmetic.
-2. AI may comment on risk, evidence gaps, liquidity, and verification steps only.
-3. Model output is advisory and schema-checked; invalid output is discarded.
-4. Missing values, uncertain quantities, or incomplete source scans remain unresolved; AI cannot fill them in.
-5. API keys and bot tokens belong in GitHub Actions Secrets, never in code, commits, logs, or chat.
-6. Do not use Discord self-bots, personal user tokens, private endpoint scraping, or permission bypasses.
+The market_intelligence package contains experimental advisory adapters. They are not called by scanner.py or the production GitHub Actions workflow. If enabled in a future change, model output must remain advisory-only and must never:
 
-## Current implementation status
+- invent or substitute ROBASE prices;
+- calculate or override trade profitability;
+- bypass Ajout/Ajouts, quantity, identity, stability, freshness, or API-budget gates;
+- mark an unverified offer as eligible.
 
-The repository has a read-only Discord collector, a BloxSwaps scanner, a tested but not production-wired Gemini adapter, a manual DeepSeek prompt exporter, and unit tests. Discord collection activates after the owner configures the `DISCORD_BOT_TOKEN` secret and the bot is present in both configured servers with the required permissions. The scanner can parse authorized collector output and manual imports into normalized item/quantity offers; private Discord records remain excluded from public history and the dashboard. Reddit RSS ingestion is a separate adapter and is not currently part of the scheduled scanner path.
+Never send API keys, bot tokens, account credentials, private DMs, or unrelated personal information to an AI provider.
+
+## Maintenance rule
+
+Keep optional integrations isolated from the scanner's critical path. A future integration must have a separate reviewed workflow, explicit secret mapping, bounded data retention, source-permission checks, and regression tests. Until then, the core scanner must operate correctly with these extensions unused.
