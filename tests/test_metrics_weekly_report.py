@@ -2,8 +2,9 @@ import json, tempfile, unittest
 from test_support import IsolatedDataTestCase
 from pathlib import Path
 from datetime import datetime, timezone
+from unittest.mock import patch
 from tools.metrics import update_metrics
-from tools.weekly_report import build_report
+from tools.weekly_report import build_report, send_report
 
 
 class MetricsReportTests(IsolatedDataTestCase):
@@ -37,6 +38,40 @@ class MetricsReportTests(IsolatedDataTestCase):
         self.assertIn("\n\nBlockers", report)
         self.assertIn("\n\nPreflight checks: PASS", report)
         self.assertNotIn("\\n", report)
+
+
+    def test_weekly_report_requires_telegram_api_ok_true(self):
+        class Response:
+            status = 200
+            def read(self, limit):
+                return b'{"ok":false,"description":"chat not found"}'
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+
+        with patch("tools.weekly_report.TELEGRAM_OPENER.open", return_value=Response()):
+            with self.assertRaisesRegex(RuntimeError, "API rejected"):
+                send_report("weekly status", token="placeholder", chat="123")
+
+    def test_weekly_report_accepts_confirmed_telegram_delivery(self):
+        class Response:
+            status = 200
+            def read(self, limit): return b'{"ok":true}'
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+
+        with patch("tools.weekly_report.TELEGRAM_OPENER.open", return_value=Response()):
+            self.assertTrue(send_report("weekly status", token="placeholder", chat="123"))
+
+    def test_weekly_report_rejects_malformed_telegram_response(self):
+        class Response:
+            status = 200
+            def read(self, limit): return b"not-json"
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+
+        with patch("tools.weekly_report.TELEGRAM_OPENER.open", return_value=Response()):
+            with self.assertRaisesRegex(RuntimeError, "invalid response"):
+                send_report("weekly status", token="placeholder", chat="123")
 
     def test_report_missing_metrics_file_is_represented_as_empty(self):
         with tempfile.TemporaryDirectory() as d:
