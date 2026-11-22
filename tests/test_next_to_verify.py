@@ -34,6 +34,17 @@ class NextToVerifyTests(IsolatedDataTestCase):
         self.assertEqual(ranked[0]["status"], "ambiguous")
         self.assertIsNone(ranked[0]["price"])
 
+    def test_format_blockers_labels_robase_prices_and_ambiguous_names(self):
+        metrics = {"2026-11-13": {"cash_blockers": {"spirit": 2, "bat": 1}, "cash_blocker_groups": {"bat|spirit": 1, "spirit": 1}}}
+        catalog = {
+            "items": {"spirit": {"cash_price_usd": 8.0, "verified_at_utc": "2026-11-13T00:00:00Z"}},
+            "duplicate_name_keys": ["bat"],
+        }
+        from tools.next_to_verify import format_blockers
+        report = format_blockers(metrics, catalog, now=datetime(2026, 11, 14, tzinfo=UTC))
+        self.assertIn("ROBASE $8.00", report)
+        self.assertIn("ambiguous ROBASE name", report)
+
     def test_no_blocker_data_returns_empty_ranking(self):
         ranked, total = rank_blockers({}, {"items": {}})
         self.assertEqual((ranked, total), ([], 0))
