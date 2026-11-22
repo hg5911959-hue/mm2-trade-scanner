@@ -53,7 +53,7 @@ class PreflightTests(IsolatedDataTestCase):
         self.assertEqual(self._checks(), [])
 
     def test_each_required_preflight_failure_is_reported(self):
-        self.assertTrue(any("fresh verified ROBASE cash prices" in x for x in self._checks(env={**self.env, "CASH_MIN_VERIFIED_ROWS": "101"})))
+        self.assertTrue(any("fresh verified ROBASE cash prices" in x for x in self._checks(env={**self.env, "CASH_MIN_VERIFIED_ROWS": "223"})))
         (self.root / "api_key_blocked.json").write_text(json.dumps({"permanent": True}), encoding="utf-8")
         self.assertTrue(any("API key is blocked" in x for x in self._checks()))
         (self.root / "api_key_blocked.json").write_text(json.dumps({"permanent": False}), encoding="utf-8")
