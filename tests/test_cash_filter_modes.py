@@ -134,7 +134,7 @@ class CashTelegramAttributionTests(IsolatedDataTestCase):
             "cash_profit_best": 216.20, "margin": 4302.79,
         }])
         payload = self._deliver_and_read_payload(message)
-        self.assertIn("ROBASE OPPORTUNITIES", payload["text"])
+        self.assertIn("<b>OPPORTUNITIES</b>", payload["text"])
         self.assertIn("Cash price source: robase.gg", payload["text"])
         self.assertNotIn("Data from rblxvalue.com", payload["text"])
 
