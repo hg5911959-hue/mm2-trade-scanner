@@ -76,7 +76,7 @@ def main():
     cash_summary = "catalogue unavailable"
     blocker_summary = None
     if not cash_filter:
-        cash_summary = "disabled (value-based mode)"
+        cash_summary = "not included in this weekly report (production scanner remains cash-first)"
     else:
         try:
             cash = load_robase_price_catalog(
