@@ -123,6 +123,29 @@ class MarketHistoryTests(IsolatedDataTestCase):
         self.assertNotIn("private-discord-1", serialized)
         self.assertNotIn("discord.com/channels/private", serialized)
 
+    def test_public_export_includes_complete_verified_robase_prices_and_sales(self):
+        robase_path = Path(self.tmp.name) / "robase_prices.json"
+        rows = [
+            {"name": "Icebreaker", "robase_category": "Ancient", "cash_price_usd": 1.25, "sold_7d": 10, "sold_30d": 40, "bloxswaps_copies": 100, "bloxswaps_holders": 80, "price_window_days": 7, "status": "verified", "source": "https://robase.gg/item/icebreaker", "last_checked_at_utc": "2026-11-22T10:00:00Z", "price_updated_at_utc": "2026-11-22T09:00:00Z"},
+            {"name": "Cowboy", "robase_category": "Classic", "cash_price_usd": 0.268, "sold_7d": 2, "sold_30d": 9, "bloxswaps_copies": None, "bloxswaps_holders": None, "price_window_days": 30, "status": "verified", "source": "https://robase.gg/item/cowboy", "last_checked_at_utc": "2026-11-22T10:01:00Z", "price_updated_at_utc": "2026-11-22T08:00:00Z"},
+        ]
+        robase_path.write_text(json.dumps({"catalog_complete": True, "catalog_expected_count": 2, "items": rows}), encoding="utf-8")
+        payload = build_dashboard_data(self.db_path, robase_path)
+        self.assertTrue(payload["robaseSummary"]["available"])
+        self.assertEqual(payload["robaseSummary"]["verifiedCount"], 2)
+        self.assertEqual(payload["robaseSummary"]["totalSold7d"], 12)
+        self.assertEqual(payload["robaseSummary"]["totalSold30d"], 49)
+        self.assertEqual(payload["robaseSummary"]["missingSupplyCount"], 1)
+        self.assertEqual(payload["robaseItems"][1]["priceWindowDays"], 30)
+        self.assertEqual(payload["robaseItems"][1]["url"], "https://robase.gg/item/cowboy")
+
+    def test_incomplete_robase_catalogue_is_not_published(self):
+        robase_path = Path(self.tmp.name) / "robase_prices.json"
+        robase_path.write_text(json.dumps({"catalog_complete": False, "catalog_expected_count": 2, "items": []}), encoding="utf-8")
+        payload = build_dashboard_data(self.db_path, robase_path)
+        self.assertFalse(payload["robaseSummary"]["available"])
+        self.assertEqual(payload["robaseItems"], [])
+
     def test_missing_database_exports_empty_dashboard(self):
         payload = build_dashboard_data(Path(self.tmp.name) / "missing.sqlite3")
         self.assertEqual(payload["summary"]["trackedListings"], 0)

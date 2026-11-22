@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -16,9 +17,88 @@ def _decode_json(value: str | None, fallback: Any) -> Any:
         return fallback
 
 
-def build_dashboard_data(db_path: str | Path) -> dict[str, Any]:
+def _robase_dashboard_payload(catalogue_path: str | Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    empty = {
+        "available": False, "itemCount": 0, "expectedCount": 0,
+        "verifiedCount": 0, "totalSold7d": 0, "totalSold30d": 0,
+        "missingSupplyCount": 0, "lastCheckedAt": None,
+        "latestPriceUpdateAt": None,
+    }
+    path = Path(catalogue_path)
+    if not path.exists():
+        return empty, []
+    try:
+        snapshot = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(snapshot, dict):
+            return empty, []
+        rows = snapshot.get("items")
+        expected = int(snapshot.get("catalog_expected_count") or 0)
+    except (OSError, ValueError, TypeError):
+        return empty, []
+    if snapshot.get("catalog_complete") is not True or not isinstance(rows, list) or expected <= 0 or len(rows) != expected:
+        return empty, []
+
+    def optional_count(value):
+        if value is None or value == "":
+            return None
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return parsed if parsed >= 0 else None
+
+    clean = []
+    checked_times = []
+    updated_times = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get("status") != "verified" or not row.get("name"):
+            return empty, []
+        try:
+            price = float(row.get("cash_price_usd"))
+            sold_7d = int(row.get("sold_7d"))
+            sold_30d = int(row.get("sold_30d"))
+            window_days = int(row.get("price_window_days"))
+        except (TypeError, ValueError, OverflowError):
+            return empty, []
+        if not math.isfinite(price) or price < 0 or sold_7d < 0 or sold_30d < 0 or window_days not in {7, 30}:
+            return empty, []
+        checked = str(row.get("last_checked_at_utc") or "")
+        updated = str(row.get("price_updated_at_utc") or "")
+        if checked:
+            checked_times.append(checked)
+        if updated:
+            updated_times.append(updated)
+        clean.append({
+            "name": str(row["name"]),
+            "category": str(row.get("robase_category") or ""),
+            "priceUsd": price,
+            "sold7d": sold_7d,
+            "sold30d": sold_30d,
+            "copies": optional_count(row.get("bloxswaps_copies")),
+            "holders": optional_count(row.get("bloxswaps_holders")),
+            "priceWindowDays": window_days,
+            "lastCheckedAt": checked or None,
+            "priceUpdatedAt": updated or None,
+            "url": str(row.get("source") or ""),
+        })
+    summary = {
+        "available": True,
+        "itemCount": len(clean),
+        "expectedCount": expected,
+        "verifiedCount": len(clean),
+        "totalSold7d": sum(row["sold7d"] for row in clean),
+        "totalSold30d": sum(row["sold30d"] for row in clean),
+        "missingSupplyCount": sum(row["copies"] is None or row["holders"] is None for row in clean),
+        "lastCheckedAt": max(checked_times) if checked_times else None,
+        "latestPriceUpdateAt": max(updated_times) if updated_times else None,
+    }
+    return summary, clean
+
+
+def build_dashboard_data(db_path: str | Path, robase_path: str | Path | None = None) -> dict[str, Any]:
     path = Path(db_path)
     generated = datetime.now(UTC).isoformat()
+    robase_summary, robase_items = _robase_dashboard_payload(robase_path or "data/robase_prices.json")
     empty = {
         "generatedAt": generated,
         "summary": {
@@ -30,6 +110,8 @@ def build_dashboard_data(db_path: str | Path) -> dict[str, Any]:
         "recentListings": [],
         "valueChecks": [],
         "priceHistory": [],
+        "robaseSummary": robase_summary,
+        "robaseItems": robase_items,
     }
     if not path.exists():
         return empty
@@ -179,6 +261,8 @@ def build_dashboard_data(db_path: str | Path) -> dict[str, Any]:
         "recentListings": recent_listings,
         "valueChecks": value_checks,
         "priceHistory": price_history,
+        "robaseSummary": robase_summary,
+        "robaseItems": robase_items,
     }
 
 
@@ -186,10 +270,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--database", default="data/market_history.sqlite3")
     parser.add_argument("--output", default="public/dashboard-data.json")
+    parser.add_argument("--robase-catalogue", default="data/robase_prices.json")
     args = parser.parse_args()
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    payload = build_dashboard_data(args.database)
+    payload = build_dashboard_data(args.database, args.robase_catalogue)
     temporary = output.with_name(output.name + ".tmp")
     temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     temporary.replace(output)

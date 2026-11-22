@@ -11,6 +11,7 @@
     *{box-sizing:border-box}body{margin:0;background:radial-gradient(900px 420px at 12% -10%,#1b3440 0%,transparent 65%),var(--bg);color:var(--text);font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
     .wrap{max-width:1240px;margin:auto;padding:28px 20px 56px}.top{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:26px}
     .eyebrow{color:var(--accent);font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:800}.title{font-size:clamp(28px,5vw,42px);line-height:1.08;letter-spacing:-.04em;margin:7px 0}.sub{color:var(--muted);max-width:680px}
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}.toolbar input,.toolbar select{background:#0b1118;border:1px solid var(--line);border-radius:9px;color:var(--text);padding:9px 11px;font:inherit;min-height:38px}.toolbar input{flex:1;min-width:180px}.toolbar select{min-width:145px}
     .status{border:1px solid var(--line);border-radius:999px;padding:7px 11px;color:var(--muted);white-space:nowrap;font-size:12px}
     .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:20px 0 24px}.metric,.panel{background:linear-gradient(145deg,var(--panel),#0e141c);border:1px solid var(--line);border-radius:16px}
     .metric{padding:16px}.metric .label{color:var(--muted);font-size:12px}.metric .value{font-size:28px;font-weight:750;letter-spacing:-.04em;margin-top:5px}.metric .hint{color:var(--muted);font-size:11px;margin-top:3px}
@@ -31,7 +32,7 @@
       <div>
         <div class="eyebrow">Independent market signals · Murder Mystery 2</div>
         <h1 class="title">MM2 Market Intelligence</h1>
-        <p class="sub">A data-led view of public BloxSwap listings, qualified trade margins, and item-value changes. Supreme remains the trading valuation source; secondary values are shown as a cross-check, never blended into profit calculations.</p>
+        <p class="sub">ROBASE completed-sale prices qualify USD opportunities. BloxSwaps item data and RBLXValue valuation and stability checks add context; source values are kept distinct rather than blended to invent a price.</p>
       </div>
       <div class="status" id="status">Loading market data…</div>
     </header>
@@ -41,6 +42,26 @@
       <div class="metric"><div class="label">Qualified opportunities</div><div class="value" id="opportunities">—</div><div class="hint">Last 7 days</div></div>
       <div class="metric"><div class="label">Items tracked</div><div class="value" id="items">—</div><div class="hint">Across value snapshots</div></div>
       <div class="metric"><div class="label">Two-source cross-checks</div><div class="value" id="crosschecked">—</div><div class="hint">Latest snapshot, within 15%</div></div>
+    </section>
+
+    </section>
+
+    <section class="panel" style="margin-bottom:14px" aria-label="ROBASE prices and item quantities">
+      <div class="panel-head">
+        <div><h2>ROBASE prices & market activity</h2><div class="small">Seller proceeds after marketplace fees · completed sales · BloxSwaps supply where published</div></div>
+        <span class="count" id="robase-count">Loading catalogue…</span>
+      </div>
+      <div class="toolbar">
+        <input id="robase-search" type="search" placeholder="Search an MM2 item…" autocomplete="off" aria-label="Search ROBASE items">
+        <select id="robase-category" aria-label="Filter by rarity"><option value="">All rarities</option></select>
+        <select id="robase-sort" aria-label="Sort ROBASE items">
+          <option value="sold7d">Most sold · 7d</option>
+          <option value="sold30d">Most sold · 30d</option>
+          <option value="price">Highest price</option>
+          <option value="name">Name A–Z</option>
+        </select>
+      </div>
+      <div id="robase-table" class="table-wrap"><div class="empty">Waiting for a complete verified ROBASE catalogue.</div></div>
     </section>
 
     <section class="panel">
@@ -65,7 +86,7 @@
     </section>
 
     <footer class="foot">
-      <span>Data from rblxvalue.com</span>
+      <span>Sources: ROBASE.gg · BloxSwaps · RBLXValue</span>
       <span>Public dashboard excludes private Discord message content and private-server listings.</span>
       <span id="updated">Data timestamp unavailable</span>
     </footer>
@@ -123,6 +144,46 @@
     }).join('');
   }
 
+  let robaseRows = [];
+  const usd = (value) => value == null ? "—" : "$" + Number(value).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:3});
+  function renderRobaseItems(summary) {
+    const query = $("robase-search").value.trim().toLowerCase();
+    const category = $("robase-category").value;
+    const sort = $("robase-sort").value;
+    const rows = robaseRows.filter(row =>
+      (!query || row.name.toLowerCase().includes(query)) &&
+      (!category || row.category === category)
+    );
+    rows.sort((a,b) => sort === "name" ? a.name.localeCompare(b.name) :
+      sort === "price" ? b.priceUsd-a.priceUsd :
+      sort === "sold30d" ? b.sold30d-a.sold30d : b.sold7d-a.sold7d);
+    $("robase-count").textContent = summary.available
+      ? rows.length + " / " + summary.verifiedCount + " verified · " + number(summary.totalSold7d) + " sold 7d · " + number(summary.missingSupplyCount) + " without supply data"
+      : "Verified catalogue unavailable";
+    if (!summary.available || !rows.length) {
+      $("robase-table").innerHTML = '<div class="empty">' + (summary.available ? "No items match this search." : "A complete verified ROBASE snapshot is not available.") + '</div>';
+      return;
+    }
+    $("robase-table").innerHTML = '<table style="min-width:900px"><thead><tr><th>Item</th><th>Cash price</th><th>Sold · 7d</th><th>Sold · 30d</th><th>Copies</th><th>Holders</th><th>Price basis</th></tr></thead><tbody>' +
+      rows.map(row => {
+        const url = safeUrl(row.url);
+        const name = url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + esc(row.name) + '</a>' : esc(row.name);
+        return '<tr><td><div class="item">' + name + '</div><div class="small">' + esc(row.category) + ' · checked ' + esc(date(row.lastCheckedAt)) + '</div></td>' +
+          '<td class="num profit">' + usd(row.priceUsd) + '</td><td class="num">' + number(row.sold7d) + '</td><td class="num">' + number(row.sold30d) + '</td>' +
+          '<td class="num">' + number(row.copies) + '</td><td class="num">' + number(row.holders) + '</td>' +
+          '<td>' + pill(row.priceWindowDays===7?'good':'warn',row.priceWindowDays===7?'7d average':'30d fallback') + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  function setupRobaseFilters(rows) {
+    const categories = [...new Set(rows.map(row=>row.category).filter(Boolean))].sort();
+    $("robase-category").innerHTML = '<option value="">All rarities</option>' +
+      categories.map(value=>'<option value="' + esc(value) + '">' + esc(value) + '</option>').join('');
+    $("robase-search").addEventListener("input",()=>renderRobaseItems(window.__robaseSummary||{}));
+    $("robase-category").addEventListener("change",()=>renderRobaseItems(window.__robaseSummary||{}));
+    $("robase-sort").addEventListener("change",()=>renderRobaseItems(window.__robaseSummary||{}));
+  }
+
   fetch("./dashboard-data.json",{cache:"no-store"})
     .then(response=>{if(!response.ok)throw new Error("Dashboard data is not published yet");return response.json();})
     .then(data=>{
@@ -137,6 +198,10 @@
       renderListings(data.recentListings||[]);
       renderValues(data.valueChecks||[]);
       renderHistory(data.priceHistory||[]);
+      robaseRows = data.robaseItems || [];
+      window.__robaseSummary = data.robaseSummary || {};
+      setupRobaseFilters(robaseRows);
+      renderRobaseItems(window.__robaseSummary);
     })
     .catch(error=>{$("status").textContent="Waiting for first deployment";$("updated").textContent=error.message;});
 </script>
