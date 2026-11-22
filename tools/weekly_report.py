@@ -1,9 +1,13 @@
 """Build a compact weekly Telegram health report using standard library only."""
 from __future__ import annotations
-import json, os, urllib.parse, urllib.request
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
+
+import json
+import os
 import tempfile
+import urllib.parse
+import urllib.request
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from tools.cash_market import cash_price_is_fresh, load_cash_price_catalog
 from tools.next_to_verify import format_blockers
 from tools.preflight import collect_preflight_checks
@@ -12,7 +16,7 @@ from tools.telegram_transport import TELEGRAM_OPENER
 DATA_DIR = Path("data")
 
 def build_report(metrics, discord_status=None, key_state=None, daily_limit=60, now=None, cash_summary=None, blocker_summary=None, preflight_checks=None):
-    current = now or datetime.now(timezone.utc)
+    current = now or datetime.now(UTC)
     days = [(current.date() - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
     rows = [metrics.get(day, {}) for day in days]
     scans = sum(int(row.get("scans", 0)) for row in rows)
@@ -37,6 +41,27 @@ def build_report(metrics, discord_status=None, key_state=None, daily_limit=60, n
             f"Last 7 days alerts: {trend}"
             + (f"\n\n{blocker_summary}" if blocker_summary else "")
             + ("\n\nPreflight checks: " + "; ".join(preflight_checks) if preflight_checks else "\n\nPreflight checks: PASS"))
+
+
+def send_report(report, *, token, chat):
+    """Send a weekly report and require Telegram's explicit API success."""
+    if not token or not chat:
+        raise RuntimeError("Telegram credentials are not configured")
+    body = urllib.parse.urlencode({"chat_id": chat, "text": report}).encode()
+    request = urllib.request.Request(
+        f"https://api.telegram.org/bot{token}/sendMessage", data=body
+    )
+    with TELEGRAM_OPENER.open(request, timeout=20) as response:
+        if response.status != 200:
+            raise RuntimeError("Telegram report delivery failed")
+        try:
+            result = json.loads(response.read(65536).decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            raise RuntimeError("Telegram report returned an invalid response") from None
+        if not isinstance(result, dict) or result.get("ok") is not True:
+            raise RuntimeError("Telegram API rejected weekly report delivery")
+    return True
+
 
 def main():
     data = DATA_DIR
@@ -69,12 +94,12 @@ def main():
                 f"oldest_verified_at={cash['oldest_verified_at'] or 'none'}"
             )
             blocker_summary = format_blockers(metrics, cash, limit=10)
-        except Exception as exc:
+        except (OSError, ValueError, RuntimeError, TypeError, KeyError, OverflowError) as exc:
             cash_summary = f"unavailable ({type(exc).__name__})"
             blocker_summary = "Cash-price blocker ranking unavailable."
     try:
         preflight_checks = collect_preflight_checks(data_dir=data, env=os.environ)["checks"]
-    except Exception as exc:
+    except (OSError, ValueError, RuntimeError, TypeError, KeyError, OverflowError) as exc:
         preflight_checks = ["preflight unavailable (" + type(exc).__name__ + ")"]
     report = build_report(
         metrics, discord, key, int(os.environ.get("RBLXVALUE_DAILY_REQUEST_LIMIT", "60")),
@@ -83,13 +108,7 @@ def main():
     )
     print("[weekly-report] " + report.replace("\n", " | "))
     token, chat = os.environ.get("TELEGRAM_BOT_TOKEN", ""), os.environ.get("TELEGRAM_CHAT_ID", "")
-    if token and chat:
-        body = urllib.parse.urlencode({"chat_id": chat, "text": report}).encode()
-        request = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=body)
-        with TELEGRAM_OPENER.open(request, timeout=20) as response:
-            if response.status != 200: raise RuntimeError("Telegram report delivery failed")
-    else:
-        raise RuntimeError("Telegram credentials are not configured")
+    send_report(report, token=token, chat=chat)
 
 if __name__ == "__main__":
     main()
