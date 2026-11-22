@@ -5624,15 +5624,16 @@ def record_failure(error):
 
 
 def minimum_cycle_start_window(duration_seconds):
-    """Reserve enough time for a full scan cycle based on observed production runtime.
+    """Keep a modest finish buffer without wasting most of the polling window.
 
-    Production scans take roughly 4.5 minutes; the former 25%/240s reserve
-    allowed a new 267s cycle to start with only 243s remaining.
+    Bounded production cycles now normally finish in seconds. Long sessions
+    reserve 25% (at least 120s and at most 180s) for a slower final cycle;
+    short sessions reserve 25% with a 30s floor.
     """
     duration = max(0.1, float(duration_seconds))
     if duration <= 300:
-        return max(0.1, duration * 0.25)
-    return min(360.0, max(300.0, duration * 0.4))
+        return max(30.0, duration * 0.25)
+    return min(180.0, max(120.0, duration * 0.25))
 
 
 def should_start_scan_cycle(remaining_seconds, duration_seconds):

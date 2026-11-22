@@ -31,5 +31,15 @@ class ScanCheckpointRecoveryTests(IsolatedDataTestCase):
         self.assertTrue(scanner.scan_checkpoint_requires_cold_start(now + 301, now=now))
 
 
+    def test_long_scan_window_uses_a_bounded_finish_buffer(self):
+        self.assertEqual(scanner.minimum_cycle_start_window(540), 135.0)
+        self.assertTrue(scanner.should_start_scan_cycle(135.0, 540))
+        self.assertFalse(scanner.should_start_scan_cycle(134.9, 540))
+
+    def test_short_scan_window_keeps_a_proportional_buffer(self):
+        self.assertEqual(scanner.minimum_cycle_start_window(240), 60.0)
+        self.assertEqual(scanner.minimum_cycle_start_window(60), 30.0)
+
+
 if __name__ == "__main__":
     unittest.main()
