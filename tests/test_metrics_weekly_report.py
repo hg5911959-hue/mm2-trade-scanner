@@ -2,6 +2,7 @@ import json, tempfile, unittest
 from test_support import IsolatedDataTestCase
 from pathlib import Path
 from datetime import datetime, timezone
+from unittest.mock import patch
 from tools.metrics import update_metrics
 from tools.weekly_report import build_report, send_report
 
