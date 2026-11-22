@@ -88,9 +88,9 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
             "DISCORD_MANUAL_MESSAGES_JSON_2", "CASH_PRICES_CSV", "HEALTHCHECKS_PING_URL",
         )
         for secret in scan_secrets:
-            self.assertIn(f"{secret}:\\n        required: false", scan_call)
+            self.assertIn(f"{secret}:\n        required: false", scan_call)
         for secret in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
-            self.assertIn(f"{secret}:\\n        required: false", watchdog_call)
+            self.assertIn(f"{secret}:\n        required: false", watchdog_call)
 
     def test_manual_scan_dispatch_defaults_to_dry_run(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
