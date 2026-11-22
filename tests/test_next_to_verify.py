@@ -27,6 +27,13 @@ class NextToVerifyTests(IsolatedDataTestCase):
         self.assertEqual(ranked[0]["price"], 8.0)
         self.assertAlmostEqual(ranked[0]["age_days"], 1.0)
 
+    def test_duplicate_robase_names_are_not_reported_as_unique_prices(self):
+        metrics = {"2026-11-13": {"cash_blockers": {"bat": 2}, "cash_blocker_groups": {"bat": 2}}}
+        catalog = {"items": {"bat": {"cash_price_usd": 2.0}}, "duplicate_name_keys": ["bat"]}
+        ranked, _ = rank_blockers(metrics, catalog, now=datetime(2026, 11, 14, tzinfo=UTC))
+        self.assertEqual(ranked[0]["status"], "ambiguous")
+        self.assertIsNone(ranked[0]["price"])
+
     def test_no_blocker_data_returns_empty_ranking(self):
         ranked, total = rank_blockers({}, {"items": {}})
         self.assertEqual((ranked, total), ([], 0))
