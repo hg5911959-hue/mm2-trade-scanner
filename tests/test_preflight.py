@@ -14,15 +14,23 @@ class PreflightTests(IsolatedDataTestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.now = datetime(2026, 11, 14, tzinfo=UTC)
+        checked = self.now.isoformat().replace("+00:00", "Z")
         snapshot = {
-            "schema_version": 1,
+            "schema_version": 2,
             "source": "https://robase.gg/",
-            "fetched_at_utc": self.now.isoformat().replace("+00:00", "Z"),
+            "fetched_at_utc": checked,
             "price_basis": "seller_proceeds_after_marketplace_fees",
+            "catalog_expected_count": 222,
+            "catalog_complete": True,
             "items": [
-                {"name": f"Item {index}", "cash_price_usd": 1.0, "sold_7d": 10,
-                 "status": "verified", "source": "https://robase.gg/", "notes": ""}
-                for index in range(100)
+                {
+                    "name": f"Item {index}", "robase_slug": f"item-{index}",
+                    "cash_price_usd": 1.0, "price_display": "$1.00",
+                    "sold_7d": 10, "sold_30d": 20, "status": "verified",
+                    "source": f"https://robase.gg/item/item-{index}",
+                    "last_checked_at_utc": checked, "price_updated_at_utc": checked,
+                }
+                for index in range(222)
             ],
         }
         (self.root / "robase_prices.json").write_text(json.dumps(snapshot), encoding="utf-8")
