@@ -4230,6 +4230,55 @@ def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
             "type": selected.get("type"),
         }
 
+    # A matching immutable ROBASE/RBLXValue slug is itself a safe direct
+    # crosswalk when the BloxSwaps metadata cache is temporarily unavailable.
+    # This fallback is deliberately exact-slug only; it never uses fuzzy names.
+    value_variants = list(_iter_value_variants(values))
+    for row in robase_rows:
+        robase_slug = normalize_slug(row.get("robase_slug") or "")
+        if not robase_slug or robase_slug in exact_map:
+            continue
+        direct_values = [
+            variant for variant in value_variants
+            if normalize_slug(variant[2].get("slug") or "") == robase_slug
+        ]
+        if len(direct_values) != 1:
+            continue
+        selected = direct_values[0][2]
+        selected_type = str(selected.get("type") or "").strip().casefold()
+        selected_category = str(selected.get("category") or "").strip().casefold()
+        row_category = str(row.get("robase_category") or "").strip().casefold()
+        expected_category = "chroma" if row_category == "chroma" else ROBASE_CATEGORY_TO_RBLX.get(row_category, row_category)
+        selected_name = normalize_name(selected.get("name") or "")
+        selected_slug = normalize_slug(selected.get("slug") or "")
+        selected_chroma = selected_name.startswith("chroma ") or selected_slug.startswith("chroma-")
+        if (
+            selected_type not in {"knife", "gun"}
+            or selected_category != expected_category
+            or selected_chroma != (row_category == "chroma")
+        ):
+            continue
+        exact_map[robase_slug] = {
+            "bloxswaps_slug": robase_slug,
+            "robase_slug": robase_slug,
+            "robase_name": row.get("name"),
+            "robase_category": row.get("robase_category"),
+            "robase_identity_source": "robase_rblx_exact_slug",
+            "rblx_slug": selected_slug,
+            "rblx_name": selected.get("name"),
+            "rblx_match_source": "slug",
+            "value": _supreme_numeric_value(selected)[0],
+            "value_status": _supreme_numeric_value(selected)[1],
+            "stability": _normalize_stability(selected.get("stability")),
+            "demand": _optional_bounded_int(selected.get("demand"), 0, 10),
+            "category": selected.get("category"),
+            "type": selected.get("type"),
+        }
+        missing_robase = [
+            name for name in missing_robase
+            if normalize_name(name) != normalize_name(row.get("name") or "")
+        ]
+
     expected_weapons = len(weapon_rows) + len(ambiguous_robase) + len(missing_robase)
     numeric = sum(row["value"] is not None for row in exact_map.values())
     missing_value = sum(row["value"] is None for row in exact_map.values())
