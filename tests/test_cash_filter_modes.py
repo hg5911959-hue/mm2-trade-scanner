@@ -94,7 +94,7 @@ class WeeklyReportValueModeTests(IsolatedDataTestCase):
                     "CASH_FILTER": "false", "CASH_PRICES_CSV": "must-not-be-read",
                     "TELEGRAM_BOT_TOKEN": "test-token", "TELEGRAM_CHAT_ID": "123",
                 }),
-                patch.object(weekly_report, "load_cash_price_catalog",
+                patch.object(weekly_report, "load_robase_price_catalog",
                              side_effect=AssertionError("cash catalogue must not load")) as load,
                 patch.object(weekly_report, "format_blockers",
                              side_effect=AssertionError("cash blockers must not load")),
@@ -105,7 +105,7 @@ class WeeklyReportValueModeTests(IsolatedDataTestCase):
             ):
                 weekly_report.main()
                 load.assert_not_called()
-            self.assertIn("Cash prices: disabled (value-based mode)", output.getvalue())
+            self.assertIn("Cash prices: not included in this weekly report (production scanner remains cash-first)", output.getvalue())
 
 
 

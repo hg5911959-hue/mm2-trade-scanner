@@ -43,9 +43,9 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn('          CASH_MIN_PROFIT_USD: "1.00"\n', workflow)
         self.assertIn('      CASH_FILTER: "true" # only fully priced, fresh ROBASE-verified offers are eligible\n', workflow)
         weekly = (ROOT / ".github/workflows/weekly-report.yml").read_text(encoding="utf-8")
-        self.assertIn('      CASH_FILTER: "false" # set to true only after fresh verified prices exist\n', weekly)
+        self.assertIn('      CASH_FILTER: "false" # weekly report is separate from the cash-first production scanner\n', weekly)
         self.assertIn("env.CASH_FILTER == '1' || env.CASH_FILTER == 'true'", workflow)
-        self.assertIn("env.CASH_FILTER == '1' || env.CASH_FILTER == 'true'", weekly)
+        self.assertNotIn("env.CASH_FILTER", weekly)
         self.assertNotIn('          RBLXVALUE_META_POLL_ENABLED: "true"\n', workflow)
         self.assertIn('          RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY: "6"\n', workflow)
         self.assertIn('          MM2_SCAN_DURATION_SECONDS: "540"\n', workflow)
@@ -197,6 +197,12 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertNotIn("run: python tools/preflight.py", scanner)
         self.assertIn("run: python -m tools.weekly_report", weekly)
         self.assertNotIn("run: python tools/weekly_report.py", weekly)
+
+    def test_weekly_report_keeps_cash_summary_separate_from_scanner_production_mode(self):
+        workflow = (ROOT / ".github/workflows/weekly-report.yml").read_text(encoding="utf-8")
+        self.assertIn('CASH_FILTER: "false"', workflow)
+        self.assertNotIn("CASH_PRICES_CSV", workflow)
+        self.assertNotIn("CASH_MAX_AGE_DAYS", workflow)
 
     def test_bloxswaps_scanner_step_has_no_duplicate_environment_keys(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
