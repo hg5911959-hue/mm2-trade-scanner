@@ -16,7 +16,7 @@ class PreflightTests(IsolatedDataTestCase):
         self.now = datetime(2026, 11, 14, tzinfo=UTC)
         checked = self.now.isoformat().replace("+00:00", "Z")
         snapshot = {
-            "schema_version": 2,
+            "schema_version": 3,
             "source": "https://robase.gg/",
             "fetched_at_utc": checked,
             "price_basis": "seller_proceeds_after_marketplace_fees",
@@ -24,7 +24,7 @@ class PreflightTests(IsolatedDataTestCase):
             "catalog_complete": True,
             "items": [
                 {
-                    "name": f"Item {index}", "robase_slug": f"item-{index}",
+                    "name": f"Item {index}", "robase_slug": f"item-{index}", "robase_category": "Godly",
                     "cash_price_usd": 1.0, "price_display": "$1.00",
                     "sold_7d": 10, "sold_30d": 20, "status": "verified",
                     "source": f"https://robase.gg/item/item-{index}",
