@@ -128,14 +128,14 @@ class CashTelegramAttributionTests(IsolatedDataTestCase):
         }
         message = scanner.format_opportunity_digest([{
             "listing": listing, "give_total": 5.02, "receive_total": 221.22,
-            "give_lines": ["Harvester x1 — $5.02 each (replacement cost) = $5.02"],
-            "receive_lines": ["Gingerscope x1 — $260.26 each (net resale, haircut 15%) = $221.22"],
+            "give_lines": ["Harvester x1 — $5.02 each = $5.02"],
+            "receive_lines": ["Gingerscope x1 — $260.26 each = $260.26"],
             "difference": 216.20, "cash_profit_worst": 216.20,
             "cash_profit_best": 216.20, "margin": 4302.79,
         }])
         payload = self._deliver_and_read_payload(message)
         self.assertIn("<b>OPPORTUNITIES</b>", payload["text"])
-        self.assertIn("Cash price source: robase.gg", payload["text"])
+        self.assertIn("Prices: robase.gg · Item values: rblxvalue.com", payload["text"])
         self.assertNotIn("Data from rblxvalue.com", payload["text"])
 
 
