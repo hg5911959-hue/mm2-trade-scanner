@@ -2773,6 +2773,7 @@ class PendingDirectLookupTests(IsolatedDataTestCase):
         with (
             patch.dict(os.environ, {"BLOXSWAPS_API_ONLY": "true"}),
             patch("scanner.bloxswaps_api_get_json", side_effect=lookup),
+            patch("scanner.fetch_bloxswaps_items_map", return_value={}),
         ):
             listings, stats, discovered = scanner.fetch_bloxswaps_all(
                 set(), pending_ad_ids=["gone-post", "single-post", "trade-post"]
