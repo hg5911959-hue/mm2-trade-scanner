@@ -23,7 +23,7 @@ from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 import rblxvalue_guard
 from tools.metrics import update_metrics
 from tools.alert_policy import rank_and_split
-from tools.cash_market import calculate_cash_side, cash_profit_bounds, normalize_cash_name, cash_price_is_fresh, strict_quantity, parse_haircut_tiers
+from tools.cash_market import calculate_cash_side, cash_profit_bounds, normalize_cash_name, cash_price_is_fresh, strict_quantity
 
 
 def load_cash_price_catalog(*args, **kwargs):
@@ -119,13 +119,6 @@ def cash_filter_enabled(value=None):
 
 
 CASH_FILTER = cash_filter_enabled()
-CASH_SELL_HAIRCUT_PCT = float(os.environ.get("CASH_SELL_HAIRCUT_PCT", "15"))
-CASH_SELL_HAIRCUT_OVERRIDE = "CASH_SELL_HAIRCUT_PCT" in os.environ
-CASH_SELL_HAIRCUT_TIERS = parse_haircut_tiers(
-    os.environ.get("CASH_SELL_HAIRCUT_TIERS", "0-2:30,2-10:20,10-50:15,50-:10")
-)
-if not math.isfinite(CASH_SELL_HAIRCUT_PCT) or not 0 <= CASH_SELL_HAIRCUT_PCT <= 99:
-    raise ValueError("CASH_SELL_HAIRCUT_PCT must be between 0 and 99")
 CASH_MIN_PROFIT_USD = max(1.0, float(os.environ.get("CASH_MIN_PROFIT_USD", "1.00")))
 CASH_MIN_PROFIT_USD_SMALL = max(1.0, float(os.environ.get("CASH_MIN_PROFIT_USD_SMALL", "1.00")))
 CASH_MIN_VERIFIED_ROWS = max(0, int(os.environ.get("CASH_MIN_VERIFIED_ROWS", "8")))
@@ -4399,9 +4392,9 @@ def scan_once(include_backlog_rechecks=True):
         previous_cash_hash = cash_catalog_snapshot_hash()
         cash_prices_changed = previous_cash_hash != cash_catalog["sha256"]
         print("[mode] mode=cash")
-        print("[cash] Loaded %s price rows; verified=%s; expired=%s; unverified=%s; max_age=%sd; sell_haircut=%s%%" % (
-            cash_catalog["row_count"], verified_cash_rows, len(expired_cash_rows),
-            unverified_cash_rows, CASH_MAX_AGE_DAYS, CASH_SELL_HAIRCUT_PCT
+        print("[cash] Loaded %s/%s exact ROBASE prices; verified=%s; expired=%s; unverified=%s" % (
+            cash_catalog["row_count"], cash_catalog.get("expected_count", cash_catalog["row_count"]),
+            verified_cash_rows, len(expired_cash_rows), unverified_cash_rows
         ))
         if unverified_cash_rows > 0:
             send_maintenance_alert(
