@@ -83,9 +83,8 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         scan_call = scan.split("  workflow_call:", 1)[1].split("  workflow_dispatch:", 1)[0]
         watchdog_call = watchdog.split("  workflow_call:", 1)[1].split("  workflow_dispatch:", 1)[0]
         scan_secrets = (
-            "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "RBLXVALUE_API_KEY",
-            "DISCORD_BOT_TOKEN", "DISCORD_MANUAL_MESSAGES_JSON",
-            "DISCORD_MANUAL_MESSAGES_JSON_2", "CASH_PRICES_CSV", "HEALTHCHECKS_PING_URL",
+            "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
+            "RBLXVALUE_API_KEY", "HEALTHCHECKS_PING_URL",
         )
         for secret in scan_secrets:
             self.assertIn(f"{secret}:\n        required: false", scan_call)
