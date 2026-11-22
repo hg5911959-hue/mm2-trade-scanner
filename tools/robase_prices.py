@@ -43,8 +43,8 @@ DETAIL_SUPPLY_RE = re.compile(
     r"BloxSwaps counts\s+([0-9,]+)\s+copies in the game,\s+held by\s+([0-9,]+)\s+players",
     re.I,
 )
-MAX_ITEM_AGE_SECONDS = 20 * 60
-DETAIL_WORKERS = 12
+MAX_ITEM_AGE_SECONDS = 15 * 60
+DETAIL_WORKERS = 8
 REQUEST_TIMEOUT_SECONDS = 25
 
 
@@ -232,32 +232,44 @@ def _fetch_item_detail(url: str, cached: dict | None):
     if cached.get("last_modified"):
         headers["If-Modified-Since"] = str(cached["last_modified"])
     request = Request(url, headers=headers)
-    try:
-        with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-            if response.status != 200:
-                raise RuntimeError(f"ROBASE returned HTTP {response.status} for {url}")
-            raw = response.read(1_000_001)
-            if len(raw) > 1_000_000:
-                raise RuntimeError(f"ROBASE item page exceeded 1 MB: {url}")
-            document = raw.decode("utf-8", errors="strict")
-            etag = response.headers.get("ETag", "")
-            last_modified = response.headers.get("Last-Modified", "")
-        fresh = _parse_item_detail(url, document, now, etag, last_modified)
-        old_price = cached.get("price_display")
-        if old_price == fresh["price_display"]:
-            fresh["price_updated_at_utc"] = cached.get("price_updated_at_utc") or now
-        return fresh, "updated" if old_price != fresh["price_display"] else "unchanged"
-    except HTTPError as exc:
-        if exc.code == 304 and cached.get("name") and cached.get("price_display"):
-            retained = dict(cached)
-            retained["last_checked_at_utc"] = now
-            retained["etag"] = retained.get("etag") or headers.get("If-None-Match", "")
-            retained["last_modified"] = retained.get("last_modified") or headers.get("If-Modified-Since", "")
-            return retained, "not_modified"
-        raise
-    except (TimeoutError, URLError, UnicodeDecodeError, ValueError, RuntimeError):
-        raise
-
+    for attempt in range(3):
+        try:
+            with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+                if response.status != 200:
+                    raise RuntimeError(f"ROBASE returned HTTP {response.status} for {url}")
+                raw = response.read(1_000_001)
+                if len(raw) > 1_000_000:
+                    raise RuntimeError(f"ROBASE item page exceeded 1 MB: {url}")
+                document = raw.decode("utf-8", errors="strict")
+                etag = response.headers.get("ETag", "")
+                last_modified = response.headers.get("Last-Modified", "")
+            fresh = _parse_item_detail(url, document, _utc_now(), etag, last_modified)
+            old_price = cached.get("price_display")
+            if old_price == fresh["price_display"]:
+                fresh["price_updated_at_utc"] = cached.get("price_updated_at_utc") or fresh["last_checked_at_utc"]
+            return fresh, "updated" if old_price != fresh["price_display"] else "unchanged"
+        except HTTPError as exc:
+            if exc.code == 304 and cached.get("name") and cached.get("price_display"):
+                retained = dict(cached)
+                retained["last_checked_at_utc"] = _utc_now()
+                retained["etag"] = retained.get("etag") or headers.get("If-None-Match", "")
+                retained["last_modified"] = retained.get("last_modified") or headers.get("If-Modified-Since", "")
+                return retained, "not_modified"
+            if exc.code not in {429, 500, 502, 503, 504} or attempt == 2:
+                raise
+            retry_after = 0.0
+            try:
+                retry_after = float(exc.headers.get("Retry-After", "0"))
+            except (AttributeError, TypeError, ValueError):
+                pass
+            time.sleep(min(8.0, max(retry_after, 0.5 * (2 ** attempt))))
+        except (TimeoutError, URLError, UnicodeDecodeError, ValueError) as exc:
+            if attempt == 2:
+                raise
+            time.sleep(0.5 * (2 ** attempt))
+            if isinstance(exc, UnicodeDecodeError):
+                continue
+    raise RuntimeError(f"ROBASE item page failed after retries: {url}")
 
 def _load_previous_snapshot(path: Path):
     try:
