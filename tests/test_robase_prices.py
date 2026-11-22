@@ -66,6 +66,21 @@ class RobasePriceParserTests(IsolatedDataTestCase):
             {"https://robase.gg/item/harvester", "https://robase.gg/item/chroma-emberscythe"},
         )
 
+    def test_item_detail_accepts_rendered_about_heading_and_description(self):
+        html = """
+        <main>
+          <h2>About Harvester</h2>
+          <p>Harvester is an Ancient item in Roblox Murder Mystery 2 (MM2).
+          Over the last 7 days it sold for $4.99 on average after the marketplace fee.</p>
+        </main>
+        """
+        item = _parse_item_detail(
+            "https://robase.gg/item/harvester", html, "2026-11-22T09:00:00Z"
+        )
+        self.assertEqual(item["name"], "Harvester")
+        self.assertEqual(item["robase_category"], "Ancient")
+        self.assertEqual(item["price_display"], "$4.99")
+
     def test_item_detail_preserves_displayed_price_and_bloxswaps_metadata(self):
         html = """
         <main>
