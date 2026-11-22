@@ -4543,11 +4543,6 @@ def listing_watch_fingerprints(listing, values, aliases=None, cash_catalog=None)
                 cash_variants = record.get("variants") or [record]
                 if len(cash_variants) == 1:
                     cash_selected = cash_variants[0]
-            cash_name = (
-                (cash_selected or {}).get("name")
-                or (record or {}).get("name")
-                or name
-            )
             if cash_catalog:
                 cash_row, _cash_identity_source = _resolve_robase_cash_record(
                     normalize_slug(item.get("catalog_slug") or ""), cash_catalog
