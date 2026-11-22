@@ -2006,7 +2006,7 @@ def _filter_variants_by_catalog(candidates, item):
         if chroma is True or any(is_chroma_variant(row) for row in candidates):
             candidates = chroma_matches
     if year is not None:
-        year_pattern = re.compile(rf"(?<!\\d){year}(?!\\d)")
+        year_pattern = re.compile(rf"(?<!\d){year}(?!\\d)")
         year_matches = [
             row for row in candidates
             if year_pattern.search(str(row[2].get("name") or ""))
