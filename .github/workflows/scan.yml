@@ -117,7 +117,7 @@ jobs:
           CASH_MIN_PROFIT_USD_SMALL: "1.00"
           CASH_MIN_MARGIN_PERCENT: "0"
           MAX_PENDING_RECHECK_PER_SCAN: "50"
-          MAX_BACKLOG_RECHECK_PAGES: "25"
+          MAX_BACKLOG_RECHECK_PAGES: "1000"
           BACKLOG_RECHECK_EVERY_CYCLES: "1"
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
           MAX_ALERTS_PER_SESSION: "0"
