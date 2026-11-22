@@ -3539,12 +3539,14 @@ class RealAlertReevaluationIntegrationTests(IsolatedDataTestCase):
                     "name": "Knife A", "cash_price_usd": 10.0, "price_display": "$10.00",
                     "status": "verified", "verified_at_utc": datetime.now(timezone.utc).isoformat(),
                     "source": "https://robase.gg/item/knife-a", "robase_slug": "knife-a",
+                    "robase_category": "Godly",
                 },
                 "knife-b": {
                     "name": "Knife B", "cash_price_usd": knife_b_price,
                     "price_display": "$" + "{:.2f}".format(knife_b_price),
                     "status": "verified", "verified_at_utc": datetime.now(timezone.utc).isoformat(),
                     "source": "https://robase.gg/item/knife-b", "robase_slug": "knife-b",
+                    "robase_category": "Godly",
                 },
             }
             return {
@@ -4065,7 +4067,7 @@ class RobaseIdentityCrosswalkTests(IsolatedDataTestCase):
             "latte-gun": {"slug": "latte", "displayName": "Latte", "rarity": "LEGENDARY", "type": "Gun", "chroma": False},
             "latte-knife": {"slug": "latte-k-2023", "displayName": "Latte", "rarity": "LEGENDARY", "type": "Knife", "chroma": False},
         }
-        matched, source = scanner._match_robase_row_to_bloxswaps(rows["latte"], item_map)
+        matched, source = scanner._match_robase_row_to_bloxswaps(rows["latte-915"], item_map)
         self.assertIsNone(matched)
         self.assertEqual(source, "ambiguous")
 
