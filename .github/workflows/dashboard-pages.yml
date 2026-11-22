@@ -26,6 +26,19 @@ jobs:
         with:
           ref: main
 
+      - name: Validate dashboard JavaScript
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          html = Path("docs/index.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
+          if len(scripts) != 1:
+              raise SystemExit(f"Expected one inline dashboard script, found {len(scripts)}")
+          Path("/tmp/mm2-dashboard-inline.js").write_text(scripts[0], encoding="utf-8")
+          PY
+          node --check /tmp/mm2-dashboard-inline.js
+
       - name: Check whether GitHub Pages is enabled
         id: pages-preflight
         env:
