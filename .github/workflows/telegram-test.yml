@@ -35,21 +35,21 @@ jobs:
           payload = {
               "chat_id": chat_id,
               "text": (
-                  "💎 MM2 TRADE <b>ALERT — TEST ONLY</b>\\n"
-                  "🟢 <b>TELEGRAM HTML DELIVERY CHECK</b>\\n\\n"
-                  "📤 <b>YOU GIVE</b> <i>(cash replacement cost)</i>\\n"
-                  "• <b>Test Item A</b> <code>×1</code>\\n"
-                  "  $1.00 each → <b>$1.00</b>\\n"
-                  "Total cost: <b>$1.00</b>\\n\\n"
-                  "📥 <b>YOU GET</b> <i>(net cash resale)</i>\\n"
-                  "• <b>Test Item B</b> <code>×1</code>\\n"
-                  "  $1.25 each → <b>$1.25</b>\\n"
-                  "Net resale: <b>$1.25</b>\\n\\n"
-                  "💵 <b>CASH PROFIT (CONSERVATIVE): +$0.25</b>\\n"
-                  "📊 CASH ROI: <b>25.00%</b>\\n"
-                  "🏁 <b>RESULT: CASH WIN</b>\\n\\n"
-                  "Cash price source: robase.gg (seller proceeds after fees)\\n"
-                  "🧪 TEST ONLY — this is not a live offer.\\n"
+                  "💎 MM2 TRADE <b>ALERT — TEST ONLY</b>\n"
+                  "🟢 <b>TELEGRAM HTML DELIVERY CHECK</b>\n\n"
+                  "📤 <b>YOU GIVE</b> <i>(cash replacement cost)</i>\n"
+                  "• <b>Test Item A</b> <code>×1</code>\n"
+                  "  $1.00 each → <b>$1.00</b>\n"
+                  "Total cost: <b>$1.00</b>\n\n"
+                  "📥 <b>YOU GET</b> <i>(net cash resale)</i>\n"
+                  "• <b>Test Item B</b> <code>×1</code>\n"
+                  "  $1.25 each → <b>$1.25</b>\n"
+                  "Net resale: <b>$1.25</b>\n\n"
+                  "💵 <b>CASH PROFIT (CONSERVATIVE): +$0.25</b>\n"
+                  "📊 CASH ROI: <b>25.00%</b>\n"
+                  "🏁 <b>RESULT: CASH WIN</b>\n\n"
+                  "Cash price source: robase.gg (seller proceeds after fees)\n"
+                  "🧪 TEST ONLY — this is not a live offer.\n"
                   "UTC: " + datetime.now(timezone.utc).isoformat(timespec="seconds")
               ),
               "parse_mode": "HTML",
