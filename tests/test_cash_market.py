@@ -290,51 +290,72 @@ class CashMarketTests(IsolatedDataTestCase):
 
 
  
-    def test_robase_catalog_uses_only_fresh_completed_sale_rows(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        path = Path(tmp.name) / "robase.json"
-        now = datetime(2026, 11, 21, tzinfo=UTC)
-        snapshot = {
-            "schema_version": 1,
+    def _robase_snapshot(self, now):
+        checked = now.isoformat().replace("+00:00", "Z")
+        rows = []
+        for i in range(222):
+            rows.append({
+                "name": f"Item {i}",
+                "robase_slug": f"item-{i}",
+                "cash_price_usd": 2.5,
+                "price_display": "$2.50",
+                "sold_7d": 1 if i == 1 else 10,
+                "sold_30d": 20,
+                "status": "verified",
+                "source": f"https://robase.gg/item/item-{i}",
+                "last_checked_at_utc": checked,
+                "price_updated_at_utc": checked,
+                "bloxswaps_value": 100,
+                "bloxswaps_copies": 1000,
+                "bloxswaps_holders": 500,
+            })
+        return {
+            "schema_version": 2,
             "source": "https://robase.gg/",
-            "fetched_at_utc": "2026-11-21T00:00:00Z",
+            "fetched_at_utc": checked,
             "price_basis": "seller_proceeds_after_marketplace_fees",
-            "items": [
-                {"name": f"Item {i}", "cash_price_usd": 2.5, "sold_7d": 10,
-                 "status": "verified", "source": "https://robase.gg/", "notes": ""}
-                for i in range(100)
-            ],
+            "catalog_expected_count": 222,
+            "catalog_complete": True,
+            "items": rows,
         }
-        snapshot["items"][1]["sold_7d"] = 1
-        snapshot["items"][1]["status"] = "unverified"
-        path.write_text(json.dumps(snapshot), encoding="utf-8")
-        catalog = load_robase_price_catalog(path, now=now)
-        self.assertEqual(catalog["row_count"], 100)
-        self.assertEqual(catalog["verified_count"], 99)
-        self.assertEqual(catalog["items"][normalize_cash_name("Item 0")]["status"], "verified")
-        self.assertEqual(catalog["items"][normalize_cash_name("Item 1")]["status"], "unverified")
 
-    def test_robase_catalog_rejects_stale_snapshot_and_duplicate_names(self):
+    def test_robase_catalog_uses_all_fresh_item_pages_even_when_sales_sample_is_low(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         path = Path(tmp.name) / "robase.json"
         now = datetime(2026, 11, 21, tzinfo=UTC)
-        snapshot = {
-            "schema_version": 1,
-            "source": "https://robase.gg/",
-            "fetched_at_utc": "2026-11-19T00:00:00Z",
-            "price_basis": "seller_proceeds_after_marketplace_fees",
-            "items": [
-                {"name": f"Item {i}", "cash_price_usd": 2.5, "sold_7d": 10,
-                 "status": "verified", "source": "https://robase.gg/", "notes": ""}
-                for i in range(100)
-            ],
-        }
+        snapshot = self._robase_snapshot(now)
         path.write_text(json.dumps(snapshot), encoding="utf-8")
-        catalog = load_robase_price_catalog(path, now=now)
-        self.assertEqual(catalog["verified_count"], 0)
-        snapshot["fetched_at_utc"] = "2026-11-21T00:00:00Z"
+        catalog = load_robase_price_catalog(path, now=now + timedelta(minutes=10))
+        self.assertEqual(catalog["row_count"], 222)
+        self.assertEqual(catalog["verified_count"], 222)
+        row = catalog["items"][normalize_cash_name("Item 1")]
+        self.assertEqual(row["status"], "verified")
+        self.assertEqual(row["price_display"], "$2.50")
+        self.assertEqual(row["bloxswaps_value"], 100)
+
+    def test_robase_catalog_rejects_any_stale_item_page(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / "robase.json"
+        now = datetime(2026, 11, 21, tzinfo=UTC)
+        snapshot = self._robase_snapshot(now)
+        snapshot["items"][1]["last_checked_at_utc"] = (now - timedelta(minutes=21)).isoformat().replace("+00:00", "Z")
+        path.write_text(json.dumps(snapshot), encoding="utf-8")
+        with self.assertRaisesRegex(RuntimeError, "not all freshly verified"):
+            load_robase_price_catalog(path, now=now)
+
+    def test_robase_catalog_rejects_incomplete_catalogue_and_duplicate_names(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / "robase.json"
+        now = datetime(2026, 11, 21, tzinfo=UTC)
+        snapshot = self._robase_snapshot(now)
+        snapshot["catalog_complete"] = False
+        path.write_text(json.dumps(snapshot), encoding="utf-8")
+        with self.assertRaisesRegex(RuntimeError, "catalogue is incomplete"):
+            load_robase_price_catalog(path, now=now)
+        snapshot["catalog_complete"] = True
         snapshot["items"][1]["name"] = snapshot["items"][0]["name"]
         path.write_text(json.dumps(snapshot), encoding="utf-8")
         with self.assertRaisesRegex(RuntimeError, "Duplicate normalized"):
