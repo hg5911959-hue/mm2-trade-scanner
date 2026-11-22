@@ -33,7 +33,8 @@ DETAIL_PRICE_RE = re.compile(
     re.I,
 )
 DETAIL_ABOUT_RE = re.compile(
-    r"(?P<name>.+?)\s+is\s+(?:a|an)\s+(?P<category>.+?)\s+item in Roblox Murder Mystery 2\s+\(MM2\)",
+    r"\bAbout\s+(?P<name>[^.]+?)\s+(?P=name)\s+is\s+(?:a|an)\s+"
+    r"(?P<category>.+?)\s+item in Roblox Murder Mystery 2\s+\(MM2\)",
     re.I,
 )
 DETAIL_SOLD_7D_RE = re.compile(r"([0-9,]+)\s+copies changed hands in the last 7 days", re.I)
