@@ -4812,10 +4812,7 @@ def scan_once(include_backlog_rechecks=True):
                 f"\n⚠️ POSSIBLE PROFIT RANGE: {format_number(op['profit_worst'])} "
                 f"to {format_number(op['profit_best'])}"
             )
-        if listing.get("valuation_mode") == "cash":
-            prefix = "ESTIMATED ONLY — NOT TRADE-ELIGIBLE" if op.get("cash_estimate_only") else "CASH PROFIT RANGE"
-            message += f"\n💵 {prefix}: ${op['cash_profit_worst']:.2f} to ${op['cash_profit_best']:.2f}"
-        else:
+        if listing.get("valuation_mode") != "cash":
             message += f"\n📊 MARGIN: {op['margin']:.2f}%"
         if op.get("receive_demand_score") is not None and op.get("receive_stability_score") is not None:
             message += (
