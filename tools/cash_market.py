@@ -319,7 +319,7 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RuntimeError("[cash] ROBASE price snapshot is missing or invalid.") from exc
 
-    if snapshot.get("schema_version") != 3 or snapshot.get("price_basis") != "seller_proceeds_after_marketplace_fees":
+    if snapshot.get("schema_version") != 4 or snapshot.get("price_basis") != "seller_proceeds_after_marketplace_fees":
         raise RuntimeError("[cash] ROBASE snapshot is not the verified item-identity schema.")
     expected = snapshot.get("catalog_expected_count")
     rows = snapshot.get("items")

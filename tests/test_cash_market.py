@@ -317,7 +317,7 @@ class CashMarketTests(IsolatedDataTestCase):
                 "bloxswaps_holders": 500,
             })
         return {
-            "schema_version": 3,
+            "schema_version": 4,
             "source": "https://robase.gg/",
             "fetched_at_utc": checked,
             "price_basis": "seller_proceeds_after_marketplace_fees",

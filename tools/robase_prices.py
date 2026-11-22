@@ -327,7 +327,7 @@ def _load_previous_snapshot(path: Path):
         return {}
     if (
         not isinstance(data, dict)
-        or data.get("schema_version") != 3
+        or data.get("schema_version") != 4
         or data.get("catalog_complete") is not True
         or not isinstance(data.get("items"), list)
     ):
@@ -415,7 +415,7 @@ def fetch_snapshot(output: Path = DEFAULT_OUTPUT, timeout: int = REQUEST_TIMEOUT
         )
     )
     snapshot = {
-        "schema_version": 3,
+        "schema_version": 4,
         "source": URL,
         "fetched_at_utc": now,
         "price_basis": "seller_proceeds_after_marketplace_fees",

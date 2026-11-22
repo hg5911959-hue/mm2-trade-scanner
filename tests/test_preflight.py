@@ -16,7 +16,7 @@ class PreflightTests(IsolatedDataTestCase):
         self.now = datetime(2026, 11, 14, tzinfo=UTC)
         checked = self.now.isoformat().replace("+00:00", "Z")
         snapshot = {
-            "schema_version": 3,
+            "schema_version": 4,
             "source": "https://robase.gg/",
             "fetched_at_utc": checked,
             "price_basis": "seller_proceeds_after_marketplace_fees",
