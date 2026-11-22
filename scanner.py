@@ -4077,6 +4077,20 @@ def _match_robase_row_to_bloxswaps(row, item_map):
     category = str(row.get("robase_category") or "").strip().casefold()
     expected_rarity = ROBASE_CATEGORY_TO_RBLX.get(category, category)
     image_slug, image_type, image_year = _robase_image_hints(row)
+    direct_slugs = {slug for slug in (image_slug, normalize_slug(row.get("robase_slug") or "")) if slug}
+    for details in (item_map or {}).values():
+        if not isinstance(details, dict) or normalize_slug(details.get("slug") or "") not in direct_slugs:
+            continue
+        direct_name = normalize_name(details.get("displayName") or "")
+        direct_type = str(details.get("type") or "").strip().casefold()
+        direct_rarity = str(details.get("rarity") or "").strip().casefold()
+        direct_chroma = details.get("chroma")
+        if (
+            direct_name == base_name
+            and ((chroma and direct_chroma is True) or (not chroma and direct_chroma is not True and direct_rarity == expected_rarity))
+        ):
+            source = "robase_og_image_slug" if normalize_slug(details.get("slug") or "") == image_slug else "robase_item_slug"
+            return details, source
     candidates = []
     for details in (item_map or {}).values():
         if not isinstance(details, dict):
