@@ -1,8 +1,7 @@
-"""Fetch the public ROBASE MM2 price table into a validated local snapshot.
+"""Collect every public ROBASE MM2 item price with conditional, bounded sync.
 
-ROBASE prices are seller proceeds after marketplace fees, derived from completed
-sales. This collector requests the public page once per scan and does not access
-accounts, private APIs, or marketplace sessions.
+The displayed ROBASE price is the seller-proceeds price after marketplace fees.
+No extra resale haircut is applied by the scanner.
 """
 from __future__ import annotations
 
@@ -11,9 +10,13 @@ import json
 import os
 import re
 import tempfile
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.parse import urljoin, urlsplit
 from urllib.request import Request, urlopen
 
 URL = "https://robase.gg/"
@@ -24,17 +27,54 @@ CATEGORIES = {
 }
 PRICE_RE = re.compile(r"^\$\s*([0-9]+(?:\.[0-9]+)?)$")
 SOLD_RE = re.compile(r"([0-9,]+)\s+sold", re.I)
+DETAIL_PRICE_RE = re.compile(
+    r"Over the last (?P<days>7|30) days it sold for \$(?P<price>[0-9,]+(?:\.[0-9]+)?) "
+    r"on average after the marketplace fee",
+    re.I,
+)
+DETAIL_ABOUT_RE = re.compile(
+    r"(?P<name>.+?)\s+is\s+(?:a|an)\s+(?P<category>.+?)\s+item in Roblox Murder Mystery 2\s+\(MM2\)",
+    re.I,
+)
+DETAIL_SOLD_7D_RE = re.compile(r"([0-9,]+)\s+copies changed hands in the last 7 days", re.I)
+DETAIL_SOLD_30D_RE = re.compile(r"\(([0-9,]+)\s+in 30 days\)", re.I)
+DETAIL_VALUE_RE = re.compile(r"Its value is\s+([0-9,]+)", re.I)
+DETAIL_SUPPLY_RE = re.compile(
+    r"BloxSwaps counts\s+([0-9,]+)\s+copies in the game,\s+held by\s+([0-9,]+)\s+players",
+    re.I,
+)
+MAX_ITEM_AGE_SECONDS = 20 * 60
+DETAIL_WORKERS = 12
+REQUEST_TIMEOUT_SECONDS = 25
+
+
+def _utc_now():
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _parse_time(value):
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
 
 
 class _TableParser(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.rows = []
+        self.item_links = set()
         self._row = None
         self._cell = None
 
     def handle_starttag(self, tag, attrs):
         tag = tag.lower()
+        attributes = dict(attrs)
+        if tag == "a":
+            href = str(attributes.get("href") or "")
+            parsed = urlsplit(urljoin(URL, href))
+            if parsed.netloc == "robase.gg" and parsed.path.startswith("/item/"):
+                self.item_links.add(urljoin(URL, parsed.path))
         if tag == "tr":
             self._row = []
         elif tag in {"td", "th"} and self._row is not None:
@@ -56,6 +96,25 @@ class _TableParser(HTMLParser):
             self._cell = None
 
 
+class _VisibleTextParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts = []
+        self._ignored = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() in {"script", "style", "noscript", "svg"}:
+            self._ignored += 1
+
+    def handle_endtag(self, tag):
+        if tag.lower() in {"script", "style", "noscript", "svg"} and self._ignored:
+            self._ignored -= 1
+
+    def handle_data(self, data):
+        if not self._ignored and data.strip():
+            self.parts.append(" ".join(data.split()))
+
+
 def _parse_item_name(raw: str) -> str:
     name = " ".join(str(raw or "").split())
     parts = name.rsplit(" ", 1)
@@ -72,7 +131,7 @@ def _parse_item_name(raw: str) -> str:
 
 
 def normalize_robase_item_name(raw: str) -> str:
-    """Normalize a BloxSwaps item label to ROBASE's canonical display name."""
+    """Normalize a ROBASE table label; never used as a fuzzy identity fallback."""
     return _parse_item_name(raw)
 
 
@@ -89,7 +148,8 @@ def parse_robase_html(document: str, fetched_at_utc: str | None = None) -> dict:
         if len(cells) < 9 or not cells[0].strip().isdigit():
             continue
         name = _parse_item_name(cells[1])
-        price_match = PRICE_RE.fullmatch(cells[2].strip())
+        price_text = cells[2].strip()
+        price_match = PRICE_RE.fullmatch(price_text)
         if not price_match:
             continue
         price = float(price_match.group(1))
@@ -103,12 +163,13 @@ def parse_robase_html(document: str, fetched_at_utc: str | None = None) -> dict:
         items[key] = {
             "name": name,
             "cash_price_usd": price,
+            "price_display": price_text,
             "sold_7d": sold_7d,
             "status": "verified" if sold_7d >= 3 else "unverified",
-            "source": "https://robase.gg/",
+            "source": URL,
             "notes": "ROBASE completed-sales average; seller proceeds after fees",
         }
-    stamp = fetched_at_utc or datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    stamp = fetched_at_utc or _utc_now()
     return {
         "schema_version": 1,
         "source": URL,
@@ -118,9 +179,105 @@ def parse_robase_html(document: str, fetched_at_utc: str | None = None) -> dict:
     }
 
 
-def fetch_snapshot(output: Path = DEFAULT_OUTPUT, timeout: int = 25) -> dict:
+def _parse_item_detail(url: str, document: str, fetched_at_utc: str, etag="", last_modified="") -> dict:
+    parser = _VisibleTextParser()
+    parser.feed(document)
+    text = " ".join(parser.parts)
+    about = DETAIL_ABOUT_RE.search(text)
+    price_match = DETAIL_PRICE_RE.search(text)
+    if not about or not price_match:
+        raise ValueError(f"ROBASE item detail did not expose a canonical name and price: {url}")
+    name = " ".join(about.group("name").split())
+    category = " ".join(about.group("category").split())
+    price_display = "$" + price_match.group("price")
+    price = float(price_match.group("price").replace(",", ""))
+    if not name or not category or price <= 0:
+        raise ValueError(f"invalid ROBASE item detail: {url}")
+    sold_7d_match = DETAIL_SOLD_7D_RE.search(text)
+    sold_30d_match = DETAIL_SOLD_30D_RE.search(text)
+    value_match = DETAIL_VALUE_RE.search(text)
+    supply_match = DETAIL_SUPPLY_RE.search(text)
+    slug = urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1]
+    return {
+        "name": name,
+        "robase_slug": slug,
+        "robase_category": category,
+        "cash_price_usd": price,
+        "price_display": price_display,
+        "price_window_days": int(price_match.group("days")),
+        "sold_7d": int(sold_7d_match.group(1).replace(",", "")) if sold_7d_match else 0,
+        "sold_30d": int(sold_30d_match.group(1).replace(",", "")) if sold_30d_match else 0,
+        "bloxswaps_value": int(value_match.group(1).replace(",", "")) if value_match else None,
+        "bloxswaps_copies": int(supply_match.group(1).replace(",", "")) if supply_match else None,
+        "bloxswaps_holders": int(supply_match.group(2).replace(",", "")) if supply_match else None,
+        "status": "verified",
+        "source": url,
+        "price_basis": "seller_proceeds_after_marketplace_fees",
+        "last_checked_at_utc": fetched_at_utc,
+        "price_updated_at_utc": fetched_at_utc,
+        "etag": etag or "",
+        "last_modified": last_modified or "",
+    }
+
+
+def _fetch_item_detail(url: str, cached: dict | None):
+    now = _utc_now()
+    headers = {
+        "User-Agent": "MM2-Trade-Scanner/1.0 (public ROBASE price sync; contact repository owner)",
+        "Accept": "text/html",
+    }
+    cached = cached if isinstance(cached, dict) else {}
+    if cached.get("etag"):
+        headers["If-None-Match"] = str(cached["etag"])
+    if cached.get("last_modified"):
+        headers["If-Modified-Since"] = str(cached["last_modified"])
+    request = Request(url, headers=headers)
+    try:
+        with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+            if response.status != 200:
+                raise RuntimeError(f"ROBASE returned HTTP {response.status} for {url}")
+            raw = response.read(1_000_001)
+            if len(raw) > 1_000_000:
+                raise RuntimeError(f"ROBASE item page exceeded 1 MB: {url}")
+            document = raw.decode("utf-8", errors="strict")
+            etag = response.headers.get("ETag", "")
+            last_modified = response.headers.get("Last-Modified", "")
+        fresh = _parse_item_detail(url, document, now, etag, last_modified)
+        old_price = cached.get("price_display")
+        if old_price == fresh["price_display"]:
+            fresh["price_updated_at_utc"] = cached.get("price_updated_at_utc") or now
+        return fresh, "updated" if old_price != fresh["price_display"] else "unchanged"
+    except HTTPError as exc:
+        if exc.code == 304 and cached.get("name") and cached.get("price_display"):
+            retained = dict(cached)
+            retained["last_checked_at_utc"] = now
+            retained["etag"] = retained.get("etag") or headers.get("If-None-Match", "")
+            retained["last_modified"] = retained.get("last_modified") or headers.get("If-Modified-Since", "")
+            return retained, "not_modified"
+        raise
+    except (TimeoutError, URLError, UnicodeDecodeError, ValueError, RuntimeError):
+        raise
+
+
+def _load_previous_snapshot(path: Path):
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+        return {}
+    return data
+
+
+def fetch_snapshot(output: Path = DEFAULT_OUTPUT, timeout: int = REQUEST_TIMEOUT_SECONDS) -> dict:
+    previous = _load_previous_snapshot(output)
+    cached_by_slug = {
+        str(row.get("robase_slug")): row
+        for row in previous.get("items", [])
+        if isinstance(row, dict) and row.get("robase_slug")
+    }
     request = Request(URL, headers={
-        "User-Agent": "MM2-Trade-Scanner/1.0 (public price snapshot; contact repository owner)",
+        "User-Agent": "MM2-Trade-Scanner/1.0 (public ROBASE price sync; contact repository owner)",
         "Accept": "text/html",
     })
     with urlopen(request, timeout=timeout) as response:
@@ -130,40 +287,74 @@ def fetch_snapshot(output: Path = DEFAULT_OUTPUT, timeout: int = 25) -> dict:
     if len(raw) > 5_000_000:
         raise RuntimeError("ROBASE response exceeded 5 MB safety limit")
     document = raw.decode("utf-8", errors="strict")
-    snapshot = parse_robase_html(document)
-    if len(snapshot["items"]) < 100:
-        title_match = re.search(r"<title[^>]*>(.*?)</title>", document, flags=re.I | re.S)
-        title = " ".join(title_match.group(1).split())[:100] if title_match else "missing"
-        diagnostic_parser = _TableParser()
-        diagnostic_parser.feed(document)
-        row_sizes = [len(row) for row in diagnostic_parser.rows[:3]]
-        first_row_shape = [
-            {
-                "length": len(cell),
-                "numeric": cell.strip().isdigit(),
-                "price": bool(PRICE_RE.fullmatch(cell.strip())),
-                "sold": bool(SOLD_RE.search(cell)),
-            }
-            for cell in (diagnostic_parser.rows[1] if len(diagnostic_parser.rows) > 1 else [])
-        ]
-        numeric_rank_rows = sum(
-            any(cell.strip().isdigit() for cell in row[:3])
-            for row in diagnostic_parser.rows
-        )
-        valid_price_rows = sum(
-            any(PRICE_RE.fullmatch(cell.strip()) for cell in row)
-            for row in diagnostic_parser.rows
-        )
-        tr_count = len(re.findall(r"<tr\b", document, flags=re.I))
-        table_count = len(re.findall(r"<table\b", document, flags=re.I))
+    link_parser = _TableParser()
+    link_parser.feed(document)
+    item_urls = sorted(link_parser.item_links)
+    visible = _VisibleTextParser()
+    visible.feed(document)
+    visible_text = " ".join(visible.parts)
+    count_match = re.search(r"All MM2 items\s+([0-9,]+)", visible_text, re.I)
+    expected_count = int(count_match.group(1).replace(",", "")) if count_match else 0
+    if expected_count < 200 or len(item_urls) != expected_count:
         raise ValueError(
-            "ROBASE table incomplete: parsed=%s tr_tags=%s table_tags=%s bytes=%s "
-            "title=%r row_sizes=%s first_row_shape=%s numeric_rank_rows=%s valid_price_rows=%s"
-            % (
-                len(snapshot["items"]), tr_count, table_count, len(raw), title,
-                row_sizes, first_row_shape, numeric_rank_rows, valid_price_rows,
-            )
+            f"ROBASE item index incomplete: expected={expected_count or 'unknown'} links={len(item_urls)}"
         )
+
+    results = {}
+    failures = []
+    updated = unchanged = 0
+    with ThreadPoolExecutor(max_workers=DETAIL_WORKERS) as pool:
+        futures = {
+            pool.submit(
+                _fetch_item_detail,
+                url,
+                cached_by_slug.get(urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1]),
+            ): url
+            for url in item_urls
+        }
+        for future in as_completed(futures):
+            url = futures[future]
+            slug = urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1]
+            try:
+                row, status = future.result()
+                key = row["name"].casefold()
+                if key in results:
+                    raise ValueError(f"duplicate canonical ROBASE item name: {row['name']}")
+                results[key] = row
+                if status == "updated":
+                    updated += 1
+                else:
+                    unchanged += 1
+            except Exception as exc:
+                failures.append(f"{slug}:{type(exc).__name__}")
+                cached = cached_by_slug.get(slug)
+                if cached and cached.get("name"):
+                    results[cached["name"].casefold()] = dict(cached)
+
+    rows = sorted(results.values(), key=lambda item: item["name"].casefold())
+    now = _utc_now()
+    complete = (
+        len(rows) == expected_count
+        and not failures
+        and all(
+            row.get("status") == "verified"
+            and _parse_time(row.get("last_checked_at_utc")) > 0
+            and time.time() - _parse_time(row.get("last_checked_at_utc")) <= MAX_ITEM_AGE_SECONDS
+            for row in rows
+        )
+    )
+    snapshot = {
+        "schema_version": 2,
+        "source": URL,
+        "fetched_at_utc": now,
+        "price_basis": "seller_proceeds_after_marketplace_fees",
+        "catalog_expected_count": expected_count,
+        "catalog_complete": complete,
+        "item_pages_updated": updated,
+        "item_pages_unchanged": unchanged,
+        "item_page_failures": failures[:30],
+        "items": rows,
+    }
     output.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=output.name + ".", suffix=".tmp", dir=output.parent)
     try:
@@ -179,18 +370,24 @@ def fetch_snapshot(output: Path = DEFAULT_OUTPUT, timeout: int = 25) -> dict:
         except OSError:
             pass
         raise
+    if not complete:
+        raise RuntimeError(
+            f"ROBASE full catalogue is not fresh and complete: rows={len(rows)}/{expected_count}, "
+            f"failures={len(failures)}"
+        )
     return snapshot
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Refresh the public ROBASE MM2 price snapshot")
+    parser = argparse.ArgumentParser(description="Refresh all public ROBASE MM2 item prices")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     args = parser.parse_args()
     snapshot = fetch_snapshot(args.output)
-    verified = sum(item["status"] == "verified" for item in snapshot["items"])
     print(
-        f"[robase] fetched={len(snapshot['items'])} verified={verified} "
-        f"low_sample={len(snapshot['items']) - verified} at={snapshot['fetched_at_utc']}"
+        f"[robase] fetched={len(snapshot['items'])}/{snapshot['catalog_expected_count']} "
+        f"updated={snapshot['item_pages_updated']} unchanged={snapshot['item_pages_unchanged']} "
+        f"failures={len(snapshot['item_page_failures'])} complete={snapshot['catalog_complete']} "
+        f"at={snapshot['fetched_at_utc']}"
     )
 
 
