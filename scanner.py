@@ -2006,7 +2006,7 @@ def _filter_variants_by_catalog(candidates, item):
         if chroma is True or any(is_chroma_variant(row) for row in candidates):
             candidates = chroma_matches
     if year is not None:
-        year_pattern = re.compile(rf"(?<!\d){year}(?!\\d)")
+        year_pattern = re.compile(rf"(?<!\d){year}(?!\d)")
         year_matches = [
             row for row in candidates
             if year_pattern.search(str(row[2].get("name") or ""))
@@ -4054,7 +4054,7 @@ def _robase_image_hints(row):
             item_type = "gun"
         elif re.search(r"(?:^|[-_])(?:k|knife)(?:[-_]|$)", image_slug) or "knife" in image_slug:
             item_type = "knife"
-        year_match = re.search(r"(?<!\\d)(20\\d{2})(?!\\d)", image_slug)
+        year_match = re.search(r"(?<!\d)(20\\d{2})(?!\d)", image_slug)
         if year_match:
             year = int(year_match.group(1))
     return image_slug, item_type, year
@@ -4206,7 +4206,7 @@ def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
             "type": selected.get("type"),
         }
 
-    expected_weapons = len(weapon_rows) + len(rblx_ambiguous) + len(rblx_missing)
+    expected_weapons = len(weapon_rows) + len(ambiguous_robase) + len(missing_robase)
     numeric = sum(row["value"] is not None for row in exact_map.values())
     missing_value = sum(row["value"] is None for row in exact_map.values())
     missing_stability = sum(row["stability"] is None for row in exact_map.values())
