@@ -5368,6 +5368,7 @@ def scan_once(include_backlog_rechecks=True):
                 mark_seen_ad(listing)
             elif status in ("failed", "not_attempted"):
                 uncertain_ids.discard(trade_id)
+                save_uncertain_ids(uncertain_ids)
                 mark_pending(listing, reason="telegram_failure")
                 if status == "failed":
                     print(
