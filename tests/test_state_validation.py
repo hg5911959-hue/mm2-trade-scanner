@@ -75,7 +75,10 @@ class StateValidationTests(IsolatedDataTestCase):
         self.assertTrue(any("unsafe" in error for error in errors))
 
     def test_api_safety_ledger_rejects_oversized_file_before_json_parse(self):
-        from tools.validate_state import (\n            MAX_API_SAFETY_FILE_BYTES,\n            validate_api_safety_state,\n        )
+        from tools.validate_state import (
+            MAX_API_SAFETY_FILE_BYTES,
+            validate_api_safety_state,
+        )
         path = self.root / "rblxvalue_request_budget.json"
         with path.open("wb") as handle:
             handle.truncate(MAX_API_SAFETY_FILE_BYTES + 1)
