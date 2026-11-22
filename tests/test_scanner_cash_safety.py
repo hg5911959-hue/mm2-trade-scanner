@@ -9,6 +9,41 @@ import scanner
 
 
 class ScannerCashSafetyTests(IsolatedDataTestCase):
+    def test_value_alert_gate_rejects_non_dictionary_results(self):
+        for result in (None, [], "profit", 10):
+            with self.subTest(result=result):
+                self.assertFalse(scanner.qualifies(result))
+
+    def test_value_alert_gate_rejects_non_finite_metrics(self):
+        base = {"manual_review": False, "cash_estimate_only": False,
+                "profit_worst": 100.0, "margin": 20.0}
+        for field in ("profit_worst", "margin"):
+            for value in (float("nan"), float("inf"), float("-inf")):
+                with self.subTest(field=field, value=value):
+                    self.assertFalse(scanner.qualifies({**base, field: value}))
+
+    def test_value_alert_gate_rejects_malformed_metrics(self):
+        base = {"manual_review": False, "cash_estimate_only": False,
+                "profit_worst": 100.0, "margin": 20.0}
+        for field, value in (("profit_worst", None), ("profit_worst", "bad"),
+                             ("margin", None), ("margin", "bad")):
+            with self.subTest(field=field, value=value):
+                self.assertFalse(scanner.qualifies({**base, field: value}))
+
+    def test_value_alert_gate_rejects_invalid_thresholds(self):
+        base = {"manual_review": False, "cash_estimate_only": False,
+                "profit_worst": 100.0, "margin": 20.0}
+        for kwargs in ({"min_diff": float("nan")}, {"min_diff": float("inf")},
+                       {"min_percent": float("nan")}, {"min_percent": float("inf")},
+                       {"min_diff": -1.0}, {"min_percent": -1.0}):
+            with self.subTest(kwargs=kwargs):
+                self.assertFalse(scanner.qualifies(base, **kwargs))
+
+    def test_value_alert_gate_accepts_finite_verified_positive_trade(self):
+        result = {"manual_review": False, "cash_estimate_only": False,
+                  "profit_worst": 10.0, "margin": 5.0}
+        self.assertTrue(scanner.qualifies(result, min_diff=1.0, min_percent=5.0))
+
     def test_legacy_estimate_is_never_alert_eligible(self):
         result = {
             "cash_estimate_only": True, "manual_review": False,
