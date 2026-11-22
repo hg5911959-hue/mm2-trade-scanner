@@ -157,7 +157,7 @@ def send_daily_notice(checks, *, data_dir="data", env=None, now=None):
         state["preflight-daily"] = current.timestamp()
         _atomic_json(path, state)
         return True
-    except Exception as exc:
+    except (OSError, TimeoutError, ValueError) as exc:
         print("[preflight] Telegram notice failed: " + type(exc).__name__)
         return False
 
