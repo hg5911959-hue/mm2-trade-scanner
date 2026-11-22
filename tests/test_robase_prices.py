@@ -81,6 +81,30 @@ class RobasePriceParserTests(IsolatedDataTestCase):
         self.assertEqual(item["robase_category"], "Ancient")
         self.assertEqual(item["price_display"], "$4.99")
 
+    def test_item_detail_anchors_name_and_extracts_exact_bloxswaps_image_slug(self):
+        html = """
+        <html><head>
+          <title>Cane price | ROBASE Items and Markets</title>
+          <meta property="og:image" content="https://cdn.bloxluck.com/item-images/cane-k-2018.png">
+        </head><body>
+          <nav>Prices after fees Buyer price Cane #217 Rare $9.29</nav>
+          <h2>About Cane</h2>
+          <p>Cane is a Rare item in Roblox Murder Mystery 2 (MM2).
+          It has not sold in the last 7 days; over the last 30 days it sold for
+          $9.29 on average after the marketplace fee, and buyers paid $13.66.</p>
+          <p>15 copies sold in the last 30 days, none in the last 7.</p>
+          <p>Its value is 150. BloxSwaps counts 977 copies in the game,
+          held by 535 players.</p>
+        </body></html>
+        """
+        item = _parse_item_detail(
+            "https://robase.gg/item/cane-562", html, "2026-11-22T09:00:00Z"
+        )
+        self.assertEqual(item["name"], "Cane")
+        self.assertEqual(item["robase_category"], "Rare")
+        self.assertEqual(item["og_image_slug"], "cane-k-2018")
+        self.assertEqual(item["bloxswaps_slug"], "cane-k-2018")
+
     def test_item_detail_preserves_displayed_price_and_bloxswaps_metadata(self):
         html = """
         <main>
