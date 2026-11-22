@@ -55,8 +55,12 @@ class ValueModeEvaluationTests(IsolatedDataTestCase):
 class WeeklyReportValueModeTests(IsolatedDataTestCase):
     def test_weekly_report_does_not_load_cash_catalogue_when_disabled(self):
         with tempfile.TemporaryDirectory() as directory:
-            response = type("Response", (), {"status": 200, "__enter__": lambda self: self,
-                                              "__exit__": lambda self, *args: None})()
+            response = type("Response", (), {
+                "status": 200,
+                "read": lambda self, limit: b'{"ok":true}',
+                "__enter__": lambda self: self,
+                "__exit__": lambda self, *args: None,
+            })()
             output = io.StringIO()
             with (
                 patch.object(weekly_report, "DATA_DIR", Path(directory)),
