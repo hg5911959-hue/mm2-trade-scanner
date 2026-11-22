@@ -43,7 +43,7 @@ def rank_blockers(metrics, catalog, *, now=None, limit=15):
         age_days = None
         if verified_at:
             try:
-                verified = datetime.fromisoformat(str(verified_at).replace("Z", "+00:00"))
+                verified = datetime.fromisoformat(str(verified_at))
                 if verified.tzinfo is not None:
                     age_days = max(0.0, (current - verified.astimezone(UTC)).total_seconds() / 86400)
             except ValueError:
