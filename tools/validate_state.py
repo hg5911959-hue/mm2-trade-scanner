@@ -143,7 +143,7 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
         try:
             documents[path.name] = _read_json_bounded(path, max_bytes=MAX_STATE_JSON_BYTES)
         except (OSError, UnicodeDecodeError, ValueError):
-            errors.append(f"invalid, oversized, or unsafe JSON state file: {path.name}")
+            errors.append(f"invalid JSON state file (oversized or unsafe): {path.name}")
 
     cache_path = root / "supreme_values.json"
     cache = documents.get("supreme_values.json")
