@@ -43,10 +43,10 @@ DETAIL_ABOUT_PLAIN_RE = re.compile(
     re.I,
 )
 DETAIL_SOLD_7D_RE = re.compile(
-    r"([0-9,]+)\s+copies?\s+(?:changed hands|sold) in the last 7 days", re.I
+    r"([0-9,]+)\s+cop(?:y|ies)\s+(?:changed hands|sold) in the last 7 days", re.I
 )
 DETAIL_SOLD_30D_RE = re.compile(
-    r"(?:\(([0-9,]+)\s+in 30 days\)|([0-9,]+)\s+copies? sold in the last 30 days)",
+    r"(?:\(([0-9,]+)\s+in 30 days\)|([0-9,]+)\s+cop(?:y|ies) sold in the last 30 days)",
     re.I,
 )
 DETAIL_VALUE_RE = re.compile(r"Its value is\s+([0-9,]+)", re.I)
