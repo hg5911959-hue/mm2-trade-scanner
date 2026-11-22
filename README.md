@@ -169,9 +169,11 @@ Never commit or share these secrets. The scanner does not print API keys or Tele
 - Supreme Values are estimates delivered by a third-party provider. A fresh RBLXValue response does not guarantee Supreme itself has just changed its upstream data.
 - No Roblox password, browser cookie, or account session token is needed.
 
-## Market Intelligence extension
+## Optional Market Intelligence extensions
 
-See [MARKET_INTELLIGENCE.md](MARKET_INTELLIGENCE.md) for the additive public-feed and optional free-AI architecture. The existing BloxSwaps scanner remains unchanged; new sources and AI review are not enabled in production until their feeds and tests are verified.
+See [MARKET_INTELLIGENCE.md](MARKET_INTELLIGENCE.md) for the standalone Discord/RSS import and advisory AI utilities. They are **not invoked by the scheduled production scanner** and do not supply prices or approve trades.
+
+The one-time 2026-11-21 weapon identity review inputs are retained under [docs/archive/weapon-review-2026-11-21](docs/archive/weapon-review-2026-11-21/README.md). They are historical review artifacts, not live prices or production configuration.
 
 
 ## SQLite market history and public dashboard
