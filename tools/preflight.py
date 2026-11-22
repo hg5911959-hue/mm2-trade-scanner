@@ -171,7 +171,13 @@ def main(argv=None):
         for check in result["checks"]:
             print("[preflight] FAIL: " + check)
         if args.warn:
-            send_daily_notice(result["checks"])
+            notices_enabled = os.environ.get(
+                "PREFLIGHT_SEND_NOTICES", "true"
+            ).strip().casefold() in {"1", "true", "yes", "on"}
+            if notices_enabled:
+                send_daily_notice(result["checks"])
+            else:
+                print("[preflight] Telegram notice suppressed for dry-run execution")
             return 0
         return 1
     print("[preflight] PASS: all configured checks are healthy")
