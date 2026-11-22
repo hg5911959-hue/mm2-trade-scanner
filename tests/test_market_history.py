@@ -144,8 +144,8 @@ class MarketHistoryTests(IsolatedDataTestCase):
         cash = self.listing("bloxswaps", "cash-opportunity")
         supreme = self.listing("bloxswaps", "value-opportunity")
         supreme["valuation_mode"] = "supreme"
-        self.store.record_opportunity(cash, {"difference": 1.25, "margin": 20, "give_total": 5, "receive_total": 6.25})
-        self.store.record_opportunity(supreme, {"difference": 99, "margin": 99, "give_total": 1, "receive_total": 100})
+        self.store.record_opportunity({"listing": cash, "difference": 1.25, "margin": 20, "give_total": 5, "receive_total": 6.25})
+        self.store.record_opportunity({"listing": supreme, "difference": 99, "margin": 99, "give_total": 1, "receive_total": 100})
         payload = build_dashboard_data(self.db_path)
         self.assertEqual([row["listingId"] for row in payload["opportunities"]], ["cash-opportunity"])
 
