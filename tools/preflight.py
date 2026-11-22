@@ -94,7 +94,7 @@ def collect_preflight_checks(data_dir="data", *, env=None, now=None,
     checker = state_checker or _state_branch_readable
     try:
         readable = bool(checker())
-    except Exception:
+    except Exception:  # noqa: BLE001 - state-check failures must fail closed
         readable = False
     if not readable:
         checks.append("state branch is unreadable")
@@ -139,9 +139,12 @@ def send_daily_notice(checks, *, data_dir="data", env=None, now=None):
     if not isinstance(state, dict):
         state = {}
     last = state.get("preflight-daily")
-    if isinstance(last, (int, float)) and not isinstance(last, bool):
-        if datetime.fromtimestamp(last, UTC).date() == current.date():
-            return False
+    if (
+        isinstance(last, (int, float))
+        and not isinstance(last, bool)
+        and datetime.fromtimestamp(last, UTC).date() == current.date()
+    ):
+        return False
     message = "MM2 PREFLIGHT WARNING\n" + "\n".join("- " + check for check in checks)
     body = urllib.parse.urlencode({"chat_id": chat, "text": message}).encode()
     request = urllib.request.Request(
@@ -157,7 +160,7 @@ def send_daily_notice(checks, *, data_dir="data", env=None, now=None):
         state["preflight-daily"] = current.timestamp()
         _atomic_json(path, state)
         return True
-    except Exception as exc:
+    except (OSError, TimeoutError, ValueError) as exc:
         print("[preflight] Telegram notice failed: " + type(exc).__name__)
         return False
 
@@ -171,7 +174,13 @@ def main(argv=None):
         for check in result["checks"]:
             print("[preflight] FAIL: " + check)
         if args.warn:
-            send_daily_notice(result["checks"])
+            notices_enabled = os.environ.get(
+                "PREFLIGHT_SEND_NOTICES", "true"
+            ).strip().casefold() in {"1", "true", "yes", "on"}
+            if notices_enabled:
+                send_daily_notice(result["checks"])
+            else:
+                print("[preflight] Telegram notice suppressed for dry-run execution")
             return 0
         return 1
     print("[preflight] PASS: all configured checks are healthy")
