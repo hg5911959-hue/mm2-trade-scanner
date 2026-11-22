@@ -96,6 +96,8 @@ class RobasePriceParserTests(IsolatedDataTestCase):
         self.assertEqual(item["name"], "Chroma Alienbeam")
         self.assertEqual(item["robase_category"], "Chroma")
         self.assertEqual(item["price_display"], "$332.50")
+        self.assertEqual(item["sold_7d"], 1)
+        self.assertEqual(item["sold_30d"], 5)
 
     def test_item_detail_anchors_name_and_extracts_exact_bloxswaps_image_slug(self):
         html = """
@@ -120,6 +122,9 @@ class RobasePriceParserTests(IsolatedDataTestCase):
         self.assertEqual(item["robase_category"], "Rare")
         self.assertEqual(item["og_image_slug"], "cane-k-2018")
         self.assertEqual(item["bloxswaps_slug"], "cane-k-2018")
+        self.assertEqual(item["price_window_days"], 30)
+        self.assertEqual(item["sold_7d"], 0)
+        self.assertEqual(item["sold_30d"], 15)
 
     def test_item_detail_preserves_displayed_price_and_bloxswaps_metadata(self):
         html = """
