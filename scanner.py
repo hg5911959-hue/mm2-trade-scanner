@@ -4003,6 +4003,23 @@ def qualifies(result, min_diff=None, min_percent=None):
     return metric > 0 and metric >= min_diff and result["margin"] >= min_percent
 
 
+def _resolve_robase_cash_record(canonical_name, catalog_slug, robase_items):
+    """Resolve a ROBASE row by exact canonical name, then exact source slug only."""
+    key = normalize_cash_name(canonical_name)
+    if key and key in robase_items:
+        return robase_items[key], "name"
+    slug = normalize_slug(catalog_slug)
+    if not slug:
+        return None, "missing"
+    matches = [
+        row for row in robase_items.values()
+        if normalize_slug(row.get("robase_slug") or "") == slug
+    ]
+    if len(matches) == 1:
+        return matches[0], "slug"
+    return None, "ambiguous" if matches else "missing"
+
+
 def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
     """Report exact BloxSwaps-slug to RBLXValue coverage for every ROBASE weapon."""
     robase_items = (cash_catalog or {}).get("items", {})
@@ -4029,9 +4046,13 @@ def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
         selected = variants[0]
         if normalize_slug(selected.get("slug") or "") != slug:
             continue
-        key = normalize_cash_name(selected.get("name") or "")
-        if key in robase_items:
-            matches.setdefault(key, []).append(selected)
+        cash_row, _identity_source = _resolve_robase_cash_record(
+            selected.get("name") or "", slug, robase_items
+        )
+        if cash_row:
+            key = normalize_cash_name(cash_row.get("name") or "")
+            if key:
+                matches.setdefault(key, []).append(selected)
 
     exact = {key: rows[0] for key, rows in matches.items() if len(rows) == 1}
     ambiguous = sorted(robase_items[key]["name"] for key, rows in matches.items() if len(rows) != 1)
@@ -4089,14 +4110,19 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
                 continue
 
             selected = variants[0]
-            canonical_name = str(selected.get("name") or "").strip()
-            if not canonical_name:
+            rblx_name = str(selected.get("name") or "").strip()
+            if not rblx_name:
                 missing.append(f"{raw_name} (RBLXValue canonical name missing)")
                 continue
-            cash_key = normalize_cash_name(canonical_name)
-            cash_record = robase_items.get(cash_key)
+            cash_record, robase_identity_source = _resolve_robase_cash_record(
+                rblx_name, catalog_slug, robase_items
+            )
             if not cash_record:
-                missing.append(f"{raw_name} (not listed on ROBASE)")
+                missing.append(f"{raw_name} (not listed on ROBASE by exact name or slug)")
+                continue
+            canonical_name = str(cash_record.get("name") or "").strip()
+            if not canonical_name:
+                missing.append(f"{raw_name} (ROBASE canonical name missing)")
                 continue
             if cash_record.get("status") != "verified":
                 missing.append(f"{raw_name} (ROBASE price not freshly verified)")
@@ -4139,6 +4165,7 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
                 "rblx_category": category,
                 "rblx_type": item_type,
                 "rblx_slug": catalog_slug,
+                "robase_identity_source": robase_identity_source,
                 "robase_price_display": cash_record.get("price_display"),
             })
 
