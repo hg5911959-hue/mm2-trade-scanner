@@ -34,8 +34,8 @@ def build_report(metrics, discord_status=None, key_state=None, daily_limit=60, n
             f"Discord manual import: {'STALE / missing' if stale else 'fresh'}\n"
             f"Cash prices: {cash_summary or 'catalogue unavailable'}\n"
             f"Last 7 days alerts: {trend}"
-            + (f"\\n\\n{blocker_summary}" if blocker_summary else "")
-            + ("\\n\\nPreflight checks: " + "; ".join(preflight_checks) if preflight_checks else "\\n\\nPreflight checks: PASS"))
+            + (f"\n\n{blocker_summary}" if blocker_summary else "")
+            + ("\n\nPreflight checks: " + "; ".join(preflight_checks) if preflight_checks else "\n\nPreflight checks: PASS"))
 
 def main():
     data = DATA_DIR
