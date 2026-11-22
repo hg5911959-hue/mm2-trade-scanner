@@ -3992,6 +3992,59 @@ def qualifies(result, min_diff=None, min_percent=None):
     return metric > 0 and metric >= min_diff and result["margin"] >= min_percent
 
 
+def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
+    """Report exact BloxSwaps-slug to RBLXValue coverage for every ROBASE weapon."""
+    robase_items = (cash_catalog or {}).get("items", {})
+    matches = {}
+    for details in (item_map or {}).values():
+        if not isinstance(details, dict):
+            continue
+        name = str(details.get("displayName") or "").strip()
+        slug = normalize_slug(details.get("slug") or "")
+        if not name or not slug:
+            continue
+        item = {
+            "name": name,
+            "catalog_slug": slug,
+            "catalog_rarity": details.get("rarity"),
+            "catalog_type": details.get("type"),
+            "catalog_chroma": details.get("chroma"),
+            "catalog_year": details.get("year"),
+        }
+        record, source, _candidates = resolve_value_record(name, values, aliases, item=item)
+        variants = record.get("variants") or [record] if record else []
+        if source != "slug" or len(variants) != 1:
+            continue
+        selected = variants[0]
+        if normalize_slug(selected.get("slug") or "") != slug:
+            continue
+        key = normalize_cash_name(selected.get("name") or "")
+        if key in robase_items:
+            matches.setdefault(key, []).append(selected)
+
+    exact = {key: rows[0] for key, rows in matches.items() if len(rows) == 1}
+    ambiguous = sorted(robase_items[key]["name"] for key, rows in matches.items() if len(rows) != 1)
+    missing = sorted(row["name"] for key, row in robase_items.items() if key not in exact and key not in matches)
+    numeric = sum(_supreme_numeric_value(row)[0] is not None for row in exact.values())
+    no_numeric = len(exact) - numeric
+    print(
+        f"[robase-rblxvalue] exact={len(exact)}/{len(robase_items)} "
+        f"numeric={numeric} non_numeric={no_numeric} ambiguous={len(ambiguous)} missing={len(missing)}"
+    )
+    if ambiguous:
+        print("[robase-rblxvalue] ambiguous_names=" + ", ".join(ambiguous[:20]))
+    if missing:
+        print("[robase-rblxvalue] missing_names=" + ", ".join(missing[:30]))
+    return {
+        "expected": len(robase_items),
+        "exact": len(exact),
+        "numeric": numeric,
+        "non_numeric": no_numeric,
+        "ambiguous": ambiguous,
+        "missing": missing,
+    }
+
+
 def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=False):
     """Evaluate BloxSwaps-only offers using exact RBLXValue identity and ROBASE prices."""
     if str(listing.get("source") or "bloxswaps").strip().casefold() not in {"bloxswaps", "bloxswaps.com"}:
