@@ -7,6 +7,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class WorkflowReliabilityTests(IsolatedDataTestCase):
+
+    def test_telegram_connection_test_uses_real_newlines_in_html_message(self):
+        workflow = (ROOT / ".github/workflows/telegram-test.yml").read_text(encoding="utf-8")
+        self.assertIn('ALERT — TEST ONLY</b>\\n"', workflow)
+        self.assertIn('DELIVERY CHECK</b>\\n\\n"', workflow)
+        self.assertNotIn(r"\\n", workflow)
+
     def test_ci_linter_version_is_pinned(self):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
         self.assertIn("ruff==0.17.5", workflow)
