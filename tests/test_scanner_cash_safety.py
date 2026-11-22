@@ -1,43 +1,37 @@
-"""Regression tests for scanner cash-alert safety gates."""
+"""Regression tests for strict ROBASE cash-alert safety gates."""
 
-import csv
 import unittest
-from test_support import IsolatedDataTestCase
 from datetime import UTC, datetime
 
+from test_support import IsolatedDataTestCase
+
 import scanner
-from tools.cash_market import load_cash_price_catalog
 
 
 class ScannerCashSafetyTests(IsolatedDataTestCase):
     def test_legacy_estimate_is_never_alert_eligible(self):
         result = {
-            "cash_estimate_only": True,
-            "manual_review": False,
-            "cash_profit_worst": 10_000.0,
-            "profit_worst": 10_000.0,
-            "margin": 500.0,
+            "cash_estimate_only": True, "manual_review": False,
+            "cash_profit_worst": 10000.0, "margin": 500.0, "give_total_max": 10.0,
+            "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
         }
         self.assertFalse(scanner.qualifies_cash(result))
 
     def test_manual_review_is_never_alert_eligible(self):
         result = {
-            "cash_estimate_only": False,
-            "manual_review": True,
-            "cash_profit_worst": 10_000.0,
-            "margin": 500.0,
+            "cash_estimate_only": False, "manual_review": True,
+            "cash_profit_worst": 10000.0, "margin": 500.0, "give_total_max": 10.0,
+            "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
         }
         self.assertFalse(scanner.qualifies_cash(result))
-
 
     def test_non_finite_cash_profit_is_never_alert_eligible(self):
         for profit in (float("nan"), float("inf"), float("-inf")):
             with self.subTest(profit=profit):
                 result = {
-                    "cash_estimate_only": False,
-                    "manual_review": False,
-                    "cash_profit_worst": profit,
-                    "margin": 1000.0,
+                    "cash_estimate_only": False, "manual_review": False,
+                    "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+                    "cash_profit_worst": profit, "margin": 1000.0, "give_total_max": 10.0,
                 }
                 self.assertFalse(scanner.qualifies_cash(result))
 
@@ -45,76 +39,72 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         for margin in (float("nan"), float("inf"), float("-inf")):
             with self.subTest(margin=margin):
                 result = {
-                    "cash_estimate_only": False,
-                    "manual_review": False,
-                    "cash_profit_worst": 1000.0,
-                    "margin": margin,
+                    "cash_estimate_only": False, "manual_review": False,
+                    "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+                    "cash_profit_worst": 1000.0, "margin": margin, "give_total_max": 10.0,
                 }
                 self.assertFalse(scanner.qualifies_cash(result))
 
     def test_negative_cash_profit_is_never_alert_eligible(self):
         result = {
-            "cash_estimate_only": False,
-            "manual_review": False,
-            "cash_profit_worst": -1000.0,
-            "margin": 1000.0,
+            "cash_estimate_only": False, "manual_review": False,
+            "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "cash_profit_worst": -1000.0, "margin": 1000.0, "give_total_max": 10.0,
         }
         self.assertFalse(scanner.qualifies_cash(result))
 
-    def test_verified_cash_profit_can_pass_alert_gate(self):
+    def test_verified_robase_cash_profit_can_pass_alert_gate(self):
         result = {
-            "cash_estimate_only": False,
-            "manual_review": False,
-            "cash_price_basis": "verified manual USD resale catalogue",
-            "cash_profit_worst": 100.0,
-            "margin": 20.0,
-            "give_total_max": 10.0,
+            "cash_estimate_only": False, "manual_review": False,
+            "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "cash_profit_worst": 1.0, "margin": 0.01, "give_total_max": 10000.0,
         }
         self.assertTrue(scanner.qualifies_cash(result))
 
-    def test_user_confirmed_cash_catalogue_items_resolve_through_scanner(self):
+    def test_robase_items_resolve_through_exact_rblxvalue_slugs(self):
         names = (
             "Spirit", "Harvester", "Bat", "Immortal", "Icebreaker", "Bloom",
             "Snowstorm", "Candy", "Watergun", "Evergun", "Celestial",
         )
         now = datetime.now(UTC).isoformat()
-        path = self.test_data_root / "cash_prices.csv"
-        with path.open("w", encoding="utf-8", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=[
-                "name", "cash_price_usd", "tier", "status",
-                "verified_at_utc", "source", "notes",
-            ])
-            writer.writeheader()
-            for name in names:
-                writer.writerow({
-                    "name": name, "cash_price_usd": "5", "tier": "test",
-                    "status": "verified", "verified_at_utc": now,
-                    "source": "synthetic_test_fixture", "notes": "",
-                })
-        catalog = load_cash_price_catalog(path)
-        values = {
-            name.casefold(): {
-                "name": name,
-                "variants": [{
-                    "id": f"test-{index}",
-                    "name": name,
-                    "value": 1,
-                    "stability": "Stable",
-                }],
+        values = {}
+        cash_items = {}
+        give_items = []
+        receive_items = []
+        for index, name in enumerate(names):
+            slug = name.casefold().replace(" ", "-")
+            values[name.casefold()] = {
+                "name": name, "slug": slug, "value_source_b": index + 1,
+                "stability": "Stable", "category": "Godly", "type": "Knife",
             }
-            for index, name in enumerate(names)
-        }
+            cash_items[scanner.normalize_cash_name(name)] = {
+                "name": name, "cash_price_usd": 5.0, "price_low_usd": 5.0,
+                "price_high_usd": 5.0, "price_display": "$5.00",
+                "status": "verified", "verified_at_utc": now,
+                "source": "https://robase.gg/item/" + slug, "robase_slug": slug,
+            }
+            item = {
+                "name": name, "catalog_slug": slug, "catalog_rarity": "Godly",
+                "catalog_type": "Knife", "catalog_chroma": False,
+                "quantity": 1, "quantity_min": 1, "quantity_max": 1,
+                "quantity_source": "structured",
+            }
+            give_items.append(dict(item))
+            receive_items.append(dict(item))
         listing = {
-            "id": "cash-catalog-integration",
-            "give_items": [{"name": name, "quantity": 1} for name in names],
-            "receive_items": [{"name": name, "quantity": 1} for name in names],
+            "id": "robase-catalog-integration", "source": "bloxswaps",
+            "give_items": give_items, "receive_items": receive_items,
         }
         result, missing = scanner.evaluate_cash_listing(
-            listing, values, {}, catalog,
+            listing, values, {}, {"items": cash_items},
         )
         self.assertEqual(missing, [])
         self.assertIsNotNone(result)
-        self.assertIn("verified manual USD resale catalogue", result["cash_price_basis"])
+        self.assertEqual(
+            result["cash_price_basis"],
+            "verified ROBASE displayed seller-proceeds price",
+        )
+        self.assertEqual(result["cash_sell_haircut_pct"], 0.0)
 
     def test_malformed_cash_profit_or_margin_fails_closed(self):
         for field, value in (
@@ -127,29 +117,24 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         ):
             with self.subTest(field=field, value=value):
                 result = {
-                    "cash_estimate_only": False,
-                    "manual_review": False,
-                    "cash_price_basis": "verified manual USD resale catalogue",
-                    "cash_profit_worst": 100.0,
-                    "margin": 20.0,
-                    "give_total_max": 10.0,
+                    "cash_estimate_only": False, "manual_review": False,
+                    "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+                    "cash_profit_worst": 100.0, "margin": 20.0, "give_total_max": 10.0,
                 }
                 result[field] = value
                 self.assertFalse(scanner.qualifies_cash(result))
 
-    def test_small_and_standard_profit_threshold_boundaries(self):
+    def test_profit_threshold_is_exactly_one_dollar_for_every_trade_size(self):
         base = {
-            "manual_review": False,
-            "cash_estimate_only": False,
-            "cash_price_basis": "verified manual USD resale catalogue",
-            "margin": 20.0,
-            "give_total_max": 4.99,
+            "manual_review": False, "cash_estimate_only": False,
+            "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "margin": 0.01, "give_total_max": 4.99,
         }
-        self.assertTrue(scanner.qualifies_cash({**base, "cash_profit_worst": 0.25}))
-        self.assertFalse(scanner.qualifies_cash({**base, "cash_profit_worst": 0.249}))
-        standard = {**base, "give_total_max": 5.0}
-        self.assertFalse(scanner.qualifies_cash({**standard, "cash_profit_worst": 0.499}))
-        self.assertTrue(scanner.qualifies_cash({**standard, "cash_profit_worst": 0.50}))
+        self.assertTrue(scanner.qualifies_cash({**base, "cash_profit_worst": 1.00}))
+        self.assertFalse(scanner.qualifies_cash({**base, "cash_profit_worst": 0.99}))
+        standard = {**base, "give_total_max": 500.0}
+        self.assertTrue(scanner.qualifies_cash({**standard, "cash_profit_worst": 1.00}))
+        self.assertFalse(scanner.qualifies_cash({**standard, "cash_profit_worst": 0.999}))
 
     def test_non_dictionary_cash_result_fails_closed(self):
         for result in (None, [], "profit", 10):
@@ -158,12 +143,9 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
 
     def test_missing_or_untrusted_cash_provenance_fails_closed(self):
         base = {
-            "manual_review": False,
-            "cash_estimate_only": False,
-            "cash_price_basis": "verified manual USD resale catalogue",
-            "cash_profit_worst": 100.0,
-            "margin": 20.0,
-            "give_total_max": 10.0,
+            "manual_review": False, "cash_estimate_only": False,
+            "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "cash_profit_worst": 100.0, "margin": 20.0, "give_total_max": 10.0,
         }
         self.assertTrue(scanner.qualifies_cash(base))
         for field in (
