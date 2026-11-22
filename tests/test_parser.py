@@ -1470,7 +1470,7 @@ class ReliabilityTests(IsolatedDataTestCase):
             self.assertEqual(len(set(alerted)), 5)
             self.assertEqual(len((root / "history.csv").read_text().splitlines()), 6)
 
-    def test_overflow_qualified_offers_are_sent_in_same_cycle_digest(self):
+    def test_overflow_qualified_offers_are_sent_as_independent_digest_messages(self):
         cards = []
         for ad in ("defer-a", "defer-b", "defer-c", "defer-d", "defer-e"):
             cards.append(f"""
@@ -1512,9 +1512,9 @@ class ReliabilityTests(IsolatedDataTestCase):
                 individual = [message for message in sent if "💎 MM2 TRADE" in message and "DIGEST" not in message]
                 digests = [message for message in sent if "MM2 TRADE " in message and "<b>DIGEST</b>" in message]
                 self.assertEqual(len(individual), 2)
-                self.assertEqual(len(digests), 1)
+                self.assertEqual(len(digests), 3)
                 for ad in ("defer-c", "defer-d", "defer-e"):
-                    self.assertIn(ad, digests[0])
+                    self.assertTrue(any(ad in message for message in digests))
                 alerted = json.loads((root / "alerted.json").read_text(encoding="utf-8"))["alerted"]
                 self.assertEqual(len(alerted), 5)
                 sent_before = len(sent)
