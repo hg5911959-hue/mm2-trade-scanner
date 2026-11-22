@@ -25,7 +25,7 @@ class CashConfigurationValidationTests(IsolatedDataTestCase):
                 environment["CASH_MIN_MARGIN_PERCENT"] = value
                 result = subprocess.run(
                     [sys.executable, "-c", "import scanner"],
-                    env=environment, capture_output=True, text=True, timeout=10,
+                    env=environment, cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, timeout=10,
                 )
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("CASH_MIN_MARGIN_PERCENT must be finite and non-negative", result.stderr)
