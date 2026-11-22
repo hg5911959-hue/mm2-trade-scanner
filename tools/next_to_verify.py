@@ -36,7 +36,10 @@ def rank_blockers(metrics, catalog, *, now=None, limit=15):
         entry = None if name in duplicate_names else items.get(name)
         price = entry.get("cash_price_usd") if entry else None
         verified_at = entry.get("verified_at_utc") if entry else None
-        status = entry.get("status", "verified") if entry else ("ambiguous" if name in duplicate_names else "missing")
+        if entry:
+            status = entry.get("status", "verified")
+        else:
+            status = "ambiguous" if name in duplicate_names else "missing"
         age_days = None
         if verified_at:
             try:
@@ -77,6 +80,7 @@ def format_blockers(metrics, catalog, *, now=None, limit=15):
             f"   If top {index} blockers are resolved: {item['unlocked_percent']:.1f}% of blocked listings unlocked"
         )
     return "\n".join(lines)
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
