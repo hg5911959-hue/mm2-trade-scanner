@@ -1879,11 +1879,10 @@ class RblxValueMetaPollingTests(IsolatedDataTestCase):
                 patch("scanner.RBLXVALUE_META_POLL_ENABLED", True),
                 patch("scanner.RBLXVALUE_API_KEY", "test-key"),
                 patch("scanner.time.time", return_value=1000),
-                patch("scanner.request_with_retry", return_value=json.dumps(payload).encode("utf-8")) as api,
+                patch("scanner.api_get_json", return_value=payload) as api,
             ):
                 result = scanner._fetch_rblxvalue_meta()
-            api.assert_called_once()
-            self.assertEqual(api.call_args.args, ("/meta",))
+            api.assert_called_once_with("/meta")
             self.assertEqual(result["last_updated"], payload["last_updated"])
 
     def test_meta_rejects_implausible_catalogue_totals(self):
