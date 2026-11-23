@@ -11,8 +11,8 @@ import watchdog
 class WatchdogRepositoryTests(IsolatedDataTestCase):
     def test_active_run_lookup_checks_running_and_queued_scans(self):
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        running = {"workflow_runs": [{"id": 123, "status": "in_progress", "created_at": now}]}
-        queued = {"workflow_runs": [{"id": 124, "status": "queued", "created_at": now}]}
+        running = {"workflow_runs": [{"id": 123, "status": "in_progress", "created_at": now, "head_branch": "main", "event": "schedule"}]}
+        queued = {"workflow_runs": [{"id": 124, "status": "queued", "created_at": now, "head_branch": "main", "event": "schedule"}]}
         responses = [
             json.dumps(running).encode("utf-8"),
             json.dumps(running).encode("utf-8"),
@@ -36,8 +36,8 @@ class WatchdogRepositoryTests(IsolatedDataTestCase):
     def test_oldest_active_scan_is_used_to_detect_a_stuck_queue(self):
         old = "2026-11-13T00:00:00Z"
         recent = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        running = {"workflow_runs": [{"id": 123, "status": "in_progress", "created_at": old}]}
-        queued = {"workflow_runs": [{"id": 124, "status": "queued", "created_at": recent}]}
+        running = {"workflow_runs": [{"id": 123, "status": "in_progress", "created_at": old, "head_branch": "main", "event": "schedule"}]}
+        queued = {"workflow_runs": [{"id": 124, "status": "queued", "created_at": recent, "head_branch": "main", "event": "schedule"}]}
         responses = [
             json.dumps(running).encode("utf-8"),
             json.dumps(running).encode("utf-8"),
@@ -59,8 +59,9 @@ class WatchdogRepositoryTests(IsolatedDataTestCase):
     def test_success_lookup_uses_completed_status_and_filters_conclusion(self):
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         payload = {"workflow_runs": [
-            {"id": 1, "conclusion": "failure", "completed_at": now},
-            {"id": 2, "conclusion": "success", "completed_at": now, "html_url": "https://github.com/example/run/2"},
+            {"id": 1, "conclusion": "failure", "completed_at": now, "head_branch": "main", "event": "schedule"},
+            {"id": 3, "conclusion": "success", "completed_at": now, "head_branch": "feature/pr", "event": "pull_request"},
+            {"id": 2, "conclusion": "success", "completed_at": now, "head_branch": "main", "event": "schedule", "html_url": "https://github.com/example/run/2"},
         ]}
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": "example/mm2-test"}), patch(
             "watchdog.scanner.request_with_retry",
@@ -83,8 +84,8 @@ class WatchdogRepositoryTests(IsolatedDataTestCase):
         old = "2026-11-13T22:00:00Z"
         new = "2026-11-13T23:59:00Z"
         payload = {"workflow_runs": [
-            {"id": 1, "conclusion": "success", "updated_at": old},
-            {"id": 2, "conclusion": "success", "updated_at": new, "html_url": "https://github.com/example/run/2"},
+            {"id": 1, "conclusion": "success", "updated_at": old, "head_branch": "main", "event": "schedule"},
+            {"id": 2, "conclusion": "success", "updated_at": new, "head_branch": "main", "event": "workflow_dispatch", "html_url": "https://github.com/example/run/2"},
         ]}
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": "example/mm2-test"}), patch(
             "watchdog.scanner.request_with_retry",
@@ -100,8 +101,8 @@ class WatchdogRepositoryTests(IsolatedDataTestCase):
         old = "2026-11-10T00:00:00Z"
         new = "2026-11-13T00:00:00Z"
         payload = {"workflow_runs": [
-            {"id": 1, "conclusion": "success", "completed_at": old},
-            {"id": 2, "conclusion": "success", "completed_at": new},
+            {"id": 1, "conclusion": "success", "completed_at": old, "head_branch": "main", "event": "schedule"},
+            {"id": 2, "conclusion": "success", "completed_at": new, "head_branch": "main", "event": "push"},
         ]}
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": "example/mm2-test"}), patch(
             "watchdog.scanner.request_with_retry",
@@ -114,12 +115,28 @@ class WatchdogRepositoryTests(IsolatedDataTestCase):
         self.assertEqual(run["id"], 2)
 
     def test_no_successful_completed_run_fails_clearly(self):
-        payload = {"workflow_runs": [{"id": 1, "conclusion": "cancelled", "completed_at": "2026-11-13T00:00:00Z"}]}
+        payload = {"workflow_runs": [{"id": 1, "conclusion": "cancelled", "completed_at": "2026-11-13T00:00:00Z", "head_branch": "main", "event": "schedule"}]}
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": "example/mm2-test"}), patch(
             "watchdog.scanner.request_with_retry",
             side_effect=[
                 json.dumps(payload).encode("utf-8"),
                 json.dumps(payload).encode("utf-8"),
+            ],
+        ):
+            with self.assertRaisesRegex(RuntimeError, "no successful completed"):
+                watchdog.latest_success_age_minutes("test-token")
+
+    def test_success_lookup_ignores_pull_request_successes(self):
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        payload = {"workflow_runs": [
+            {"id": 99, "conclusion": "success", "completed_at": now,
+             "head_branch": "feature/pr", "event": "pull_request"},
+        ]}
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "example/mm2-test"}), patch(
+            "watchdog.scanner.request_with_retry",
+            side_effect=[
+                json.dumps(payload).encode("utf-8"),
+                json.dumps({"workflow_runs": []}).encode("utf-8"),
             ],
         ):
             with self.assertRaisesRegex(RuntimeError, "no successful completed"):
@@ -151,3 +168,4 @@ class WatchdogActiveRunGraceTests(IsolatedDataTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
