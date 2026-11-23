@@ -3375,9 +3375,15 @@ def send_telegram(message):
     is_html = isinstance(message, TelegramHTML)
     message = str(message)
     is_robase_cash_message = "CASH PROFIT" in message or "ROBASE PRICE" in message or "MM2 ROBASE" in message
-    attribution = ROBASE_ATTRIBUTION if is_robase_cash_message else RBLXVALUE_ATTRIBUTION
-    has_attribution = message.rstrip().endswith((RBLXVALUE_ATTRIBUTION, ROBASE_ATTRIBUTION))
-    footer = "\n\n" + attribution if not has_attribution else ""
+    required_attributions = (
+        [ROBASE_ATTRIBUTION, RBLXVALUE_ATTRIBUTION]
+        if is_robase_cash_message else [RBLXVALUE_ATTRIBUTION]
+    )
+    existing_lines = set(message.rstrip().splitlines())
+    missing_attributions = [
+        value for value in required_attributions if value not in existing_lines
+    ]
+    footer = "\n\n" + "\n".join(missing_attributions) if missing_attributions else ""
     if len(message) + len(footer) > TELEGRAM_MAX_CHARS:
         chunk_limit = TELEGRAM_MAX_CHARS - 96
         chunks, current = [], ""
