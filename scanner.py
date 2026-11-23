@@ -4008,7 +4008,7 @@ def send_maintenance_alert(key, message, cooldown_seconds=3600):
         # silent for an entire cooldown window after a definite failure.
         state.pop(key, None)
         try:
-            atomic_write_text(MAINTENANCE_FILE, json.dumps(state, indent=2) + "\\n")
+            atomic_write_text(MAINTENANCE_FILE, json.dumps(state, indent=2) + "\n")
         except OSError as state_exc:
             print(f"[maintenance] Could not release failed-alert cooldown for {key}: {type(state_exc).__name__}")
         print(f"[maintenance] Alert failed for {key}: {type(exc).__name__}")
