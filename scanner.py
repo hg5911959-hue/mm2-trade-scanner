@@ -2468,18 +2468,10 @@ def _fetch_rblxvalue_meta(force=False):
         and 0 <= now - checked_at < RBLXVALUE_META_POLL_INTERVAL_SECONDS
     ):
         return state
-    request = urllib.request.Request(
-        RBLXVALUE_API_BASE + "/meta",
-        headers={
-            "Accept": "application/json",
-            "User-Agent": "MM2TradeScanner/2.2 (+https://github.com/hg5911959-hue/mm2-trade-scanner)",
-        },
-    )
-    raw = request_with_retry(request, 20, "RBLXValue public metadata")
-    try:
-        payload = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise RuntimeError("[rblxvalue-meta] Public metadata response was invalid JSON.") from exc
+    # RBLXValue v2 requires X-Api-Key on every data endpoint, including /meta.
+    # Route metadata through the same guarded client as /items so the request is
+    # authenticated, counted against the persistent daily budget, and breaker-aware.
+    payload = api_get_json("/meta")
     if not isinstance(payload, dict) or not isinstance(payload.get("last_updated"), str):
         raise RuntimeError("[rblxvalue-meta] Missing or invalid last_updated metadata")
     totals = payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
