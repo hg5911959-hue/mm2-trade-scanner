@@ -101,7 +101,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         base = {
             "cash_estimate_only": False, "manual_review": False,
             "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
-            "cash_profit_worst": 1.0, "margin": 0.01, "give_total_max": 10000.0,
+            "cash_profit_worst": 2.0, "margin": 0.01, "give_total_max": 10000.0,
         }
         with patch.object(scanner, "CASH_MIN_MARGIN_PERCENT", 0.5):
             self.assertFalse(scanner.qualifies_cash(base))
@@ -243,7 +243,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         self.assertTrue(scanner.qualifies_cash({**base, "cash_profit_worst": 2.00}))
         self.assertFalse(scanner.qualifies_cash({**base, "cash_profit_worst": 1.99}))
         standard = {**base, "give_total_max": 500.0}
-        self.assertTrue(scanner.qualifies_cash({**standard, "cash_profit_worst": 1.00}))
+        self.assertTrue(scanner.qualifies_cash({**standard, "cash_profit_worst": 2.00}))
         self.assertFalse(scanner.qualifies_cash({**standard, "cash_profit_worst": 1.999}))
 
     def test_non_dictionary_cash_result_fails_closed(self):
