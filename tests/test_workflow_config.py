@@ -244,6 +244,8 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         script = (ROOT / "tools/configure_state_remote.sh").read_text(encoding="utf-8")
         self.assertIn("git remote rename origin source", script)
         self.assertIn("git remote set-url origin", script)
+        self.assertIn('http.https://github.com/$state_repo.git/.extraheader', script)
+        self.assertNotIn('x-access-token:$state_token@', script)
         self.assertIn('get("private") is True', script)
         self.assertIn("refusing to store runtime data there", script)
         self.assertIn("git push origin refs/remotes/source/state:refs/heads/state", script)
