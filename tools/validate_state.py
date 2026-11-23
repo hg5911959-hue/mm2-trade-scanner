@@ -486,12 +486,20 @@ def validate_dedupe_state(directory: str | Path) -> list[str]:
         valid = isinstance(entries, dict) and len(entries) <= 1000
         if valid:
             for key, entry in entries.items():
-                if (
-                    not isinstance(key, str) or not key or not isinstance(entry, dict)
-                    or not _finite_positive(entry.get("created_at"))
-                    or not _finite_positive(entry.get("updated_at"))
-                    or not isinstance(entry.get("content_hash"), str)
-                    or not isinstance(entry.get("values_hash"), str)
+                if not isinstance(key, str) or not key or not isinstance(entry, dict):
+                    valid = False
+                    break
+                # Older schema-v1 entries may omit hashes or updated_at; the
+                # scanner treats those as changed/old rather than corrupt.
+                if any(
+                    field in entry and not isinstance(entry[field], str)
+                    for field in ("content_hash", "values_hash")
+                ):
+                    valid = False
+                    break
+                if any(
+                    field in entry and not _finite_positive(entry[field])
+                    for field in ("created_at", "updated_at")
                 ):
                     valid = False
                     break
