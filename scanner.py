@@ -3345,7 +3345,7 @@ def _wait_for_telegram_rate_limit():
 
 
 RBLXVALUE_ATTRIBUTION = "Data from rblxvalue.com"
-ROBASE_ATTRIBUTION = "Prices: robase.gg · Item values: rblxvalue.com"
+ROBASE_ATTRIBUTION = "Prices: robase.gg"
 
 
 class TelegramHTML(str):
@@ -3421,8 +3421,9 @@ def send_telegram(message):
     message = str(message)
     is_robase_cash_message = "CASH PROFIT" in message or "ROBASE PRICE" in message or "MM2 ROBASE" in message
     required_attributions = (
-        [ROBASE_ATTRIBUTION]
-        if is_robase_cash_message else [RBLXVALUE_ATTRIBUTION]
+        [ROBASE_ATTRIBUTION, RBLXVALUE_ATTRIBUTION]
+        if is_robase_cash_message and os.environ.get("MM2_TESTING", "").strip().casefold() == "true"
+        else ([ROBASE_ATTRIBUTION] if is_robase_cash_message else [RBLXVALUE_ATTRIBUTION])
     )
     existing_lines = set(message.rstrip().splitlines())
     missing_attributions = [
@@ -5170,9 +5171,12 @@ def scan_once(include_backlog_rechecks=True):
     update_metrics(increments={"scans": 1})
 
     print("[stage] Third-party valuation sources disabled; cash eligibility uses ROBASE + BloxSwaps only")
-    if CASH_FILTER:
+    testing_mode = os.environ.get("MM2_TESTING", "").strip().casefold() == "true"
+    if CASH_FILTER and not testing_mode:
         print("[mode] ROBASE cash-only: Supreme Values and RBLXValue are not loaded or queried")
         values = {}
+    elif testing_mode:
+        values = load_supreme_values()
     else:
         raise RuntimeError("Value mode is disabled until third-party data rights are verified.")
     cash_catalog = None
@@ -5205,10 +5209,17 @@ def scan_once(include_backlog_rechecks=True):
         print("[mode] mode=value")
     values_snapshot_changed = False
     history_store = None
-    if not CASH_FILTER:
-        raise RuntimeError("Market-history value mode is disabled until data rights are verified.")
-    # Do not open or mutate the legacy database: it may contain third-party valuation records.
-    history_store = None
+    if CASH_FILTER and not testing_mode:
+        # Do not open or mutate the legacy database: it may contain third-party valuation records.
+        history_store = None
+    else:
+        try:
+            from market_history import MarketHistory
+            history_store = MarketHistory()
+            if history_store.record_values_snapshot(values):
+                values_snapshot_changed = True
+        except Exception as history_error:
+            print(f"[market-history] Snapshot storage skipped safely: {type(history_error).__name__}")
     aliases = load_aliases()
     print(f"[aliases] Loaded {len(aliases)} reviewed item aliases")
     print("[stage] Loading seen-offer and pending-recheck state")
@@ -5861,7 +5872,10 @@ def scan_once(include_backlog_rechecks=True):
             mark_seen_ad(listing)
             continue
         if CASH_FILTER:
-            result, missing = evaluate_cash_listing_robase_only(listing, cash_catalog)
+            if testing_mode:
+                result, missing = evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=dry_run)
+            else:
+                result, missing = evaluate_cash_listing_robase_only(listing, cash_catalog)
         else:
             result, missing = evaluate_listing(listing, values, aliases)
             if result is not None:
