@@ -239,7 +239,7 @@ jobs:
 
   persist-state:
     needs: [prepare-private-state, scan]
-    if: always()
+    if: always() && needs.prepare-private-state.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
