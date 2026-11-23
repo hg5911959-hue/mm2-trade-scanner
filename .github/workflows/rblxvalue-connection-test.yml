@@ -16,9 +16,6 @@ jobs:
     name: Verify RBLXValue API credentials
     runs-on: ubuntu-latest
     timeout-minutes: 3
-    env:
-      MM2_STATE_REPO: ${{ secrets.MM2_STATE_REPO_TOKEN != '' && 'hg5911959-hue/mm2-trade-scanner-state' || '' }}
-      MM2_STATE_REPO_TOKEN: ${{ secrets.MM2_STATE_REPO_TOKEN }}
     permissions:
       contents: write
     steps:
@@ -26,6 +23,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Configure private durable state repository
+        env:
+          MM2_STATE_REPO: ${{ secrets.MM2_STATE_REPO_TOKEN != '' && 'hg5911959-hue/mm2-trade-scanner-state' || '' }}
+          MM2_STATE_REPO_TOKEN: ${{ secrets.MM2_STATE_REPO_TOKEN }}
         run: bash tools/configure_state_remote.sh
 
       - name: Set up Python
