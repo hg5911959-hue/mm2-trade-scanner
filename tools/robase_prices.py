@@ -62,6 +62,8 @@ DETAIL_SOLD_30D_RE = re.compile(
     r"(?:\(([0-9,]+)\s+in 30 days\)|([0-9,]+)\s+cop(?:y|ies) sold in the last 30 days)",
     re.I,
 )
+DETAIL_SOLD_7D_STAT_RE = re.compile(r"\bSold\s*\(7d\)\s*([0-9,]+)", re.I)
+DETAIL_SOLD_30D_STAT_RE = re.compile(r"\bSold\s*\(30d\)\s*([0-9,]+)", re.I)
 DETAIL_VALUE_RE = re.compile(r"Its value is\s+([0-9,]+)", re.I)
 DETAIL_SUPPLY_RE = re.compile(
     r"BloxSwaps counts\s+([0-9,]+)\s+copies in the game,\s+held by\s+([0-9,]+)\s+players",
@@ -250,8 +252,21 @@ def _parse_item_detail(url: str, document: str, fetched_at_utc: str, etag="", la
     price = float(price_match.group("price").replace(",", ""))
     if not name or not category or price <= 0:
         raise ValueError(f"invalid ROBASE item detail: {url}")
+    sold_7d_stat = DETAIL_SOLD_7D_STAT_RE.search(text)
+    sold_30d_stat = DETAIL_SOLD_30D_STAT_RE.search(text)
     sold_7d_match = DETAIL_SOLD_7D_RE.search(text)
     sold_30d_match = DETAIL_SOLD_30D_RE.search(text)
+    sold_7d = (
+        int(sold_7d_stat.group(1).replace(",", ""))
+        if sold_7d_stat else
+        int(sold_7d_match.group(1).replace(",", "")) if sold_7d_match else 0
+    )
+    sold_30d = (
+        int(sold_30d_stat.group(1).replace(",", ""))
+        if sold_30d_stat else
+        int(next(value for value in sold_30d_match.groups() if value).replace(",", ""))
+        if sold_30d_match else 0
+    )
     value_match = DETAIL_VALUE_RE.search(text)
     supply_match = DETAIL_SUPPLY_RE.search(text)
     slug = urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1]
@@ -265,11 +280,8 @@ def _parse_item_detail(url: str, document: str, fetched_at_utc: str, etag="", la
         "cash_price_usd": price,
         "price_display": price_display,
         "price_window_days": int(price_match.group("days")),
-        "sold_7d": int(sold_7d_match.group(1).replace(",", "")) if sold_7d_match else 0,
-        "sold_30d": (
-            int(next(value for value in sold_30d_match.groups() if value).replace(",", ""))
-            if sold_30d_match else 0
-        ),
+        "sold_7d": sold_7d,
+        "sold_30d": sold_30d,
         "bloxswaps_value": int(value_match.group(1).replace(",", "")) if value_match else None,
         "bloxswaps_copies": int(supply_match.group(1).replace(",", "")) if supply_match else None,
         "bloxswaps_holders": int(supply_match.group(2).replace(",", "")) if supply_match else None,

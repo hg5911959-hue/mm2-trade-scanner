@@ -99,6 +99,39 @@ class RobasePriceParserTests(IsolatedDataTestCase):
         self.assertEqual(item["sold_7d"], 1)
         self.assertEqual(item["sold_30d"], 5)
 
+    def test_item_detail_prefers_explicit_sold_period_stats_over_about_copy(self):
+        html = """
+        <main>
+          <h2>About Chroma Constellation</h2>
+          <div>Sold (7d) 1</div>
+          <div>Sold (30d) 4</div>
+          <p>Chroma Constellation is a Chroma item in Roblox Murder Mystery 2 (MM2).
+          Over the last 7 days it sold for $446.50 on average after the marketplace fee.</p>
+          <p>1 copy changed hands in the last 7 days for $470.00.</p>
+        </main>
+        """
+        item = _parse_item_detail(
+            "https://robase.gg/item/chroma-constellation", html, "2026-11-23T22:00:00Z"
+        )
+        self.assertEqual(item["price_window_days"], 7)
+        self.assertEqual(item["sold_7d"], 1)
+        self.assertEqual(item["sold_30d"], 4)
+
+    def test_item_detail_falls_back_to_about_sales_counts_when_stats_are_absent(self):
+        html = """
+        <main>
+          <h2>About Harvester</h2>
+          <p>Harvester is an Ancient item in Roblox Murder Mystery 2 (MM2).
+          Over the last 7 days it sold for $4.99 on average after the marketplace fee.</p>
+          <p>1,403 copies changed hands in the last 7 days for $9,611 (7,722 in 30 days).</p>
+        </main>
+        """
+        item = _parse_item_detail(
+            "https://robase.gg/item/harvester", html, "2026-11-23T22:00:00Z"
+        )
+        self.assertEqual(item["sold_7d"], 1403)
+        self.assertEqual(item["sold_30d"], 7722)
+
     def test_item_detail_anchors_name_and_extracts_exact_bloxswaps_image_slug(self):
         html = """
         <html><head>
