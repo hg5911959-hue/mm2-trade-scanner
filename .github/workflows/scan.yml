@@ -302,6 +302,85 @@ jobs:
             fi
           done
 
+      - name: Validate dedupe state after failed scan
+        id: validate-dedupe
+        if: >-
+          always() &&
+          needs.scan.result != 'success' &&
+          steps.download.outcome == 'success' &&
+          hashFiles(
+            'state-artifact/data/alerted.json',
+            'state-artifact/data/telegram_uncertain.json',
+            'state-artifact/data/telegram_uncertain_context.json',
+            'state-artifact/data/seen_ads.json',
+            'state-artifact/data/pending_recheck.json',
+            'state-artifact/data/pending_recheck_schedule.json',
+            'state-artifact/data/first_seen_ads.json',
+            'state-artifact/data/watch_ads.json',
+            'state-artifact/data/maintenance_alerts.json'
+          ) != ''
+        run: |
+          set -euo pipefail
+          python tools/validate_state.py --directory state-artifact/data --dedupe-only
+
+      - name: Persist validated dedupe state after failed scan
+        id: persist-dedupe
+        if: >-
+          always() &&
+          needs.scan.result != 'success' &&
+          steps.download.outcome == 'success' &&
+          steps.validate-dedupe.outcome == 'success'
+        run: |
+          set -euo pipefail
+          if ! git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
+            echo "No existing durable state branch; refusing to seed it from a failed partial scan."
+            exit 0
+          fi
+          git fetch origin refs/heads/state:refs/remotes/origin/state
+          git checkout --detach origin/state
+          mkdir -p data
+          files=(
+            alerted.json
+            telegram_uncertain.json
+            telegram_uncertain_context.json
+            seen_ads.json
+            pending_recheck.json
+            pending_recheck_schedule.json
+            first_seen_ads.json
+            watch_ads.json
+            maintenance_alerts.json
+          )
+          copied=0
+          for file in "${files[@]}"; do
+            if [ -f "state-artifact/data/$file" ]; then
+              cp "state-artifact/data/$file" "data/$file"
+              git add "data/$file"
+              copied=$((copied + 1))
+            fi
+          done
+          if [ "$copied" -eq 0 ] || git diff --cached --quiet; then
+            echo "No validated dedupe checkpoint changes to persist."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(state): preserve dedupe checkpoints after failed scan"
+          git push origin HEAD:state
+          echo "updated=true" >> "$GITHUB_OUTPUT"
+          echo "Persisted $copied validated dedupe checkpoint file(s); market cache/database were not replaced."
+
+      - name: Verify dedupe checkpoints after failed scan
+        if: always() && steps.persist-dedupe.outputs.updated == 'true'
+        run: |
+          set -euo pipefail
+          git fetch origin refs/heads/state:refs/remotes/origin/state
+          for file in alerted.json telegram_uncertain.json telegram_uncertain_context.json seen_ads.json pending_recheck.json pending_recheck_schedule.json first_seen_ads.json watch_ads.json maintenance_alerts.json; do
+            if [ -f "state-artifact/data/$file" ]; then
+              git cat-file -e "refs/remotes/origin/state:data/$file"
+              echo "[dedupe-persist-audit] verified=$file"
+            fi
+          done
+
       - name: Persist state branch
         id: persist-state
         if: steps.download.outcome == 'success' && steps.validate-state.outcome == 'success'
