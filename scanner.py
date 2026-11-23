@@ -5092,7 +5092,7 @@ def scan_once(include_backlog_rechecks=True):
                     "robase-rblxvalue-mapping-gaps",
                     "ROBASE/RBLXValue weapon crosswalk has unresolved identities: "
                     + "; ".join(str(value) for value in mapping_gaps[:20])
-                    + f"\\nUnresolved: {len(mapping_gaps)} of {mapping_audit.get('expected', 0)} weapons. "
+                    + f"\nUnresolved: {len(mapping_gaps)} of {mapping_audit.get('expected', 0)} weapons. "
                     "Affected listings are excluded; no names or values are guessed.",
                     cooldown_seconds=6 * 60 * 60,
                 )
@@ -5720,7 +5720,7 @@ def scan_once(include_backlog_rechecks=True):
             f"Eligible listings: {len(listings)}\n"
             f"Evaluated: {evaluated} · Qualified: {len(opportunities)}\n"
             f"Alerts sent: {sent} · Digest sent: {digest_sent} · Digest pending: {digest_not_sent}\n"
-            f"RBLXValue API requests this run: {rblxvalue_guard.requests_this_run()}\\n"
+            f"RBLXValue API requests this run: {rblxvalue_guard.requests_this_run()}\n"
             + (
                 f"ROBASE weapons mapped: {max(0, mapping_audit.get('expected', 0) - len(mapping_audit.get('missing', [])) - len(mapping_audit.get('ambiguous', [])))}/"
                 f"{mapping_audit.get('expected', 0)} · non-weapons excluded: {len(mapping_audit.get('non_weapons', []))}"
