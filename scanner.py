@@ -5678,9 +5678,9 @@ def scan_once(include_backlog_rechecks=True):
         watch_id = str(listing.get("source_ad_id") or "")
         previous_watch = watch_state.get(watch_id, {})
         current_content_hash, current_values_hash = listing_watch_fingerprints(listing, values, aliases, cash_catalog)
-        legacy_cash_watch = bool(previous_watch) and CASH_FILTER and previous_watch.get("cash_source_version") != 2
+        legacy_cash_watch = bool(previous_watch) and CASH_FILTER and not testing_mode and previous_watch.get("cash_source_version") != 2
         variant_changed = watch_variant_changed(
-            previous_watch, current_content_hash, current_values_hash, cash_filter=CASH_FILTER
+            previous_watch, current_content_hash, current_values_hash, cash_filter=(CASH_FILTER and not testing_mode)
         )
         if (trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids:
             if legacy_cash_watch and trade_id in alerted_set:
