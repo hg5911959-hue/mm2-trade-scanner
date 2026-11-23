@@ -9,6 +9,7 @@ Every five minutes, the Worker reads the latest runs of `MM2 Scanner Scheduler` 
 - Does nothing if a scanner run is queued or in progress.
 - Does nothing if a successful scan completed within the last 15 minutes.
 - Does nothing for 10 minutes after a recent manual dispatch or failed run, preventing dispatch loops.
+- Respects a manually disabled GitHub workflow, but re-enables it if GitHub reports `disabled_inactivity`.
 - Otherwise dispatches one live run of `scan-scheduler.yml` with `dry_run=false` and `verify_rblxvalue_key=false`.
 
 The Worker never reads trade listings, RBLXValue data, Telegram messages, or repository state. It only checks GitHub Actions run metadata and dispatches the existing workflow. The normal scanner concurrency group remains the final duplicate-run guard.
