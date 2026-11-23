@@ -5103,6 +5103,17 @@ def save_watch_state(ads):
     if len(active) > MAX_WATCHED_ADS: active = dict(sorted(active.items(), key=lambda pair: float(pair[1].get('updated_at', 0)))[-300:])
     atomic_write_text(WATCH_FILE, json.dumps({'version': 1, 'ads': active}, ensure_ascii=False, indent=2) + "\n")
 
+def watch_variant_changed(previous_watch, content_hash, values_hash, cash_filter=False):
+    """Ignore one legacy value-source fingerprint change during cash-mode migration."""
+    if not previous_watch:
+        return False
+    legacy_cash_watch = cash_filter and previous_watch.get("cash_source_version") != 2
+    return (
+        previous_watch.get("content_hash") != content_hash
+        or (not legacy_cash_watch and previous_watch.get("values_hash") != values_hash)
+    )
+
+
 def update_watch_entry(watch_state, listing, values, aliases=None, cash_catalog=None):
     ad_id = str(listing.get('source_ad_id') or '')
     if not ad_id: return False
@@ -5665,9 +5676,8 @@ def scan_once(include_backlog_rechecks=True):
         previous_watch = watch_state.get(watch_id, {})
         current_content_hash, current_values_hash = listing_watch_fingerprints(listing, values, aliases, cash_catalog)
         legacy_cash_watch = bool(previous_watch) and CASH_FILTER and previous_watch.get("cash_source_version") != 2
-        variant_changed = bool(previous_watch) and (
-            previous_watch.get("content_hash") != current_content_hash
-            or (not legacy_cash_watch and previous_watch.get("values_hash") != current_values_hash)
+        variant_changed = watch_variant_changed(
+            previous_watch, current_content_hash, current_values_hash, cash_filter=CASH_FILTER
         )
         if (trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids:
             if legacy_cash_watch and trade_id in alerted_set:
