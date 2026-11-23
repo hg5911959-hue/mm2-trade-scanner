@@ -362,7 +362,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
             mapping[slug] = {
                 "bloxswaps_slug": slug, "robase_slug": slug, "robase_name": name,
                 "bloxswaps_type": "knife", "bloxswaps_rarity": "godly",
-                "bloxswaps_chroma": False,
+                "bloxswaps_chroma": False, "bloxswaps_tradable": True,
             }
         def item(name):
             return {
@@ -396,7 +396,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         mapping = {"laser": {
             "robase_slug": "laser", "robase_name": "Laser",
             "bloxswaps_type": "knife", "bloxswaps_rarity": "godly",
-            "bloxswaps_chroma": False,
+            "bloxswaps_chroma": False, "bloxswaps_tradable": True,
         }}
         bad_item = {
             "name": "Laser", "catalog_slug": "laser", "catalog_type": "gun",
