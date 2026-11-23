@@ -117,6 +117,23 @@ class RobasePriceParserTests(IsolatedDataTestCase):
         self.assertEqual(item["sold_7d"], 1)
         self.assertEqual(item["sold_30d"], 4)
 
+    def test_item_detail_uses_30_day_window_when_7_day_stats_show_no_sales(self):
+        html = """
+        <main>
+          <h2>About Chroma Vampire's Gun</h2>
+          <div>Sold (7d) 0</div>
+          <div>Sold (30d) 1</div>
+          <p>Chroma Vampire's Gun is a Chroma item in Roblox Murder Mystery 2 (MM2).
+          Over the last 7 days it sold for $392.99 on average after the marketplace fee.</p>
+        </main>
+        """
+        item = _parse_item_detail(
+            "https://robase.gg/item/chroma-vampires-gun", html, "2026-11-23T22:00:00Z"
+        )
+        self.assertEqual(item["sold_7d"], 0)
+        self.assertEqual(item["sold_30d"], 1)
+        self.assertEqual(item["price_window_days"], 30)
+
     def test_item_detail_falls_back_to_about_sales_counts_when_stats_are_absent(self):
         html = """
         <main>
