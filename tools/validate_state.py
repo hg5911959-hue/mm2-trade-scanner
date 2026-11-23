@@ -473,7 +473,7 @@ def validate_dedupe_state(directory: str | Path) -> list[str]:
                 try:
                     if not isinstance(key, str) or not key or not isinstance(value, str):
                         raise ValueError
-                    datetime.fromisoformat(value.replace("Z", "+00:00"))
+                    datetime.fromisoformat(value)
                 except (TypeError, ValueError):
                     valid = False
                     break
