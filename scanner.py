@@ -5106,31 +5106,41 @@ def save_watch_state(ads):
     if len(active) > MAX_WATCHED_ADS: active = dict(sorted(active.items(), key=lambda pair: float(pair[1].get('updated_at', 0)))[-300:])
     atomic_write_text(WATCH_FILE, json.dumps({'version': 1, 'ads': active}, ensure_ascii=False, indent=2) + "\n")
 
+_CASH_PROFIT_HISTORY_CACHE_KEY = None
+_CASH_PROFIT_HISTORY_CACHE = {}
+
+
 def last_cash_profit_for_listing(listing_id):
-    """Read only the previous cash-profit field needed for one-time watch migration."""
-    if not HISTORY_FILE.exists():
-        return None
-    latest = None
+    """Read cached previous cash profits once; ignore every non-cash history field."""
+    global _CASH_PROFIT_HISTORY_CACHE_KEY, _CASH_PROFIT_HISTORY_CACHE
     try:
-        with HISTORY_FILE.open("r", newline="", encoding="utf-8") as handle:
-            for row in csv.DictReader(handle):
-                if str(row.get("listing_id") or "") != str(listing_id):
-                    continue
-                if str(row.get("profit_basis") or "").casefold() != "cash_usd":
-                    continue
-                raw_profit = row.get("profit_cash_usd")
-                if raw_profit in (None, ""):
-                    continue
-                try:
-                    profit = float(raw_profit)
-                except (TypeError, ValueError):
-                    continue
-                if math.isfinite(profit) and profit >= 0:
-                    latest = profit
-    except (OSError, csv.Error, UnicodeDecodeError) as exc:
-        print(f"[watch-migration] Previous cash-profit history unavailable: {type(exc).__name__}")
+        stat = HISTORY_FILE.stat()
+    except OSError:
         return None
-    return latest
+    cache_key = (str(HISTORY_FILE), stat.st_mtime_ns, stat.st_size)
+    if cache_key != _CASH_PROFIT_HISTORY_CACHE_KEY:
+        latest_by_listing = {}
+        try:
+            with HISTORY_FILE.open("r", newline="", encoding="utf-8") as handle:
+                for row in csv.DictReader(handle):
+                    if str(row.get("profit_basis") or "").casefold() != "cash_usd":
+                        continue
+                    raw_profit = row.get("profit_cash_usd")
+                    if raw_profit in (None, ""):
+                        continue
+                    try:
+                        profit = float(raw_profit)
+                    except (TypeError, ValueError):
+                        continue
+                    key = str(row.get("listing_id") or "")
+                    if key and math.isfinite(profit) and profit >= 0:
+                        latest_by_listing[key] = profit
+        except (OSError, csv.Error, UnicodeDecodeError) as exc:
+            print(f"[watch-migration] Previous cash-profit history unavailable: {type(exc).__name__}")
+            return None
+        _CASH_PROFIT_HISTORY_CACHE = latest_by_listing
+        _CASH_PROFIT_HISTORY_CACHE_KEY = cache_key
+    return _CASH_PROFIT_HISTORY_CACHE.get(str(listing_id))
 
 
 def watch_variant_changed(previous_watch, content_hash, values_hash, cash_filter=False):
