@@ -2,11 +2,9 @@
 
 ## Important: public state-storage and data-rights warning
 
-This repository is public, so **every branch, including `state`, is publicly readable**. The current `state` branch contains plaintext `supreme_values.json`, `supreme_values_audit.json`, and `market_history.sqlite3`; the database schema stores Supreme-derived values. The presence of a file named `private_state.enc` does not encrypt or protect those separate plaintext files.
+This repository is public, so **every branch, including the legacy `state` branch, is publicly readable**. The current legacy branch contains plaintext `supreme_values.json`, `supreme_values_audit.json`, and `market_history.sqlite3`; the database schema stores Supreme-derived values. The code now supports moving runtime state into a dedicated private repository, but that protection is not active until the private repository and `MM2_STATE_REPO_TOKEN` secret are configured and a successful migration is verified. Follow [Private state setup](docs/PRIVATE_STATE_SETUP.md). Do not delete the legacy state files before the private copy is verified.
 
-Therefore, the state branch must not be described as private, and the current storage layout does not satisfy the no-public-redistribution boundary described below. Do not delete these files manually: the scanner currently depends on its cached value snapshot and market-history database. A safe migration requires a separate private storage destination or a dedicated encryption key, a tested restore path, and verification that no plaintext copies remain before the old public copies are removed. This migration is intentionally not performed by this change because no private destination or independent encryption key is configured here.
-
-The repository's own Supreme Values compliance notes state that written redistribution authorization is required for Supreme-derived data. I found no authorization reference in the repository files reviewed for this audit. Until that is confirmed, do not treat attribution alone as permission to republish those values.
+The repository's own Supreme Values compliance notes state that written redistribution authorization is required for Supreme-derived data. I found no authorization reference in the repository files reviewed for this audit. Until that is confirmed, do not treat attribution alone as permission to republish those values. Removing the public branch later cannot undo copies already made by third parties.
 
 
 Automated scanner for public **BloxSwaps MM2 P2P listings**, with concise Telegram alerts. GitHub Actions schedules a scan every 10 minutes; each scan polls the feed every 30 seconds for up to 540 seconds (9 minutes), leaving a short persistence window. GitHub cron can be delayed, so this is a target cadence, not a real-time guarantee.
@@ -109,6 +107,7 @@ Open **Settings → Secrets and variables → Actions → New repository secret*
 - `TELEGRAM_BOT_TOKEN`: Telegram bot token.
 - `TELEGRAM_CHAT_ID`: your Telegram numeric chat ID.
 - `RBLXVALUE_API_KEY`: active API key from the RBLXValue developer dashboard (raw key only, no quotes).
+- `MM2_STATE_REPO_TOKEN`: optional during compatibility mode, but required for the final private-state deployment. Use a fine-grained token limited to the private `hg5911959-hue/mm2-trade-scanner-state` repository with Contents read/write. See [Private state setup](docs/PRIVATE_STATE_SETUP.md).
 
 Never commit or share these secrets. The scanner does not print API keys or Telegram bot tokens in logs.
 
@@ -118,7 +117,7 @@ Never commit or share these secrets. The scanner does not print API keys or Tele
 - RBLXValue documents one free API key per account. Do not create alternate accounts or spread requests across keys to bypass limits. If a key is compromised or needs replacement, rotate the existing key through the official developer dashboard and update the `RBLXVALUE_API_KEY` repository secret.
 - HTTP 429 is a rate-limit response, not a key suspension; the scanner respects retry guidance and its own persistent rolling request budget. HTTP 401 indicates a missing/wrong/rotated key; HTTP 403 may indicate a key that is not activated, expired, or suspended.
 - Preflight reads the local rolling 24-hour request ledger and sends a separate Telegram warning at 80% of the configured limit (48/60 by default). This check is local-only and does not spend an RBLXValue request; the hard limit remains enforced by the shared request guard.
-- The scanner never stores the API key itself in repository state. The key-health file stores only a truncated SHA-256 fingerprint and timestamps for health checks and circuit-breaker recovery. The `state` branch is public and currently contains other plaintext state; see the warning at the top of this README.
+- The scanner never stores the API key itself in repository state. The key-health file stores only a truncated SHA-256 fingerprint and timestamps for health checks and circuit-breaker recovery. The legacy public `state` branch remains a privacy blocker until the private-state migration is verified; see [Private state setup](docs/PRIVATE_STATE_SETUP.md).
 
 - `data/supreme_values_audit.json` records the complete internal API snapshot with completeness counts, missing metadata and same-name identity collisions. It is retained for scanner diagnostics only; do not export or republish the Supreme-derived value list. Missing or unrecognized received-side Stability blocks value-mode offers, but does not block a cash-first offer whose identity, quantities and ROBASE prices are verified. Demand and non-tradability Stability labels are informational in cash-first mode; explicit `Untradeable` is always blocked.
 - The RBLXValue API explicitly documents `value_source_b` as the Supreme Values numeric value, but documents `stability` as a general API field rather than a source-specific field. Telegram therefore labels it `Stability (RBLXValue)`; this is not a claim of direct Supreme website verification. Its `/v2/history/{slug}?source=supremevalues` endpoint can be used for source-specific historical value movement where API budget permits.
