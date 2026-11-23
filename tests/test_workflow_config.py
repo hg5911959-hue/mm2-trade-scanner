@@ -273,6 +273,10 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn('written authorization before using its value-list data in a bot', scan)
         scan = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         self.assertIn("prepare-private-state:", scan)
+        scan_job = scan.split("  scan:", 1)[1].split("  persist-state:", 1)[0]
+        scan_job_env = scan_job.split("    env:", 1)[1].split("    steps:", 1)[0]
+        self.assertNotIn("MM2_STATE_REPO_TOKEN", scan_job_env)
+        self.assertIn("MM2_STATE_REPO_TOKEN", scan_job)
         self.assertIn("needs: prepare-private-state", scan)
         self.assertIn("needs: [prepare-private-state, scan]", scan)
         for path in (".github/workflows/weekly-report.yml", ".github/workflows/dashboard-pages.yml", ".github/workflows/tests.yml"):
