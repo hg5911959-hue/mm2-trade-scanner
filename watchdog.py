@@ -54,15 +54,27 @@ def _workflow_runs(token, workflow_file, query, label):
     return runs
 
 
+def _is_mainline_scan_run(run):
+    """Only main-branch executions count; PR validation is not a live scan."""
+    return (
+        isinstance(run, dict)
+        and run.get("head_branch") == "main"
+        and run.get("event") in {"schedule", "workflow_dispatch", "push"}
+    )
+
+
 def latest_success_age_minutes(token):
-    """Find the latest successful scheduled or manually dispatched scan run."""
+    """Find the latest successful main-branch scan run."""
     runs = []
     for workflow_file in SCAN_WORKFLOW_FILES:
         runs.extend(_workflow_runs(
             token, workflow_file, "status=completed&per_page=100",
             f"GitHub completed {workflow_file} runs",
         ))
-    successful = [run for run in runs if isinstance(run, dict) and run.get("conclusion") == "success"]
+    successful = [
+        run for run in runs
+        if _is_mainline_scan_run(run) and run.get("conclusion") == "success"
+    ]
     if not successful:
         raise RuntimeError("GitHub returned no successful completed scan workflow runs.")
     # GitHub's workflow-runs REST response may omit completed_at even for
@@ -90,7 +102,7 @@ def latest_active_scan_age_minutes(token):
             ))
     active = [
         run for run in runs
-        if isinstance(run, dict) and run.get("status") in {"in_progress", "queued"}
+        if _is_mainline_scan_run(run) and run.get("status") in {"in_progress", "queued"}
     ]
     if not active:
         return None, None
@@ -114,7 +126,12 @@ def main():
         )
         return
     age, run = latest_success_age_minutes(token)
-    print(f"[watchdog] Latest successful scan age: {age:.1f} minutes")
+    print(
+        f"[watchdog] Latest successful main-branch scan age: {age:.1f} minutes; "
+        f"run_id={run.get('id', 'unknown')} event={run.get('event', 'unknown')} "
+        f"branch={run.get('head_branch', 'unknown')} "
+        f"completed_at={run.get('completed_at') or run.get('updated_at') or 'unknown'}"
+    )
     if should_alert(age):
         scanner.send_telegram(
             "MM2 TRADE SCANNER WATCHDOG\n"
