@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   weekly-report:
-    if: ${{ vars.SUPREME_DATA_AUTHORIZED == 'true' }} # disabled unless written data-use permission is obtained
+    if: false # disabled: no written authorization for Supreme-derived data
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
