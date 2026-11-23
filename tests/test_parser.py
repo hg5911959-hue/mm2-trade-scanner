@@ -1839,7 +1839,7 @@ class SourceMetaSnapshotTests(IsolatedDataTestCase):
         self.assertFalse(scanner._source_snapshot_matches_meta({}, matching))
 
 class RblxValueMetaPollingTests(IsolatedDataTestCase):
-    def test_meta_is_cached_for_twelve_hours_and_refreshed_when_due(self):
+    def test_meta_is_cached_for_one_hour_and_refreshed_when_due(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "rblxvalue_meta.json"
             payload = {
@@ -1851,7 +1851,7 @@ class RblxValueMetaPollingTests(IsolatedDataTestCase):
                 patch("scanner.RBLXVALUE_META_FILE", path),
                 patch("scanner.RBLXVALUE_META_POLL_ENABLED", True),
                 patch("scanner.RBLXVALUE_API_KEY", "test-key"),
-                patch("scanner.time.time", side_effect=[1000, 1500, 44201]),
+                patch("scanner.time.time", side_effect=[1000, 1500, 4601]),
                 patch("scanner.request_with_retry", return_value=json.dumps(payload).encode("utf-8")) as api,
             ):
                 first = scanner._fetch_rblxvalue_meta()
