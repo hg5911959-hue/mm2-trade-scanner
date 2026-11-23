@@ -81,6 +81,9 @@ jobs:
             data/maintenance_alerts.json | tar -x -C "$state_dir"
           python tools/validate_state.py --directory "$state_dir/data" --dedupe-only
 
+      - name: Validate private state migration shell syntax
+        run: bash -n tools/configure_state_remote.sh
+
       - name: Install Ruff
         run: python -m pip install --disable-pip-version-check ruff==0.17.5
 
