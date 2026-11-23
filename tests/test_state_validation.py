@@ -60,6 +60,120 @@ class StateValidationTests(IsolatedDataTestCase):
             """)
 
 
+    def test_dedupe_state_validator_accepts_current_checkpoint_schemas(self):
+        from tools.validate_state import validate_dedupe_state
+
+        documents = {
+            "alerted.json": {"version": 2, "alerted": ["listing-1"]},
+            "telegram_uncertain.json": {
+                "version": 2, "ids": ["listing-2"],
+                "created_at": {"listing-2": 1_800_000_000},
+            },
+            "telegram_uncertain_context.json": {
+                "version": 1,
+                "details": {
+                    "listing-2": {
+                        "source_ad_id": "post-2",
+                        "listing_url": "https://bloxswaps.com/trade-mm2?ad=post-2",
+                        "owner_url": "https://bloxswaps.com/fr/users/2",
+                        "source": "bloxswaps",
+                        "delivery_path": "individual",
+                        "attempted_at_utc": "2026-11-23T15:00:00+00:00",
+                    }
+                },
+            },
+            "seen_ads.json": {"version": 1, "ad_ids": ["listing-1"]},
+            "pending_recheck.json": {"version": 1, "pending": {"listing-2": 1_800_000_000}},
+            "pending_recheck_schedule.json": {
+                "version": 1,
+                "schedule": {
+                    "listing-2": {
+                        "attempts": 1,
+                        "next_check_at": 1_800_000_100,
+                        "reason": "deferred_offer",
+                    }
+                },
+            },
+            "first_seen_ads.json": {
+                "version": 1,
+                "first_seen": {"listing-1": "2026-11-23T15:00:00+00:00"},
+            },
+            "watch_ads.json": {
+                "version": 1,
+                "ads": {
+                    "post-1": {
+                        "content_hash": "a" * 64,
+                        "values_hash": "b" * 64,
+                        "created_at": 1_800_000_000,
+                        "updated_at": 1_800_000_001,
+                    }
+                },
+            },
+            "maintenance_alerts.json": {"preflight-daily": 1_800_000_000},
+        }
+        for name, document in documents.items():
+            (self.root / name).write_text(json.dumps(document), encoding="utf-8")
+
+        self.assertEqual(validate_dedupe_state(self.root), [])
+
+    def test_dedupe_state_validator_accepts_legacy_watch_entries(self):
+        from tools.validate_state import validate_dedupe_state
+
+        (self.root / "watch_ads.json").write_text(json.dumps({
+            "version": 1,
+            "ads": {
+                "legacy-post": {
+                    "created_at": "1800000000",
+                    "updated_at": "1800000001",
+                }
+            },
+        }), encoding="utf-8")
+        self.assertEqual(validate_dedupe_state(self.root), [])
+
+    def test_dedupe_state_validator_rejects_corrupt_alert_ids_and_cooldowns(self):
+        from tools.validate_state import validate_dedupe_state
+
+        (self.root / "alerted.json").write_text(
+            json.dumps({"version": 2, "alerted": ["ok", 123]}), encoding="utf-8"
+        )
+        (self.root / "maintenance_alerts.json").write_text(
+            json.dumps({"preflight-daily": "not-a-timestamp"}), encoding="utf-8"
+        )
+        errors = validate_dedupe_state(self.root)
+        self.assertTrue(any("alerted state" in error for error in errors))
+        self.assertTrue(any("maintenance alert cooldown" in error for error in errors))
+
+    def test_dedupe_state_validator_rejects_unsafe_uncertain_links(self):
+        from tools.validate_state import validate_dedupe_state
+
+        (self.root / "telegram_uncertain_context.json").write_text(json.dumps({
+            "version": 1,
+            "details": {
+                "listing-2": {
+                    "source_ad_id": "post-2",
+                    "listing_url": "https://attacker.example/collect",
+                    "owner_url": "",
+                    "source": "bloxswaps",
+                    "delivery_path": "individual",
+                    "attempted_at_utc": "2026-11-23T15:00:00+00:00",
+                }
+            },
+        }), encoding="utf-8")
+        self.assertTrue(any(
+            "unsafe link" in error for error in validate_dedupe_state(self.root)
+        ))
+
+    def test_dedupe_state_validator_rejects_symlink_paths(self):
+        from tools.validate_state import validate_dedupe_state
+
+        target = self.root / "outside.json"
+        target.write_text(json.dumps({"version": 2, "alerted": []}), encoding="utf-8")
+        (self.root / "alerted.json").symlink_to(target)
+        self.assertTrue(any(
+            "symlink paths" in error for error in validate_dedupe_state(self.root)
+        ))
+
+
     def test_api_safety_ledger_rejects_symlinked_file(self):
         from tools.validate_state import validate_api_safety_state
         target = self.root / "outside.json"

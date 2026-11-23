@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Switch the workflow's state remote to a dedicated private repository.
+# The public source repository remains available as "source" for one-time migration.
+set -euo pipefail
+set +x
+
+state_repo="${MM2_STATE_REPO:-}"
+state_token="${MM2_STATE_REPO_TOKEN:-}"
+if [[ -z "$state_repo" && -z "$state_token" ]]; then
+  echo "[state-remote] Private state repository is not configured; using the legacy origin/state branch."
+  exit 0
+fi
+if [[ -z "$state_repo" || -z "$state_token" ]]; then
+  echo "::error::Private state repository configuration is incomplete; refusing an ambiguous state fallback."
+  exit 1
+fi
+if [[ ! "$state_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+  echo "::error::MM2_STATE_REPO must be an owner/repository pair."
+  exit 1
+fi
+
+# Refuse a public destination: the state repository must actually be private.
+repo_private="$(curl --fail --silent --show-error \
+  --header "Authorization: Bearer $state_token" \
+  --header "Accept: application/vnd.github+json" \
+  --header "X-GitHub-Api-Version: 2022-11-28" \
+  "https://api.github.com/repos/$state_repo" \
+  | python -c 'import json, sys; print("true" if json.load(sys.stdin).get("private") is True else "false")')"
+if [[ "$repo_private" != "true" ]]; then
+  echo "::error::Configured state repository is not private; refusing to store runtime data there."
+  exit 1
+fi
+
+if ! git remote get-url source >/dev/null 2>&1; then
+  git remote rename origin source
+fi
+git remote set-url origin "https://github.com/$state_repo.git"
+
+# Use a short-lived runner-local HTTP auth header rather than embedding the PAT
+# in the remote URL or printing it in command output.
+auth="$(printf 'x-access-token:%s' "$state_token" | base64 | tr -d '\n')"
+# Scope the PAT to the private state repository only. The public source remote
+# remains anonymous so a fine-grained token need not grant access to this repo.
+git config --unset-all http.https://github.com/.extraheader >/dev/null 2>&1 || true
+git config "http.https://github.com/$state_repo.git/.extraheader" "AUTHORIZATION: basic $auth"
+unset auth state_token
+
+set +e
+git ls-remote --exit-code origin refs/heads/state >/dev/null 2>/dev/null
+private_status=$?
+set -e
+if [[ "$private_status" -eq 0 ]]; then
+  echo "[state-remote] Private state branch is available."
+  exit 0
+fi
+if [[ "$private_status" -ne 2 ]]; then
+  echo "::error::Cannot access the configured private state repository. Check that it exists and the token has Contents read/write access."
+  exit 1
+fi
+
+set +e
+git ls-remote --exit-code source refs/heads/state >/dev/null 2>/dev/null
+source_status=$?
+set -e
+if [[ "$source_status" -eq 2 ]]; then
+  echo "[state-remote] Private repository is empty and no legacy public state branch exists; a cold start is required."
+  exit 0
+fi
+if [[ "$source_status" -ne 0 ]]; then
+  echo "::error::Cannot inspect the legacy source state branch; refusing to seed an incomplete private store."
+  exit 1
+fi
+
+if [[ "${MM2_STATE_ALLOW_MIGRATION:-true}" != "true" ]]; then
+  echo "[state-remote] Private state branch is not initialized yet; this read-only consumer will not seed it."
+  exit 0
+fi
+
+git fetch --no-tags source refs/heads/state:refs/remotes/source/state
+git push origin refs/remotes/source/state:refs/heads/state
+echo "[state-remote] Migrated the existing state snapshot to the private repository."
+echo "[state-remote] The legacy public state branch has NOT been deleted; review and remove it only after verifying private-state operation."

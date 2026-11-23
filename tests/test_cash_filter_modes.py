@@ -111,6 +111,38 @@ class WeeklyReportValueModeTests(IsolatedDataTestCase):
 
 
 
+class RobaseRblxCrosswalkSafetyTests(IsolatedDataTestCase):
+    def test_known_bloxswaps_pet_type_cannot_be_overridden_by_rblx_weapon_type(self):
+        row = {
+            "name": "Chroma Fire Bat",
+            "robase_slug": "chroma-fire-bat",
+            "robase_category": "Chroma",
+        }
+        rblx_variant = {
+            "name": "Chroma Fire Bat",
+            "slug": "chroma-fire-bat",
+            "type": "Knife",
+            "category": "Chroma",
+            "raw_source_value": 10,
+            "stability": "Stable",
+        }
+        cash_catalog = {"items_by_slug": {"chroma-fire-bat": row}}
+        with (
+            patch.object(
+                scanner, "_match_robase_row_to_bloxswaps",
+                return_value=({"slug": "chroma-fire-bat", "displayName": "Fire Bat", "type": "Pet"}, "exact"),
+            ),
+            patch.object(
+                scanner, "_iter_value_variants",
+                return_value=iter([("chroma-fire-bat", rblx_variant, rblx_variant)]),
+            ),
+        ):
+            audit = scanner.audit_robase_rblxvalue_mapping(
+                {"values": {}}, {}, cash_catalog, {"pet-id": {}}
+            )
+        self.assertEqual(cash_catalog["rblx_exact_map"], {})
+        self.assertEqual(audit["non_weapons"], ["Chroma Fire Bat"])
+
 class CashTelegramAttributionTests(IsolatedDataTestCase):
     def _deliver_and_read_payload(self, message):
         class Response:

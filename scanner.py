@@ -77,6 +77,11 @@ SEEN_FILE = Path("data/seen_ads.json")
 PENDING_FILE = Path("data/pending_recheck.json")
 PENDING_RECHECK_SCHEDULE_FILE = Path("data/pending_recheck_schedule.json")
 PENDING_RECHECK_BACKOFF_SECONDS = (300, 900, 1800, 3600, 21600)
+PENDING_RECHECK_BACKOFF_BY_REASON = {
+    # Technical failures are time-sensitive: retry within minutes, not hours.
+    "telegram_failure": (30, 60, 120, 300),
+    "unparsed_feed": (60, 120, 300, 600),
+}
 VALID_PENDING_REASONS = frozenset({
     "legacy_unclassified", "unmatched_value", "stability_unverified",
     "stability_blocked", "quantity_uncertain", "unparsed_feed",
@@ -3716,10 +3721,11 @@ def record_pending_recheck_attempts(due_ids, pending, schedule, now=None):
             continue
         previous = updated.get(key, {})
         attempts = int(previous.get("attempts", 0)) + 1
-        delay = PENDING_RECHECK_BACKOFF_SECONDS[
-            min(attempts - 1, len(PENDING_RECHECK_BACKOFF_SECONDS) - 1)
-        ]
         reason = previous.get("reason", "legacy_unclassified")
+        backoff = PENDING_RECHECK_BACKOFF_BY_REASON.get(
+            reason, PENDING_RECHECK_BACKOFF_SECONDS
+        )
+        delay = backoff[min(attempts - 1, len(backoff) - 1)]
         updated[key] = {
             "attempts": attempts, "next_check_at": current + delay, "reason": reason,
         }
@@ -3991,7 +3997,20 @@ def send_maintenance_alert(key, message, cooldown_seconds=3600):
         send_telegram("MM2 SCANNER MAINTENANCE\n" + message)
         print(f"[maintenance] Alert sent: {key}")
         return True
+    except TelegramDeliveryUncertain as exc:
+        # The API may have accepted the message before the response was lost.
+        # Keep the cooldown to avoid duplicating a maintenance notice.
+        print(f"[maintenance] Alert delivery uncertain for {key}: {type(exc).__name__}")
+        return False
     except Exception as exc:
+        # Telegram explicitly rejected the request (for example 400/401/403).
+        # Release the cooldown so the next scan can retry instead of remaining
+        # silent for an entire cooldown window after a definite failure.
+        state.pop(key, None)
+        try:
+            atomic_write_text(MAINTENANCE_FILE, json.dumps(state, indent=2) + "\n")
+        except OSError as state_exc:
+            print(f"[maintenance] Could not release failed-alert cooldown for {key}: {type(state_exc).__name__}")
         print(f"[maintenance] Alert failed for {key}: {type(exc).__name__}")
         return False
 
@@ -4499,6 +4518,7 @@ def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
     missing_robase = []
     ambiguous_robase = []
     seen_blox_slugs = {}
+    known_non_weapon_slugs = set()
     for row in robase_rows:
         matched, identity_source = _match_robase_row_to_bloxswaps(row, item_map)
         if not matched:
@@ -4510,6 +4530,7 @@ def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
         item_type = str(matched.get("type") or "").strip().casefold()
         if item_type not in {"knife", "gun"}:
             non_weapons.append(row.get("name") or row.get("robase_slug"))
+            known_non_weapon_slugs.add(normalize_slug(row.get("robase_slug") or ""))
             continue
         catalog_slug = normalize_slug(matched.get("slug") or "")
         if catalog_slug in seen_blox_slugs:
@@ -4584,7 +4605,11 @@ def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
     value_variants = list(_iter_value_variants(values))
     for row in robase_rows:
         robase_slug = normalize_slug(row.get("robase_slug") or "")
-        if not robase_slug or robase_slug in exact_map:
+        # An authoritative BloxSwaps catalogue match to a non-weapon (for
+        # example, a Pet) must not be overridden by a conflicting RBLXValue
+        # type merely because the slugs happen to match exactly. The fallback
+        # is only for genuinely unavailable BloxSwaps metadata.
+        if not robase_slug or robase_slug in exact_map or robase_slug in known_non_weapon_slugs:
             continue
         direct_values = [
             variant for variant in value_variants

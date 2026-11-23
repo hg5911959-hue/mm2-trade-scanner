@@ -55,6 +55,17 @@ MAX_STATE_JSON_BYTES = 20 * 1024 * 1024
 MAX_API_SAFETY_FILE_BYTES = 256 * 1024
 
 
+def _coercible_positive(value: Any) -> bool:
+    """Match legacy state loaders that accept numeric strings but reject booleans."""
+    if isinstance(value, bool):
+        return False
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return math.isfinite(parsed) and parsed > 0
+
+
 def _read_json_bounded(path: Path, *, max_bytes: int) -> Any:
     """Read a bounded regular JSON file without following symlinks or blocking on FIFOs."""
     if path.is_symlink():
@@ -337,6 +348,221 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
     return errors
 
 
+
+DEDUPE_STATE_FILES = (
+    "alerted.json",
+    "telegram_uncertain.json",
+    "telegram_uncertain_context.json",
+    "seen_ads.json",
+    "pending_recheck.json",
+    "pending_recheck_schedule.json",
+    "first_seen_ads.json",
+    "watch_ads.json",
+    "maintenance_alerts.json",
+)
+
+
+def validate_dedupe_state(directory: str | Path) -> list[str]:
+    """Validate only alert/deduplication checkpoints so they can survive a failed scan."""
+    root = Path(directory)
+    if root.is_symlink():
+        return ["dedupe state directory is a symlink"]
+    if not root.exists():
+        return []
+    paths = list(root.rglob("*"))
+    if any(path.is_symlink() for path in paths):
+        return ["dedupe state contains symlink paths"]
+
+    errors: list[str] = []
+    documents: dict[str, Any] = {}
+    for name in DEDUPE_STATE_FILES:
+        path = root / name
+        if not path.exists():
+            continue
+        try:
+            documents[name] = _read_json_bounded(path, max_bytes=MAX_STATE_JSON_BYTES)
+        except (OSError, UnicodeDecodeError, ValueError):
+            errors.append(f"dedupe state JSON is invalid, oversized, or unsafe: {name}")
+
+    alerted = documents.get("alerted.json")
+    if "alerted.json" in documents:
+        ids = alerted.get("alerted") if isinstance(alerted, dict) else alerted
+        version = alerted.get("version") if isinstance(alerted, dict) else None
+        if (
+            not isinstance(ids, list)
+            or len(ids) > 5000
+            or (version is not None and (type(version) is not int or version not in (1, 2)))
+            or any(not isinstance(value, str) or not value for value in ids)
+        ):
+            errors.append("alerted state has an invalid schema or listing ID")
+
+    uncertain = documents.get("telegram_uncertain.json")
+    if "telegram_uncertain.json" in documents:
+        if isinstance(uncertain, list):
+            uncertain_ids = uncertain
+            created_at = {}
+        elif isinstance(uncertain, dict) and isinstance(uncertain.get("ids"), list):
+            uncertain_ids = uncertain["ids"]
+            created_at = uncertain.get("created_at", {})
+        else:
+            uncertain_ids = None
+            created_at = None
+        if (
+            not isinstance(uncertain_ids, list)
+            or len(uncertain_ids) > 5000
+            or any(not isinstance(value, str) or not value for value in uncertain_ids)
+            or not isinstance(created_at, dict)
+            or any(
+                not isinstance(key, str) or not key or not _coercible_positive(value)
+                for key, value in created_at.items()
+            )
+        ):
+            errors.append("Telegram uncertain-delivery state has an invalid schema or timestamp")
+
+    seen = documents.get("seen_ads.json")
+    if "seen_ads.json" in documents:
+        ids = seen.get("ad_ids") if isinstance(seen, dict) else seen
+        if not isinstance(ids, list) or len(ids) > 50000 or any(
+            not isinstance(value, str) or not value for value in ids
+        ):
+            errors.append("seen-ad state has an invalid schema or listing ID")
+
+    pending = documents.get("pending_recheck.json")
+    if "pending_recheck.json" in documents:
+        entries = pending if isinstance(pending, list) else (
+            pending.get("pending") if isinstance(pending, dict) else None
+        )
+        if isinstance(entries, list):
+            valid_pending = len(entries) <= 50000 and all(
+                isinstance(value, str) and value for value in entries
+            )
+        elif isinstance(entries, dict):
+            valid_pending = len(entries) <= 50000 and all(
+                isinstance(key, str) and key and _finite_positive(value)
+                for key, value in entries.items()
+            )
+        else:
+            valid_pending = False
+        if not valid_pending:
+            errors.append("pending recheck state has an invalid schema or timestamp")
+
+    schedule = documents.get("pending_recheck_schedule.json")
+    if "pending_recheck_schedule.json" in documents:
+        entries = schedule.get("schedule") if isinstance(schedule, dict) else None
+        if (
+            not isinstance(schedule, dict)
+            or type(schedule.get("version")) is not int
+            or schedule.get("version") != 1
+            or not isinstance(entries, dict)
+            or len(entries) > 50000
+        ):
+            errors.append("pending recheck schedule root or version is invalid")
+        else:
+            for entry in entries.values():
+                if not isinstance(entry, dict):
+                    errors.append("pending recheck schedule entry is invalid")
+                    break
+                attempts = entry.get("attempts")
+                reason = entry.get("reason")
+                if (
+                    type(attempts) is not int or attempts < 0
+                    or not _coercible_positive(entry.get("next_check_at"))
+                    or (reason is not None and (
+                        not isinstance(reason, str) or reason not in VALID_PENDING_REASONS
+                    ))
+                ):
+                    errors.append("pending recheck schedule counter, timestamp, or reason is invalid")
+                    break
+
+    first_seen = documents.get("first_seen_ads.json")
+    if "first_seen_ads.json" in documents:
+        entries = first_seen.get("first_seen") if isinstance(first_seen, dict) else None
+        valid = isinstance(entries, dict) and len(entries) <= 50000
+        if valid:
+            from datetime import datetime
+            for key, value in entries.items():
+                try:
+                    if not isinstance(key, str) or not key or not isinstance(value, str):
+                        raise ValueError
+                    datetime.fromisoformat(value)
+                except (TypeError, ValueError):
+                    valid = False
+                    break
+        if not valid:
+            errors.append("first-seen listing state has an invalid schema or timestamp")
+
+    watch = documents.get("watch_ads.json")
+    if "watch_ads.json" in documents:
+        entries = watch.get("ads") if isinstance(watch, dict) else None
+        valid = isinstance(entries, dict) and len(entries) <= 1000
+        if valid:
+            for key, entry in entries.items():
+                if not isinstance(key, str) or not key or not isinstance(entry, dict):
+                    valid = False
+                    break
+                # Older schema-v1 entries may omit hashes or updated_at; the
+                # scanner treats those as changed/old rather than corrupt.
+                if any(
+                    field in entry and not isinstance(entry[field], str)
+                    for field in ("content_hash", "values_hash")
+                ):
+                    valid = False
+                    break
+                if any(
+                    field in entry and not _coercible_positive(entry[field])
+                    for field in ("created_at", "updated_at")
+                ):
+                    valid = False
+                    break
+        if not valid:
+            errors.append("watch-window state has an invalid schema or timestamp")
+
+    maintenance = documents.get("maintenance_alerts.json")
+    if "maintenance_alerts.json" in documents and (
+        not isinstance(maintenance, dict)
+        or len(maintenance) > 5000
+        or any(
+            not isinstance(key, str) or not key or not _finite_positive(value)
+            for key, value in maintenance.items()
+        )
+    ):
+        errors.append("maintenance alert cooldown state has an invalid key or timestamp")
+
+    context = documents.get("telegram_uncertain_context.json")
+    if "telegram_uncertain_context.json" in documents:
+        details = context.get("details") if isinstance(context, dict) else None
+        if (
+            not isinstance(context, dict)
+            or type(context.get("version")) is not int
+            or context.get("version") != 1
+            or not isinstance(details, dict)
+            or len(details) > 500
+        ):
+            errors.append("Telegram uncertain-delivery context root, version, or size is invalid")
+        else:
+            allowed_hosts = {"bloxswaps.com", "www.bloxswaps.com", "discord.com", "www.discord.com"}
+            for trade_id, entry in details.items():
+                fields = ("source_ad_id", "listing_url", "owner_url", "source", "delivery_path", "attempted_at_utc")
+                if (
+                    not isinstance(trade_id, str) or not trade_id or not isinstance(entry, dict)
+                    or any(not isinstance(entry.get(field, ""), str) for field in fields)
+                    or entry.get("delivery_path") not in {"individual", "digest", "recovered"}
+                ):
+                    errors.append("Telegram uncertain-delivery context entry is invalid")
+                    break
+                for field in ("listing_url", "owner_url"):
+                    value = entry.get(field, "")
+                    if value:
+                        parsed = urlsplit(value)
+                        if parsed.scheme != "https" or (parsed.hostname or "").casefold() not in allowed_hosts:
+                            errors.append("Telegram uncertain-delivery context contains an unsafe link")
+                            break
+                if errors and errors[-1] == "Telegram uncertain-delivery context contains an unsafe link":
+                    break
+
+    return errors
+
+
 def validate_api_safety_state(directory: str | Path) -> list[str]:
     """Validate the small API safety ledger using bounded, no-follow reads."""
     root = Path(directory)
@@ -399,12 +625,16 @@ def main() -> int:
     parser.add_argument("--directory", default="state-artifact/data")
     parser.add_argument("--require-cache", action="store_true")
     parser.add_argument("--api-safety-only", action="store_true")
+    parser.add_argument("--dedupe-only", action="store_true")
     args = parser.parse_args()
-    errors = (
-        validate_api_safety_state(args.directory)
-        if args.api_safety_only
-        else validate_state(args.directory, require_cache=args.require_cache)
-    )
+    if args.api_safety_only and args.dedupe_only:
+        parser.error("--api-safety-only and --dedupe-only cannot be combined")
+    if args.api_safety_only:
+        errors = validate_api_safety_state(args.directory)
+    elif args.dedupe_only:
+        errors = validate_dedupe_state(args.directory)
+    else:
+        errors = validate_state(args.directory, require_cache=args.require_cache)
     if errors:
         for error in errors:
             print(f"[state-validation] ERROR: {error}")

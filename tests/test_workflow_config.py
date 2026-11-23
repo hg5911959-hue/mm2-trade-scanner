@@ -92,7 +92,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         watchdog_call = watchdog.split("  workflow_call:", 1)[1].split("  workflow_dispatch:", 1)[0]
         scan_secrets = (
             "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
-            "RBLXVALUE_API_KEY", "HEALTHCHECKS_PING_URL",
+            "RBLXVALUE_API_KEY", "HEALTHCHECKS_PING_URL", "MM2_STATE_REPO_TOKEN",
         )
         for secret in scan_secrets:
             self.assertIn(f"{secret}:\n        required: false", scan_call)
@@ -200,6 +200,38 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("Repository administrator permission may be required", workflow)
 
 
+    def test_failed_scan_preserves_only_validated_dedupe_checkpoints(self):
+        workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        validate = workflow.split(
+            "      - name: Validate dedupe state after failed scan", 1
+        )[1].split("      - name:", 1)[0]
+        persist = workflow.split(
+            "      - name: Persist validated dedupe state after failed scan", 1
+        )[1].split("      - name:", 1)[0]
+        self.assertIn("needs.scan.result != 'success'", validate)
+        self.assertIn("--dedupe-only", validate)
+        self.assertIn("steps.validate-dedupe.outcome == 'success'", persist)
+        self.assertIn("git checkout --detach origin/state", persist)
+        self.assertIn("git push origin HEAD:state", persist)
+        self.assertNotIn("--force", persist)
+        for filename in (
+            "alerted.json",
+            "telegram_uncertain.json",
+            "telegram_uncertain_context.json",
+            "seen_ads.json",
+            "pending_recheck.json",
+            "pending_recheck_schedule.json",
+            "first_seen_ads.json",
+            "watch_ads.json",
+            "maintenance_alerts.json",
+        ):
+            self.assertIn(filename, validate)
+            self.assertIn(filename, persist)
+        self.assertIn("market cache/database were not replaced", persist)
+        tests_workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
+        self.assertIn("Validate current durable dedupe checkpoints", tests_workflow)
+        self.assertIn("--dedupe-only", tests_workflow)
+
     def test_tools_that_import_the_tools_package_are_invoked_as_modules(self):
         scanner = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         weekly = (ROOT / ".github/workflows/weekly-report.yml").read_text(encoding="utf-8")
@@ -207,6 +239,73 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertNotIn("run: python tools/preflight.py", scanner)
         self.assertIn("run: python -m tools.weekly_report", weekly)
         self.assertNotIn("run: python tools/weekly_report.py", weekly)
+
+    def test_readme_does_not_recommend_unsupported_repository_dispatch(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("docs/EXTERNAL_SCHEDULER.md", readme)
+        self.assertIn("workflow_dispatch", readme)
+        self.assertNotIn('{"event_type":"mm2-scan"}', readme)
+        self.assertNotIn("repository-dispatch API", readme)
+        self.assertNotIn("repository_dispatch", readme)
+
+    def test_ci_runs_external_scheduler_unit_tests(self):
+        workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
+        self.assertIn("node --check ops/cloudflare_mm2_scheduler.mjs", workflow)
+        self.assertIn("node --test tests/test_cloudflare_scheduler.mjs", workflow)
+
+    def test_ci_checks_private_state_migration_shell_syntax(self):
+        workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
+        self.assertIn("bash -n tools/configure_state_remote.sh", workflow)
+
+    def test_private_state_remote_is_configured_for_every_state_consumer(self):
+        script = (ROOT / "tools/configure_state_remote.sh").read_text(encoding="utf-8")
+        self.assertIn("git remote rename origin source", script)
+        self.assertIn("git remote set-url origin", script)
+        self.assertIn('http.https://github.com/$state_repo.git/.extraheader', script)
+        self.assertNotIn('x-access-token:$state_token@', script)
+        self.assertIn('get("private") is True', script)
+        self.assertIn("refusing to store runtime data there", script)
+        self.assertIn("git push origin refs/remotes/source/state:refs/heads/state", script)
+        self.assertNotIn("git push source --delete state", script)
+        workflows = {
+            ".github/workflows/scan.yml": "Configure private durable state repository",
+            ".github/workflows/weekly-report.yml": "Configure private durable state repository",
+            ".github/workflows/dashboard-pages.yml": "Configure private durable state repository",
+            ".github/workflows/rblxvalue-connection-test.yml": "Configure private durable state repository",
+            ".github/workflows/tests.yml": "Configure private durable state repository",
+        }
+        for path, step in workflows.items():
+            content = (ROOT / path).read_text(encoding="utf-8")
+            self.assertIn(step, content, path)
+            self.assertIn("MM2_STATE_REPO_TOKEN", content, path)
+        scheduler = (ROOT / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
+        self.assertIn("MM2_STATE_REPO_TOKEN: ${{ secrets.MM2_STATE_REPO_TOKEN }}", scheduler)
+        self.assertIn("SUPREME_DATA_AUTHORIZED: ${{ secrets.SUPREME_DATA_AUTHORIZED }}", scheduler)
+        scan = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        self.assertIn("Enforce Supreme Values data-rights authorization", scan)
+        self.assertIn("SUPREME_DATA_AUTHORIZED", scan)
+        self.assertIn('written authorization before using its value-list data in a bot', scan)
+        self.assertIn("prepare-private-state:", scan)
+        scan_job = scan.split("  scan:", 1)[1].split("  persist-state:", 1)[0]
+        scan_job_env = scan_job.split("    env:", 1)[1].split("    steps:", 1)[0]
+        self.assertNotIn("MM2_STATE_REPO_TOKEN", scan_job_env)
+        self.assertIn("MM2_STATE_REPO_TOKEN", scan_job)
+        self.assertIn("needs: prepare-private-state", scan)
+        self.assertIn("needs: [prepare-private-state, scan]", scan)
+        for path in (".github/workflows/weekly-report.yml", ".github/workflows/dashboard-pages.yml", ".github/workflows/tests.yml"):
+            content = (ROOT / path).read_text(encoding="utf-8")
+            self.assertIn('MM2_STATE_ALLOW_MIGRATION: "false"', content, path)
+
+    def test_preflight_receives_the_same_rblxvalue_budget_limit(self):
+        workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        preflight = workflow.split(
+            "      - name: Run scanner preflight checks", 1
+        )[1].split("      - name:", 1)[0]
+        scanner = workflow.split(
+            "      - name: Run BloxSwaps scanner", 1
+        )[1].split("      - name:", 1)[0]
+        self.assertIn('RBLXVALUE_DAILY_REQUEST_LIMIT: "60"', preflight)
+        self.assertIn('RBLXVALUE_DAILY_REQUEST_LIMIT: "60"', scanner)
 
     def test_weekly_report_keeps_cash_summary_separate_from_scanner_production_mode(self):
         workflow = (ROOT / ".github/workflows/weekly-report.yml").read_text(encoding="utf-8")

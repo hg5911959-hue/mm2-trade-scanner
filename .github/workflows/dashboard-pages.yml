@@ -32,6 +32,13 @@ jobs:
         with:
           ref: main
 
+      - name: Configure private durable state repository
+        env:
+          MM2_STATE_REPO: ${{ secrets.MM2_STATE_REPO_TOKEN != '' && 'hg5911959-hue/mm2-trade-scanner-state' || '' }}
+          MM2_STATE_REPO_TOKEN: ${{ secrets.MM2_STATE_REPO_TOKEN }}
+          MM2_STATE_ALLOW_MIGRATION: "false"
+        run: bash tools/configure_state_remote.sh
+
       - name: Validate dashboard JavaScript
         run: |
           python - <<'PY'

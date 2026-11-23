@@ -52,6 +52,44 @@ jobs:
             fi
           done
 
+      - name: Configure private durable state repository
+        env:
+          MM2_STATE_REPO: ${{ secrets.MM2_STATE_REPO_TOKEN != '' && 'hg5911959-hue/mm2-trade-scanner-state' || '' }}
+          MM2_STATE_REPO_TOKEN: ${{ secrets.MM2_STATE_REPO_TOKEN }}
+          MM2_STATE_ALLOW_MIGRATION: "false"
+        run: bash tools/configure_state_remote.sh
+
+      - name: Validate current durable dedupe checkpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
+            echo "No durable state branch exists yet; skipping the live-state compatibility check."
+            exit 0
+          fi
+          git fetch --no-tags --depth=1 origin refs/heads/state
+          state_dir="$(mktemp -d)"
+          trap 'rm -rf "$state_dir"' EXIT
+          git archive FETCH_HEAD \
+            data/alerted.json \
+            data/telegram_uncertain.json \
+            data/telegram_uncertain_context.json \
+            data/seen_ads.json \
+            data/pending_recheck.json \
+            data/pending_recheck_schedule.json \
+            data/first_seen_ads.json \
+            data/watch_ads.json \
+            data/maintenance_alerts.json | tar -x -C "$state_dir"
+          python tools/validate_state.py --directory "$state_dir/data" --dedupe-only
+
+      - name: Validate private state migration shell syntax
+        run: bash -n tools/configure_state_remote.sh
+
+      - name: Test independent Cloudflare scheduler
+        run: |
+          node --check ops/cloudflare_mm2_scheduler.mjs
+          node --test tests/test_cloudflare_scheduler.mjs
+
       - name: Install Ruff
         run: python -m pip install --disable-pip-version-check ruff==0.17.5
 

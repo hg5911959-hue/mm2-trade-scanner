@@ -142,6 +142,33 @@ class PendingRecheckScheduleTests(IsolatedDataTestCase):
                 stored = json.loads(path.read_text(encoding="utf-8"))
                 self.assertEqual(stored["schedule"]["ad"]["attempts"], 6)
 
+    def test_telegram_delivery_failures_use_fast_retry_schedule(self):
+        pending = {"ad": 100.0}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "pending_recheck_schedule.json"
+            with patch.object(scanner, "PENDING_RECHECK_SCHEDULE_FILE", path):
+                schedule = {"ad": {"attempts": 0, "next_check_at": 1000, "reason": "telegram_failure"}}
+                expected = (1030, 1090, 1210, 1510, 1810)
+                for now, next_check in zip((1000, 1030, 1090, 1210, 1510), expected):
+                    schedule = scanner.record_pending_recheck_attempts(
+                        {"ad": 100.0}, pending, schedule, now=now
+                    )
+                    self.assertEqual(schedule["ad"]["next_check_at"], next_check)
+                    self.assertEqual(schedule["ad"]["reason"], "telegram_failure")
+
+    def test_unparsed_feed_uses_fast_retry_schedule_without_changing_legacy_backoff(self):
+        pending = {"ad": 100.0}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "pending_recheck_schedule.json"
+            with patch.object(scanner, "PENDING_RECHECK_SCHEDULE_FILE", path):
+                schedule = {"ad": {"attempts": 0, "next_check_at": 1000, "reason": "unparsed_feed"}}
+                for now, next_check in ((1000, 1060), (1060, 1180), (1180, 1480), (1480, 2080)):
+                    schedule = scanner.record_pending_recheck_attempts(
+                        {"ad": 100.0}, pending, schedule, now=now
+                    )
+                    self.assertEqual(schedule["ad"]["next_check_at"], next_check)
+                    self.assertEqual(schedule["ad"]["reason"], "unparsed_feed")
+
     def test_resolved_ids_are_removed_and_new_pending_ids_get_initial_delay(self):
         pending = {"still-pending": 1.0, "new-pending": 2.0}
         schedule = {
