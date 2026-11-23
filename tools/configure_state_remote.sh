@@ -39,7 +39,10 @@ git remote set-url origin "https://github.com/$state_repo.git"
 # Use a short-lived runner-local HTTP auth header rather than embedding the PAT
 # in the remote URL or printing it in command output.
 auth="$(printf 'x-access-token:%s' "$state_token" | base64 | tr -d '\n')"
-git config http.https://github.com/.extraheader "AUTHORIZATION: basic $auth"
+# Scope the PAT to the private state repository only. The public source remote
+# remains anonymous so a fine-grained token need not grant access to this repo.
+git config --unset-all http.https://github.com/.extraheader >/dev/null 2>&1 || true
+git config "http.https://github.com/$state_repo.git/.extraheader" "AUTHORIZATION: basic $auth"
 unset auth state_token
 
 set +e
