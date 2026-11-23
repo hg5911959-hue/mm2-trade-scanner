@@ -3,11 +3,6 @@ name: MM2 Trade Scanner
 on:
   workflow_call:
     inputs:
-      verify_rblxvalue_key:
-        description: "Send exactly one small /v2/items request to verify the configured API key"
-        required: false
-        type: boolean
-        default: false
       dry_run:
         description: "Evaluate and log opportunities without sending Telegram messages or recording alerts"
         required: false
@@ -18,17 +13,10 @@ on:
         required: false
       TELEGRAM_CHAT_ID:
         required: false
-      RBLXVALUE_API_KEY:
-        required: false
       HEALTHCHECKS_PING_URL:
         required: false
   workflow_dispatch:
     inputs:
-      verify_rblxvalue_key:
-        description: "Send exactly one small /v2/items request to verify the configured API key"
-        required: false
-        type: boolean
-        default: false
       dry_run:
         description: "Evaluate and log opportunities without sending Telegram messages or recording alerts"
         required: false
@@ -139,14 +127,9 @@ jobs:
           MM2_SCAN_INTERVAL_SECONDS: "30"
           ALERT_DELAY_SECONDS: "3.2"
           MAX_FEED_PAGES: "1000"
-          RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY: "6"
-          RBLXVALUE_DAILY_REQUEST_LIMIT: "60"
-          RBLXVALUE_FORCE_KEY_CHECK: "false" # third-party valuation API disabled
           BLOXSWAPS_ITEMS_TTL_SECONDS: "3600"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          VALUES_TTL_SECONDS: "43200"
-          RBLXVALUE_META_POLL_ENABLED: "false"
           MM2_TELEGRAM_SCAN_SUMMARY: "true"
         run: |
           mkdir -p data
