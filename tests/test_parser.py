@@ -2267,6 +2267,22 @@ class SeenAdStateTests(IsolatedDataTestCase):
 
 
 class MaintenanceAndUnmatchedNameTests(IsolatedDataTestCase):
+    def test_cash_mode_ignores_expected_out_of_robase_items_but_keeps_real_identity_gaps(self):
+        missing = [
+            "Black (no exact ROBASE/RBLXValue weapon mapping)",
+            "Bunnies (not a ROBASE weapon)",
+            "Mystery Blade (RBLXValue identity mismatch)",
+            "Knife C (quantity invalid)",
+        ]
+        self.assertEqual(
+            scanner.unmatched_names_from_missing(missing, cash_mode=True),
+            ["Mystery Blade", "Knife C"],
+        )
+        self.assertEqual(
+            scanner.unmatched_names_from_missing(missing, cash_mode=False),
+            ["Black", "Bunnies", "Mystery Blade", "Knife C"],
+        )
+
     def test_unmatched_names_are_alerted_once_and_kept_for_recheck(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
