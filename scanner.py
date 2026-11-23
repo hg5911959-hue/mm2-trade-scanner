@@ -5631,6 +5631,18 @@ def scan_once(include_backlog_rechecks=True):
     )
     print(f"[summary] {summary}")
     write_step_summary(summary)
+    send_maintenance_alert(
+        "scan-results-summary",
+        "📊 MM2 SCAN RESULTS\\n"
+        f"Candidates: {stats.get('candidate_count', 0)}\\n"
+        f"Excluded Ajouts: {stats.get('addition_count', 0)}\\n"
+        f"Excluded Offres: {stats.get('offers_excluded_count', 0)}\\n"
+        f"Eligible listings: {len(listings)}\\n"
+        f"Evaluated: {evaluated} · Qualified: {len(opportunities)}\\n"
+        f"Alerts sent: {sent} · Digest sent: {digest_sent} · Digest pending: {digest_not_sent}\\n"
+        f"RBLXValue API requests this run: {rblxvalue_guard.requests_this_run()}",
+        cooldown_seconds=1800,
+    )
     record_success_if_complete(stats)
     if CASH_FILTER:
         save_cash_catalog_snapshot(cash_catalog["sha256"])
