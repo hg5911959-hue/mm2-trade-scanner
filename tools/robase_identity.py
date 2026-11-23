@@ -22,6 +22,16 @@ def match_robase_row(row, item_map):
     base_name = raw_name[7:].strip() if raw_name.casefold().startswith("chroma ") else raw_name
     expected_rarity = ALIASES.get(category, category)
     image_slug = _slug(row.get("og_image_slug") or row.get("bloxswaps_slug") or "")
+    image_type = None
+    image_year = None
+    if image_slug:
+        if re.search(r"(?:^|-)(?:g|gun)(?:-|$)", image_slug):
+            image_type = "gun"
+        elif re.search(r"(?:^|-)(?:k|knife)(?:-|$)", image_slug) or "knife" in image_slug:
+            image_type = "knife"
+        year_match = re.search(r"(?<!\\d)(20\\d{2})(?!\\d)", image_slug)
+        if year_match:
+            image_year = int(year_match.group(1))
     robase_slug = _slug(row.get("robase_slug") or "")
     hints = {v for v in (image_slug, robase_slug) if v}
     for details in (item_map or {}).values():
@@ -29,7 +39,10 @@ def match_robase_row(row, item_map):
             continue
         is_chroma = details.get("chroma") is True
         rarity = str(details.get("rarity") or "").strip().casefold()
-        if _name(details.get("displayName")) == _name(base_name) and ((chroma and is_chroma) or (not chroma and not is_chroma and rarity == expected_rarity)):
+        detail_type = str(details.get("type") or "").strip().casefold()
+        detail_year = details.get("year")
+        year_matches = image_year is None or detail_year is None or str(detail_year) == str(image_year)
+        if _name(details.get("displayName")) == _name(base_name) and ((chroma and is_chroma) or (not chroma and not is_chroma and rarity == expected_rarity)) and (not image_type or detail_type == image_type) and year_matches:
             source = "robase_image_slug" if _slug(details.get("slug")) == image_slug else "robase_item_slug"
             return details, source
     candidates = []
@@ -43,6 +56,14 @@ def match_robase_row(row, item_map):
             continue
         if (chroma and not is_chroma) or (not chroma and (is_chroma or rarity != expected_rarity)):
             continue
+        if image_type and kind != image_type:
+            continue
+        if image_year is not None and details.get("year") is not None:
+            try:
+                if int(details.get("year")) != image_year:
+                    continue
+            except (TypeError, ValueError):
+                continue
         candidates.append(details)
     exact = [d for d in candidates if _slug(d.get("slug")) in hints]
     if len(exact) == 1:
