@@ -128,7 +128,11 @@ jobs:
           fi
 
           echo "::warning::No successful scan for $age_minutes minutes; dispatching one live recovery scan."
-          gh workflow run scan-scheduler.yml --ref main \
-            -f dry_run=false \
-            -f verify_rblxvalue_key=false
-          echo "[recovery] live scan dispatched without forcing an RBLXValue key check."
+          # Use the REST dispatch endpoint: unlike `gh workflow run`, this
+          # does not require a checked-out local git repository in the runner.
+          gh api --method POST \
+            "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id/dispatches" \
+            -f ref=main \
+            -f 'inputs[dry_run]=false' \
+            -f 'inputs[verify_rblxvalue_key]=false'
+          echo "[recovery] live scan dispatched through the GitHub Actions API without forcing an RBLXValue key check."
