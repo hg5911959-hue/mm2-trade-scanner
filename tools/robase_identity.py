@@ -42,7 +42,12 @@ def match_robase_row(row, item_map):
         detail_type = str(details.get("type") or "").strip().casefold()
         detail_year = details.get("year")
         year_matches = image_year is None or detail_year is None or str(detail_year) == str(image_year)
-        if _name(details.get("displayName")) == _name(base_name) and ((chroma and is_chroma) or (not chroma and not is_chroma and rarity == expected_rarity)) and (not image_type or detail_type == image_type) and year_matches:
+        if (
+            _name(details.get("displayName")) == _name(base_name)
+            and ((chroma and is_chroma) or (not chroma and not is_chroma and rarity == expected_rarity))
+            and (not image_type or detail_type == image_type)
+            and year_matches
+        ):
             source = "robase_image_slug" if _slug(details.get("slug")) == image_slug else "robase_item_slug"
             return details, source
     candidates = []
