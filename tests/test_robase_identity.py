@@ -48,6 +48,19 @@ class RobaseBloxswapsIdentityTests(IsolatedDataTestCase):
         self.assertEqual(result["bloxswaps_exact_map"], {})
         self.assertEqual(result["non_weapons"], ["Laser"])
 
+
+    def test_image_slug_type_and_year_hints_restrict_candidates(self):
+        row = self.row(slug="unmatched")
+        row["og_image_slug"] = "laser-g-2026"
+        gun = self.item(kind="gun", slug="laser-g-2026")
+        gun["year"] = 2026
+        knife = self.item(kind="knife", slug="laser-k-2026")
+        knife["year"] = 2026
+        matched, source = match_robase_row(row, {"gun": gun, "knife": knife})
+        self.assertEqual(matched, gun)
+        self.assertEqual(source, "robase_image_slug")
+
+
     def test_duplicate_slug_collision_is_excluded(self):
         catalog = {"items_by_slug": {"a": self.row(), "b": self.row(name="Laser", slug="laser-copy")}}
         result = build_robase_bloxswaps_map(catalog, {"one": self.item()})
