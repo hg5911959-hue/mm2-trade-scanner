@@ -15,6 +15,7 @@ jobs:
       CASH_MAX_AGE_DAYS: "14"
       MM2_STATE_REPO: ${{ secrets.MM2_STATE_REPO_TOKEN != '' && 'hg5911959-hue/mm2-trade-scanner-state' || '' }}
       MM2_STATE_REPO_TOKEN: ${{ secrets.MM2_STATE_REPO_TOKEN }}
+      MM2_STATE_ALLOW_MIGRATION: "false"
     # Regression tests are required before the production scanner can be re-enabled.
     runs-on: ubuntu-latest
     timeout-minutes: 5
