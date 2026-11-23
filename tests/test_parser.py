@@ -1029,7 +1029,7 @@ class ReliabilityTests(IsolatedDataTestCase):
         self.assertEqual(len(captured), 1)
         self.assertTrue(captured[0].endswith("Data from rblxvalue.com"))
 
-    def test_robase_cash_telegram_messages_credit_both_data_sources(self):
+    def test_robase_cash_telegram_messages_credit_robase_only(self):
         from io import BytesIO
 
         captured = []
@@ -1044,7 +1044,7 @@ class ReliabilityTests(IsolatedDataTestCase):
 
         self.assertEqual(len(captured), 1)
         self.assertIn(scanner.ROBASE_ATTRIBUTION, captured[0])
-        self.assertIn(scanner.RBLXVALUE_ATTRIBUTION, captured[0])
+        self.assertNotIn(scanner.RBLXVALUE_ATTRIBUTION, captured[0])
         self.assertTrue(captured[0].endswith(
             scanner.ROBASE_ATTRIBUTION + "\n" + scanner.RBLXVALUE_ATTRIBUTION
         ))
