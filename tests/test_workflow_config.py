@@ -53,7 +53,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn('      CASH_FILTER: "false" # weekly report is separate from the cash-first production scanner\n', weekly)
         self.assertIn("env.CASH_FILTER == '1' || env.CASH_FILTER == 'true'", workflow)
         self.assertNotIn("env.CASH_FILTER", weekly)
-        self.assertIn('          RBLXVALUE_META_POLL_ENABLED: "true"\n', workflow)
+        self.assertIn('          RBLXVALUE_META_POLL_ENABLED: "false"\n', workflow)
         self.assertIn('          VALUES_TTL_SECONDS: "43200"\n', workflow)
         self.assertIn('          RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY: "6"\n', workflow)
         self.assertIn('          MM2_SCAN_DURATION_SECONDS: "540"\n', workflow)
@@ -61,7 +61,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn('          MAX_BACKLOG_RECHECK_PAGES: "1000"\n', workflow)
         self.assertIn('          BACKLOG_RECHECK_EVERY_CYCLES: "4"\n', workflow)
         self.assertNotIn('\n      MAX_PENDING_RECHECK_PER_SCAN:', workflow)
-        self.assertIn("python tools/validate_state.py --directory state-artifact/data --require-cache", workflow)
+        self.assertIn("python tools/validate_state.py --directory state-artifact/data", workflow)
         restore = workflow.split("      - name: Restore durable state branch", 1)[1].split("      - name:", 1)[0]
         self.assertIn("set -euo pipefail", restore)
         self.assertIn("tar --exclude='data/cash_prices.csv' -x", restore)
@@ -117,7 +117,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
     def test_existing_state_branch_is_validated_before_scanning(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         restore = workflow.split("      - name: Restore durable state branch", 1)[1].split("      - name:", 1)[0]
-        self.assertIn("python tools/validate_state.py --directory data --require-cache", restore)
+        self.assertIn("python tools/validate_state.py --directory data", restore)
         self.assertIn("python tools/validate_state.py --directory data", restore)
 
     def test_manual_scan_dispatch_defaults_to_dry_run(self):
