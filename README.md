@@ -64,7 +64,7 @@ If a quantity is uncertain, the scanner computes a conservative best/worst profi
 - If only the best-case profit is positive, it is held for recheck/manual review and is not advertised as a WIN.
 - If even the best-case profit is not positive, it does not send a trade alert.
 
-In production cash-first mode, Telegram cash alerts show owner/listing links, every item, verified ROBASE USD price, the RBLXValue blended estimate, separate MM2Values and Supreme Values source values when available, Demand, Rarity, and Stability. The totals and conservative USD cash profit are calculated only from verified ROBASE prices. Demand and Stability are informational except that explicit `Untradeable` blocks the listing. Uncertain quantities are rejected; no alert is sent unless the worst-case cash profit is at least $1.00. Parser provenance, raw excerpts, and HTML/API diagnostics stay in GitHub Actions logs.
+In production cash-first mode, Telegram cash alerts show owner/listing links, every item, verified ROBASE USD price, the Supreme value transported through the authenticated RBLXValue API, and `Stability (RBLXValue)`. They do not display the blended RBLXValue estimate, MM2Values, Demand, or Rarity as competing valuation lines. Supreme values and Stability are informational in cash mode; the totals and conservative USD cash profit are calculated only from verified ROBASE prices. An explicit `Untradeable` status still blocks the listing. Uncertain quantities are rejected; no alert is sent unless the worst-case cash profit is at least $1.00. Parser provenance, raw excerpts, and HTML/API diagnostics stay in GitHub Actions logs.
 
 ### Legacy manual cash-price catalogue
 
