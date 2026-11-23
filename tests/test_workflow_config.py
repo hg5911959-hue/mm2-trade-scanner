@@ -228,6 +228,9 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
             self.assertIn(filename, validate)
             self.assertIn(filename, persist)
         self.assertIn("market cache/database were not replaced", persist)
+        tests_workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
+        self.assertIn("Validate current durable dedupe checkpoints", tests_workflow)
+        self.assertIn("--dedupe-only", tests_workflow)
 
     def test_tools_that_import_the_tools_package_are_invoked_as_modules(self):
         scanner = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
