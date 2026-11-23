@@ -55,6 +55,17 @@ MAX_STATE_JSON_BYTES = 20 * 1024 * 1024
 MAX_API_SAFETY_FILE_BYTES = 256 * 1024
 
 
+def _coercible_positive(value: Any) -> bool:
+    """Match legacy state loaders that accept numeric strings but reject booleans."""
+    if isinstance(value, bool):
+        return False
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return math.isfinite(parsed) and parsed > 0
+
+
 def _read_json_bounded(path: Path, *, max_bytes: int) -> Any:
     """Read a bounded regular JSON file without following symlinks or blocking on FIFOs."""
     if path.is_symlink():
@@ -402,7 +413,7 @@ def validate_dedupe_state(directory: str | Path) -> list[str]:
             or any(not isinstance(value, str) or not value for value in uncertain_ids)
             or not isinstance(created_at, dict)
             or any(
-                not isinstance(key, str) or not key or not _finite_positive(value)
+                not isinstance(key, str) or not key or not _coercible_positive(value)
                 for key, value in created_at.items()
             )
         ):
@@ -455,7 +466,7 @@ def validate_dedupe_state(directory: str | Path) -> list[str]:
                 reason = entry.get("reason")
                 if (
                     type(attempts) is not int or attempts < 0
-                    or not _finite_positive(entry.get("next_check_at"))
+                    or not _coercible_positive(entry.get("next_check_at"))
                     or (reason is not None and (
                         not isinstance(reason, str) or reason not in VALID_PENDING_REASONS
                     ))
@@ -498,7 +509,7 @@ def validate_dedupe_state(directory: str | Path) -> list[str]:
                     valid = False
                     break
                 if any(
-                    field in entry and not _finite_positive(entry[field])
+                    field in entry and not _coercible_positive(entry[field])
                     for field in ("created_at", "updated_at")
                 ):
                     valid = False
