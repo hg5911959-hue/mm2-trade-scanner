@@ -550,6 +550,21 @@ def has_addition_marker(node):
     return bool(re.search(r"\bajout(?:s)?\b", text))
 
 
+def requested_wildcard_kind(values):
+    """Classify non-specific requested wildcard tokens without scanning free text."""
+    if not isinstance(values, (list, tuple, set)):
+        return ""
+    normalized = {
+        unicodedata.normalize("NFKD", str(value)).encode("ascii", "ignore").decode().casefold().strip()
+        for value in values
+    }
+    if normalized & {"add", "ajout", "ajouts"}:
+        return "ajout"
+    if normalized & {"offer", "offers", "offre", "offres"}:
+        return "offres"
+    return ""
+
+
 def _item_quantity_details(image_node, segment_text, segment_nodes=()):
     wrapper = _item_wrapper(image_node)
     wrapper_text = node_text(wrapper) if wrapper is not None else ""
@@ -1023,6 +1038,7 @@ def parse_page(html, item_map=None):
     structured_entries = parse_structured_trade_data(html)
     listings = []
     additions = 0
+    offers_excluded = 0
     addition_ids = []
     malformed = 0
     malformed_samples = []
@@ -1033,18 +1049,16 @@ def parse_page(html, item_map=None):
         link, owner_url = listing_links(context)
         source_ad_id = _ad_id_from_url(link) or listing_identifier(context)
         structured = structured_entries.get(source_ad_id)
-        structured_add = bool(
-            structured and any(
-                str(value).casefold() in {"add", "ajout", "ajouts"}
-                for value in (structured.get("requestedWildcards") or [])
-            )
-        )
+        wildcard_kind = requested_wildcard_kind((structured or {}).get("requestedWildcards") or [])
         # Check the single-card context before attempting side parsing. Never
         # inspect the whole feed container for an Ajout marker.
-        if has_addition_marker(context) or structured_add:
+        if has_addition_marker(context) or wildcard_kind == "ajout":
             additions += 1
             if source_ad_id:
                 addition_ids.append(source_ad_id)
+            continue
+        if wildcard_kind == "offres":
+            offers_excluded += 1
             continue
         received, requested = extract_side_items(node)
         if not received or not requested:
@@ -1069,6 +1083,7 @@ def parse_page(html, item_map=None):
     return parsed, {
         "candidate_count": len(candidates),
         "addition_count": additions,
+        "offers_excluded_count": offers_excluded,
         "addition_ids": addition_ids,
         "malformed_count": malformed,
         "malformed_samples": malformed_samples[:5],
@@ -1629,7 +1644,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
         cutoff = now_ts - 3600
         seed_ids, recent_ids, recent_listings = [], [], []
         addition_ids, unparsed_ids = [], []
-        additions = malformed = candidate_count = 0
+        additions = offers_excluded = malformed = candidate_count = 0
         api_posts = len(raw_first_items) if api_only else 0
         old_streak = page_count = 1
         age_boundary = False
@@ -1694,14 +1709,17 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                 old_streak = 0
                 recent_ids.append(post_id)
                 candidate_count += 1
-                wildcards = post.get('requestedWildcards') or []
-                if any(str(value).casefold() in {'add', 'ajout', 'ajouts'} for value in wildcards):
+                wildcard_kind = requested_wildcard_kind(post.get('requestedWildcards') or [])
+                if wildcard_kind == "ajout":
                     additions += 1
                     addition_ids.append(post_id)
                     continue
                 if api_only and _api_post_is_single_sided(post):
                     single_sided_count += 1
                     single_sided_ids.append(post_id)
+                    continue
+                if wildcard_kind == "offres":
+                    offers_excluded += 1
                     continue
                 refresh_catalogue_for_post(post)
                 listing = _api_trade_post_to_listing(post, initial_item_map)
@@ -1743,6 +1761,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
             'cold_start_recent_ids': recent_ids,
             'candidate_count': candidate_count,
             'addition_count': additions,
+            'offers_excluded_count': offers_excluded,
             'malformed_count': malformed,
             'addition_ids': addition_ids,
             'single_sided_count': single_sided_count,
@@ -1777,6 +1796,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     seen_ids_skipped = []
     last_success_ts = _last_successful_scan_timestamp()
     additions = 0
+    offers_excluded = 0
     malformed = 0
     api_listings_added = 0
     api_posts_scanned = len(raw_first_items) if api_only else 0
@@ -1784,7 +1804,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     item_map = initial_item_map
 
     def consume_raw_posts(raw_posts, compare_html=False):
-        nonlocal boundary_reached, seen_streak, additions, malformed, api_listings_added, candidate_count, item_map, watch_remaining, single_sided_count
+        nonlocal boundary_reached, seen_streak, additions, offers_excluded, malformed, api_listings_added, candidate_count, item_map, watch_remaining, single_sided_count
         for raw in raw_posts:
             if not isinstance(raw, dict) or not raw.get("id"):
                 malformed += 1
@@ -1825,8 +1845,8 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                 continue
             discovered_ids.append(post_id)
             candidate_count += 1
-            wildcards = raw.get("requestedWildcards") or []
-            if post_id in html_addition_ids or any(str(value).casefold() in {"add", "ajout", "ajouts"} for value in wildcards):
+            wildcard_kind = requested_wildcard_kind(raw.get("requestedWildcards") or [])
+            if post_id in html_addition_ids or wildcard_kind == "ajout":
                 additions += 1
                 addition_ids.append(post_id)
                 continue
@@ -1835,6 +1855,9 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                 # Classify them consistently on RSC+API and API-only scans.
                 single_sided_count += 1
                 single_sided_ids.append(post_id)
+                continue
+            if wildcard_kind == "offres":
+                offers_excluded += 1
                 continue
             if item_map is None:
                 needs_catalogue = any(
@@ -1949,6 +1972,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     stats.update({
         "candidate_count": candidate_count,
         "addition_count": additions,
+        "offers_excluded_count": offers_excluded,
         "malformed_count": malformed,
         "html_malformed_count": html_malformed_count,
         "html_parse_warning_count": len(html_parse_warning_ids),
@@ -2381,6 +2405,9 @@ def _enrich_catalog_metadata_gaps(values, cache_document, source_meta=None, pers
                     low, high = _parse_numeric_value_range(detail.get("range"), numeric_value)
                     variant["value_min"], variant["value_max"] = low, high
                     variant["value_status"] = value_status
+            published_rblxvalue = _positive_numeric_value(detail.get("value"))
+            if published_rblxvalue is not None:
+                variant["rblxvalue_value"] = published_rblxvalue
             if variant.get("secondary_value") is None and detail.get("value_source_a") is not None:
                 try:
                     secondary = float(detail["value_source_a"])
@@ -2421,8 +2448,8 @@ def _read_rblxvalue_meta_state():
 
 
 def _fetch_rblxvalue_meta(force=False):
-    """Poll source metadata hourly; the upstream dataset itself updates every ~12h."""
-    if not RBLXVALUE_META_POLL_ENABLED or not RBLXVALUE_API_KEY:
+    """Poll the public source metadata endpoint hourly without spending keyed API budget."""
+    if not RBLXVALUE_META_POLL_ENABLED:
         return None
     now = time.time()
     state = _read_rblxvalue_meta_state()
@@ -2441,7 +2468,18 @@ def _fetch_rblxvalue_meta(force=False):
         and 0 <= now - checked_at < RBLXVALUE_META_POLL_INTERVAL_SECONDS
     ):
         return state
-    payload = api_get_json("/meta")
+    request = urllib.request.Request(
+        RBLXVALUE_API_BASE + "/meta",
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "MM2TradeScanner/2.2 (+https://github.com/hg5911959-hue/mm2-trade-scanner)",
+        },
+    )
+    raw = request_with_retry(request, 20, "RBLXValue public metadata")
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("[rblxvalue-meta] Public metadata response was invalid JSON.") from exc
     if not isinstance(payload, dict) or not isinstance(payload.get("last_updated"), str):
         raise RuntimeError("[rblxvalue-meta] Missing or invalid last_updated metadata")
     totals = payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
@@ -2461,6 +2499,32 @@ def _fetch_rblxvalue_meta(force=False):
     }
     atomic_write_text(RBLXVALUE_META_FILE, json.dumps(updated, ensure_ascii=False, indent=2) + "\n")
     return updated
+
+
+def _positive_numeric_value(value):
+    """Return a finite positive numeric source value, or None when it is not listed."""
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return parsed if math.isfinite(parsed) and parsed > 0 else None
+
+
+def _rblxvalue_blended_value(item):
+    """Read the published RBLXValue estimate, deriving only from its documented sources for old caches."""
+    if not isinstance(item, dict):
+        return None
+    direct = _positive_numeric_value(item.get("rblxvalue_value"))
+    if direct is not None:
+        return direct
+    source_a = _positive_numeric_value(item.get("secondary_value"))
+    source_b = _positive_numeric_value(item.get("raw_source_value"))
+    if source_a is not None and source_b is not None:
+        # RBLXValue's published estimate is the rounded mean when both lists contain the item.
+        return float(math.floor((source_a + source_b) / 2.0 + 0.5))
+    return source_a if source_a is not None else source_b
 
 
 def _supreme_numeric_value(item):
@@ -2930,6 +2994,7 @@ def load_supreme_values():
                 candidate = {
                     "id": str(item.get("id") or ""), "slug": str(item.get("slug") or ""),
                     "name": name, "value": value, "value_min": value_min, "value_max": value_max,
+                    "rblxvalue_value": _positive_numeric_value(item.get("value")),
                     "raw_source_value": item.get("value_source_b"), "value_status": value_status,
                     "secondary_value": secondary, "category": category, "type": item_type,
                     # The API does not document stability as source-specific. Preserve the
@@ -3321,9 +3386,15 @@ def send_telegram(message):
     is_html = isinstance(message, TelegramHTML)
     message = str(message)
     is_robase_cash_message = "CASH PROFIT" in message or "ROBASE PRICE" in message or "MM2 ROBASE" in message
-    attribution = ROBASE_ATTRIBUTION if is_robase_cash_message else RBLXVALUE_ATTRIBUTION
-    has_attribution = message.rstrip().endswith((RBLXVALUE_ATTRIBUTION, ROBASE_ATTRIBUTION))
-    footer = "\n\n" + attribution if not has_attribution else ""
+    required_attributions = (
+        [ROBASE_ATTRIBUTION, RBLXVALUE_ATTRIBUTION]
+        if is_robase_cash_message else [RBLXVALUE_ATTRIBUTION]
+    )
+    existing_lines = set(message.rstrip().splitlines())
+    missing_attributions = [
+        value for value in required_attributions if value not in existing_lines
+    ]
+    footer = "\n\n" + "\n".join(missing_attributions) if missing_attributions else ""
     if len(message) + len(footer) > TELEGRAM_MAX_CHARS:
         chunk_limit = TELEGRAM_MAX_CHARS - 96
         chunks, current = [], ""
@@ -3805,6 +3876,27 @@ def send_maintenance_alert(key, message, cooldown_seconds=3600):
     except Exception as exc:
         print(f"[maintenance] Alert failed for {key}: {type(exc).__name__}")
         return False
+
+
+def unmatched_names_from_missing(missing, cash_mode=False):
+    """Keep true identity gaps for review; suppress expected out-of-ROBASE items in cash mode."""
+    names = []
+    ignored_cash_reasons = (
+        "no exact robase/rblxvalue weapon mapping",
+        "(not a robase weapon)",
+        "(bloxswaps catalogue slug missing)",
+    )
+    for value in missing or []:
+        text = str(value or "")
+        lowered = text.casefold()
+        if not text or lowered.startswith("one side has"):
+            continue
+        if lowered in {"quantity unknown", "quantity uncertain"} or "stability" in lowered:
+            continue
+        if cash_mode and any(reason in lowered for reason in ignored_cash_reasons):
+            continue
+        names.append(text.split(" (", 1)[0])
+    return names
 
 
 def record_unmatched_names(names):
@@ -4359,6 +4451,9 @@ def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
             "rblx_match_source": source,
             "value": _supreme_numeric_value(selected)[0],
             "value_status": _supreme_numeric_value(selected)[1],
+            "rblxvalue_value": _rblxvalue_blended_value(selected),
+            "mm2values_value": _positive_numeric_value(selected.get("secondary_value")),
+            "supreme_value": _positive_numeric_value(selected.get("raw_source_value")),
             "stability": _normalize_stability(selected.get("stability")),
             "demand": _optional_bounded_int(selected.get("demand"), 0, 10),
             "category": selected.get("category"),
@@ -4555,9 +4650,12 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
                 "quantity_min": qmin,
                 "quantity_max": qmax,
                 "stability": stability or "N/A",
-                "rblx_value": value,
+                "rblx_value": _rblxvalue_blended_value(selected),
+                "mm2values_value": _positive_numeric_value(selected.get("secondary_value")),
+                "supreme_value": _positive_numeric_value(selected.get("raw_source_value")),
                 "rblx_value_status": value_status,
                 "rblx_demand": _optional_bounded_int(selected.get("demand"), 0, 10),
+                "rblx_rarity": _optional_bounded_int(selected.get("rarity"), 0, 10),
                 "rblx_category": category,
                 "rblx_type": item_type,
                 "rblx_slug": normalize_slug(selected.get("slug") or ""),
@@ -4592,10 +4690,22 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
                 f"RBLXValue: {format_number(item['rblx_value'])}"
                 if item["rblx_value"] is not None else "RBLXValue: not listed"
             ]
+            details.append(
+                f"MM2Values: {format_number(item['mm2values_value'])}"
+                if item.get("mm2values_value") is not None else "MM2Values: not listed"
+            )
+            details.append(
+                f"Supreme Values: {format_number(item['supreme_value'])}"
+                if item.get("supreme_value") is not None else "Supreme Values: not listed"
+            )
             details.append(f"Stability: {item['stability']}")
             details.append(
                 f"Demand: {item['rblx_demand']}/10"
                 if item.get("rblx_demand") is not None else "Demand: not listed"
+            )
+            details.append(
+                f"Rarity: {item['rblx_rarity']}/10"
+                if item.get("rblx_rarity") is not None else "Rarity: not listed"
             )
             enriched.append(line + " | " + " · ".join(details))
         return enriched
@@ -4987,13 +5097,30 @@ def scan_once(include_backlog_rechecks=True):
     listings, stats, discovered_ids = fetch_bloxswaps_all(
         seen_ads, due_pending_ids.keys(), bloxswaps_watch_ids
     )
+    mapping_audit = None
     if CASH_FILTER:
         try:
-            audit_robase_rblxvalue_mapping(
+            mapping_audit = audit_robase_rblxvalue_mapping(
                 values, aliases, cash_catalog, fetch_bloxswaps_items_map()
             )
+            mapping_gaps = mapping_audit.get("missing", []) + mapping_audit.get("ambiguous", [])
+            if mapping_gaps:
+                send_maintenance_alert(
+                    "robase-rblxvalue-mapping-gaps",
+                    "ROBASE/RBLXValue weapon crosswalk has unresolved identities: "
+                    + "; ".join(str(value) for value in mapping_gaps[:20])
+                    + f"\nUnresolved: {len(mapping_gaps)} of {mapping_audit.get('expected', 0)} weapons. "
+                    "Affected listings are excluded; no names or values are guessed.",
+                    cooldown_seconds=6 * 60 * 60,
+                )
         except Exception as audit_error:
             print(f"[robase-rblxvalue] coverage audit unavailable: {type(audit_error).__name__}")
+            send_maintenance_alert(
+                "robase-rblxvalue-audit-unavailable",
+                "ROBASE/RBLXValue identity audit could not complete: "
+                f"{type(audit_error).__name__}. Cash opportunities remain fail-closed.",
+                cooldown_seconds=6 * 60 * 60,
+            )
     pending_schedule = record_pending_recheck_attempts(
         due_pending_ids, pending_ids, pending_schedule
     )
@@ -5162,7 +5289,8 @@ def scan_once(include_backlog_rechecks=True):
     print(
         f"[bloxswaps] candidate_cards={stats.get('candidate_count', 0)} "
         f"excluded_ajouts={stats.get('addition_count', 0)} "
-        f"eligible_after_ajout_filter={len(listings)}"
+        f"excluded_offres={stats.get('offers_excluded_count', 0)} "
+        f"eligible_after_wildcard_filter={len(listings)}"
     )
     print(f"[bloxswaps] Direct owner profiles parsed: {stats.get('owner_link_count', 0)}/{len(listings)}")
     print(
@@ -5539,14 +5667,7 @@ def scan_once(include_backlog_rechecks=True):
                 f"[skip-unknown] Listing rejected without offer-level deferral; missing/unvalued items: "
                 f"{', '.join(missing)}"
             )
-            unknown_names = [
-                str(value).split(" (", 1)[0]
-                for value in missing
-                if value
-                and not str(value).startswith("one side has")
-                and str(value).casefold() not in {"quantity unknown", "quantity uncertain"}
-                and "stability" not in str(value).casefold()
-            ]
+            unknown_names = unmatched_names_from_missing(missing, cash_mode=CASH_FILTER)
             if unknown_names:
                 record_unmatched_names(unknown_names)
             update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
@@ -5606,6 +5727,24 @@ def scan_once(include_backlog_rechecks=True):
     )
     print(f"[summary] {summary}")
     write_step_summary(summary)
+    if os.getenv("MM2_TELEGRAM_SCAN_SUMMARY", "").strip().casefold() in {"1", "true", "yes", "on"}:
+        send_maintenance_alert(
+            "scan-results-summary",
+            "📊 MM2 SCAN RESULTS\n"
+            f"Candidates: {stats.get('candidate_count', 0)}\n"
+            f"Excluded Ajouts: {stats.get('addition_count', 0)}\n"
+            f"Excluded Offres: {stats.get('offers_excluded_count', 0)}\n"
+            f"Eligible listings: {len(listings)}\n"
+            f"Evaluated: {evaluated} · Qualified: {len(opportunities)}\n"
+            f"Alerts sent: {sent} · Digest sent: {digest_sent} · Digest pending: {digest_not_sent}\n"
+            f"RBLXValue API requests this run: {rblxvalue_guard.requests_this_run()}\n"
+            + (
+                f"ROBASE weapons mapped: {max(0, mapping_audit.get('expected', 0) - len(mapping_audit.get('missing', [])) - len(mapping_audit.get('ambiguous', [])))}/"
+                f"{mapping_audit.get('expected', 0)} · non-weapons excluded: {len(mapping_audit.get('non_weapons', []))}"
+                if isinstance(mapping_audit, dict) else "ROBASE mapping audit: unavailable"
+            ),
+            cooldown_seconds=1800,
+        )
     record_success_if_complete(stats)
     if CASH_FILTER:
         save_cash_catalog_snapshot(cash_catalog["sha256"])

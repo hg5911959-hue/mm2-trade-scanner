@@ -145,6 +145,9 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           RBLXVALUE_API_KEY: ${{ secrets.RBLXVALUE_API_KEY }}
+          VALUES_TTL_SECONDS: "43200"
+          RBLXVALUE_META_POLL_ENABLED: "true"
+          MM2_TELEGRAM_SCAN_SUMMARY: "true"
         run: |
           mkdir -p data
           set -o pipefail

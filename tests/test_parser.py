@@ -1029,6 +1029,26 @@ class ReliabilityTests(IsolatedDataTestCase):
         self.assertEqual(len(captured), 1)
         self.assertTrue(captured[0].endswith("Data from rblxvalue.com"))
 
+    def test_robase_cash_telegram_messages_credit_both_data_sources(self):
+        from io import BytesIO
+
+        captured = []
+        def fake_open(req, timeout):
+            captured.append(json.loads(req.data.decode())["text"])
+            return BytesIO(b'{"ok": true}')
+
+        with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
+            "scanner.TELEGRAM_OPENER.open", side_effect=fake_open
+        ):
+            scanner.send_telegram("💵 CASH PROFIT: $4.25\nRBLXValue: 210")
+
+        self.assertEqual(len(captured), 1)
+        self.assertIn(scanner.ROBASE_ATTRIBUTION, captured[0])
+        self.assertIn(scanner.RBLXVALUE_ATTRIBUTION, captured[0])
+        self.assertTrue(captured[0].endswith(
+            scanner.ROBASE_ATTRIBUTION + "\n" + scanner.RBLXVALUE_ATTRIBUTION
+        ))
+
     def test_telegram_partial_multipart_delivery_is_quarantined(self):
         from io import BytesIO
         from urllib.error import HTTPError
@@ -1832,7 +1852,7 @@ class RblxValueMetaPollingTests(IsolatedDataTestCase):
                 patch("scanner.RBLXVALUE_META_POLL_ENABLED", True),
                 patch("scanner.RBLXVALUE_API_KEY", "test-key"),
                 patch("scanner.time.time", side_effect=[1000, 1500, 4601]),
-                patch("scanner.api_get_json", return_value=payload) as api,
+                patch("scanner.request_with_retry", return_value=json.dumps(payload).encode("utf-8")) as api,
             ):
                 first = scanner._fetch_rblxvalue_meta()
                 second = scanner._fetch_rblxvalue_meta()
@@ -1841,7 +1861,8 @@ class RblxValueMetaPollingTests(IsolatedDataTestCase):
             self.assertEqual(second, first)
             self.assertEqual(third["items_total"], 1091)
             self.assertEqual(api.call_count, 2)
-            self.assertEqual(api.call_args_list[0].args, ("/meta",))
+            self.assertIn("/meta", api.call_args_list[0].args[0].full_url)
+            self.assertNotIn("X-api-key", api.call_args_list[0].args[0].headers)
 
     def test_recent_but_incomplete_meta_state_is_refetched(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1859,10 +1880,12 @@ class RblxValueMetaPollingTests(IsolatedDataTestCase):
                 patch("scanner.RBLXVALUE_META_POLL_ENABLED", True),
                 patch("scanner.RBLXVALUE_API_KEY", "test-key"),
                 patch("scanner.time.time", return_value=1000),
-                patch("scanner.api_get_json", return_value=payload) as api,
+                patch("scanner.request_with_retry", return_value=json.dumps(payload).encode("utf-8")) as api,
             ):
                 result = scanner._fetch_rblxvalue_meta()
-            api.assert_called_once_with("/meta")
+            api.assert_called_once()
+            self.assertIn("/meta", api.call_args.args[0].full_url)
+            self.assertNotIn("X-api-key", api.call_args.args[0].headers)
             self.assertEqual(result["last_updated"], payload["last_updated"])
 
     def test_meta_rejects_implausible_catalogue_totals(self):
@@ -1872,9 +1895,9 @@ class RblxValueMetaPollingTests(IsolatedDataTestCase):
                 patch("scanner.RBLXVALUE_META_POLL_ENABLED", True),
                 patch("scanner.RBLXVALUE_API_KEY", "test-key"),
                 patch("scanner.time.time", return_value=1000),
-                patch("scanner.api_get_json", return_value={
+                patch("scanner.request_with_retry", return_value=json.dumps({
                     "last_updated": "2026-11-14 00:00:00", "totals": {"items": 1}
-                }),
+                }).encode("utf-8")),
             ):
                 with self.assertRaisesRegex(RuntimeError, "Implausible source item total"):
                     scanner._fetch_rblxvalue_meta()
@@ -2267,6 +2290,22 @@ class SeenAdStateTests(IsolatedDataTestCase):
 
 
 class MaintenanceAndUnmatchedNameTests(IsolatedDataTestCase):
+    def test_cash_mode_ignores_expected_out_of_robase_items_but_keeps_real_identity_gaps(self):
+        missing = [
+            "Black (no exact ROBASE/RBLXValue weapon mapping)",
+            "Bunnies (not a ROBASE weapon)",
+            "Mystery Blade (RBLXValue identity mismatch)",
+            "Knife C (quantity invalid)",
+        ]
+        self.assertEqual(
+            scanner.unmatched_names_from_missing(missing, cash_mode=True),
+            ["Mystery Blade", "Knife C"],
+        )
+        self.assertEqual(
+            scanner.unmatched_names_from_missing(missing, cash_mode=False),
+            ["Black", "Bunnies", "Mystery Blade", "Knife C"],
+        )
+
     def test_unmatched_names_are_alerted_once_and_kept_for_recheck(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -2622,6 +2661,41 @@ class CardScopedAjoutFilterTests(IsolatedDataTestCase):
         self.assertEqual([item["source_ad_id"] for item in listings], ["clean-card"])
         self.assertEqual(stats["addition_count"], 1)
         self.assertEqual(stats["addition_ids"], ["with-add"])
+
+
+class RequestedOffersExclusionTests(IsolatedDataTestCase):
+    def test_structured_offer_wildcard_is_excluded_without_free_text_matching(self):
+        post = {
+            "id": "offers-wildcard-post",
+            "tradePostItems": [
+                {"displayName": "Snowcannon", "quantity": 1, "tradeRole": "OFFERED"},
+                {"displayName": "Harvester", "quantity": 2, "tradeRole": "REQUESTED"},
+            ],
+            "requestedWildcards": ["OFFER"],
+        }
+        payload = json.dumps({"initialPage": {"items": [post], "meta": {"cursor": None}}}, separators=(",", ":"))
+        html = (
+            '<script>self.__next_f.push([1,' + json.dumps(payload) + ']);</script>'
+            '<article><div>Propose <img alt="Snowcannon"></div>'
+            '<div>Recherche <img alt="Harvester"></div>'
+            '<a href="/fr/trade-mm2?ad=offers-wildcard-post">Discussion</a>'
+            '<a href="/fr/users/123">Owner</a></article>'
+        )
+        listings, stats = parse_page(html)
+        self.assertEqual(listings, [])
+        self.assertEqual(stats["offers_excluded_count"], 1)
+        self.assertEqual(stats["addition_count"], 0)
+
+    def test_free_text_word_offres_does_not_exclude_concrete_trade(self):
+        html = (
+            '<article><div>Propose <img alt="Snowcannon"></div>'
+            '<div>Recherche <img alt="Harvester"></div>'
+            '<span>Offres are welcome in chat</span>'
+            '<a href="/fr/users/123">Owner</a></article>'
+        )
+        listings, stats = parse_page(html)
+        self.assertEqual(len(listings), 1)
+        self.assertEqual(stats["offers_excluded_count"], 0)
 
 
 class LiveBloxSwapsFixtureTests(IsolatedDataTestCase):
@@ -4006,11 +4080,13 @@ class CashFirstEvaluatorTests(IsolatedDataTestCase):
         self.values = {
             "chroma laser": {
                 "name": "Chroma Laser", "slug": "chroma-laser", "value_source_b": 100,
-                "stability": "Stable", "demand": 0, "category": "Godly", "type": "Knife",
+                "raw_source_value": 100, "secondary_value": 120, "rblxvalue_value": 110,
+                "stability": "Stable", "demand": 7, "rarity": 6, "category": "Godly", "type": "Knife",
             },
             "chroma gemstone": {
-                "name": "Chroma Gemstone", "slug": "chroma-gemstone", "value_source_b": None,
-                "stability": "Stable", "demand": 0, "category": "Godly", "type": "Knife",
+                "name": "Chroma Gemstone", "slug": "chroma-gemstone", "value_source_b": 220,
+                "raw_source_value": 220, "secondary_value": 200, "rblxvalue_value": 210,
+                "stability": "Stable", "demand": 8, "rarity": 4, "category": "Godly", "type": "Knife",
             },
             "chroma heat": {
                 "name": "Chroma Heat", "slug": "chroma-heat", "value_source_b": 2,
@@ -4077,8 +4153,26 @@ class CashFirstEvaluatorTests(IsolatedDataTestCase):
         self.assertTrue(scanner.qualifies_cash(result))
         self.assertEqual(result["cash_sell_haircut_pct"], 0.0)
         self.assertIn("$20.00 each", result["receive_lines"][0])
-        self.assertIn("RBLXValue: not listed", result["receive_lines"][0])
+        self.assertIn("RBLXValue: 210", result["receive_lines"][0])
+        self.assertIn("MM2Values: 200", result["receive_lines"][0])
+        self.assertIn("Supreme Values: 220", result["receive_lines"][0])
+        self.assertIn("Demand: 8/10", result["receive_lines"][0])
+        self.assertIn("Rarity: 4/10", result["receive_lines"][0])
+        self.assertIn("Stability: Stable", result["receive_lines"][0])
         self.assertNotIn("haircut", result["receive_lines"][0].casefold())
+
+    def test_legacy_cache_blended_value_uses_both_published_sources(self):
+        self.assertEqual(
+            scanner._rblxvalue_blended_value({
+                "raw_source_value": 220, "secondary_value": 200,
+            }),
+            210,
+        )
+
+    def test_missing_both_source_values_does_not_invent_a_blended_value(self):
+        self.assertIsNone(scanner._rblxvalue_blended_value({
+            "raw_source_value": None, "secondary_value": None,
+        }))
 
     def test_cash_price_fingerprint_changes_when_robase_price_changes(self):
         listing = self.listing
