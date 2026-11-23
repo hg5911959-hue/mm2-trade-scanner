@@ -116,6 +116,20 @@ class StateValidationTests(IsolatedDataTestCase):
 
         self.assertEqual(validate_dedupe_state(self.root), [])
 
+    def test_dedupe_state_validator_accepts_legacy_watch_entries(self):
+        from tools.validate_state import validate_dedupe_state
+
+        (self.root / "watch_ads.json").write_text(json.dumps({
+            "version": 1,
+            "ads": {
+                "legacy-post": {
+                    "created_at": 1_800_000_000,
+                    "updated_at": 1_800_000_001,
+                }
+            },
+        }), encoding="utf-8")
+        self.assertEqual(validate_dedupe_state(self.root), [])
+
     def test_dedupe_state_validator_rejects_corrupt_alert_ids_and_cooldowns(self):
         from tools.validate_state import validate_dedupe_state
 
