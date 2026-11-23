@@ -1926,7 +1926,7 @@ class RblxValueMetaPollingTests(IsolatedDataTestCase):
                 patch("scanner.RBLXVALUE_META_FILE", path),
                 patch("scanner.RBLXVALUE_META_POLL_ENABLED", True),
                 patch("scanner.RBLXVALUE_API_KEY", "test-key"),
-                patch("scanner.time.time", side_effect=[1000, 1200]),
+                patch("scanner.time.time", side_effect=[1000, 1200, 1201]),
                 patch("scanner.api_get_json", side_effect=RuntimeError("temporary upstream failure")) as api,
             ):
                 with self.assertRaisesRegex(RuntimeError, "temporary upstream failure"):
