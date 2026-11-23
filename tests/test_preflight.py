@@ -2,6 +2,7 @@ import os
 import json
 import tempfile
 import unittest
+import urllib.parse
 from test_support import IsolatedDataTestCase
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -84,10 +85,12 @@ class PreflightTests(IsolatedDataTestCase):
             def __exit__(self, *args):
                 return False
 
-        with patch("tools.preflight.TELEGRAM_OPENER.open", return_value=Response()) as opener:
+        with patch("tools.preflight.TELEGRAM_OPENER.open", side_effect=capture_request) as opener:
             checks = check_telegram_connection(env=self.env)
         self.assertEqual(checks, ["Telegram Bot API rejected the bot token"])
         self.assertEqual(opener.call_count, 1)
+        self.assertIn("\\n", captured["text"])
+        self.assertNotIn(r"\\n", captured["text"])
 
     def test_daily_notice_failure_is_not_recorded_and_can_retry(self):
         with patch("tools.preflight.TELEGRAM_OPENER.open", side_effect=OSError("network down")):
@@ -162,6 +165,10 @@ class PreflightTests(IsolatedDataTestCase):
 
         warning = {"used": 48, "limit": 60, "threshold": 48}
         env = {"TELEGRAM_BOT_TOKEN": "placeholder", "TELEGRAM_CHAT_ID": "123"}
+        captured = {}
+        def capture_request(request, timeout):
+            captured["text"] = urllib.parse.parse_qs(request.data.decode())["text"][0]
+            return Response()
         with patch("tools.preflight.TELEGRAM_OPENER.open", return_value=Response()) as opener:
             self.assertTrue(send_budget_warning(warning, data_dir=self.root, env=env, now=self.now))
             self.assertFalse(send_budget_warning(warning, data_dir=self.root, env=env, now=self.now))
