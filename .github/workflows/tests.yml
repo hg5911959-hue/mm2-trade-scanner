@@ -13,6 +13,8 @@ jobs:
     env:
       MM2_TESTING: "true"
       CASH_MAX_AGE_DAYS: "14"
+      MM2_STATE_REPO: ${{ secrets.MM2_STATE_REPO_TOKEN != '' && 'hg5911959-hue/mm2-trade-scanner-state' || '' }}
+      MM2_STATE_REPO_TOKEN: ${{ secrets.MM2_STATE_REPO_TOKEN }}
     # Regression tests are required before the production scanner can be re-enabled.
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -51,6 +53,9 @@ jobs:
               exit 1
             fi
           done
+
+      - name: Configure private durable state repository
+        run: bash tools/configure_state_remote.sh
 
       - name: Validate current durable dedupe checkpoints
         shell: bash
