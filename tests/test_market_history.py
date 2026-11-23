@@ -153,6 +153,49 @@ class MarketHistoryTests(IsolatedDataTestCase):
         self.assertEqual(payload["valueChecks"], [])
         self.assertEqual(payload["priceHistory"], [])
 
+    def test_public_export_whitelists_item_fields_from_legacy_database_rows(self):
+        listing = self.listing("bloxswaps", "legacy-row-with-extra-fields")
+        self.store.record_listings([listing])
+        self.store.record_opportunity({
+            "listing": listing,
+            "give_total": 1.0,
+            "receive_total": 2.0,
+            "difference": 1.0,
+            "margin": 100.0,
+        })
+        unsafe_items = [{
+            "name": "Icebreaker",
+            "quantity": 1,
+            "quantity_source": "structured",
+            "supreme_value": 99999,
+            "secondary_value": 88888,
+            "stability": "Stable",
+            "confidence": "cross_checked",
+            "source_slug": "private-source-marker",
+        }]
+        with sqlite3.connect(self.db_path) as db:
+            db.execute(
+                "UPDATE listings SET give_items_json=?, receive_items_json=? WHERE listing_id=?",
+                (json.dumps(unsafe_items), json.dumps(unsafe_items), listing["id"]),
+            )
+            db.execute(
+                "UPDATE opportunities SET details_json=? WHERE listing_id=?",
+                (json.dumps({
+                    "valuation_mode": "cash",
+                    "give_items": unsafe_items,
+                    "receive_items": unsafe_items,
+                }), listing["id"]),
+            )
+
+        payload = build_dashboard_data(self.db_path)
+        serialized = json.dumps(payload, ensure_ascii=False)
+        for forbidden in ("supreme_value", "secondary_value", "stability", "confidence", "private-source-marker"):
+            self.assertNotIn(forbidden, serialized)
+        allowed = {"name", "quantity", "quantity_min", "quantity_max", "quantity_source"}
+        self.assertTrue(set(payload["recentListings"][0]["giveItems"][0]).issubset(allowed))
+        self.assertTrue(set(payload["opportunities"][0]["giveItems"][0]).issubset(allowed))
+
+
     def test_incomplete_robase_catalogue_is_not_published(self):
         robase_path = Path(self.tmp.name) / "robase_prices.json"
         robase_path.write_text(json.dumps({"catalog_complete": False, "catalog_expected_count": 2, "items": []}), encoding="utf-8")
