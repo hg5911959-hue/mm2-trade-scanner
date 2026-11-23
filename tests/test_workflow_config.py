@@ -240,6 +240,10 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("run: python -m tools.weekly_report", weekly)
         self.assertNotIn("run: python tools/weekly_report.py", weekly)
 
+    def test_ci_checks_private_state_migration_shell_syntax(self):
+        workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
+        self.assertIn("bash -n tools/configure_state_remote.sh", workflow)
+
     def test_private_state_remote_is_configured_for_every_state_consumer(self):
         script = (ROOT / "tools/configure_state_remote.sh").read_text(encoding="utf-8")
         self.assertIn("git remote rename origin source", script)
