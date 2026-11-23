@@ -240,6 +240,26 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("run: python -m tools.weekly_report", weekly)
         self.assertNotIn("run: python tools/weekly_report.py", weekly)
 
+    def test_private_state_remote_is_configured_for_every_state_consumer(self):
+        script = (ROOT / "tools/configure_state_remote.sh").read_text(encoding="utf-8")
+        self.assertIn("git remote rename origin source", script)
+        self.assertIn("git remote set-url origin", script)
+        self.assertIn("git push origin refs/remotes/source/state:refs/heads/state", script)
+        self.assertNotIn("git push source --delete state", script)
+        workflows = {
+            ".github/workflows/scan.yml": "Configure private durable state repository",
+            ".github/workflows/weekly-report.yml": "Configure private durable state repository",
+            ".github/workflows/dashboard-pages.yml": "Configure private durable state repository",
+            ".github/workflows/rblxvalue-connection-test.yml": "Configure private durable state repository",
+            ".github/workflows/tests.yml": "Configure private durable state repository",
+        }
+        for path, step in workflows.items():
+            content = (ROOT / path).read_text(encoding="utf-8")
+            self.assertIn(step, content, path)
+            self.assertIn("MM2_STATE_REPO_TOKEN", content, path)
+        scheduler = (ROOT / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
+        self.assertIn("MM2_STATE_REPO_TOKEN: ${{ secrets.MM2_STATE_REPO_TOKEN }}", scheduler)
+
     def test_preflight_receives_the_same_rblxvalue_budget_limit(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         preflight = workflow.split(
