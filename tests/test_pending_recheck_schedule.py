@@ -148,8 +148,8 @@ class PendingRecheckScheduleTests(IsolatedDataTestCase):
             path = Path(directory) / "pending_recheck_schedule.json"
             with patch.object(scanner, "PENDING_RECHECK_SCHEDULE_FILE", path):
                 schedule = {"ad": {"attempts": 0, "next_check_at": 1000, "reason": "telegram_failure"}}
-                expected = (1030, 1060, 1120, 1300, 1480)
-                for now, next_check in zip((1000, 1030, 1060, 1120, 1300), expected):
+                expected = (1030, 1090, 1210, 1510, 1810)
+                for now, next_check in zip((1000, 1030, 1090, 1210, 1510), expected):
                     schedule = scanner.record_pending_recheck_attempts(
                         {"ad": 100.0}, pending, schedule, now=now
                     )
@@ -162,7 +162,7 @@ class PendingRecheckScheduleTests(IsolatedDataTestCase):
             path = Path(directory) / "pending_recheck_schedule.json"
             with patch.object(scanner, "PENDING_RECHECK_SCHEDULE_FILE", path):
                 schedule = {"ad": {"attempts": 0, "next_check_at": 1000, "reason": "unparsed_feed"}}
-                for now, next_check in ((1000, 1060), (1060, 1120), (1120, 1300), (1300, 1900)):
+                for now, next_check in ((1000, 1060), (1060, 1180), (1180, 1480), (1480, 2080)):
                     schedule = scanner.record_pending_recheck_attempts(
                         {"ad": 100.0}, pending, schedule, now=now
                     )
