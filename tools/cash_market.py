@@ -267,8 +267,19 @@ def calculate_cash_side(
             unit_label = "$" + f"{unit_low:.2f}.." + "$" + f"{unit_high:.2f}"
             total_label = "$" + f"{line_low:.2f}.." + "$" + f"{line_high:.2f}"
         haircut_label = f" (haircut {applied_haircut:.0f}%)" if side == "receive" and applied_haircut > 0 else ""
+        sample_count = entry.get("price_sample_count")
+        sample_window = entry.get("price_window_days")
+        sample_label = ""
+        if (
+            entry.get("tier") == "robase"
+            and type(sample_count) is int
+            and sample_count < 3
+            and sample_window in (7, 30)
+        ):
+            sample_label = f" [LOW SAMPLE {sample_count}/{sample_window}d]"
         lines.append(
-            f"• {display_name} {quantity_label} — {unit_label} each = {total_label}{haircut_label}{estimate_label}"
+            f"• {display_name} {quantity_label} — {unit_label} each = {total_label}"
+            f"{haircut_label}{sample_label}{estimate_label}"
         )
     return low_total, high_total, lines, missing
 
@@ -366,6 +377,18 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
             raise RuntimeError(f"[cash] Invalid ROBASE item identity or displayed price: {name or slug}")
         if slug in items_by_slug:
             raise RuntimeError(f"[cash] Duplicate ROBASE source slug: {slug}")
+        price_window_days = row.get("price_window_days")
+        if price_window_days is not None and (
+            type(price_window_days) is not int or price_window_days not in (7, 30)
+        ):
+            raise RuntimeError(f"[cash] Invalid ROBASE price sample window: {name or slug}")
+        sold_7d = int(row.get("sold_7d") or 0)
+        sold_30d = int(row.get("sold_30d") or 0)
+        price_sample_count = (
+            sold_7d if price_window_days == 7
+            else sold_30d if price_window_days == 30
+            else None
+        )
         verified = row.get("status") == "verified" and fresh
         entry = {
             "name": name,
@@ -386,8 +409,10 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
             "bloxswaps_value": row.get("bloxswaps_value"),
             "bloxswaps_copies": row.get("bloxswaps_copies"),
             "bloxswaps_holders": row.get("bloxswaps_holders"),
-            "sold_7d": int(row.get("sold_7d") or 0),
-            "sold_30d": int(row.get("sold_30d") or 0),
+            "sold_7d": sold_7d,
+            "sold_30d": sold_30d,
+            "price_window_days": price_window_days,
+            "price_sample_count": price_sample_count,
             "source": source,
             "notes": "Exact ROBASE displayed seller-proceeds price",
         }
