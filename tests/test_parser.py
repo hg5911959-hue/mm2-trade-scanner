@@ -3963,7 +3963,7 @@ class RealAlertReevaluationIntegrationTests(IsolatedDataTestCase):
                 }))
                 stack.enter_context(patch("scanner.fetch_bloxswaps_all", return_value=([listing], stats, ["same-source-ad"])))
                 stack.enter_context(patch("scanner.fetch_bloxswaps_items_map", return_value={
-                    "knife-a": {"displayName": "Knife A", "slug": "knife-a", "rarity": "Godly", "type": "Knife", "chroma": False},
+                    "knife-a": {"displayName": "Knife A", "slug": "knife-a", "rarity": "Godly", "type": "Knife", "chroma": False, "tradable": True},
                     "knife-b": {"displayName": "Knife B", "slug": "knife-b", "rarity": "Godly", "type": "Knife", "chroma": False},
                 }))
                 stack.enter_context(patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)))
