@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   weekly-report:
+    if: false # disabled: no written authorization for Supreme-derived data
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:

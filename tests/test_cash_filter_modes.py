@@ -131,7 +131,7 @@ class CashTelegramAttributionTests(IsolatedDataTestCase):
         request = send.call_args.args[0]
         return json.loads(request.data.decode("utf-8"))
 
-    def test_cash_trade_alert_credits_robase_prices_and_rblxvalue_items(self):
+    def test_cash_trade_alert_credits_robase_prices_only(self):
         listing = {
             "id": "cash-alert", "source": "bloxswaps",
             "valuation_mode": "cash",
@@ -148,10 +148,10 @@ class CashTelegramAttributionTests(IsolatedDataTestCase):
         payload = self._deliver_and_read_payload(message)
         self.assertEqual(payload["parse_mode"], "HTML")
         self.assertIn("CASH PROFIT", payload["text"])
-        self.assertIn("Prices: robase.gg · Item values: rblxvalue.com", payload["text"])
-        self.assertIn("Data from rblxvalue.com", payload["text"])
+        self.assertIn("Prices: robase.gg", payload["text"])
+        self.assertNotIn("Data from rblxvalue.com", payload["text"])
 
-    def test_cash_digest_credits_robase_prices_and_rblxvalue_items(self):
+    def test_cash_digest_credits_robase_prices_only(self):
         listing = {
             "id": "cash-digest", "source": "bloxswaps",
             "valuation_mode": "cash", "url": "https://bloxswaps.com/trade/2",
@@ -165,8 +165,8 @@ class CashTelegramAttributionTests(IsolatedDataTestCase):
         }])
         payload = self._deliver_and_read_payload(message)
         self.assertIn("<b>OPPORTUNITIES</b>", payload["text"])
-        self.assertIn("Prices: robase.gg · Item values: rblxvalue.com", payload["text"])
-        self.assertIn("Data from rblxvalue.com", payload["text"])
+        self.assertIn("Prices: robase.gg", payload["text"])
+        self.assertNotIn("Data from rblxvalue.com", payload["text"])
 
 
 class DisabledScanIntegrationTests(IsolatedDataTestCase):

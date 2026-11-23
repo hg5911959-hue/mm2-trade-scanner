@@ -1029,7 +1029,7 @@ class ReliabilityTests(IsolatedDataTestCase):
         self.assertEqual(len(captured), 1)
         self.assertTrue(captured[0].endswith("Data from rblxvalue.com"))
 
-    def test_robase_cash_telegram_messages_credit_both_data_sources(self):
+    def test_robase_cash_telegram_messages_credit_robase_only(self):
         from io import BytesIO
 
         captured = []
@@ -1040,14 +1040,12 @@ class ReliabilityTests(IsolatedDataTestCase):
         with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
             "scanner.TELEGRAM_OPENER.open", side_effect=fake_open
         ):
-            scanner.send_telegram("💵 CASH PROFIT: $4.25\nRBLXValue: 210")
+            scanner.send_telegram("💵 CASH PROFIT: $4.25")
 
         self.assertEqual(len(captured), 1)
         self.assertIn(scanner.ROBASE_ATTRIBUTION, captured[0])
-        self.assertIn(scanner.RBLXVALUE_ATTRIBUTION, captured[0])
-        self.assertTrue(captured[0].endswith(
-            scanner.ROBASE_ATTRIBUTION + "\n" + scanner.RBLXVALUE_ATTRIBUTION
-        ))
+        self.assertNotIn(scanner.RBLXVALUE_ATTRIBUTION, captured[0])
+        self.assertTrue(captured[0].endswith(scanner.ROBASE_ATTRIBUTION))
 
     def test_telegram_partial_multipart_delivery_is_quarantined(self):
         from io import BytesIO
@@ -3480,6 +3478,34 @@ class WatchWindowRegressionTests(IsolatedDataTestCase):
         self.assertEqual(first[0], second[0])
         self.assertNotEqual(first[1], second[1])
 
+    def test_bloxswaps_tradability_change_changes_cash_watch_fingerprint(self):
+        listing = self._listing()
+        for item in listing["give_items"] + listing["receive_items"]:
+            item["catalog_slug"] = item["name"].casefold().replace(" ", "-")
+            item["catalog_type"] = "knife"
+            item["catalog_rarity"] = "godly"
+            item["catalog_chroma"] = False
+        rows = {
+            "knife-a": {"robase_slug": "knife-a", "price_display": "$10.00", "status": "verified"},
+            "knife-b": {"robase_slug": "knife-b", "price_display": "$12.00", "status": "verified"},
+        }
+        mapping = {
+            slug: {
+                "robase_slug": slug, "bloxswaps_type": "knife",
+                "bloxswaps_rarity": "godly", "bloxswaps_chroma": False,
+                "bloxswaps_tradable": True,
+            }
+            for slug in rows
+        }
+        first = scanner.listing_watch_fingerprints(
+            listing, {}, cash_catalog={"items_by_slug": rows, "bloxswaps_exact_map": mapping}
+        )
+        mapping["knife-a"]["bloxswaps_tradable"] = False
+        second = scanner.listing_watch_fingerprints(
+            listing, {}, cash_catalog={"items_by_slug": rows, "bloxswaps_exact_map": mapping}
+        )
+        self.assertNotEqual(first[1], second[1])
+
     def test_owner_quantity_edit_changes_watch_fingerprint(self):
         first = scanner.listing_watch_fingerprints(self._listing(1), {})
         second = scanner.listing_watch_fingerprints(self._listing(3), {})
@@ -3496,6 +3522,20 @@ class WatchWindowRegressionTests(IsolatedDataTestCase):
             with patch("scanner.WATCH_FILE", path), patch("scanner.time.time", return_value=1000 + 24 * 3600 + 1):
                 self.assertEqual(scanner.load_watch_state(), {})
 
+
+
+    def test_cash_source_migration_does_not_replay_unchanged_alerts(self):
+        legacy = {"content_hash": "same", "values_hash": "old-supreme-hash"}
+        self.assertFalse(scanner.watch_variant_changed(
+            legacy, "same", "new-robase-only-hash", cash_filter=True
+        ))
+        self.assertTrue(scanner.watch_variant_changed(
+            legacy, "edited-content", "new-robase-only-hash", cash_filter=True
+        ))
+        migrated = dict(legacy, cash_source_version=2)
+        self.assertTrue(scanner.watch_variant_changed(
+            migrated, "same", "changed-robase-price", cash_filter=True
+        ))
 
 class CatalogueRefreshRegressionTests(IsolatedDataTestCase):
     def test_unknown_item_catalogue_refresh_bypasses_hour_ttl_once(self):
@@ -3723,10 +3763,10 @@ class WorkflowSecurityTests(IsolatedDataTestCase):
         self.assertNotIn("discord_collector.py", scan_job)
         self.assertIn('BLOXSWAPS_API_ONLY: "true"', scan_job)
         self.assertIn("[state-audit] supreme_cache_present=true", scan_job)
-        self.assertIn("[state-persist-audit] present=", state_job)
+        self.assertIn("[state-persist-audit] absent=", state_job)
         self.assertIn("data/rblxvalue_key_health.json", state_job)
         self.assertIn("data/market_history.sqlite3", state_job)
-        self.assertIn('RBLXVALUE_DAILY_REQUEST_LIMIT: "60"', scan_job)
+        self.assertNotIn("RBLXVALUE_DAILY_REQUEST_LIMIT", scan_job)
         self.assertIn("No scanner data files found", state_job)
         self.assertIn('MM2_SCAN_INTERVAL_SECONDS: "30"', scan_job)
         self.assertIn('MAX_ALERTS_PER_RUN: "0"', scan_job)
@@ -3892,6 +3932,10 @@ class RealAlertReevaluationIntegrationTests(IsolatedDataTestCase):
         }
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            (root / "history.csv").write_text(
+                "listing_id,profit_basis,profit_cash_usd\nstable-ad-id,cash_usd,10.00\n",
+                encoding="utf-8",
+            )
             sent = []
             with ExitStack() as stack:
                 stack.enter_context(patch("scanner.CASH_FILTER", True))
@@ -3919,7 +3963,7 @@ class RealAlertReevaluationIntegrationTests(IsolatedDataTestCase):
                 }))
                 stack.enter_context(patch("scanner.fetch_bloxswaps_all", return_value=([listing], stats, ["same-source-ad"])))
                 stack.enter_context(patch("scanner.fetch_bloxswaps_items_map", return_value={
-                    "knife-a": {"displayName": "Knife A", "slug": "knife-a", "rarity": "Godly", "type": "Knife", "chroma": False},
+                    "knife-a": {"displayName": "Knife A", "slug": "knife-a", "rarity": "Godly", "type": "Knife", "chroma": False, "tradable": True},
                     "knife-b": {"displayName": "Knife B", "slug": "knife-b", "rarity": "Godly", "type": "Knife", "chroma": False},
                 }))
                 stack.enter_context(patch("scanner.send_telegram", side_effect=lambda message: sent.append(message)))

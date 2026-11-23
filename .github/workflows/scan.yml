@@ -3,11 +3,6 @@ name: MM2 Trade Scanner
 on:
   workflow_call:
     inputs:
-      verify_rblxvalue_key:
-        description: "Send exactly one small /v2/items request to verify the configured API key"
-        required: false
-        type: boolean
-        default: false
       dry_run:
         description: "Evaluate and log opportunities without sending Telegram messages or recording alerts"
         required: false
@@ -18,17 +13,10 @@ on:
         required: false
       TELEGRAM_CHAT_ID:
         required: false
-      RBLXVALUE_API_KEY:
-        required: false
       HEALTHCHECKS_PING_URL:
         required: false
   workflow_dispatch:
     inputs:
-      verify_rblxvalue_key:
-        description: "Send exactly one small /v2/items request to verify the configured API key"
-        required: false
-        type: boolean
-        default: false
       dry_run:
         description: "Evaluate and log opportunities without sending Telegram messages or recording alerts"
         required: false
@@ -72,7 +60,7 @@ jobs:
             git archive origin/state data | tar --exclude='data/cash_prices.csv' -x
             echo "Restored scanner state from branch 'state'."
             # Refuse to scan if restored dedupe/cache state is incomplete or unsafe.
-            python tools/validate_state.py --directory data --require-cache
+            python tools/validate_state.py --directory data
           else
             echo "State branch not found; cold-start safety window will evaluate recent posts."
             python tools/validate_state.py --directory data
@@ -139,15 +127,9 @@ jobs:
           MM2_SCAN_INTERVAL_SECONDS: "30"
           ALERT_DELAY_SECONDS: "3.2"
           MAX_FEED_PAGES: "1000"
-          RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY: "6"
-          RBLXVALUE_DAILY_REQUEST_LIMIT: "60"
-          RBLXVALUE_FORCE_KEY_CHECK: ${{ inputs.verify_rblxvalue_key && 'true' || 'false' }}
           BLOXSWAPS_ITEMS_TTL_SECONDS: "3600"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          RBLXVALUE_API_KEY: ${{ secrets.RBLXVALUE_API_KEY }}
-          VALUES_TTL_SECONDS: "43200"
-          RBLXVALUE_META_POLL_ENABLED: "true"
           MM2_TELEGRAM_SCAN_SUMMARY: "true"
         run: |
           mkdir -p data
@@ -171,8 +153,13 @@ jobs:
           # Discord messages may come from private servers; process them in this
           # job only and never publish raw message bodies to the public state branch.
           rm -f state-bundle/data/discord_messages.json state-bundle/data/discord_messages.json.tmp
-          # Never persist the manually maintained cash-price catalogue to state.
+          # Never persist manual prices or legacy third-party valuation caches/history.
           rm -f state-bundle/data/cash_prices.csv
+          rm -f state-bundle/data/supreme_values.json state-bundle/data/supreme_values_audit.json
+          rm -f state-bundle/data/market_history.sqlite3 state-bundle/data/history.csv
+          rm -f state-bundle/data/rblxvalue_meta.json state-bundle/data/rblxvalue_detail_enrichment.json
+          rm -f state-bundle/data/rblxvalue_key_health.json state-bundle/data/rblxvalue_request_budget.json
+          rm -f state-bundle/data/api_key_blocked.json
           printf '%s\n' "${GITHUB_SHA}" > state-bundle/source-commit.txt
 
       - name: Upload durable state
@@ -255,7 +242,7 @@ jobs:
           set -euo pipefail
           # Never replace the durable branch with a partial artifact, even if
           # the scan failed. The previous cache/database must survive failures.
-          python tools/validate_state.py --directory state-artifact/data --require-cache
+          python tools/validate_state.py --directory state-artifact/data
 
       - name: Persist API safety ledger after failed scan
         id: persist-api-safety
@@ -344,20 +331,16 @@ jobs:
           git push --force origin state-new:state
           echo "Replaced durable scanner state with a single-commit history."
 
-      - name: Verify durable RBLXValue state
+      - name: Verify legacy valuation data is absent from durable state
         if: steps.persist-state.outcome == 'success'
         run: |
           set -euo pipefail
-          if ! git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
-            echo "State branch is not available for verification."
-            exit 1
-          fi
           git fetch origin refs/heads/state:refs/remotes/origin/state
-          for file in data/supreme_values.json data/rblxvalue_request_budget.json data/api_key_blocked.json data/rblxvalue_key_health.json data/market_history.sqlite3; do
+          for file in data/supreme_values.json data/supreme_values_audit.json data/market_history.sqlite3 data/history.csv data/rblxvalue_meta.json data/rblxvalue_detail_enrichment.json data/rblxvalue_key_health.json data/rblxvalue_request_budget.json data/api_key_blocked.json; do
             if git cat-file -e "refs/remotes/origin/state:$file" 2>/dev/null; then
-              bytes="$(git cat-file -s "refs/remotes/origin/state:$file")"
-              echo "[state-persist-audit] present=$file bytes=$bytes"
-            else
-              echo "[state-persist-audit] absent=$file"
+              echo "[state-persist-audit] ERROR: legacy third-party valuation data remains: $file"
+              exit 1
             fi
+            echo "[state-persist-audit] absent=$file"
           done
+          echo "[state-persist-audit] PASS: legacy third-party valuation data is absent"

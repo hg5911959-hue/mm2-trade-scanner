@@ -1,6 +1,9 @@
+import json
+import time
 import unittest
 from datetime import datetime, timezone
 from io import BytesIO
+from pathlib import Path
 from urllib.error import HTTPError
 from unittest.mock import patch
 from urllib.request import Request
@@ -96,6 +99,31 @@ class BloxSwapsRateLimitTests(IsolatedDataTestCase):
                 scanner.request_with_retry(request, 10, "BloxSwaps page")
 
         self.assertNotIn("private response body", str(raised.exception))
+
+
+    def test_item_catalogue_cache_discards_prices_and_keeps_identity_only(self):
+        path = Path("data/bloxswaps_items.json")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        item_id = "identity-item-1"
+        raw_item = {
+            "id": item_id, "slug": "laser-k-2026", "displayName": "Laser",
+            "chroma": False, "rarity": "GODLY", "type": "Knife",
+            "tradable": True, "year": 2026, "currentPrices": {"sellPrice": "9.99"},
+            "manualPrice": False, "appAvailableQuantity": 3, "image": "https://cdn.example/item.webp",
+        }
+        path.write_text(json.dumps({
+            "fetched_at": time.time(), "items": {item_id: raw_item},
+        }), encoding="utf-8")
+        with patch.object(scanner, "BLOXSWAPS_ITEMS_FILE", path):
+            result = scanner.fetch_bloxswaps_items_map()
+        self.assertEqual(result[item_id]["displayName"], "Laser")
+        self.assertTrue(result[item_id]["tradable"])
+        self.assertNotIn("currentPrices", result[item_id])
+        self.assertNotIn("manualPrice", result[item_id])
+        self.assertNotIn("image", result[item_id])
+        persisted = json.loads(path.read_text(encoding="utf-8"))
+        self.assertNotIn("currentPrices", persisted["items"][item_id])
+
 
     def test_api_only_mode_uses_public_trade_posts_endpoint_without_html_request(self):
         post = {

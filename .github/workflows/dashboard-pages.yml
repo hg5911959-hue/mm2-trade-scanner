@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   build:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.workflow_run.conclusion == 'success'
+    if: false # legacy export depends on the old valuation database; rebuild a cash-only export first
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:

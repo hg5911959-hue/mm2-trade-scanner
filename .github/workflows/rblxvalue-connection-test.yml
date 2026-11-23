@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   connection-test:
-    if: github.ref == 'refs/heads/main'
+    if: false # disabled until written authorization for third-party value data exists
     name: Verify RBLXValue API credentials
     runs-on: ubuntu-latest
     timeout-minutes: 3

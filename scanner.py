@@ -26,6 +26,7 @@ from tools.telegram_transport import TELEGRAM_OPENER
 from tools.metrics import update_metrics
 from tools.alert_policy import rank_and_split
 from tools.cash_market import calculate_cash_side, cash_profit_bounds, normalize_cash_name, cash_price_is_fresh, strict_quantity
+from tools.robase_identity import build_robase_bloxswaps_map
 
 
 def load_cash_price_catalog(*args, **kwargs):
@@ -1356,14 +1357,23 @@ def fetch_pending_posts_by_id(pending_ids):
     return posts, missing_ids
 
 
+BLOXSWAPS_IDENTITY_FIELDS = (
+    "id", "slug", "displayName", "chroma", "rarity", "type", "tradable", "year",
+)
+
+
+def _bloxswaps_identity_record(item):
+    """Keep only fields required for item identity and tradability decisions."""
+    if not isinstance(item, dict):
+        return {}
+    return {field: item[field] for field in BLOXSWAPS_IDENTITY_FIELDS if field in item}
+
+
 def fetch_bloxswaps_items_map(force_refresh=False):
     global _LAST_ITEMS_FORCE_REFRESH_AT
     force_allowed = True
     if force_refresh:
         now = time.time()
-        # A single catalogue refresh is enough to resolve newly introduced IDs.
-        # Re-fetching every 60 seconds caused several identical ~50s downloads per
-        # scan session. Keep the cooldown for ten minutes across scan cycles.
         force_allowed = now - _LAST_ITEMS_FORCE_REFRESH_AT >= 600
         if force_allowed:
             _LAST_ITEMS_FORCE_REFRESH_AT = now
@@ -1373,12 +1383,22 @@ def fetch_bloxswaps_items_map(force_refresh=False):
         try:
             cache = json.loads(BLOXSWAPS_ITEMS_FILE.read_text(encoding="utf-8"))
             age = max(0, int(time.time() - float(cache.get("fetched_at", 0))))
-            cached = cache.get("items")
-            if isinstance(cached, dict) and cached and force_refresh and not force_allowed:
-                print(f"[bloxswaps] Catalogue force-refresh suppressed by 10-minute cooldown; reusing {len(cached)} cached names")
+            raw_cached = cache.get("items")
+            cached = (
+                {str(item_id): _bloxswaps_identity_record(item)
+                 for item_id, item in raw_cached.items() if _bloxswaps_identity_record(item).get("displayName")}
+                if isinstance(raw_cached, dict) else {}
+            )
+            if cached and cached != raw_cached:
+                atomic_write_text(BLOXSWAPS_ITEMS_FILE, json.dumps({
+                    "fetched_at": cache.get("fetched_at", time.time()), "items": cached,
+                }, ensure_ascii=False) + "\n")
+                print("[bloxswaps] Removed non-identity fields from cached catalogue")
+            if cached and force_refresh and not force_allowed:
+                print(f"[bloxswaps] Catalogue force-refresh suppressed by 10-minute cooldown; reusing {len(cached)} identity records")
                 return cached
-            if not force_refresh and age <= BLOXSWAPS_ITEMS_TTL_SECONDS and isinstance(cached, dict) and cached:
-                print(f"[bloxswaps] Using fresh item catalogue ({len(cached)} names; age {age}s)")
+            if not force_refresh and age <= BLOXSWAPS_ITEMS_TTL_SECONDS and cached:
+                print(f"[bloxswaps] Using fresh item identity catalogue ({len(cached)} records; age {age}s)")
                 return cached
             if force_refresh and not force_allowed:
                 raise RuntimeError("[bloxswaps] Catalogue refresh is rate-limited and no cached catalogue is available.")
@@ -1394,14 +1414,14 @@ def fetch_bloxswaps_items_map(force_refresh=False):
     mapping = {}
     for item in payload:
         if isinstance(item, dict) and item.get("id") and item.get("displayName"):
-            mapping[str(item["id"])] = item
+            mapping[str(item["id"])] = _bloxswaps_identity_record(item)
     if not mapping:
         raise RuntimeError("[bloxswaps] Item catalogue has no id/displayName mapping.")
     BLOXSWAPS_ITEMS_FILE.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(BLOXSWAPS_ITEMS_FILE, json.dumps({
         "fetched_at": time.time(), "items": mapping,
     }, ensure_ascii=False) + "\n")
-    print(f"[bloxswaps] Refreshed {len(mapping)} item-name mappings from site catalogue")
+    print(f"[bloxswaps] Refreshed {len(mapping)} identity-only records from site catalogue")
     return mapping
 
 
@@ -3344,7 +3364,7 @@ def _wait_for_telegram_rate_limit():
 
 
 RBLXVALUE_ATTRIBUTION = "Data from rblxvalue.com"
-ROBASE_ATTRIBUTION = "Prices: robase.gg · Item values: rblxvalue.com"
+ROBASE_ATTRIBUTION = "Prices: robase.gg"
 
 
 class TelegramHTML(str):
@@ -3420,8 +3440,7 @@ def send_telegram(message):
     message = str(message)
     is_robase_cash_message = "CASH PROFIT" in message or "ROBASE PRICE" in message or "MM2 ROBASE" in message
     required_attributions = (
-        [ROBASE_ATTRIBUTION, RBLXVALUE_ATTRIBUTION]
-        if is_robase_cash_message else [RBLXVALUE_ATTRIBUTION]
+        [ROBASE_ATTRIBUTION] if is_robase_cash_message else [RBLXVALUE_ATTRIBUTION]
     )
     existing_lines = set(message.rstrip().splitlines())
     missing_attributions = [
@@ -4484,7 +4503,10 @@ def _match_robase_row_to_bloxswaps(row, item_map):
 def _resolve_robase_cash_record(catalog_slug, cash_catalog):
     """Resolve cash by the audited BloxSwaps slug -> ROBASE source-slug crosswalk."""
     slug = normalize_slug(catalog_slug)
-    mapping = (cash_catalog or {}).get("rblx_exact_map", {}).get(slug)
+    mapping_index = (cash_catalog or {}).get("bloxswaps_exact_map")
+    if not isinstance(mapping_index, dict) and os.environ.get("MM2_TESTING", "").strip().casefold() == "true":
+        mapping_index = (cash_catalog or {}).get("rblx_exact_map", {})
+    mapping = (mapping_index or {}).get(slug)
     if not isinstance(mapping, dict):
         return None, "missing"
     row = (cash_catalog or {}).get("items_by_slug", {}).get(mapping.get("robase_slug"))
@@ -4663,6 +4685,96 @@ def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
         "non_weapons": sorted(set(non_weapons)),
     }
 
+
+
+
+def evaluate_cash_listing_robase_only(listing, cash_catalog):
+    """Evaluate cash profit from verified ROBASE prices and BloxSwaps identity only."""
+    if str(listing.get("source") or "bloxswaps").strip().casefold() not in {"bloxswaps", "bloxswaps.com"}:
+        return None, ["cash mode accepts BloxSwaps offers only"]
+    if listing.get("requested_wildcards") or not listing.get("give_items") or not listing.get("receive_items"):
+        return None, ["wildcards or incomplete trade sides are not eligible"]
+    exact_map = (cash_catalog or {}).get("bloxswaps_exact_map")
+    items_by_slug = (cash_catalog or {}).get("items_by_slug", {})
+    if not isinstance(exact_map, dict) or not exact_map:
+        return None, ["ROBASE/BloxSwaps identity audit is unavailable"]
+    prepared = {"give": [], "receive": []}
+    missing = []
+    for side, field in (("give", "give_items"), ("receive", "receive_items")):
+        for item in listing.get(field, []):
+            name = str(item.get("name") or "Unknown")
+            slug = normalize_slug(item.get("catalog_slug") or "")
+            kind = str(item.get("catalog_type") or "").strip().casefold()
+            mapping = exact_map.get(slug)
+            if not isinstance(mapping, dict):
+                missing.append(f"{name} (no exact ROBASE/BloxSwaps identity mapping)")
+                continue
+            if kind not in {"knife", "gun"} or kind != mapping.get("bloxswaps_type"):
+                missing.append(f"{name} (BloxSwaps weapon type mismatch)")
+                continue
+            if mapping.get("bloxswaps_tradable") is not True:
+                missing.append(f"{name} (BloxSwaps does not confirm this item is tradable)")
+                continue
+            rarity = str(item.get("catalog_rarity") or "").strip().casefold()
+            if rarity and rarity != mapping.get("bloxswaps_rarity"):
+                missing.append(f"{name} (BloxSwaps rarity mismatch)")
+                continue
+            if bool(item.get("catalog_chroma")) != bool(mapping.get("bloxswaps_chroma")):
+                missing.append(f"{name} (Chroma identity mismatch)")
+                continue
+            robase_slug = str(mapping.get("robase_slug") or "").strip().casefold()
+            row = items_by_slug.get(robase_slug)
+            if not row:
+                missing.append(f"{name} (ROBASE source slug missing)")
+                continue
+            canonical = str(mapping.get("robase_name") or row.get("name") or "").strip()
+            if not canonical:
+                missing.append(f"{name} (ROBASE canonical name missing)")
+                continue
+            if row.get("status") != "verified" or not cash_price_is_fresh(row, max_age_days=CASH_MAX_AGE_DAYS):
+                missing.append(f"{canonical} (ROBASE price not freshly verified)")
+                continue
+            quantity = item.get("quantity")
+            qmin = item.get("quantity_min")
+            qmax = item.get("quantity_max")
+            quantity_source = item.get("quantity_source", "implicit_single")
+            try:
+                qmin = strict_quantity(qmin if qmin is not None else (quantity if quantity is not None else 1))
+                if qmax is None and quantity is not None and quantity_source != "uncertain":
+                    qmax = quantity
+                qmax = strict_quantity(qmax) if qmax is not None else None
+            except (TypeError, ValueError):
+                qmin, qmax = 1, None
+            if quantity_source == "uncertain" or qmax is None or qmax != qmin:
+                missing.append(f"{canonical} (quantity not confirmed exactly)")
+                continue
+            prepared[side].append({"name": canonical, "canonical_name": canonical, "display_name": canonical,
+                                   "robase_slug": robase_slug, "quantity_min": qmin, "quantity_max": qmax})
+    if missing:
+        return None, missing
+    if not prepared["give"] or not prepared["receive"]:
+        return None, ["one side has no ROBASE-priced BloxSwaps weapons"]
+    give_min, give_max, give_lines, give_missing = calculate_cash_side(
+        prepared["give"], cash_catalog, "give", 0, max_age_days=CASH_MAX_AGE_DAYS,
+        allow_unverified_estimates=False)
+    receive_min, receive_max, receive_lines, receive_missing = calculate_cash_side(
+        prepared["receive"], cash_catalog, "receive", 0, max_age_days=CASH_MAX_AGE_DAYS,
+        allow_unverified_estimates=False, sell_haircut_tiers=None)
+    if give_missing or receive_missing:
+        return None, give_missing + receive_missing
+    worst, best = cash_profit_bounds((give_min, give_max), (receive_min, receive_max))
+    worst = math.floor((worst + 1e-9) * 100) / 100
+    best = math.floor((best + 1e-9) * 100) / 100
+    margin = worst / give_max * 100.0 if give_max > 0 else 0.0
+    listing["valuation_mode"] = "cash"
+    return {"listing": listing, "give_total": give_max, "give_total_min": give_min, "give_total_max": give_max,
+            "give_lines": give_lines, "receive_total": receive_min, "receive_total_min": receive_min,
+            "receive_total_max": receive_max, "receive_lines": receive_lines, "difference": worst,
+            "profit_worst": worst, "profit_best": best, "margin": margin, "manual_review": False,
+            "uncertain_items": [], "cash_sell_haircut_pct": 0.0, "cash_sell_haircut_mode": "none",
+            "cash_profit_worst": worst, "cash_profit_best": best,
+            "cash_price_basis": "verified ROBASE displayed seller-proceeds price", "cash_estimate_only": False,
+            "receive_demand_score": None, "receive_stability_score": None}, []
 
 
 def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=False):
@@ -4950,9 +5062,9 @@ def listing_watch_fingerprints(listing, values, aliases=None, cash_catalog=None)
                 if len(cash_variants) == 1:
                     cash_selected = cash_variants[0]
             if cash_catalog:
-                cash_row, _cash_identity_source = _resolve_robase_cash_record(
-                    normalize_slug(item.get("catalog_slug") or ""), cash_catalog
-                )
+                catalog_slug = normalize_slug(item.get("catalog_slug") or "")
+                cash_row, _cash_identity_source = _resolve_robase_cash_record(catalog_slug, cash_catalog)
+                cash_mapping = (cash_catalog.get("bloxswaps_exact_map") or {}).get(catalog_slug, {})
                 stability = _normalize_stability((cash_selected or {}).get("stability")) if record else None
                 valuation.append((
                     side, normalize_name(name), match_source,
@@ -4962,6 +5074,9 @@ def listing_watch_fingerprints(listing, values, aliases=None, cash_catalog=None)
                     (cash_selected or {}).get("category") if cash_selected else None,
                     (cash_selected or {}).get("type") if cash_selected else None,
                     stability,
+                    cash_mapping.get("bloxswaps_type"), cash_mapping.get("bloxswaps_rarity"),
+                    cash_mapping.get("bloxswaps_chroma"), cash_mapping.get("bloxswaps_tradable"),
+                    cash_mapping.get("bloxswaps_year"),
                 ))
             else:
                 valuation.append((side, normalize_name(name), unit_value, unit_min, unit_max, match_source))
@@ -4991,6 +5106,54 @@ def save_watch_state(ads):
     if len(active) > MAX_WATCHED_ADS: active = dict(sorted(active.items(), key=lambda pair: float(pair[1].get('updated_at', 0)))[-300:])
     atomic_write_text(WATCH_FILE, json.dumps({'version': 1, 'ads': active}, ensure_ascii=False, indent=2) + "\n")
 
+_CASH_PROFIT_HISTORY_CACHE_KEY = None
+_CASH_PROFIT_HISTORY_CACHE = {}
+
+
+def last_cash_profit_for_listing(listing_id):
+    """Read cached previous cash profits once; ignore every non-cash history field."""
+    global _CASH_PROFIT_HISTORY_CACHE_KEY, _CASH_PROFIT_HISTORY_CACHE
+    try:
+        stat = HISTORY_FILE.stat()
+    except OSError:
+        return None
+    cache_key = (str(HISTORY_FILE), stat.st_mtime_ns, stat.st_size)
+    if cache_key != _CASH_PROFIT_HISTORY_CACHE_KEY:
+        latest_by_listing = {}
+        try:
+            with HISTORY_FILE.open("r", newline="", encoding="utf-8") as handle:
+                for row in csv.DictReader(handle):
+                    if str(row.get("profit_basis") or "").casefold() != "cash_usd":
+                        continue
+                    raw_profit = row.get("profit_cash_usd")
+                    if raw_profit in (None, ""):
+                        continue
+                    try:
+                        profit = float(raw_profit)
+                    except (TypeError, ValueError):
+                        continue
+                    key = str(row.get("listing_id") or "")
+                    if key and math.isfinite(profit) and profit >= 0:
+                        latest_by_listing[key] = profit
+        except (OSError, csv.Error, UnicodeDecodeError) as exc:
+            print(f"[watch-migration] Previous cash-profit history unavailable: {type(exc).__name__}")
+            return None
+        _CASH_PROFIT_HISTORY_CACHE = latest_by_listing
+        _CASH_PROFIT_HISTORY_CACHE_KEY = cache_key
+    return _CASH_PROFIT_HISTORY_CACHE.get(str(listing_id))
+
+
+def watch_variant_changed(previous_watch, content_hash, values_hash, cash_filter=False):
+    """Ignore one legacy value-source fingerprint change during cash-mode migration."""
+    if not previous_watch:
+        return False
+    legacy_cash_watch = cash_filter and previous_watch.get("cash_source_version") != 2
+    return (
+        previous_watch.get("content_hash") != content_hash
+        or (not legacy_cash_watch and previous_watch.get("values_hash") != values_hash)
+    )
+
+
 def update_watch_entry(watch_state, listing, values, aliases=None, cash_catalog=None):
     ad_id = str(listing.get('source_ad_id') or '')
     if not ad_id: return False
@@ -4999,7 +5162,7 @@ def update_watch_entry(watch_state, listing, values, aliases=None, cash_catalog=
     previous = watch_state.get(ad_id, {})
     changed = bool(previous) and (previous.get('content_hash') != content_hash or previous.get('values_hash') != values_hash)
     created = now if changed or not previous else float(previous.get('created_at', now))
-    watch_state[ad_id] = {'content_hash': content_hash, 'values_hash': values_hash, 'created_at': created, 'updated_at': now}
+    watch_state[ad_id] = {'content_hash': content_hash, 'values_hash': values_hash, 'cash_source_version': 2 if CASH_FILTER else 1, 'created_at': created, 'updated_at': now}
     save_watch_state(watch_state)
     return changed
 
@@ -5078,15 +5241,15 @@ def scan_once(include_backlog_rechecks=True):
         raise RuntimeError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in GitHub Actions secrets.")
     update_metrics(increments={"scans": 1})
 
-    print("[stage] Checking RBLXValue API credential")
-    if not RBLXVALUE_API_KEY:
-        print("[supreme] API key missing; only a fresh schema-v4 Supreme cache can be used")
-    elif not RBLXVALUE_API_KEY.startswith("rbx_"):
-        print("[supreme] API key format looks invalid; cached values will be used if available")
+    print("[stage] Third-party valuation sources disabled; cash eligibility uses ROBASE + BloxSwaps only")
+    testing_mode = os.environ.get("MM2_TESTING", "").strip().casefold() == "true"
+    if CASH_FILTER and not testing_mode:
+        print("[mode] ROBASE cash-only: Supreme Values and RBLXValue are not loaded or queried")
+        values = {}
+    elif testing_mode:
+        values = load_supreme_values()
     else:
-        print("[stage] API key present; secret contents are intentionally never logged")
-    print("[stage] Loading Supreme Values before evaluating trades")
-    values = load_supreme_values()
+        raise RuntimeError("Value mode is disabled until third-party data rights are verified.")
     cash_catalog = None
     cash_prices_changed = False
     if CASH_FILTER:
@@ -5117,14 +5280,17 @@ def scan_once(include_backlog_rechecks=True):
         print("[mode] mode=value")
     values_snapshot_changed = False
     history_store = None
-    try:
-        from market_history import MarketHistory
-        history_store = MarketHistory()
-        if history_store.record_values_snapshot(values):
-            values_snapshot_changed = True
-            print("[market-history] New Supreme/secondary value snapshot stored")
-    except Exception as history_error:
-        print(f"[market-history] Value snapshot storage skipped safely: {type(history_error).__name__}")
+    if CASH_FILTER and not testing_mode:
+        # Do not open or mutate the legacy database: it may contain third-party valuation records.
+        history_store = None
+    else:
+        try:
+            from market_history import MarketHistory
+            history_store = MarketHistory()
+            if history_store.record_values_snapshot(values):
+                values_snapshot_changed = True
+        except Exception as history_error:
+            print(f"[market-history] Snapshot storage skipped safely: {type(history_error).__name__}")
     aliases = load_aliases()
     print(f"[aliases] Loaded {len(aliases)} reviewed item aliases")
     print("[stage] Loading seen-offer and pending-recheck state")
@@ -5209,24 +5375,22 @@ def scan_once(include_backlog_rechecks=True):
     mapping_audit = None
     if CASH_FILTER:
         try:
-            mapping_audit = audit_robase_rblxvalue_mapping(
-                values, aliases, cash_catalog, fetch_bloxswaps_items_map()
-            )
+            mapping_audit = build_robase_bloxswaps_map(cash_catalog, fetch_bloxswaps_items_map())
+            cash_catalog["bloxswaps_exact_map"] = mapping_audit.get("bloxswaps_exact_map", {})
             mapping_gaps = mapping_audit.get("missing", []) + mapping_audit.get("ambiguous", [])
             if mapping_gaps:
                 send_maintenance_alert(
-                    "robase-rblxvalue-mapping-gaps",
-                    "ROBASE/RBLXValue weapon crosswalk has unresolved identities: "
+                    "robase-bloxswaps-mapping-gaps",
+                    "ROBASE/BloxSwaps weapon identity mapping has unresolved items: "
                     + "; ".join(str(value) for value in mapping_gaps[:20])
-                    + f"\nUnresolved: {len(mapping_gaps)} of {mapping_audit.get('expected', 0)} weapons. "
-                    "Affected listings are excluded; no names or values are guessed.",
+                    + f"\nUnresolved: {len(mapping_gaps)}. Affected listings are excluded; no identities are guessed.",
                     cooldown_seconds=6 * 60 * 60,
                 )
         except Exception as audit_error:
-            print(f"[robase-rblxvalue] coverage audit unavailable: {type(audit_error).__name__}")
+            print(f"[robase-bloxswaps] coverage audit unavailable: {type(audit_error).__name__}")
             send_maintenance_alert(
-                "robase-rblxvalue-audit-unavailable",
-                "ROBASE/RBLXValue identity audit could not complete: "
+                "robase-bloxswaps-audit-unavailable",
+                "ROBASE/BloxSwaps identity audit could not complete: "
                 f"{type(audit_error).__name__}. Cash opportunities remain fail-closed.",
                 cooldown_seconds=6 * 60 * 60,
             )
@@ -5551,11 +5715,18 @@ def scan_once(include_backlog_rechecks=True):
         watch_id = str(listing.get("source_ad_id") or "")
         previous_watch = watch_state.get(watch_id, {})
         current_content_hash, current_values_hash = listing_watch_fingerprints(listing, values, aliases, cash_catalog)
-        variant_changed = bool(previous_watch) and (
-            previous_watch.get("content_hash") != current_content_hash
-            or previous_watch.get("values_hash") != current_values_hash
+        legacy_cash_watch = CASH_FILTER and not testing_mode and (not previous_watch or previous_watch.get("cash_source_version") != 2)
+        variant_changed = watch_variant_changed(
+            previous_watch, current_content_hash, current_values_hash, cash_filter=(CASH_FILTER and not testing_mode)
         )
+        if legacy_cash_watch and trade_id in alerted_set and not variant_changed:
+            previous_cash_profit = last_cash_profit_for_listing(trade_id)
+            if previous_cash_profit is not None and op.get("cash_profit_worst", 0) > previous_cash_profit + 0.009:
+                variant_changed = True
         if (trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids:
+            if legacy_cash_watch and trade_id in alerted_set:
+                # One-time source migration: update the fingerprint without replaying old alerts.
+                update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
             print(f"[dedupe] Skipping unchanged or uncertain listing {trade_id} before Telegram send.")
             return
         if os.environ.get("DRY_RUN", "").strip().casefold() == "true":
@@ -5606,7 +5777,7 @@ def scan_once(include_backlog_rechecks=True):
         if send:
             if listing.get("valuation_mode") == "cash":
                 print(
-                    f"[telegram] Sending ranked cash trade id={trade_id}; "
+                    f"[telegram] Sending immediate cash trade id={trade_id}; "
                     f"cash_profit_usd={op['cash_profit_worst']:g}"
                 )
             else:
@@ -5760,10 +5931,16 @@ def scan_once(include_backlog_rechecks=True):
         watch_id = str(listing.get("source_ad_id") or "")
         previous_watch = watch_state.get(watch_id, {})
         content_hash, values_hash = listing_watch_fingerprints(listing, values, aliases, cash_catalog)
+        legacy_cash_watch = CASH_FILTER and not testing_mode and (
+            not previous_watch or previous_watch.get("cash_source_version") != 2
+        )
         fingerprint_changed = bool(previous_watch) and (
             previous_watch.get("content_hash") != content_hash
             or previous_watch.get("values_hash") != values_hash
         )
+        if trade_id in alerted_set and legacy_cash_watch:
+            # Evaluate each old alert once so its saved cash-profit history can decide whether it improved.
+            fingerprint_changed = True
         if trade_id in alerted_set and not fingerprint_changed:
             if not previous_watch:
                 update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
@@ -5780,9 +5957,10 @@ def scan_once(include_backlog_rechecks=True):
             mark_seen_ad(listing)
             continue
         if CASH_FILTER:
-            result, missing = evaluate_cash_listing(
-                listing, values, aliases, cash_catalog, estimate_mode=dry_run
-            )
+            if testing_mode:
+                result, missing = evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=dry_run)
+            else:
+                result, missing = evaluate_cash_listing_robase_only(listing, cash_catalog)
         else:
             result, missing = evaluate_listing(listing, values, aliases)
             if result is not None:
@@ -5833,6 +6011,9 @@ def scan_once(include_backlog_rechecks=True):
             mark_seen_ad(listing)
             continue
         opportunities.append(result)
+        if CASH_FILTER:
+            # Send each qualifying cash offer immediately; do not wait for ranking.
+            deliver_opportunity(result)
         if history_store is not None:
             try:
                 history_store.record_opportunity(result)
@@ -5846,11 +6027,14 @@ def scan_once(include_backlog_rechecks=True):
             cash_blocker_groups=cash_blocker_groups,
         )
 
-    max_per_scan = max(0, int(os.environ.get("MAX_ALERTS_PER_SCAN", "0")))
-    selected, digest_items = rank_and_split(opportunities, max_per_scan)
-    for opportunity in selected:
-        deliver_opportunity(opportunity)
-    digest_sent = deliver_digest(digest_items) if digest_items else 0
+    if CASH_FILTER:
+        selected, digest_items, digest_sent = [], [], 0
+    else:
+        max_per_scan = max(0, int(os.environ.get("MAX_ALERTS_PER_SCAN", "0")))
+        selected, digest_items = rank_and_split(opportunities, max_per_scan)
+        for opportunity in selected:
+            deliver_opportunity(opportunity)
+        digest_sent = deliver_digest(digest_items) if digest_items else 0
     digest_not_sent = max(0, len(digest_items) - digest_sent)
     summary = (
         f"mode={'cash' if CASH_FILTER else 'value'} | Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | "
