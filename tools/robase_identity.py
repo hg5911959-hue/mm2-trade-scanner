@@ -25,7 +25,7 @@ def match_robase_row(row, item_map):
     image_type = None
     image_year = None
     if image_slug:
-        if re.search(r"(?:^|-)(?:g|gun)(?:-|$)", image_slug):
+        if re.search(r"(?:^|-)(?:g|gun)(?:-|$)", image_slug) or "gun" in image_slug:
             image_type = "gun"
         elif re.search(r"(?:^|-)(?:k|knife)(?:-|$)", image_slug) or "knife" in image_slug:
             image_type = "knife"
