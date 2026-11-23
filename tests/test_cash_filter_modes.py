@@ -140,7 +140,7 @@ class RobaseRblxCrosswalkSafetyTests(IsolatedDataTestCase):
             audit = scanner.audit_robase_rblxvalue_mapping(
                 {"values": {}}, {}, cash_catalog, {"pet-id": {}}
             )
-        self.assertEqual(audit["rblx_exact_map"], {})
+        self.assertEqual(cash_catalog["rblx_exact_map"], {})
         self.assertEqual(audit["non_weapons"], ["Chroma Fire Bat"])
 
 class CashTelegramAttributionTests(IsolatedDataTestCase):
