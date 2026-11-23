@@ -17,7 +17,7 @@ The Worker never reads trade listings, RBLXValue data, Telegram messages, or rep
 ## Deploy in Cloudflare
 
 1. In Cloudflare, open **Workers & Pages → Create → Worker** and create a Worker named `mm2-external-scheduler`.
-2. Paste the contents of [ops/cloudflare_mm2_scheduler.mjs](../ops/cloudflare_mm2_scheduler.mjs) into the Worker editor, or deploy the checked-in entrypoint with Wrangler using [ops/cloudflare/wrangler.jsonc](../ops/cloudflare/wrangler.jsonc).
+2. Paste the contents of [ops/cloudflare_mm2_scheduler.mjs](../ops/cloudflare_mm2_scheduler.mjs) into the Worker editor (no terminal is required), or deploy the checked-in entrypoint with `npx wrangler deploy --config ops/cloudflare/wrangler.jsonc`.
 3. Under **Settings → Variables and Secrets**, add:
    - Secret `GITHUB_TOKEN`: a fine-grained GitHub token restricted to `hg5911959-hue/mm2-trade-scanner`, with **Actions: Read and write** and repository metadata read access.
    - Variable `GITHUB_REPOSITORY`: `hg5911959-hue/mm2-trade-scanner`.
