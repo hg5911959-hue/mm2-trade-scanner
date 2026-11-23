@@ -4,6 +4,7 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
+from test_support import IsolatedDataTestCase
 from tools.robase_price_history import record_daily_snapshot
 
 
@@ -30,7 +31,7 @@ def make_snapshot(*, fetched_at="2026-11-23T12:00:00Z", count=222):
     }
 
 
-class RobaseDailyHistoryTests(unittest.TestCase):
+class RobaseDailyHistoryTests(IsolatedDataTestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
