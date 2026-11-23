@@ -36,9 +36,6 @@ class PreflightTests(IsolatedDataTestCase):
             ],
         }
         (self.root / "robase_prices.json").write_text(json.dumps(snapshot), encoding="utf-8")
-        (self.root / "supreme_values.json").write_text(json.dumps({
-            "fetched_at": self.now.timestamp(),
-        }), encoding="utf-8")
         (self.root / "api_key_blocked.json").write_text(json.dumps({
             "permanent": False, "blocked_until_epoch": self.now.timestamp() - 1,
         }), encoding="utf-8")
@@ -149,9 +146,11 @@ class PreflightTests(IsolatedDataTestCase):
         (self.root / "api_key_blocked.json").write_text(json.dumps({"permanent": True}), encoding="utf-8")
         self.assertTrue(any("API key is blocked" in x for x in self._checks()))
         (self.root / "api_key_blocked.json").write_text(json.dumps({"permanent": False}), encoding="utf-8")
-        (self.root / "supreme_values.json").write_text(json.dumps({"fetched_at": (self.now - timedelta(hours=25)).timestamp()}), encoding="utf-8")
-        self.assertTrue(any("older than 24 hours" in x for x in self._checks()))
-        (self.root / "supreme_values.json").write_text(json.dumps({"fetched_at": self.now.timestamp()}), encoding="utf-8")
+        # Cash mode uses only fresh ROBASE prices; legacy Supreme cache is irrelevant.
+        (self.root / "supreme_values.json").write_text(json.dumps({"fetched_at": (self.now - timedelta(days=30)).timestamp()}), encoding="utf-8")
+        self.assertFalse(any("Supreme cache" in x for x in self._checks()))
+        (self.root / "supreme_values.json").unlink()
+        self.assertFalse(any("Supreme cache" in x for x in self._checks()))
         self.assertTrue(any("Telegram credentials" in x for x in self._checks(env={})))
         self.assertTrue(any("state branch is unreadable" in x for x in self._checks(state_checker=lambda: False)))
 

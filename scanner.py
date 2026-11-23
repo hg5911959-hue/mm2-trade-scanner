@@ -5819,17 +5819,25 @@ def scan_once(include_backlog_rechecks=True):
         if listing.get("source") != "discord":
             append_history(listing, op)
         first_seen_ts = _parse_feed_timestamp(listing.get("first_seen_at_utc"))
+        refreshed_ts = _parse_feed_timestamp(listing.get("posted_at"))
         alerted_ts = _parse_feed_timestamp(listing["alerted_at_utc"])
         detection_latency = (
             max(0.0, alerted_ts - first_seen_ts)
             if first_seen_ts is not None and alerted_ts is not None else None
         )
-        latency_label = f"{detection_latency:.2f}s" if detection_latency is not None else "unknown"
+        refresh_latency = (
+            max(0.0, alerted_ts - refreshed_ts)
+            if refreshed_ts is not None and alerted_ts is not None else None
+        )
+        detection_label = f"{detection_latency:.2f}s" if detection_latency is not None else "unknown"
+        refresh_label = f"{refresh_latency:.2f}s" if refresh_latency is not None else "unknown"
         print(
             f"[timing] listing={listing.get('source_ad_id') or trade_id} "
             f"first_seen={listing.get('first_seen_at_utc', 'unknown')} "
+            f"feed_refreshed_at={listing.get('posted_at', 'unknown')} "
             f"alerted={listing['alerted_at_utc']} "
-            f"first_seen_to_alert={latency_label}"
+            f"scanner_first_seen_to_alert={detection_label} "
+            f"feed_refresh_to_alert={refresh_label}"
         )
         sent += 1
         update_metrics(increments={"alerts_sent": 1})
