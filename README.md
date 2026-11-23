@@ -2,6 +2,12 @@
 
 Automated scanner for public **BloxSwaps MM2 P2P listings**, with concise Telegram alerts. GitHub Actions schedules a scan every 10 minutes; each scan polls the feed every 30 seconds for up to 540 seconds (9 minutes), leaving a short persistence window. GitHub cron can be delayed, so this is a target cadence, not a real-time guarantee.
 
+## Current source-isolated implementation (PR #162)
+
+The proposed cash-only scanner path in PR #162 removes Supreme Values and RBLXValue from production cash evaluation. It uses ROBASE USD prices plus BloxSwaps item identity metadata only; it does not display Supreme values, Stability, Demand, or RBLXValue-derived fields. The legacy value-mode and weekly valuation report are disabled in the proposed workflow until third-party data rights are verified. The legacy dashboard is paused pending a cash-only export.
+
+This is a code-path separation, not a blanket legal clearance for every upstream source. ROBASE's public page describes its prices as aggregated completed sales from other marketplaces, but an explicit redistribution/automation licence still needs confirmation. BloxSwaps' terms prohibit automated tools that disrupt its service; they do not expressly grant a general data-republication licence. Do not treat this PR as production-ready until upstream use conditions, full CI, state cleanup, and an end-to-end dry run are confirmed.
+
 ## Production mode and alert eligibility
 
 The production scanner workflow currently runs with `CASH_FILTER: "true"`. The weekly health report intentionally omits the cash-price summary (`CASH_FILTER: "false"`); this does not change the scanner's production mode. Do not infer the live scanner mode from the weekly-report setting.
