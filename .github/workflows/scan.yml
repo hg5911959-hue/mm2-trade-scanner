@@ -358,5 +358,6 @@ jobs:
               echo "[state-persist-audit] ERROR: legacy third-party valuation data remains: $file"
               exit 1
             fi
+            echo "[state-persist-audit] absent=$file"
           done
           echo "[state-persist-audit] PASS: legacy third-party valuation data is absent"
