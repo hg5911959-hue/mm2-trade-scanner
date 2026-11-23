@@ -21,6 +21,9 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      MM2_STATE_REPO: ${{ secrets.MM2_STATE_REPO_TOKEN != '' && 'hg5911959-hue/mm2-trade-scanner-state' || '' }}
+      MM2_STATE_REPO_TOKEN: ${{ secrets.MM2_STATE_REPO_TOKEN }}
     outputs:
       pages_enabled: ${{ steps.pages-preflight.outputs.enabled }}
     permissions:
@@ -31,6 +34,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
+
+      - name: Configure private durable state repository
+        run: bash tools/configure_state_remote.sh
 
       - name: Validate dashboard JavaScript
         run: |
