@@ -15,8 +15,10 @@ on:
     branches: [main]
     paths:
       - "tools/robase_prices.py"
+      - "tools/robase_price_history.py"
       - "tools/cash_market.py"
       - "tests/test_robase_prices.py"
+      - "tests/test_robase_price_history.py"
       - "tests/test_cash_market.py"
       - "scanner.py"
       - ".github/workflows/robase-pricing-tests.yml"
