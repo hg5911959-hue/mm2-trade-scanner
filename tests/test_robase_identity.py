@@ -48,7 +48,7 @@ class RobaseBloxswapsIdentityTests(unittest.TestCase):
         self.assertEqual(result["non_weapons"], ["Laser"])
 
     def test_duplicate_slug_collision_is_excluded(self):
-        catalog = {"items_by_slug": {"a": self.row(), "b": self.row(name="Laser copy", slug="laser-copy")}}
+        catalog = {"items_by_slug": {"a": self.row(), "b": self.row(name="Laser", slug="laser-copy")}}
         result = build_robase_bloxswaps_map(catalog, {"one": self.item()})
         self.assertEqual(result["bloxswaps_exact_map"], {})
         self.assertTrue(result["ambiguous"])
