@@ -3932,6 +3932,10 @@ class RealAlertReevaluationIntegrationTests(IsolatedDataTestCase):
         }
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            (root / "history.csv").write_text(
+                "listing_id,profit_basis,profit_cash_usd\nstable-ad-id,cash_usd,10.00\n",
+                encoding="utf-8",
+            )
             sent = []
             with ExitStack() as stack:
                 stack.enter_context(patch("scanner.CASH_FILTER", True))
