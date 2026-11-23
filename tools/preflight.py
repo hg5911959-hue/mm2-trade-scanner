@@ -78,7 +78,12 @@ def _collect_budget_warning(data_dir, environment, current):
     if not isinstance(state, dict):
         return None, "RBLXValue request budget ledger is unreadable"
     timestamps = state.get("request_timestamps_epoch", [])
-    limit = state.get("limit", environment.get("RBLXVALUE_DAILY_REQUEST_LIMIT", "60"))
+    limit = state.get("limit")
+    if limit is None:
+        try:
+            limit = int(environment.get("RBLXVALUE_DAILY_REQUEST_LIMIT", "60"))
+        except (TypeError, ValueError):
+            limit = None
     if (
         not isinstance(timestamps, list)
         or len(timestamps) > 60
