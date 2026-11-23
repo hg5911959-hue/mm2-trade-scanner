@@ -75,7 +75,7 @@ def build_robase_bloxswaps_map(cash_catalog, item_map):
             ambiguous.extend([mapped[slug]["robase_name"], label])
             mapped.pop(slug, None)
             continue
-        mapped[slug] = {"bloxswaps_slug": slug, "robase_slug": _slug(row.get("robase_slug")), "robase_name": str(row.get("name") or ""), "robase_identity_source": source, "bloxswaps_type": kind, "bloxswaps_rarity": str(details.get("rarity") or "").strip().casefold(), "bloxswaps_chroma": details.get("chroma") is True, "bloxswaps_year": details.get("year")}
+        mapped[slug] = {"bloxswaps_slug": slug, "robase_slug": _slug(row.get("robase_slug")), "robase_name": str(row.get("name") or ""), "robase_identity_source": source, "bloxswaps_type": kind, "bloxswaps_rarity": str(details.get("rarity") or "").strip().casefold(), "bloxswaps_chroma": details.get("chroma") is True, "bloxswaps_tradable": details.get("tradable") is True, "bloxswaps_year": details.get("year")}
     for slug in collisions:
         mapped.pop(slug, None)
     return {"bloxswaps_exact_map": mapped, "robase_total": len(rows), "expected": len(mapped) + len(set(missing)) + len(set(ambiguous)), "exact": len(mapped), "missing": sorted(set(missing)), "ambiguous": sorted(set(ambiguous)), "non_weapons": sorted(set(non_weapons))}
