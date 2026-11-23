@@ -348,5 +348,72 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         self.assertTrue(all(status == "sent" for status, _item, _error in outcomes))
 
 
+    def test_production_cash_evaluator_uses_only_robase_and_bloxswaps_metadata(self):
+        now = datetime.now(UTC).isoformat()
+        rows, mapping = {}, {}
+        for name, price in (("Bat", 3.0), ("Laser", 10.0)):
+            slug = name.casefold()
+            rows[slug] = {
+                "name": name, "cash_price_usd": price, "price_low_usd": price,
+                "price_high_usd": price, "price_display": f"${price:.2f}",
+                "status": "verified", "verified_at_utc": now,
+                "source": "ROBASE completed sales", "robase_slug": slug,
+            }
+            mapping[slug] = {
+                "bloxswaps_slug": slug, "robase_slug": slug, "robase_name": name,
+                "bloxswaps_type": "knife", "bloxswaps_rarity": "godly",
+                "bloxswaps_chroma": False,
+            }
+        def item(name):
+            return {
+                "name": name, "catalog_slug": name.casefold(),
+                "catalog_type": "knife", "catalog_rarity": "godly",
+                "catalog_chroma": False, "quantity": 1,
+                "quantity_min": 1, "quantity_max": 1,
+                "quantity_source": "structured",
+            }
+        listing = {
+            "id": "source-independent-cash-test", "source": "bloxswaps",
+            "give_items": [item("Bat")], "receive_items": [item("Laser")],
+        }
+        result, missing = scanner.evaluate_cash_listing_robase_only(
+            listing, {"items_by_slug": rows, "bloxswaps_exact_map": mapping}
+        )
+        self.assertEqual(missing, [])
+        self.assertEqual(result["cash_profit_worst"], 7.0)
+        self.assertEqual(result["cash_price_basis"], "verified ROBASE displayed seller-proceeds price")
+        self.assertFalse(any("Supreme" in line or "Stability" in line
+                             for line in result["give_lines"] + result["receive_lines"]))
+
+    def test_production_cash_evaluator_rejects_bloxswaps_metadata_mismatch(self):
+        now = datetime.now(UTC).isoformat()
+        row = {
+            "name": "Laser", "cash_price_usd": 10.0, "price_low_usd": 10.0,
+            "price_high_usd": 10.0, "price_display": "$10.00",
+            "status": "verified", "verified_at_utc": now,
+            "source": "ROBASE completed sales", "robase_slug": "laser",
+        }
+        mapping = {"laser": {
+            "robase_slug": "laser", "robase_name": "Laser",
+            "bloxswaps_type": "knife", "bloxswaps_rarity": "godly",
+            "bloxswaps_chroma": False,
+        }}
+        bad_item = {
+            "name": "Laser", "catalog_slug": "laser", "catalog_type": "gun",
+            "catalog_rarity": "godly", "catalog_chroma": False,
+            "quantity": 1, "quantity_min": 1, "quantity_max": 1,
+            "quantity_source": "structured",
+        }
+        listing = {
+            "id": "metadata-mismatch", "source": "bloxswaps",
+            "give_items": [bad_item], "receive_items": [dict(bad_item)],
+        }
+        result, missing = scanner.evaluate_cash_listing_robase_only(
+            listing, {"items_by_slug": {"laser": row}, "bloxswaps_exact_map": mapping}
+        )
+        self.assertIsNone(result)
+        self.assertTrue(any("weapon type mismatch" in reason for reason in missing))
+
+
 if __name__ == "__main__":
     unittest.main()
