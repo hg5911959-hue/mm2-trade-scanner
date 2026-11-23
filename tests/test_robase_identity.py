@@ -87,7 +87,7 @@ class RobaseBloxswapsIdentityTests(IsolatedDataTestCase):
         self.assertEqual(source, "missing")
 
     def test_name_only_match_rejects_ambiguous_same_rarity_variants(self):
-        row = self.row(name="Predator", slug="predator", category="legendary")
+        row = self.row(name="Predator", slug="predator-page", category="legendary")
         items = {
             "gun": self.item(name="Predator", slug="predator", rarity="legendary", kind="gun"),
             "knife": self.item(name="Predator", slug="predatorknife", rarity="legendary", kind="knife"),
