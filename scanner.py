@@ -550,6 +550,21 @@ def has_addition_marker(node):
     return bool(re.search(r"\bajout(?:s)?\b", text))
 
 
+def requested_wildcard_kind(values):
+    """Classify non-specific requested wildcard tokens without scanning free text."""
+    if not isinstance(values, (list, tuple, set)):
+        return ""
+    normalized = {
+        unicodedata.normalize("NFKD", str(value)).encode("ascii", "ignore").decode().casefold().strip()
+        for value in values
+    }
+    if normalized & {"add", "ajout", "ajouts"}:
+        return "ajout"
+    if normalized & {"offer", "offers", "offre", "offres"}:
+        return "offres"
+    return ""
+
+
 def _item_quantity_details(image_node, segment_text, segment_nodes=()):
     wrapper = _item_wrapper(image_node)
     wrapper_text = node_text(wrapper) if wrapper is not None else ""
@@ -1023,6 +1038,7 @@ def parse_page(html, item_map=None):
     structured_entries = parse_structured_trade_data(html)
     listings = []
     additions = 0
+    offers_excluded = 0
     addition_ids = []
     malformed = 0
     malformed_samples = []
@@ -1033,18 +1049,16 @@ def parse_page(html, item_map=None):
         link, owner_url = listing_links(context)
         source_ad_id = _ad_id_from_url(link) or listing_identifier(context)
         structured = structured_entries.get(source_ad_id)
-        structured_add = bool(
-            structured and any(
-                str(value).casefold() in {"add", "ajout", "ajouts"}
-                for value in (structured.get("requestedWildcards") or [])
-            )
-        )
+        wildcard_kind = requested_wildcard_kind((structured or {}).get("requestedWildcards") or [])
         # Check the single-card context before attempting side parsing. Never
         # inspect the whole feed container for an Ajout marker.
-        if has_addition_marker(context) or structured_add:
+        if has_addition_marker(context) or wildcard_kind == "ajout":
             additions += 1
             if source_ad_id:
                 addition_ids.append(source_ad_id)
+            continue
+        if wildcard_kind == "offres":
+            offers_excluded += 1
             continue
         received, requested = extract_side_items(node)
         if not received or not requested:
@@ -1069,6 +1083,7 @@ def parse_page(html, item_map=None):
     return parsed, {
         "candidate_count": len(candidates),
         "addition_count": additions,
+        "offers_excluded_count": offers_excluded,
         "addition_ids": addition_ids,
         "malformed_count": malformed,
         "malformed_samples": malformed_samples[:5],
@@ -1629,7 +1644,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
         cutoff = now_ts - 3600
         seed_ids, recent_ids, recent_listings = [], [], []
         addition_ids, unparsed_ids = [], []
-        additions = malformed = candidate_count = 0
+        additions = offers_excluded = malformed = candidate_count = 0
         api_posts = len(raw_first_items) if api_only else 0
         old_streak = page_count = 1
         age_boundary = False
@@ -1694,10 +1709,13 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                 old_streak = 0
                 recent_ids.append(post_id)
                 candidate_count += 1
-                wildcards = post.get('requestedWildcards') or []
-                if any(str(value).casefold() in {'add', 'ajout', 'ajouts'} for value in wildcards):
+                wildcard_kind = requested_wildcard_kind(post.get('requestedWildcards') or [])
+                if wildcard_kind == "ajout":
                     additions += 1
                     addition_ids.append(post_id)
+                    continue
+                if wildcard_kind == "offres":
+                    offers_excluded += 1
                     continue
                 if api_only and _api_post_is_single_sided(post):
                     single_sided_count += 1
@@ -1743,6 +1761,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
             'cold_start_recent_ids': recent_ids,
             'candidate_count': candidate_count,
             'addition_count': additions,
+            'offers_excluded_count': offers_excluded,
             'malformed_count': malformed,
             'addition_ids': addition_ids,
             'single_sided_count': single_sided_count,
@@ -1784,7 +1803,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     item_map = initial_item_map
 
     def consume_raw_posts(raw_posts, compare_html=False):
-        nonlocal boundary_reached, seen_streak, additions, malformed, api_listings_added, candidate_count, item_map, watch_remaining, single_sided_count
+        nonlocal boundary_reached, seen_streak, additions, offers_excluded, malformed, api_listings_added, candidate_count, item_map, watch_remaining, single_sided_count
         for raw in raw_posts:
             if not isinstance(raw, dict) or not raw.get("id"):
                 malformed += 1
@@ -1825,10 +1844,13 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                 continue
             discovered_ids.append(post_id)
             candidate_count += 1
-            wildcards = raw.get("requestedWildcards") or []
-            if post_id in html_addition_ids or any(str(value).casefold() in {"add", "ajout", "ajouts"} for value in wildcards):
+            wildcard_kind = requested_wildcard_kind(raw.get("requestedWildcards") or [])
+            if post_id in html_addition_ids or wildcard_kind == "ajout":
                 additions += 1
                 addition_ids.append(post_id)
+                continue
+            if wildcard_kind == "offres":
+                offers_excluded += 1
                 continue
             if _api_post_is_single_sided(raw):
                 # Single-sided posts are intentionally non-actionable, not malformed.
@@ -5162,7 +5184,8 @@ def scan_once(include_backlog_rechecks=True):
     print(
         f"[bloxswaps] candidate_cards={stats.get('candidate_count', 0)} "
         f"excluded_ajouts={stats.get('addition_count', 0)} "
-        f"eligible_after_ajout_filter={len(listings)}"
+        f"excluded_offres={stats.get('offers_excluded_count', 0)} "
+        f"eligible_after_wildcard_filter={len(listings)}"
     )
     print(f"[bloxswaps] Direct owner profiles parsed: {stats.get('owner_link_count', 0)}/{len(listings)}")
     print(
