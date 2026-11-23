@@ -75,6 +75,14 @@ jobs:
             echo "ROBASE refresh failed; the scanner will use only a still-fresh cached snapshot."
           }
 
+      - name: Archive one daily ROBASE rolling-sales snapshot
+        if: env.CASH_FILTER == '1' || env.CASH_FILTER == 'true' || env.CASH_FILTER == 'yes' || env.CASH_FILTER == 'on'
+        continue-on-error: true
+        run: |
+          python -m tools.robase_price_history --snapshot data/robase_prices.json --output data/robase_price_history.json || {
+            echo "Daily ROBASE history was not updated; live scanning will continue unchanged."
+          }
+
       - name: Run scanner preflight checks (warnings do not block the scan)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
