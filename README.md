@@ -4,7 +4,7 @@
 
 This repository is public, so **every branch, including the legacy `state` branch, is publicly readable**. The current legacy branch contains plaintext `supreme_values.json`, `supreme_values_audit.json`, and `market_history.sqlite3`; the database schema stores Supreme-derived values. The code now supports moving runtime state into a dedicated private repository, but that protection is not active until the private repository and `MM2_STATE_REPO_TOKEN` secret are configured and a successful migration is verified. Follow [Private state setup](docs/PRIVATE_STATE_SETUP.md). Do not delete the legacy state files before the private copy is verified.
 
-The repository's own Supreme Values compliance notes state that written redistribution authorization is required for Supreme-derived data. I found no authorization reference in the repository files reviewed for this audit. Until that is confirmed, do not treat attribution alone as permission to republish those values. Removing the public branch later cannot undo copies already made by third parties.
+The repository's own Supreme Values compliance notes state that written permission is required before using Supreme-derived value-list data in an application or bot. I found no authorization reference in the repository files reviewed for this audit. The production workflow now fails closed unless `SUPREME_DATA_AUTHORIZED=true` is configured; set it only after obtaining written permission. Attribution alone is not permission. Removing the public branch later cannot undo copies already made by third parties.
 
 
 Automated scanner for public **BloxSwaps MM2 P2P listings**, with concise Telegram alerts. GitHub Actions schedules a scan every 10 minutes; each scan polls the feed every 30 seconds for up to 540 seconds (9 minutes), leaving a short persistence window. GitHub cron can be delayed, so this is a target cadence, not a real-time guarantee.
@@ -108,6 +108,7 @@ Open **Settings → Secrets and variables → Actions → New repository secret*
 - `TELEGRAM_CHAT_ID`: your Telegram numeric chat ID.
 - `RBLXVALUE_API_KEY`: active API key from the RBLXValue developer dashboard (raw key only, no quotes).
 - `MM2_STATE_REPO_TOKEN`: optional during compatibility mode, but required for the final private-state deployment. Use a fine-grained token limited to the private `hg5911959-hue/mm2-trade-scanner-state` repository with Contents read/write. See [Private state setup](docs/PRIVATE_STATE_SETUP.md).
+- `SUPREME_DATA_AUTHORIZED`: set to the exact value `true` only after obtaining written permission from Supreme Values for this bot/application use. The production scan now fails closed if this authorization flag is absent or false.
 
 Never commit or share these secrets. The scanner does not print API keys or Telegram bot tokens in logs.
 
