@@ -26,6 +26,7 @@ from tools.telegram_transport import TELEGRAM_OPENER
 from tools.metrics import update_metrics
 from tools.alert_policy import rank_and_split
 from tools.cash_market import calculate_cash_side, cash_profit_bounds, normalize_cash_name, cash_price_is_fresh, strict_quantity
+from tools.robase_identity import build_robase_bloxswaps_map
 
 
 def load_cash_price_catalog(*args, **kwargs):
@@ -3420,7 +3421,7 @@ def send_telegram(message):
     message = str(message)
     is_robase_cash_message = "CASH PROFIT" in message or "ROBASE PRICE" in message or "MM2 ROBASE" in message
     required_attributions = (
-        [ROBASE_ATTRIBUTION, RBLXVALUE_ATTRIBUTION]
+        [ROBASE_ATTRIBUTION]
         if is_robase_cash_message else [RBLXVALUE_ATTRIBUTION]
     )
     existing_lines = set(message.rstrip().splitlines())
@@ -4484,7 +4485,7 @@ def _match_robase_row_to_bloxswaps(row, item_map):
 def _resolve_robase_cash_record(catalog_slug, cash_catalog):
     """Resolve cash by the audited BloxSwaps slug -> ROBASE source-slug crosswalk."""
     slug = normalize_slug(catalog_slug)
-    mapping = (cash_catalog or {}).get("rblx_exact_map", {}).get(slug)
+    mapping = (cash_catalog or {}).get("bloxswaps_exact_map", {}).get(slug)
     if not isinstance(mapping, dict):
         return None, "missing"
     row = (cash_catalog or {}).get("items_by_slug", {}).get(mapping.get("robase_slug"))
@@ -4663,6 +4664,93 @@ def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
         "non_weapons": sorted(set(non_weapons)),
     }
 
+
+
+
+def evaluate_cash_listing_robase_only(listing, cash_catalog):
+    """Evaluate cash profit from verified ROBASE prices and BloxSwaps identity only."""
+    if str(listing.get("source") or "bloxswaps").strip().casefold() not in {"bloxswaps", "bloxswaps.com"}:
+        return None, ["cash mode accepts BloxSwaps offers only"]
+    if listing.get("requested_wildcards") or not listing.get("give_items") or not listing.get("receive_items"):
+        return None, ["wildcards or incomplete trade sides are not eligible"]
+    exact_map = (cash_catalog or {}).get("bloxswaps_exact_map")
+    items_by_slug = (cash_catalog or {}).get("items_by_slug", {})
+    if not isinstance(exact_map, dict) or not exact_map:
+        return None, ["ROBASE/BloxSwaps identity audit is unavailable"]
+    prepared = {"give": [], "receive": []}
+    missing = []
+    for side, field in (("give", "give_items"), ("receive", "receive_items")):
+        for item in listing.get(field, []):
+            name = str(item.get("name") or "Unknown")
+            slug = normalize_slug(item.get("catalog_slug") or "")
+            kind = str(item.get("catalog_type") or "").strip().casefold()
+            mapping = exact_map.get(slug)
+            if not isinstance(mapping, dict):
+                missing.append(f"{name} (no exact ROBASE/BloxSwaps identity mapping)")
+                continue
+            if kind not in {"knife", "gun"} or kind != mapping.get("bloxswaps_type"):
+                missing.append(f"{name} (BloxSwaps weapon type mismatch)")
+                continue
+            rarity = str(item.get("catalog_rarity") or "").strip().casefold()
+            if rarity and rarity != mapping.get("bloxswaps_rarity"):
+                missing.append(f"{name} (BloxSwaps rarity mismatch)")
+                continue
+            if bool(item.get("catalog_chroma")) != bool(mapping.get("bloxswaps_chroma")):
+                missing.append(f"{name} (Chroma identity mismatch)")
+                continue
+            robase_slug = str(mapping.get("robase_slug") or "").strip().casefold()
+            row = items_by_slug.get(robase_slug)
+            if not row:
+                missing.append(f"{name} (ROBASE source slug missing)")
+                continue
+            canonical = str(mapping.get("robase_name") or row.get("name") or "").strip()
+            if not canonical:
+                missing.append(f"{name} (ROBASE canonical name missing)")
+                continue
+            if row.get("status") != "verified" or not cash_price_is_fresh(row, max_age_days=CASH_MAX_AGE_DAYS):
+                missing.append(f"{canonical} (ROBASE price not freshly verified)")
+                continue
+            quantity = item.get("quantity")
+            qmin = item.get("quantity_min")
+            qmax = item.get("quantity_max")
+            quantity_source = item.get("quantity_source", "implicit_single")
+            try:
+                qmin = strict_quantity(qmin if qmin is not None else (quantity if quantity is not None else 1))
+                if qmax is None and quantity is not None and quantity_source != "uncertain":
+                    qmax = quantity
+                qmax = strict_quantity(qmax) if qmax is not None else None
+            except (TypeError, ValueError):
+                qmin, qmax = 1, None
+            if quantity_source == "uncertain" or qmax is None or qmax != qmin:
+                missing.append(f"{canonical} (quantity not confirmed exactly)")
+                continue
+            prepared[side].append({"name": canonical, "canonical_name": canonical, "display_name": canonical,
+                                   "robase_slug": robase_slug, "quantity_min": qmin, "quantity_max": qmax})
+    if missing:
+        return None, missing
+    if not prepared["give"] or not prepared["receive"]:
+        return None, ["one side has no ROBASE-priced BloxSwaps weapons"]
+    give_min, give_max, give_lines, give_missing = calculate_cash_side(
+        prepared["give"], cash_catalog, "give", 0, max_age_days=CASH_MAX_AGE_DAYS,
+        allow_unverified_estimates=False)
+    receive_min, receive_max, receive_lines, receive_missing = calculate_cash_side(
+        prepared["receive"], cash_catalog, "receive", 0, max_age_days=CASH_MAX_AGE_DAYS,
+        allow_unverified_estimates=False, sell_haircut_tiers=None)
+    if give_missing or receive_missing:
+        return None, give_missing + receive_missing
+    worst, best = cash_profit_bounds((give_min, give_max), (receive_min, receive_max))
+    worst = math.floor((worst + 1e-9) * 100) / 100
+    best = math.floor((best + 1e-9) * 100) / 100
+    margin = worst / give_max * 100.0 if give_max > 0 else 0.0
+    listing["valuation_mode"] = "cash"
+    return {"listing": listing, "give_total": give_max, "give_total_min": give_min, "give_total_max": give_max,
+            "give_lines": give_lines, "receive_total": receive_min, "receive_total_min": receive_min,
+            "receive_total_max": receive_max, "receive_lines": receive_lines, "difference": worst,
+            "profit_worst": worst, "profit_best": best, "margin": margin, "manual_review": False,
+            "uncertain_items": [], "cash_sell_haircut_pct": 0.0, "cash_sell_haircut_mode": "none",
+            "cash_profit_worst": worst, "cash_profit_best": best,
+            "cash_price_basis": "verified ROBASE displayed seller-proceeds price", "cash_estimate_only": False,
+            "receive_demand_score": None, "receive_stability_score": None}, []
 
 
 def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=False):
@@ -5085,8 +5173,11 @@ def scan_once(include_backlog_rechecks=True):
         print("[supreme] API key format looks invalid; cached values will be used if available")
     else:
         print("[stage] API key present; secret contents are intentionally never logged")
-    print("[stage] Loading Supreme Values before evaluating trades")
-    values = load_supreme_values()
+    if CASH_FILTER:
+        print("[mode] ROBASE cash-only: Supreme Values and RBLXValue are not loaded or queried")
+        values = {}
+    else:
+        raise RuntimeError("Value mode is disabled until third-party data rights are verified.")
     cash_catalog = None
     cash_prices_changed = False
     if CASH_FILTER:
@@ -5120,9 +5211,10 @@ def scan_once(include_backlog_rechecks=True):
     try:
         from market_history import MarketHistory
         history_store = MarketHistory()
-        if history_store.record_values_snapshot(values):
+        # Cash-only operation intentionally does not store third-party value snapshots.
+        if not CASH_FILTER and history_store.record_values_snapshot(values):
             values_snapshot_changed = True
-            print("[market-history] New Supreme/secondary value snapshot stored")
+            print("[market-history] New value snapshot stored")
     except Exception as history_error:
         print(f"[market-history] Value snapshot storage skipped safely: {type(history_error).__name__}")
     aliases = load_aliases()
@@ -5209,24 +5301,21 @@ def scan_once(include_backlog_rechecks=True):
     mapping_audit = None
     if CASH_FILTER:
         try:
-            mapping_audit = audit_robase_rblxvalue_mapping(
-                values, aliases, cash_catalog, fetch_bloxswaps_items_map()
-            )
+            mapping_audit = build_robase_bloxswaps_map(cash_catalog, fetch_bloxswaps_items_map())
             mapping_gaps = mapping_audit.get("missing", []) + mapping_audit.get("ambiguous", [])
             if mapping_gaps:
                 send_maintenance_alert(
-                    "robase-rblxvalue-mapping-gaps",
-                    "ROBASE/RBLXValue weapon crosswalk has unresolved identities: "
+                    "robase-bloxswaps-mapping-gaps",
+                    "ROBASE/BloxSwaps weapon identity mapping has unresolved items: "
                     + "; ".join(str(value) for value in mapping_gaps[:20])
-                    + f"\nUnresolved: {len(mapping_gaps)} of {mapping_audit.get('expected', 0)} weapons. "
-                    "Affected listings are excluded; no names or values are guessed.",
+                    + f"\nUnresolved: {len(mapping_gaps)}. Affected listings are excluded; no identities are guessed.",
                     cooldown_seconds=6 * 60 * 60,
                 )
         except Exception as audit_error:
-            print(f"[robase-rblxvalue] coverage audit unavailable: {type(audit_error).__name__}")
+            print(f"[robase-bloxswaps] coverage audit unavailable: {type(audit_error).__name__}")
             send_maintenance_alert(
-                "robase-rblxvalue-audit-unavailable",
-                "ROBASE/RBLXValue identity audit could not complete: "
+                "robase-bloxswaps-audit-unavailable",
+                "ROBASE/BloxSwaps identity audit could not complete: "
                 f"{type(audit_error).__name__}. Cash opportunities remain fail-closed.",
                 cooldown_seconds=6 * 60 * 60,
             )
@@ -5780,9 +5869,7 @@ def scan_once(include_backlog_rechecks=True):
             mark_seen_ad(listing)
             continue
         if CASH_FILTER:
-            result, missing = evaluate_cash_listing(
-                listing, values, aliases, cash_catalog, estimate_mode=dry_run
-            )
+            result, missing = evaluate_cash_listing_robase_only(listing, cash_catalog)
         else:
             result, missing = evaluate_listing(listing, values, aliases)
             if result is not None:
@@ -5833,6 +5920,9 @@ def scan_once(include_backlog_rechecks=True):
             mark_seen_ad(listing)
             continue
         opportunities.append(result)
+        if CASH_FILTER:
+            # Send each qualifying cash offer immediately; do not wait for ranking.
+            deliver_opportunity(result)
         if history_store is not None:
             try:
                 history_store.record_opportunity(result)
@@ -5846,11 +5936,14 @@ def scan_once(include_backlog_rechecks=True):
             cash_blocker_groups=cash_blocker_groups,
         )
 
-    max_per_scan = max(0, int(os.environ.get("MAX_ALERTS_PER_SCAN", "0")))
-    selected, digest_items = rank_and_split(opportunities, max_per_scan)
-    for opportunity in selected:
-        deliver_opportunity(opportunity)
-    digest_sent = deliver_digest(digest_items) if digest_items else 0
+    if CASH_FILTER:
+        selected, digest_items, digest_sent = [], [], 0
+    else:
+        max_per_scan = max(0, int(os.environ.get("MAX_ALERTS_PER_SCAN", "0")))
+        selected, digest_items = rank_and_split(opportunities, max_per_scan)
+        for opportunity in selected:
+            deliver_opportunity(opportunity)
+        digest_sent = deliver_digest(digest_items) if digest_items else 0
     digest_not_sent = max(0, len(digest_items) - digest_sent)
     summary = (
         f"mode={'cash' if CASH_FILTER else 'value'} | Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | "
