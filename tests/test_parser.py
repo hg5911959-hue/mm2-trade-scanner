@@ -3723,7 +3723,7 @@ class WorkflowSecurityTests(IsolatedDataTestCase):
         self.assertNotIn("discord_collector.py", scan_job)
         self.assertIn('BLOXSWAPS_API_ONLY: "true"', scan_job)
         self.assertIn("[state-audit] supreme_cache_present=true", scan_job)
-        self.assertIn("[state-persist-audit] present=", state_job)
+        self.assertIn("[state-persist-audit] absent=", state_job)
         self.assertIn("data/rblxvalue_key_health.json", state_job)
         self.assertIn("data/market_history.sqlite3", state_job)
         self.assertIn('RBLXVALUE_DAILY_REQUEST_LIMIT: "60"', scan_job)
