@@ -2624,6 +2624,41 @@ class CardScopedAjoutFilterTests(IsolatedDataTestCase):
         self.assertEqual(stats["addition_ids"], ["with-add"])
 
 
+class RequestedOffersExclusionTests(IsolatedDataTestCase):
+    def test_structured_offer_wildcard_is_excluded_without_free_text_matching(self):
+        post = {
+            "id": "offers-wildcard-post",
+            "tradePostItems": [
+                {"displayName": "Snowcannon", "quantity": 1, "tradeRole": "OFFERED"},
+                {"displayName": "Harvester", "quantity": 2, "tradeRole": "REQUESTED"},
+            ],
+            "requestedWildcards": ["OFFER"],
+        }
+        payload = json.dumps({"initialPage": {"items": [post], "meta": {"cursor": None}}}, separators=(",", ":"))
+        html = (
+            '<script>self.__next_f.push([1,' + json.dumps(payload) + ']);</script>'
+            '<article><div>Propose <img alt="Snowcannon"></div>'
+            '<div>Recherche <img alt="Harvester"></div>'
+            '<a href="/fr/trade-mm2?ad=offers-wildcard-post">Discussion</a>'
+            '<a href="/fr/users/123">Owner</a></article>'
+        )
+        listings, stats = parse_page(html)
+        self.assertEqual(listings, [])
+        self.assertEqual(stats["offers_excluded_count"], 1)
+        self.assertEqual(stats["addition_count"], 0)
+
+    def test_free_text_word_offres_does_not_exclude_concrete_trade(self):
+        html = (
+            '<article><div>Propose <img alt="Snowcannon"></div>'
+            '<div>Recherche <img alt="Harvester"></div>'
+            '<span>Offres are welcome in chat</span>'
+            '<a href="/fr/users/123">Owner</a></article>'
+        )
+        listings, stats = parse_page(html)
+        self.assertEqual(len(listings), 1)
+        self.assertEqual(stats["offers_excluded_count"], 0)
+
+
 class LiveBloxSwapsFixtureTests(IsolatedDataTestCase):
     def test_redacted_real_bloxswaps_card_matches_rsc_quantities(self):
         fixture = Path(__file__).parent / "fixtures" / "bloxswaps-live-sample.html"
