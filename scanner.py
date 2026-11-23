@@ -3876,7 +3876,7 @@ def save_uncertain_context(context):
         )[-500:])
     atomic_write_text(UNCERTAIN_CONTEXT_FILE, json.dumps({
         "version": 1, "details": normalized,
-    }, ensure_ascii=False, sort_keys=True, indent=2) + "\\n")
+    }, ensure_ascii=False, sort_keys=True, indent=2) + "\n")
 
 
 def record_uncertain_context(listing, trade_id, delivery_path):
@@ -5467,7 +5467,7 @@ def scan_once(include_backlog_rechecks=True):
                 f"{source_id}: {listing_url}" if listing_url else f"{source_id} (internal ID {expired_id})"
             )
         context_suffix = (
-            "\\nManual review references:\\n" + "\\n".join(expired_context_lines)
+            "\nManual review references:\n" + "\n".join(expired_context_lines)
             if expired_context_lines else ""
         )
         send_maintenance_alert(
