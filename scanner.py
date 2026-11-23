@@ -5308,6 +5308,7 @@ def scan_once(include_backlog_rechecks=True):
     if CASH_FILTER:
         try:
             mapping_audit = build_robase_bloxswaps_map(cash_catalog, fetch_bloxswaps_items_map())
+            cash_catalog["bloxswaps_exact_map"] = mapping_audit.get("bloxswaps_exact_map", {})
             mapping_gaps = mapping_audit.get("missing", []) + mapping_audit.get("ambiguous", [])
             if mapping_gaps:
                 send_maintenance_alert(
