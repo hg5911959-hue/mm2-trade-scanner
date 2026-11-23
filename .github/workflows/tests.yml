@@ -85,6 +85,11 @@ jobs:
       - name: Validate private state migration shell syntax
         run: bash -n tools/configure_state_remote.sh
 
+      - name: Test independent Cloudflare scheduler
+        run: |
+          node --check ops/cloudflare_mm2_scheduler.mjs
+          node --test tests/test_cloudflare_scheduler.mjs
+
       - name: Install Ruff
         run: python -m pip install --disable-pip-version-check ruff==0.17.5
 
