@@ -5169,13 +5169,7 @@ def scan_once(include_backlog_rechecks=True):
         raise RuntimeError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in GitHub Actions secrets.")
     update_metrics(increments={"scans": 1})
 
-    print("[stage] Checking RBLXValue API credential")
-    if not RBLXVALUE_API_KEY:
-        print("[supreme] API key missing; only a fresh schema-v4 Supreme cache can be used")
-    elif not RBLXVALUE_API_KEY.startswith("rbx_"):
-        print("[supreme] API key format looks invalid; cached values will be used if available")
-    else:
-        print("[stage] API key present; secret contents are intentionally never logged")
+    print("[stage] Third-party valuation sources disabled; cash eligibility uses ROBASE + BloxSwaps only")
     if CASH_FILTER:
         print("[mode] ROBASE cash-only: Supreme Values and RBLXValue are not loaded or queried")
         values = {}
@@ -5211,15 +5205,10 @@ def scan_once(include_backlog_rechecks=True):
         print("[mode] mode=value")
     values_snapshot_changed = False
     history_store = None
-    try:
-        from market_history import MarketHistory
-        history_store = MarketHistory()
-        # Cash-only operation intentionally does not store third-party value snapshots.
-        if not CASH_FILTER and history_store.record_values_snapshot(values):
-            values_snapshot_changed = True
-            print("[market-history] New value snapshot stored")
-    except Exception as history_error:
-        print(f"[market-history] Value snapshot storage skipped safely: {type(history_error).__name__}")
+    if not CASH_FILTER:
+        raise RuntimeError("Market-history value mode is disabled until data rights are verified.")
+    # Do not open or mutate the legacy database: it may contain third-party valuation records.
+    history_store = None
     aliases = load_aliases()
     print(f"[aliases] Loaded {len(aliases)} reviewed item aliases")
     print("[stage] Loading seen-offer and pending-recheck state")
