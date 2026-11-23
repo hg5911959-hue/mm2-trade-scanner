@@ -3478,6 +3478,34 @@ class WatchWindowRegressionTests(IsolatedDataTestCase):
         self.assertEqual(first[0], second[0])
         self.assertNotEqual(first[1], second[1])
 
+    def test_bloxswaps_tradability_change_changes_cash_watch_fingerprint(self):
+        listing = self._listing()
+        for item in listing["give_items"] + listing["receive_items"]:
+            item["catalog_slug"] = item["name"].casefold().replace(" ", "-")
+            item["catalog_type"] = "knife"
+            item["catalog_rarity"] = "godly"
+            item["catalog_chroma"] = False
+        rows = {
+            "knife-a": {"robase_slug": "knife-a", "price_display": "$10.00", "status": "verified"},
+            "knife-b": {"robase_slug": "knife-b", "price_display": "$12.00", "status": "verified"},
+        }
+        mapping = {
+            slug: {
+                "robase_slug": slug, "bloxswaps_type": "knife",
+                "bloxswaps_rarity": "godly", "bloxswaps_chroma": False,
+                "bloxswaps_tradable": True,
+            }
+            for slug in rows
+        }
+        first = scanner.listing_watch_fingerprints(
+            listing, {}, cash_catalog={"items_by_slug": rows, "bloxswaps_exact_map": mapping}
+        )
+        mapping["knife-a"]["bloxswaps_tradable"] = False
+        second = scanner.listing_watch_fingerprints(
+            listing, {}, cash_catalog={"items_by_slug": rows, "bloxswaps_exact_map": mapping}
+        )
+        self.assertNotEqual(first[1], second[1])
+
     def test_owner_quantity_edit_changes_watch_fingerprint(self):
         first = scanner.listing_watch_fingerprints(self._listing(1), {})
         second = scanner.listing_watch_fingerprints(self._listing(3), {})
