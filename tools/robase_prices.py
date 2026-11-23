@@ -267,6 +267,11 @@ def _parse_item_detail(url: str, document: str, fetched_at_utc: str, etag="", la
         int(next(value for value in sold_30d_match.groups() if value).replace(",", ""))
         if sold_30d_match else 0
     )
+    price_window_days = int(price_match.group("days"))
+    if price_window_days == 7 and sold_7d == 0 and sold_30d > 0:
+        # ROBASE's explicit period counts outrank contradictory descriptive copy.
+        # A 7-day average cannot be supported when the page reports zero 7-day sales.
+        price_window_days = 30
     value_match = DETAIL_VALUE_RE.search(text)
     supply_match = DETAIL_SUPPLY_RE.search(text)
     slug = urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1]
@@ -279,7 +284,7 @@ def _parse_item_detail(url: str, document: str, fetched_at_utc: str, etag="", la
         "bloxswaps_slug": image_slug or ROBASE_BLOXSWAPS_SLUG_OVERRIDES.get(slug.casefold(), ""),
         "cash_price_usd": price,
         "price_display": price_display,
-        "price_window_days": int(price_match.group("days")),
+        "price_window_days": price_window_days,
         "sold_7d": sold_7d,
         "sold_30d": sold_30d,
         "bloxswaps_value": int(value_match.group(1).replace(",", "")) if value_match else None,
