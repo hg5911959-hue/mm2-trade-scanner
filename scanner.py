@@ -101,7 +101,7 @@ VALUES_REVALIDATION_INTERVAL_SECONDS = 24 * 60 * 60
 _CASH_FILTER_REQUESTED = os.environ.get("CASH_FILTER", "false").strip().casefold() in {"1", "true", "yes", "on"}
 _DEFAULT_VALUES_TTL_SECONDS = 24 * 60 * 60 if _CASH_FILTER_REQUESTED else 12 * 60 * 60
 RBLXVALUE_META_POLL_INTERVAL_SECONDS = 60 * 60
-RBLXVALUE_META_RETRY_SECONDS = 10 * 60
+RBLXVALUE_META_RETRY_SECONDS = 60 * 60
 RBLXVALUE_META_FILE = Path("data/rblxvalue_meta.json")
 RBLXVALUE_DETAIL_FILE = Path("data/rblxvalue_detail_enrichment.json")
 RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY = max(
@@ -2485,7 +2485,7 @@ def _fetch_rblxvalue_meta(force=False):
         and 0 <= now - last_attempt < RBLXVALUE_META_RETRY_SECONDS
     ):
         print("[rblxvalue-meta] Retry cooldown active; preserving last verified metadata")
-        return state if cached_meta_valid else None
+        return None
 
     # Persist the attempt before network I/O to prevent rapid repeated requests.
     attempt_state = dict(state)
@@ -2951,6 +2951,11 @@ def load_supreme_values():
                 f"[supreme] Could not verify source version before pagination ({type(exc).__name__}); "
                 "refusing an unverified catalogue refresh"
             ) from exc
+        if source_meta is None:
+            raise RuntimeError(
+                "[supreme] Source metadata is unavailable or in retry cooldown; "
+                "refusing to paginate without a verified source version."
+            )
     if cached_values is not None:
         print(f"[supreme] Cached snapshot expired (age {cached_age}s); conditionally refreshing API")
     cached_pages = cached_document.get("pages", {}) if isinstance(cached_document, dict) else {}
