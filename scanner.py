@@ -4695,6 +4695,9 @@ def evaluate_cash_listing_robase_only(listing, cash_catalog):
             if kind not in {"knife", "gun"} or kind != mapping.get("bloxswaps_type"):
                 missing.append(f"{name} (BloxSwaps weapon type mismatch)")
                 continue
+            if mapping.get("bloxswaps_tradable") is not True:
+                missing.append(f"{name} (BloxSwaps does not confirm this item is tradable)")
+                continue
             rarity = str(item.get("catalog_rarity") or "").strip().casefold()
             if rarity and rarity != mapping.get("bloxswaps_rarity"):
                 missing.append(f"{name} (BloxSwaps rarity mismatch)")
