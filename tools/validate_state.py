@@ -7,9 +7,9 @@ import math
 import os
 import sqlite3
 import stat
-from urllib.parse import urlsplit
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 REQUIRED_MARKET_TABLES = {
     "market_snapshots",
