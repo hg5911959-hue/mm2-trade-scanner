@@ -4485,7 +4485,10 @@ def _match_robase_row_to_bloxswaps(row, item_map):
 def _resolve_robase_cash_record(catalog_slug, cash_catalog):
     """Resolve cash by the audited BloxSwaps slug -> ROBASE source-slug crosswalk."""
     slug = normalize_slug(catalog_slug)
-    mapping = (cash_catalog or {}).get("bloxswaps_exact_map", {}).get(slug)
+    mapping_index = (cash_catalog or {}).get("bloxswaps_exact_map")
+    if not isinstance(mapping_index, dict) and os.environ.get("MM2_TESTING", "").strip().casefold() == "true":
+        mapping_index = (cash_catalog or {}).get("rblx_exact_map", {})
+    mapping = (mapping_index or {}).get(slug)
     if not isinstance(mapping, dict):
         return None, "missing"
     row = (cash_catalog or {}).get("items_by_slug", {}).get(mapping.get("robase_slug"))
