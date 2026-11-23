@@ -415,5 +415,35 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         self.assertTrue(any("weapon type mismatch" in reason for reason in missing))
 
 
+    def test_production_cash_evaluator_rejects_nontradable_item(self):
+        now = datetime.now(UTC).isoformat()
+        row = {
+            "name": "Laser", "cash_price_usd": 10.0, "price_low_usd": 10.0,
+            "price_high_usd": 10.0, "price_display": "$10.00",
+            "status": "verified", "verified_at_utc": now,
+            "source": "ROBASE completed sales", "robase_slug": "laser",
+        }
+        mapping = {"laser": {
+            "robase_slug": "laser", "robase_name": "Laser",
+            "bloxswaps_type": "knife", "bloxswaps_rarity": "godly",
+            "bloxswaps_chroma": False, "bloxswaps_tradable": False,
+        }}
+        item = {
+            "name": "Laser", "catalog_slug": "laser", "catalog_type": "knife",
+            "catalog_rarity": "godly", "catalog_chroma": False,
+            "quantity": 1, "quantity_min": 1, "quantity_max": 1,
+            "quantity_source": "structured",
+        }
+        listing = {
+            "id": "nontradable-item", "source": "bloxswaps",
+            "give_items": [item], "receive_items": [dict(item)],
+        }
+        result, missing = scanner.evaluate_cash_listing_robase_only(
+            listing, {"items_by_slug": {"laser": row}, "bloxswaps_exact_map": mapping}
+        )
+        self.assertIsNone(result)
+        self.assertTrue(any("does not confirm" in reason for reason in missing))
+
+
 if __name__ == "__main__":
     unittest.main()
