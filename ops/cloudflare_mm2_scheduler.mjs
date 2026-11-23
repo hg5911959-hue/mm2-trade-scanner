@@ -41,6 +41,17 @@ export async function dispatchIfStale(env, options = {}) {
     "X-GitHub-Api-Version": "2022-11-28",
     "User-Agent": "MM2-External-Scheduler",
   };
+  const workflowUrl = `${API_ROOT}/repos/${repository}/actions/workflows/${WORKFLOW_FILE}`;
+  const workflow = await githubJson(fetchImpl, workflowUrl, headers);
+  if (workflow?.state === "disabled_manually") {
+    return { action: "skip", reason: "manually_disabled" };
+  }
+  if (workflow?.state === "disabled_inactivity") {
+    await githubJson(fetchImpl, `${workflowUrl}/enable`, headers, { method: "PUT" });
+  } else if (workflow?.state !== "active") {
+    return { action: "skip", reason: "unknown_workflow_state" };
+  }
+
   const endpoint = `${API_ROOT}/repos/${repository}/actions/workflows/${WORKFLOW_FILE}/runs?branch=main&per_page=50`;
   const payload = await githubJson(fetchImpl, endpoint, headers);
   const runs = Array.isArray(payload?.workflow_runs) ? payload.workflow_runs : [];
