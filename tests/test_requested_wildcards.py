@@ -1,9 +1,8 @@
-import unittest
-
 import scanner
+from test_support import IsolatedDataTestCase
 
 
-class RequestedWildcardKindTests(unittest.TestCase):
+class RequestedWildcardKindTests(IsolatedDataTestCase):
     def test_addition_wildcards_are_classified(self):
         for value in ("add", "ajout", "ajouts"):
             with self.subTest(value=value):
@@ -24,7 +23,3 @@ class RequestedWildcardKindTests(unittest.TestCase):
 
     def test_unstructured_string_is_not_treated_as_wildcard_list(self):
         self.assertEqual(scanner.requested_wildcard_kind("offres"), "")
-
-
-if __name__ == "__main__":
-    unittest.main()
