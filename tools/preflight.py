@@ -172,8 +172,7 @@ def send_budget_warning(warning, *, data_dir="data", env=None, now=None):
                 return False
             result = json.loads(response.read(4096).decode("utf-8"))
             if not isinstance(result, dict) or result.get("ok") is not True:
-                state.pop(key, None)
-                _atomic_json(path, state)
+                clear_guard()
                 return False
         print(f"[preflight] RBLXValue API budget warning sent: {used}/{limit}")
         return True
