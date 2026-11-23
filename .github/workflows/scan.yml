@@ -24,6 +24,8 @@ on:
         required: false
       MM2_STATE_REPO_TOKEN:
         required: false
+      SUPREME_DATA_AUTHORIZED:
+        required: false
   workflow_dispatch:
     inputs:
       verify_rblxvalue_key:
@@ -140,6 +142,15 @@ jobs:
           CASH_MIN_VERIFIED_ROWS: "8"
           PREFLIGHT_SEND_NOTICES: ${{ inputs.dry_run && 'false' || 'true' }}
         run: python -m tools.preflight --warn
+
+      - name: Enforce Supreme Values data-rights authorization
+        env:
+          SUPREME_DATA_AUTHORIZED: ${{ secrets.SUPREME_DATA_AUTHORIZED }}
+        run: |
+          if [ "${SUPREME_DATA_AUTHORIZED,,}" != "true" ]; then
+            echo "::error::Supreme Values Terms require written authorization before using its value-list data in a bot. Set SUPREME_DATA_AUTHORIZED=true only after permission is obtained."
+            exit 1
+          fi
 
       - name: Run BloxSwaps scanner
         id: scan
