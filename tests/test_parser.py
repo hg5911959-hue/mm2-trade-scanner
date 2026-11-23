@@ -1040,13 +1040,13 @@ class ReliabilityTests(IsolatedDataTestCase):
         with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
             "scanner.TELEGRAM_OPENER.open", side_effect=fake_open
         ):
-            scanner.send_telegram("💵 CASH PROFIT: $4.25\\nRBLXValue: 210")
+            scanner.send_telegram("💵 CASH PROFIT: $4.25\nRBLXValue: 210")
 
         self.assertEqual(len(captured), 1)
         self.assertIn(scanner.ROBASE_ATTRIBUTION, captured[0])
         self.assertIn(scanner.RBLXVALUE_ATTRIBUTION, captured[0])
         self.assertTrue(captured[0].endswith(
-            scanner.ROBASE_ATTRIBUTION + "\\n" + scanner.RBLXVALUE_ATTRIBUTION
+            scanner.ROBASE_ATTRIBUTION + "\n" + scanner.RBLXVALUE_ATTRIBUTION
         ))
 
     def test_telegram_partial_multipart_delivery_is_quarantined(self):
