@@ -4041,11 +4041,13 @@ class CashFirstEvaluatorTests(IsolatedDataTestCase):
         self.values = {
             "chroma laser": {
                 "name": "Chroma Laser", "slug": "chroma-laser", "value_source_b": 100,
-                "stability": "Stable", "demand": 0, "category": "Godly", "type": "Knife",
+                "raw_source_value": 100, "secondary_value": 120, "rblxvalue_value": 110,
+                "stability": "Stable", "demand": 7, "rarity": 6, "category": "Godly", "type": "Knife",
             },
             "chroma gemstone": {
-                "name": "Chroma Gemstone", "slug": "chroma-gemstone", "value_source_b": None,
-                "stability": "Stable", "demand": 0, "category": "Godly", "type": "Knife",
+                "name": "Chroma Gemstone", "slug": "chroma-gemstone", "value_source_b": 220,
+                "raw_source_value": 220, "secondary_value": 200, "rblxvalue_value": 210,
+                "stability": "Stable", "demand": 8, "rarity": 4, "category": "Godly", "type": "Knife",
             },
             "chroma heat": {
                 "name": "Chroma Heat", "slug": "chroma-heat", "value_source_b": 2,
@@ -4112,8 +4114,26 @@ class CashFirstEvaluatorTests(IsolatedDataTestCase):
         self.assertTrue(scanner.qualifies_cash(result))
         self.assertEqual(result["cash_sell_haircut_pct"], 0.0)
         self.assertIn("$20.00 each", result["receive_lines"][0])
-        self.assertIn("RBLXValue: not listed", result["receive_lines"][0])
+        self.assertIn("RBLXValue: 210", result["receive_lines"][0])
+        self.assertIn("MM2Values: 200", result["receive_lines"][0])
+        self.assertIn("Supreme Values: 220", result["receive_lines"][0])
+        self.assertIn("Demand: 8/10", result["receive_lines"][0])
+        self.assertIn("Rarity: 4/10", result["receive_lines"][0])
+        self.assertIn("Stability: Stable", result["receive_lines"][0])
         self.assertNotIn("haircut", result["receive_lines"][0].casefold())
+
+    def test_legacy_cache_blended_value_uses_both_published_sources(self):
+        self.assertEqual(
+            scanner._rblxvalue_blended_value({
+                "raw_source_value": 220, "secondary_value": 200,
+            }),
+            210,
+        )
+
+    def test_missing_both_source_values_does_not_invent_a_blended_value(self):
+        self.assertIsNone(scanner._rblxvalue_blended_value({
+            "raw_source_value": None, "secondary_value": None,
+        }))
 
     def test_cash_price_fingerprint_changes_when_robase_price_changes(self):
         listing = self.listing
