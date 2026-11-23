@@ -246,6 +246,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("workflow_dispatch", readme)
         self.assertNotIn('{"event_type":"mm2-scan"}', readme)
         self.assertNotIn("repository-dispatch API", readme)
+        self.assertNotIn("repository_dispatch", readme)
 
     def test_ci_runs_external_scheduler_unit_tests(self):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
