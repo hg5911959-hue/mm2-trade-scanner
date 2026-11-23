@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from tools.preflight import collect_preflight_checks, send_daily_notice, main, check_telegram_connection
+from tools.preflight import collect_preflight_checks, send_daily_notice, send_budget_warning, main, check_telegram_connection
 
 
 class PreflightTests(IsolatedDataTestCase):
@@ -118,6 +118,76 @@ class PreflightTests(IsolatedDataTestCase):
         self.assertTrue(sent)
         state = json.loads((self.root / "maintenance_alerts.json").read_text(encoding="utf-8"))
         self.assertEqual(state["preflight-daily"], self.now.timestamp())
+
+    def test_rblxvalue_budget_warning_triggers_at_80_percent_of_rolling_limit(self):
+        budget = {
+            "schema_version": 1,
+            "window": "rolling_24_hours",
+            "limit": 60,
+            "request_timestamps_epoch": [self.now.timestamp() - 3600] * 48,
+        }
+        (self.root / "rblxvalue_request_budget.json").write_text(
+            json.dumps(budget), encoding="utf-8"
+        )
+        result = collect_preflight_checks(
+            self.root, env=self.env, now=self.now, state_checker=lambda: True
+        )
+        self.assertEqual(
+            result["rblxvalue_budget_warning"],
+            {"used": 48, "limit": 60, "threshold": 48},
+        )
+
+    def test_rblxvalue_budget_warning_does_not_trigger_below_80_percent(self):
+        budget = {
+            "limit": 60,
+            "request_timestamps_epoch": [self.now.timestamp() - 3600] * 47,
+        }
+        (self.root / "rblxvalue_request_budget.json").write_text(
+            json.dumps(budget), encoding="utf-8"
+        )
+        result = collect_preflight_checks(
+            self.root, env=self.env, now=self.now, state_checker=lambda: True
+        )
+        self.assertIsNone(result["rblxvalue_budget_warning"])
+
+    def test_rblxvalue_budget_notice_is_sent_once_per_cooldown(self):
+        class Response:
+            status = 200
+            def read(self, limit):
+                return b'{"ok":true}'
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+
+        warning = {"used": 48, "limit": 60, "threshold": 48}
+        env = {"TELEGRAM_BOT_TOKEN": "placeholder", "TELEGRAM_CHAT_ID": "123"}
+        with patch("tools.preflight.TELEGRAM_OPENER.open", return_value=Response()) as opener:
+            self.assertTrue(send_budget_warning(warning, data_dir=self.root, env=env, now=self.now))
+            self.assertFalse(send_budget_warning(warning, data_dir=self.root, env=env, now=self.now))
+        self.assertEqual(opener.call_count, 1)
+        state = json.loads((self.root / "maintenance_alerts.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["rblxvalue-budget-80pct"], self.now.timestamp())
+
+    def test_main_dispatches_budget_warning_and_dry_run_suppresses_it(self):
+        warning = {"used": 48, "limit": 60, "threshold": 48}
+        result = {"checks": [], "rblxvalue_budget_warning": warning}
+        with (
+            patch("tools.preflight.collect_preflight_checks", return_value=result),
+            patch.dict(os.environ, {"PREFLIGHT_SEND_NOTICES": "true"}),
+            patch("tools.preflight.send_budget_warning") as send_warning,
+        ):
+            self.assertEqual(main(["--warn"]), 0)
+        send_warning.assert_called_once_with(warning)
+
+        with (
+            patch("tools.preflight.collect_preflight_checks", return_value=result),
+            patch.dict(os.environ, {"PREFLIGHT_SEND_NOTICES": "false"}),
+            patch("tools.preflight.send_budget_warning") as send_warning,
+        ):
+            self.assertEqual(main(["--warn"]), 0)
+        send_warning.assert_not_called()
+
 
     def test_preflight_telegram_redirect_handler_rejects_redirects(self):
         from tools.telegram_transport import RejectTelegramRedirects
