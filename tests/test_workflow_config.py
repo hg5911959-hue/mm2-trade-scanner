@@ -240,6 +240,11 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("run: python -m tools.weekly_report", weekly)
         self.assertNotIn("run: python tools/weekly_report.py", weekly)
 
+    def test_ci_runs_external_scheduler_unit_tests(self):
+        workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
+        self.assertIn("node --check ops/cloudflare_mm2_scheduler.mjs", workflow)
+        self.assertIn("node --test tests/test_cloudflare_scheduler.mjs", workflow)
+
     def test_ci_checks_private_state_migration_shell_syntax(self):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
         self.assertIn("bash -n tools/configure_state_remote.sh", workflow)
