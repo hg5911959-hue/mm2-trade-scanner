@@ -5931,10 +5931,16 @@ def scan_once(include_backlog_rechecks=True):
         watch_id = str(listing.get("source_ad_id") or "")
         previous_watch = watch_state.get(watch_id, {})
         content_hash, values_hash = listing_watch_fingerprints(listing, values, aliases, cash_catalog)
+        legacy_cash_watch = CASH_FILTER and not testing_mode and (
+            not previous_watch or previous_watch.get("cash_source_version") != 2
+        )
         fingerprint_changed = bool(previous_watch) and (
             previous_watch.get("content_hash") != content_hash
             or previous_watch.get("values_hash") != values_hash
         )
+        if trade_id in alerted_set and legacy_cash_watch:
+            # Evaluate each old alert once so its saved cash-profit history can decide whether it improved.
+            fingerprint_changed = True
         if trade_id in alerted_set and not fingerprint_changed:
             if not previous_watch:
                 update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
