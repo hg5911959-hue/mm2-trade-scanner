@@ -2405,6 +2405,9 @@ def _enrich_catalog_metadata_gaps(values, cache_document, source_meta=None, pers
                     low, high = _parse_numeric_value_range(detail.get("range"), numeric_value)
                     variant["value_min"], variant["value_max"] = low, high
                     variant["value_status"] = value_status
+            published_rblxvalue = _positive_numeric_value(detail.get("value"))
+            if published_rblxvalue is not None:
+                variant["rblxvalue_value"] = published_rblxvalue
             if variant.get("secondary_value") is None and detail.get("value_source_a") is not None:
                 try:
                     secondary = float(detail["value_source_a"])
@@ -2485,6 +2488,32 @@ def _fetch_rblxvalue_meta(force=False):
     }
     atomic_write_text(RBLXVALUE_META_FILE, json.dumps(updated, ensure_ascii=False, indent=2) + "\n")
     return updated
+
+
+def _positive_numeric_value(value):
+    """Return a finite positive numeric source value, or None when it is not listed."""
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return parsed if math.isfinite(parsed) and parsed > 0 else None
+
+
+def _rblxvalue_blended_value(item):
+    """Read the published RBLXValue estimate, deriving only from its documented sources for old caches."""
+    if not isinstance(item, dict):
+        return None
+    direct = _positive_numeric_value(item.get("rblxvalue_value"))
+    if direct is not None:
+        return direct
+    source_a = _positive_numeric_value(item.get("secondary_value"))
+    source_b = _positive_numeric_value(item.get("raw_source_value"))
+    if source_a is not None and source_b is not None:
+        # RBLXValue's published estimate is the rounded mean when both lists contain the item.
+        return float(math.floor((source_a + source_b) / 2.0 + 0.5))
+    return source_a if source_a is not None else source_b
 
 
 def _supreme_numeric_value(item):
@@ -2954,6 +2983,7 @@ def load_supreme_values():
                 candidate = {
                     "id": str(item.get("id") or ""), "slug": str(item.get("slug") or ""),
                     "name": name, "value": value, "value_min": value_min, "value_max": value_max,
+                    "rblxvalue_value": _positive_numeric_value(item.get("value")),
                     "raw_source_value": item.get("value_source_b"), "value_status": value_status,
                     "secondary_value": secondary, "category": category, "type": item_type,
                     # The API does not document stability as source-specific. Preserve the
@@ -4383,6 +4413,9 @@ def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
             "rblx_match_source": source,
             "value": _supreme_numeric_value(selected)[0],
             "value_status": _supreme_numeric_value(selected)[1],
+            "rblxvalue_value": _rblxvalue_blended_value(selected),
+            "mm2values_value": _positive_numeric_value(selected.get("secondary_value")),
+            "supreme_value": _positive_numeric_value(selected.get("raw_source_value")),
             "stability": _normalize_stability(selected.get("stability")),
             "demand": _optional_bounded_int(selected.get("demand"), 0, 10),
             "category": selected.get("category"),
@@ -4579,9 +4612,12 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
                 "quantity_min": qmin,
                 "quantity_max": qmax,
                 "stability": stability or "N/A",
-                "rblx_value": value,
+                "rblx_value": _rblxvalue_blended_value(selected),
+                "mm2values_value": _positive_numeric_value(selected.get("secondary_value")),
+                "supreme_value": _positive_numeric_value(selected.get("raw_source_value")),
                 "rblx_value_status": value_status,
                 "rblx_demand": _optional_bounded_int(selected.get("demand"), 0, 10),
+                "rblx_rarity": _optional_bounded_int(selected.get("rarity"), 0, 10),
                 "rblx_category": category,
                 "rblx_type": item_type,
                 "rblx_slug": normalize_slug(selected.get("slug") or ""),
@@ -4616,10 +4652,22 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
                 f"RBLXValue: {format_number(item['rblx_value'])}"
                 if item["rblx_value"] is not None else "RBLXValue: not listed"
             ]
+            details.append(
+                f"MM2Values: {format_number(item['mm2values_value'])}"
+                if item.get("mm2values_value") is not None else "MM2Values: not listed"
+            )
+            details.append(
+                f"Supreme Values: {format_number(item['supreme_value'])}"
+                if item.get("supreme_value") is not None else "Supreme Values: not listed"
+            )
             details.append(f"Stability: {item['stability']}")
             details.append(
                 f"Demand: {item['rblx_demand']}/10"
                 if item.get("rblx_demand") is not None else "Demand: not listed"
+            )
+            details.append(
+                f"Rarity: {item['rblx_rarity']}/10"
+                if item.get("rblx_rarity") is not None else "Rarity: not listed"
             )
             enriched.append(line + " | " + " · ".join(details))
         return enriched
@@ -5634,13 +5682,13 @@ def scan_once(include_backlog_rechecks=True):
     if os.getenv("MM2_TELEGRAM_SCAN_SUMMARY", "").strip().casefold() in {"1", "true", "yes", "on"}:
         send_maintenance_alert(
             "scan-results-summary",
-            "📊 MM2 SCAN RESULTS\\n"
-            f"Candidates: {stats.get('candidate_count', 0)}\\n"
-            f"Excluded Ajouts: {stats.get('addition_count', 0)}\\n"
-            f"Excluded Offres: {stats.get('offers_excluded_count', 0)}\\n"
-            f"Eligible listings: {len(listings)}\\n"
-            f"Evaluated: {evaluated} · Qualified: {len(opportunities)}\\n"
-            f"Alerts sent: {sent} · Digest sent: {digest_sent} · Digest pending: {digest_not_sent}\\n"
+            "📊 MM2 SCAN RESULTS\n"
+            f"Candidates: {stats.get('candidate_count', 0)}\n"
+            f"Excluded Ajouts: {stats.get('addition_count', 0)}\n"
+            f"Excluded Offres: {stats.get('offers_excluded_count', 0)}\n"
+            f"Eligible listings: {len(listings)}\n"
+            f"Evaluated: {evaluated} · Qualified: {len(opportunities)}\n"
+            f"Alerts sent: {sent} · Digest sent: {digest_sent} · Digest pending: {digest_not_sent}\n"
             f"RBLXValue API requests this run: {rblxvalue_guard.requests_this_run()}",
             cooldown_seconds=1800,
         )
