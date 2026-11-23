@@ -4312,16 +4312,15 @@ class CashFirstEvaluatorTests(IsolatedDataTestCase):
 
     def test_profit_threshold_is_two_dollars_not_less(self):
         catalog = {**self.catalog, "items": dict(self.catalog["items"]), "items_by_slug": {k: dict(v) for k, v in self.catalog["items_by_slug"].items()}}
-        catalog["items_by_slug"]["chroma-gemstone"] = dict(catalog["items_by_slug"]["chroma-gemstone"], cash_price_usd=11.0, price_low_usd=11.0, price_high_usd=11.0, price_display="$11.00")
+        catalog["items_by_slug"]["chroma-gemstone"] = dict(catalog["items_by_slug"]["chroma-gemstone"], cash_price_usd=12.0, price_low_usd=12.0, price_high_usd=12.0, price_display="$12.00")
         result, missing = scanner.evaluate_cash_listing(self.listing, self.values, {}, catalog)
         self.assertEqual(missing, [])
-        self.assertEqual(result["cash_profit_worst"], 1.0)
-        self.assertFalse(scanner.qualifies_cash(result))
+        self.assertEqual(result["cash_profit_worst"], 2.0)
+        self.assertTrue(scanner.qualifies_cash(result))
         catalog["items_by_slug"]["chroma-gemstone"] = dict(catalog["items_by_slug"]["chroma-gemstone"], cash_price_usd=11.99, price_low_usd=11.99, price_high_usd=11.99, price_display="$11.99")
         result, missing = scanner.evaluate_cash_listing(self.listing, self.values, {}, catalog)
         self.assertEqual(missing, [])
         self.assertEqual(result["cash_profit_worst"], 1.99)
-        self.assertFalse(scanner.qualifies_cash(result))
         self.assertFalse(scanner.qualifies_cash(result))
 
 
