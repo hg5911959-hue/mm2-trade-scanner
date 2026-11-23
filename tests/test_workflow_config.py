@@ -53,7 +53,8 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn('      CASH_FILTER: "false" # weekly report is separate from the cash-first production scanner\n', weekly)
         self.assertIn("env.CASH_FILTER == '1' || env.CASH_FILTER == 'true'", workflow)
         self.assertNotIn("env.CASH_FILTER", weekly)
-        self.assertNotIn('          RBLXVALUE_META_POLL_ENABLED: "true"\n', workflow)
+        self.assertIn('          RBLXVALUE_META_POLL_ENABLED: "true"\n', workflow)
+        self.assertIn('          VALUES_TTL_SECONDS: "43200"\n', workflow)
         self.assertIn('          RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY: "6"\n', workflow)
         self.assertIn('          MM2_SCAN_DURATION_SECONDS: "540"\n', workflow)
         self.assertIn('          MM2_SCAN_INTERVAL_SECONDS: "30"\n', workflow)
@@ -184,7 +185,9 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
                     prefix = text[:match.start()]
                     job_match = list(re.finditer(r"(?m)^  ([a-zA-Z0-9_-]+):\s*$", prefix))
                     job_name = job_match[-1].group(1) if job_match else ""
-                    self.assertEqual((path.name, job_name), ("watchdog-scheduler.yml", "enable-schedules"))
+                    allowed_jobs = {"enable-schedules", "recover-stale-scan"}
+                    self.assertEqual(path.name, "watchdog-scheduler.yml")
+                    self.assertIn(job_name, allowed_jobs)
 
     def test_dashboard_skips_deploy_when_pages_is_not_enabled(self):
         workflow = (ROOT / ".github/workflows/dashboard-pages.yml").read_text(encoding="utf-8")
