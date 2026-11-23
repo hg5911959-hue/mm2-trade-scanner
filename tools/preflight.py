@@ -156,9 +156,9 @@ def send_budget_warning(warning, *, data_dir="data", env=None, now=None):
             print("[preflight] Could not clear rejected budget-notice cooldown: " + type(exc).__name__)
 
     message = (
-        "MM2 RBLXVALUE API BUDGET WARNING\\n"
+        "MM2 RBLXVALUE API BUDGET WARNING\n"
         f"Rolling 24-hour usage reached {used}/{limit} requests "
-        f"(80% warning threshold: {threshold}/{limit}).\\n"
+        f"(80% warning threshold: {threshold}/{limit}).\n"
         "The scanner still enforces the hard request limit; this notice itself uses no RBLXValue request."
     )
     body = urllib.parse.urlencode({"chat_id": chat, "text": message}).encode()
