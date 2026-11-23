@@ -5702,7 +5702,7 @@ def scan_once(include_backlog_rechecks=True):
         if send:
             if listing.get("valuation_mode") == "cash":
                 print(
-                    f"[telegram] Sending ranked cash trade id={trade_id}; "
+                    f"[telegram] Sending immediate cash trade id={trade_id}; "
                     f"cash_profit_usd={op['cash_profit_worst']:g}"
                 )
             else:
