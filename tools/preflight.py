@@ -124,8 +124,12 @@ def send_budget_warning(warning, *, data_dir="data", env=None, now=None):
     current = now or datetime.now(UTC)
     key = "rblxvalue-budget-80pct"
     path = Path(data_dir) / MAINTENANCE_FILE.name
-    state = _read_json(path)
-    if not isinstance(state, dict):
+    if path.exists():
+        state = _read_json(path)
+        if not isinstance(state, dict):
+            print("[preflight] Maintenance cooldown state is unreadable; refusing budget notice.")
+            return False
+    else:
         state = {}
     try:
         last_sent = float(state.get(key, 0) or 0)
@@ -138,7 +142,19 @@ def send_budget_warning(warning, *, data_dir="data", env=None, now=None):
     limit = int(warning["limit"])
     threshold = int(warning["threshold"])
     state[key] = current.timestamp()
-    _atomic_json(path, state)
+    try:
+        _atomic_json(path, state)
+    except OSError as exc:
+        print("[preflight] Could not persist budget-notice cooldown: " + type(exc).__name__)
+        return False
+
+    def clear_guard():
+        state.pop(key, None)
+        try:
+            _atomic_json(path, state)
+        except OSError as exc:
+            print("[preflight] Could not clear rejected budget-notice cooldown: " + type(exc).__name__)
+
     message = (
         "MM2 RBLXVALUE API BUDGET WARNING\\n"
         f"Rolling 24-hour usage reached {used}/{limit} requests "
@@ -152,8 +168,7 @@ def send_budget_warning(warning, *, data_dir="data", env=None, now=None):
     try:
         with TELEGRAM_OPENER.open(request, timeout=15) as response:
             if response.status != 200:
-                state.pop(key, None)
-                _atomic_json(path, state)
+                clear_guard()
                 return False
             result = json.loads(response.read(4096).decode("utf-8"))
             if not isinstance(result, dict) or result.get("ok") is not True:
@@ -165,8 +180,7 @@ def send_budget_warning(warning, *, data_dir="data", env=None, now=None):
     except urllib.error.HTTPError as exc:
         # A definite client rejection can be retried next scan; 429/5xx remain throttled.
         if 400 <= exc.code < 500 and exc.code != 429:
-            state.pop(key, None)
-            _atomic_json(path, state)
+            clear_guard()
         print("[preflight] RBLXValue budget notice failed: HTTP " + str(exc.code))
         return False
     except (OSError, TimeoutError, ValueError) as exc:
