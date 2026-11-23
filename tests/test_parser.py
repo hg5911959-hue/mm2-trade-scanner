@@ -3495,6 +3495,20 @@ class WatchWindowRegressionTests(IsolatedDataTestCase):
                 self.assertEqual(scanner.load_watch_state(), {})
 
 
+
+    def test_cash_source_migration_does_not_replay_unchanged_alerts(self):
+        legacy = {"content_hash": "same", "values_hash": "old-supreme-hash"}
+        self.assertFalse(scanner.watch_variant_changed(
+            legacy, "same", "new-robase-only-hash", cash_filter=True
+        ))
+        self.assertTrue(scanner.watch_variant_changed(
+            legacy, "edited-content", "new-robase-only-hash", cash_filter=True
+        ))
+        migrated = dict(legacy, cash_source_version=2)
+        self.assertTrue(scanner.watch_variant_changed(
+            migrated, "same", "changed-robase-price", cash_filter=True
+        ))
+
 class CatalogueRefreshRegressionTests(IsolatedDataTestCase):
     def test_unknown_item_catalogue_refresh_bypasses_hour_ttl_once(self):
         with tempfile.TemporaryDirectory() as directory:
