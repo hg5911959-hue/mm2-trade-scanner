@@ -4716,29 +4716,20 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
         return None, missing
 
     def add_rblx_details(lines, items):
+        """Keep Telegram valuation concise: Supreme is the sole displayed game value.
+
+        RBLXValue remains the authenticated transport for Supreme data and Stability,
+        but its blended estimate and MM2Values are intentionally not shown as
+        separate competing valuations.
+        """
         enriched = []
         for line, item in zip(lines, items):
+            supreme_value = item.get("supreme_value")
             details = [
-                f"RBLXValue: {format_number(item['rblx_value'])}"
-                if item["rblx_value"] is not None else "RBLXValue: not listed"
+                f"Supreme: {format_number(supreme_value)}"
+                if supreme_value is not None else "Supreme: N/A"
             ]
-            details.append(
-                f"MM2Values: {format_number(item['mm2values_value'])}"
-                if item.get("mm2values_value") is not None else "MM2Values: not listed"
-            )
-            details.append(
-                f"Supreme Values: {format_number(item['supreme_value'])}"
-                if item.get("supreme_value") is not None else "Supreme Values: not listed"
-            )
             details.append(f"Stability: {item['stability']}")
-            details.append(
-                f"Demand: {item['rblx_demand']}/10"
-                if item.get("rblx_demand") is not None else "Demand: not listed"
-            )
-            details.append(
-                f"Rarity: {item['rblx_rarity']}/10"
-                if item.get("rblx_rarity") is not None else "Rarity: not listed"
-            )
             enriched.append(line + " | " + " · ".join(details))
         return enriched
 
