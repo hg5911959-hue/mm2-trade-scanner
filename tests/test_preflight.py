@@ -89,8 +89,8 @@ class PreflightTests(IsolatedDataTestCase):
             checks = check_telegram_connection(env=self.env)
         self.assertEqual(checks, ["Telegram Bot API rejected the bot token"])
         self.assertEqual(opener.call_count, 1)
-        self.assertIn("\\n", captured["text"])
-        self.assertNotIn(r"\\n", captured["text"])
+        self.assertIn("\n", captured["text"])
+        self.assertNotIn(r"\n", captured["text"])
 
     def test_daily_notice_failure_is_not_recorded_and_can_retry(self):
         with patch("tools.preflight.TELEGRAM_OPENER.open", side_effect=OSError("network down")):
