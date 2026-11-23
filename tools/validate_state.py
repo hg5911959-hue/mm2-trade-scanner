@@ -9,6 +9,7 @@ import sqlite3
 import stat
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 REQUIRED_MARKET_TABLES = {
     "market_snapshots",
@@ -226,6 +227,42 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
                     or (reason is not None and (not isinstance(reason, str) or reason not in VALID_PENDING_REASONS))
                 ):
                     errors.append("pending recheck schedule counter, timestamp, or reason is invalid")
+                    break
+
+    uncertain_context = documents.get("telegram_uncertain_context.json")
+    uncertain_context_path = root / "telegram_uncertain_context.json"
+    if uncertain_context_path.exists():
+        if (
+            not isinstance(uncertain_context, dict)
+            or type(uncertain_context.get("version")) is not int
+            or uncertain_context.get("version") != 1
+            or not isinstance(uncertain_context.get("details"), dict)
+            or len(uncertain_context.get("details", {})) > 500
+        ):
+            errors.append("Telegram uncertain-delivery context root, version, or size is invalid")
+        else:
+            allowed_hosts = {"bloxswaps.com", "www.bloxswaps.com", "discord.com", "www.discord.com"}
+            for trade_id, entry in uncertain_context["details"].items():
+                if not isinstance(trade_id, str) or not trade_id or not isinstance(entry, dict):
+                    errors.append("Telegram uncertain-delivery context entry is invalid")
+                    break
+                fields = ("source_ad_id", "listing_url", "owner_url", "source", "delivery_path", "attempted_at_utc")
+                if any(not isinstance(entry.get(field, ""), str) for field in fields):
+                    errors.append("Telegram uncertain-delivery context fields are invalid")
+                    break
+                if entry.get("delivery_path") not in {"individual", "digest", "recovered"}:
+                    errors.append("Telegram uncertain-delivery context delivery path is invalid")
+                    break
+                unsafe_link = False
+                for field in ("listing_url", "owner_url"):
+                    value = entry.get(field, "")
+                    if value:
+                        parsed = urlsplit(value)
+                        if parsed.scheme != "https" or (parsed.hostname or "").casefold() not in allowed_hosts:
+                            unsafe_link = True
+                            break
+                if unsafe_link:
+                    errors.append("Telegram uncertain-delivery context contains an unsafe link")
                     break
 
     budget = documents.get("rblxvalue_request_budget.json")
