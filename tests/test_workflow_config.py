@@ -240,6 +240,13 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("run: python -m tools.weekly_report", weekly)
         self.assertNotIn("run: python tools/weekly_report.py", weekly)
 
+    def test_readme_does_not_recommend_unsupported_repository_dispatch(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("docs/EXTERNAL_SCHEDULER.md", readme)
+        self.assertIn("workflow_dispatch", readme)
+        self.assertNotIn('{"event_type":"mm2-scan"}', readme)
+        self.assertNotIn("repository-dispatch API", readme)
+
     def test_ci_runs_external_scheduler_unit_tests(self):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
         self.assertIn("node --check ops/cloudflare_mm2_scheduler.mjs", workflow)
