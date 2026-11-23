@@ -3861,6 +3861,27 @@ def send_maintenance_alert(key, message, cooldown_seconds=3600):
         return False
 
 
+def unmatched_names_from_missing(missing, cash_mode=False):
+    """Keep true identity gaps for review; suppress expected out-of-ROBASE items in cash mode."""
+    names = []
+    ignored_cash_reasons = (
+        "no exact robase/rblxvalue weapon mapping",
+        "(not a robase weapon)",
+        "(bloxswaps catalogue slug missing)",
+    )
+    for value in missing or []:
+        text = str(value or "")
+        lowered = text.casefold()
+        if not text or lowered.startswith("one side has"):
+            continue
+        if lowered in {"quantity unknown", "quantity uncertain"} or "stability" in lowered:
+            continue
+        if cash_mode and any(reason in lowered for reason in ignored_cash_reasons):
+            continue
+        names.append(text.split(" (", 1)[0])
+    return names
+
+
 def record_unmatched_names(names):
     state = _load_json_state(UNMATCHED_FILE, {}, "unmatched-name state")
     if not isinstance(state, dict):
@@ -5059,13 +5080,30 @@ def scan_once(include_backlog_rechecks=True):
     listings, stats, discovered_ids = fetch_bloxswaps_all(
         seen_ads, due_pending_ids.keys(), bloxswaps_watch_ids
     )
+    mapping_audit = None
     if CASH_FILTER:
         try:
-            audit_robase_rblxvalue_mapping(
+            mapping_audit = audit_robase_rblxvalue_mapping(
                 values, aliases, cash_catalog, fetch_bloxswaps_items_map()
             )
+            mapping_gaps = mapping_audit.get("missing", []) + mapping_audit.get("ambiguous", [])
+            if mapping_gaps:
+                send_maintenance_alert(
+                    "robase-rblxvalue-mapping-gaps",
+                    "ROBASE/RBLXValue weapon crosswalk has unresolved identities: "
+                    + "; ".join(str(value) for value in mapping_gaps[:20])
+                    + f"\\nUnresolved: {len(mapping_gaps)} of {mapping_audit.get('expected', 0)} weapons. "
+                    "Affected listings are excluded; no names or values are guessed.",
+                    cooldown_seconds=6 * 60 * 60,
+                )
         except Exception as audit_error:
             print(f"[robase-rblxvalue] coverage audit unavailable: {type(audit_error).__name__}")
+            send_maintenance_alert(
+                "robase-rblxvalue-audit-unavailable",
+                "ROBASE/RBLXValue identity audit could not complete: "
+                f"{type(audit_error).__name__}. Cash opportunities remain fail-closed.",
+                cooldown_seconds=6 * 60 * 60,
+            )
     pending_schedule = record_pending_recheck_attempts(
         due_pending_ids, pending_ids, pending_schedule
     )
@@ -5612,14 +5650,7 @@ def scan_once(include_backlog_rechecks=True):
                 f"[skip-unknown] Listing rejected without offer-level deferral; missing/unvalued items: "
                 f"{', '.join(missing)}"
             )
-            unknown_names = [
-                str(value).split(" (", 1)[0]
-                for value in missing
-                if value
-                and not str(value).startswith("one side has")
-                and str(value).casefold() not in {"quantity unknown", "quantity uncertain"}
-                and "stability" not in str(value).casefold()
-            ]
+            unknown_names = unmatched_names_from_missing(missing, cash_mode=CASH_FILTER)
             if unknown_names:
                 record_unmatched_names(unknown_names)
             update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
@@ -5689,7 +5720,12 @@ def scan_once(include_backlog_rechecks=True):
             f"Eligible listings: {len(listings)}\n"
             f"Evaluated: {evaluated} · Qualified: {len(opportunities)}\n"
             f"Alerts sent: {sent} · Digest sent: {digest_sent} · Digest pending: {digest_not_sent}\n"
-            f"RBLXValue API requests this run: {rblxvalue_guard.requests_this_run()}",
+            f"RBLXValue API requests this run: {rblxvalue_guard.requests_this_run()}\\n"
+            + (
+                f"ROBASE weapons mapped: {max(0, mapping_audit.get('expected', 0) - len(mapping_audit.get('missing', [])) - len(mapping_audit.get('ambiguous', [])))}/"
+                f"{mapping_audit.get('expected', 0)} · non-weapons excluded: {len(mapping_audit.get('non_weapons', []))}"
+                if isinstance(mapping_audit, dict) else "ROBASE mapping audit: unavailable"
+            ),
             cooldown_seconds=1800,
         )
     record_success_if_complete(stats)
