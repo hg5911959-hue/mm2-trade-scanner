@@ -3726,7 +3726,7 @@ class WorkflowSecurityTests(IsolatedDataTestCase):
         self.assertIn("[state-persist-audit] absent=", state_job)
         self.assertIn("data/rblxvalue_key_health.json", state_job)
         self.assertIn("data/market_history.sqlite3", state_job)
-        self.assertIn('RBLXVALUE_DAILY_REQUEST_LIMIT: "60"', scan_job)
+        self.assertNotIn("RBLXVALUE_DAILY_REQUEST_LIMIT", scan_job)
         self.assertIn("No scanner data files found", state_job)
         self.assertIn('MM2_SCAN_INTERVAL_SECONDS: "30"', scan_job)
         self.assertIn('MAX_ALERTS_PER_RUN: "0"', scan_job)
