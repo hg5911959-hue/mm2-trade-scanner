@@ -67,5 +67,34 @@ class RobaseBloxswapsIdentityTests(IsolatedDataTestCase):
         self.assertEqual(result["bloxswaps_exact_map"], {})
         self.assertTrue(result["ambiguous"])
 
+    def test_2026_catseye_uses_type_hint_to_choose_knife_not_gun(self):
+        row = self.row(name="Catseye", slug="catseye-1144", category="rare")
+        row["og_image_slug"] = "catseye-k-2026"
+        gun = self.item(name="Catseye", slug="catseye", rarity="rare", kind="gun")
+        knife = self.item(name="Catseye", slug="catseye-k-2026", rarity="rare", kind="knife")
+        knife["year"] = 2026
+        matched, source = match_robase_row(row, {"gun": gun, "knife": knife})
+        self.assertEqual(matched, knife)
+        self.assertEqual(source, "robase_image_slug")
+
+    def test_image_slug_exact_match_does_not_override_conflicting_type_hint(self):
+        row = self.row(name="Laser", slug="laser-1148", category="rare")
+        row["og_image_slug"] = "laser-k-2026"
+        gun = self.item(name="Laser", slug="laser-k-2026", rarity="rare", kind="gun")
+        gun["year"] = 2026
+        matched, source = match_robase_row(row, {"gun": gun})
+        self.assertIsNone(matched)
+        self.assertEqual(source, "missing")
+
+    def test_name_only_match_rejects_ambiguous_same_rarity_variants(self):
+        row = self.row(name="Predator", slug="predator-page", category="legendary")
+        items = {
+            "gun": self.item(name="Predator", slug="predator", rarity="legendary", kind="gun"),
+            "knife": self.item(name="Predator", slug="predatorknife", rarity="legendary", kind="knife"),
+        }
+        matched, source = match_robase_row(row, items)
+        self.assertIsNone(matched)
+        self.assertEqual(source, "ambiguous")
+
 if __name__ == "__main__":
     unittest.main()
