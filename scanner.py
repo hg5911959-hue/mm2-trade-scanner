@@ -100,8 +100,8 @@ MAX_FEED_PAGES = max(1, min(1000, int(os.environ.get("MAX_FEED_PAGES", "1000")))
 VALUES_REVALIDATION_INTERVAL_SECONDS = 24 * 60 * 60
 _CASH_FILTER_REQUESTED = os.environ.get("CASH_FILTER", "false").strip().casefold() in {"1", "true", "yes", "on"}
 _DEFAULT_VALUES_TTL_SECONDS = 24 * 60 * 60 if _CASH_FILTER_REQUESTED else 12 * 60 * 60
-RBLXVALUE_META_POLL_INTERVAL_SECONDS = 60 * 60
-RBLXVALUE_META_RETRY_SECONDS = 60 * 60
+RBLXVALUE_META_POLL_INTERVAL_SECONDS = 2 * 60 * 60
+RBLXVALUE_META_RETRY_SECONDS = 2 * 60 * 60
 RBLXVALUE_META_FILE = Path("data/rblxvalue_meta.json")
 RBLXVALUE_DETAIL_FILE = Path("data/rblxvalue_detail_enrichment.json")
 RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY = max(
@@ -2480,10 +2480,14 @@ def _fetch_rblxvalue_meta(force=False):
         last_attempt = float(state.get("last_attempt_at_epoch", 0))
     except (TypeError, ValueError):
         last_attempt = 0
-    if (
-        not force and last_attempt > 0
+    # A forced post-pagination check may bypass a recent successful poll,
+    # but never a failed/incomplete attempt. Otherwise a 30-second scan loop
+    # could defeat the retry cooldown by repeatedly forcing the same endpoint.
+    failed_attempt_is_recent = (
+        last_attempt > checked_at and last_attempt > 0
         and 0 <= now - last_attempt < RBLXVALUE_META_RETRY_SECONDS
-    ):
+    )
+    if failed_attempt_is_recent:
         print("[rblxvalue-meta] Retry cooldown active; preserving last verified metadata")
         return None
 
