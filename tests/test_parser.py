@@ -1045,9 +1045,7 @@ class ReliabilityTests(IsolatedDataTestCase):
         self.assertEqual(len(captured), 1)
         self.assertIn(scanner.ROBASE_ATTRIBUTION, captured[0])
         self.assertNotIn(scanner.RBLXVALUE_ATTRIBUTION, captured[0])
-        self.assertTrue(captured[0].endswith(
-            scanner.ROBASE_ATTRIBUTION + "\n" + scanner.RBLXVALUE_ATTRIBUTION
-        ))
+        self.assertTrue(captured[0].endswith(scanner.ROBASE_ATTRIBUTION))
 
     def test_telegram_partial_multipart_delivery_is_quarantined(self):
         from io import BytesIO
