@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 import subprocess
 import tempfile
@@ -16,7 +15,6 @@ from tools.cash_market import load_robase_price_catalog
 from tools.telegram_transport import TELEGRAM_OPENER
 
 MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
-SUPREME_FILE = Path("data/supreme_values.json")
 BREAKER_FILE = Path("data/api_key_blocked.json")
 
 
@@ -109,13 +107,6 @@ def collect_preflight_checks(data_dir="data", *, env=None, now=None,
             checks.append("RBLXValue API key is blocked")
     elif (root / BREAKER_FILE.name).exists():
         checks.append("RBLXValue breaker state is unreadable")
-
-    supreme = _read_json(root / SUPREME_FILE.name)
-    fetched_at = supreme.get("fetched_at") if isinstance(supreme, dict) else None
-    if (isinstance(fetched_at, bool) or not isinstance(fetched_at, (int, float))
-            or not math.isfinite(fetched_at) or current.timestamp() - fetched_at > 86400
-            or fetched_at > current.timestamp()):
-        checks.append("Supreme cache is missing, invalid, or older than 24 hours")
 
     if not environment.get("TELEGRAM_BOT_TOKEN") or not environment.get("TELEGRAM_CHAT_ID"):
         checks.append("Telegram credentials are missing")
