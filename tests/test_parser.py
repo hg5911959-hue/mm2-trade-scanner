@@ -3737,7 +3737,8 @@ class WorkflowSecurityTests(IsolatedDataTestCase):
         job_defaults = scan_job.split("    steps:", 1)[0]
         self.assertNotIn("MM2_SCAN_DURATION_SECONDS", job_defaults)
         self.assertNotIn("MM2_SCAN_INTERVAL_SECONDS", job_defaults)
-        self.assertIn("contents: write", prepare_job)
+        self.assertIn("contents: read", prepare_job)
+        self.assertNotIn("contents: write", prepare_job)
         self.assertIn("Migrate or verify private durable state repository", prepare_job)
         self.assertIn("contents: read", scan_job)
         self.assertNotIn("contents: write", scan_job)
