@@ -100,7 +100,7 @@ MAX_FEED_PAGES = max(1, min(1000, int(os.environ.get("MAX_FEED_PAGES", "1000")))
 VALUES_REVALIDATION_INTERVAL_SECONDS = 24 * 60 * 60
 _CASH_FILTER_REQUESTED = os.environ.get("CASH_FILTER", "false").strip().casefold() in {"1", "true", "yes", "on"}
 _DEFAULT_VALUES_TTL_SECONDS = 24 * 60 * 60 if _CASH_FILTER_REQUESTED else 12 * 60 * 60
-RBLXVALUE_META_POLL_INTERVAL_SECONDS = 12 * 60 * 60
+RBLXVALUE_META_POLL_INTERVAL_SECONDS = 60 * 60
 RBLXVALUE_META_FILE = Path("data/rblxvalue_meta.json")
 RBLXVALUE_DETAIL_FILE = Path("data/rblxvalue_detail_enrichment.json")
 RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY = max(
@@ -2448,8 +2448,8 @@ def _read_rblxvalue_meta_state():
 
 
 def _fetch_rblxvalue_meta(force=False):
-    """Poll source metadata hourly; the upstream dataset itself updates every ~12h."""
-    if not RBLXVALUE_META_POLL_ENABLED or not RBLXVALUE_API_KEY:
+    """Poll the public source metadata endpoint hourly without spending keyed API budget."""
+    if not RBLXVALUE_META_POLL_ENABLED:
         return None
     now = time.time()
     state = _read_rblxvalue_meta_state()
@@ -2468,7 +2468,18 @@ def _fetch_rblxvalue_meta(force=False):
         and 0 <= now - checked_at < RBLXVALUE_META_POLL_INTERVAL_SECONDS
     ):
         return state
-    payload = api_get_json("/meta")
+    request = urllib.request.Request(
+        RBLXVALUE_API_BASE + "/meta",
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "MM2TradeScanner/2.2 (+https://github.com/hg5911959-hue/mm2-trade-scanner)",
+        },
+    )
+    raw = request_with_retry(request, 20, "RBLXValue public metadata")
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("[rblxvalue-meta] Public metadata response was invalid JSON.") from exc
     if not isinstance(payload, dict) or not isinstance(payload.get("last_updated"), str):
         raise RuntimeError("[rblxvalue-meta] Missing or invalid last_updated metadata")
     totals = payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
