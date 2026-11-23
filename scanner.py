@@ -5846,7 +5846,7 @@ def scan_once(include_backlog_rechecks=True):
             cash_blocker_groups=cash_blocker_groups,
         )
 
-    max_per_scan = max(0, int(os.environ.get("MAX_ALERTS_PER_SCAN", "15")))
+    max_per_scan = max(0, int(os.environ.get("MAX_ALERTS_PER_SCAN", "0")))
     selected, digest_items = rank_and_split(opportunities, max_per_scan)
     for opportunity in selected:
         deliver_opportunity(opportunity)
