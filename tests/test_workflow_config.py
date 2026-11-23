@@ -240,6 +240,17 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("run: python -m tools.weekly_report", weekly)
         self.assertNotIn("run: python tools/weekly_report.py", weekly)
 
+    def test_preflight_receives_the_same_rblxvalue_budget_limit(self):
+        workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        preflight = workflow.split(
+            "      - name: Run scanner preflight checks", 1
+        )[1].split("      - name:", 1)[0]
+        scanner = workflow.split(
+            "      - name: Run BloxSwaps scanner", 1
+        )[1].split("      - name:", 1)[0]
+        self.assertIn('RBLXVALUE_DAILY_REQUEST_LIMIT: "60"', preflight)
+        self.assertIn('RBLXVALUE_DAILY_REQUEST_LIMIT: "60"', scanner)
+
     def test_weekly_report_keeps_cash_summary_separate_from_scanner_production_mode(self):
         workflow = (ROOT / ".github/workflows/weekly-report.yml").read_text(encoding="utf-8")
         self.assertIn('CASH_FILTER: "false"', workflow)
