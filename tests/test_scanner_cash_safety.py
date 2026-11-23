@@ -93,7 +93,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         result = {
             "cash_estimate_only": False, "manual_review": False,
             "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
-            "cash_profit_worst": 1.0, "margin": 0.01, "give_total_max": 10000.0,
+            "cash_profit_worst": 2.0, "margin": 0.01, "give_total_max": 10000.0,
         }
         self.assertTrue(scanner.qualifies_cash(result))
 
@@ -234,17 +234,17 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
                 result[field] = value
                 self.assertFalse(scanner.qualifies_cash(result))
 
-    def test_profit_threshold_is_exactly_one_dollar_for_every_trade_size(self):
+    def test_profit_threshold_is_exactly_two_dollars_for_every_trade_size(self):
         base = {
             "manual_review": False, "cash_estimate_only": False,
             "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
             "margin": 0.01, "give_total_max": 4.99,
         }
-        self.assertTrue(scanner.qualifies_cash({**base, "cash_profit_worst": 1.00}))
-        self.assertFalse(scanner.qualifies_cash({**base, "cash_profit_worst": 0.99}))
+        self.assertTrue(scanner.qualifies_cash({**base, "cash_profit_worst": 2.00}))
+        self.assertFalse(scanner.qualifies_cash({**base, "cash_profit_worst": 1.99}))
         standard = {**base, "give_total_max": 500.0}
         self.assertTrue(scanner.qualifies_cash({**standard, "cash_profit_worst": 1.00}))
-        self.assertFalse(scanner.qualifies_cash({**standard, "cash_profit_worst": 0.999}))
+        self.assertFalse(scanner.qualifies_cash({**standard, "cash_profit_worst": 1.999}))
 
     def test_non_dictionary_cash_result_fails_closed(self):
         for result in (None, [], "profit", 10):
