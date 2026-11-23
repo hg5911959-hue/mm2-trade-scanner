@@ -19,6 +19,18 @@ if [[ ! "$state_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
   exit 1
 fi
 
+# Refuse a public destination: the state repository must actually be private.
+repo_private="$(curl --fail --silent --show-error \
+  --header "Authorization: Bearer $state_token" \
+  --header "Accept: application/vnd.github+json" \
+  --header "X-GitHub-Api-Version: 2022-11-28" \
+  "https://api.github.com/repos/$state_repo" \
+  | python -c 'import json, sys; print("true" if json.load(sys.stdin).get("private") is True else "false")')"
+if [[ "$repo_private" != "true" ]]; then
+  echo "::error::Configured state repository is not private; refusing to store runtime data there."
+  exit 1
+fi
+
 if ! git remote get-url source >/dev/null 2>&1; then
   git remote rename origin source
 fi
