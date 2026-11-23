@@ -11,7 +11,7 @@ Production cash alerts require a complete, fresh ROBASE snapshot (222 catalogue 
 Key production thresholds configured in `.github/workflows/scan.yml`:
 - `CASH_MAX_AGE_DAYS=1`
 - `CASH_MIN_VERIFIED_ROWS=8`
-- `CASH_MIN_PROFIT_USD=1.00` (the small-offer threshold is also $1.00)
+- `CASH_MIN_PROFIT_USD=2.00` (the small-offer threshold is also $2.00)
 - `CASH_MIN_MARGIN_PERCENT=0`
 - `MIN_PROFIT_PERCENT=5`
 
@@ -64,13 +64,13 @@ If a quantity is uncertain, the scanner computes a conservative best/worst profi
 - If only the best-case profit is positive, it is held for recheck/manual review and is not advertised as a WIN.
 - If even the best-case profit is not positive, it does not send a trade alert.
 
-In production cash-first mode, Telegram cash alerts show owner/listing links, every item, verified ROBASE USD price, the Supreme value transported through the authenticated RBLXValue API, and `Stability (RBLXValue)`. They do not display the blended RBLXValue estimate, MM2Values, Demand, or Rarity as competing valuation lines. Supreme values and Stability are informational in cash mode; the totals and conservative USD cash profit are calculated only from verified ROBASE prices. An explicit `Untradeable` status still blocks the listing. Uncertain quantities are rejected; no alert is sent unless the worst-case cash profit is at least $1.00. Parser provenance, raw excerpts, and HTML/API diagnostics stay in GitHub Actions logs.
+In production cash-first mode, Telegram cash alerts show owner/listing links, every item, verified ROBASE USD price, the Supreme value transported through the authenticated RBLXValue API, and `Stability (RBLXValue)`. They do not display the blended RBLXValue estimate, MM2Values, Demand, or Rarity as competing valuation lines. Supreme values and Stability are informational in cash mode; the totals and conservative USD cash profit are calculated only from verified ROBASE prices. An explicit `Untradeable` status still blocks the listing. Uncertain quantities are rejected; no alert is sent unless the worst-case cash profit is at least $2.00. Parser provenance, raw excerpts, and HTML/API diagnostics stay in GitHub Actions logs.
 
 ### Legacy manual cash-price catalogue
 
 `data/cash_prices.csv` is retained for compatibility and offline/manual verification only. Editing it does not update the production ROBASE snapshot or change production alert eligibility. The live scanner refreshes `data/robase_prices.json` from ROBASE before scanning and uses only fresh, verified item prices. If you maintain the legacy CSV for a separate experiment, keep names canonical, mark unverified estimates as `unverified`, and never treat historical rows as current market facts.
 
-The default resale haircut is controlled by CASH_SELL_HAIRCUT_PCT (15%), the minimum net cash profit by CASH_MIN_PROFIT_USD ($1.00), and the minimum cash ROI by CASH_MIN_MARGIN_PERCENT (0% by default). These are conservative starting thresholds and should be calibrated after verified completed-sale data is available.
+The default resale haircut is controlled by CASH_SELL_HAIRCUT_PCT (15%), the minimum net cash profit by CASH_MIN_PROFIT_USD ($2.00; small offers use CASH_MIN_PROFIT_USD_SMALL, also $2.00 in production), and the minimum cash ROI by CASH_MIN_MARGIN_PERCENT (0% by default). These are conservative starting thresholds and should be calibrated after verified completed-sale data is available.
 
 ### Item names and duplicate values
 
@@ -231,7 +231,7 @@ The secret is merged into the temporary collector file for that run; its content
 ## Reliability controls: breaker, alert cap and dry-run
 
 - RBLXValue credential rejections are tracked by the SHA-256 key fingerprint only. Consecutive 401/credential-specific 403 responses escalate the lockout (6h, 12h, then permanent after the third consecutive rejection); a successful API response or key rotation resets the counter. Cloudflare/CAPTCHA challenge 403 responses are not classified as invalid credentials. After three rejections, replace the key or contact RBLXValue; the scanner makes no more requests using that fingerprint.
-- `MAX_ALERTS_PER_SCAN` defaults to 15 in production. In cash mode, the scanner ranks qualifying offers by conservative USD cash profit; in value mode it ranks by game-value profit. It sends the best 15 and leaves the remainder eligible for the next scan. A single Telegram notice reports how many offers were deferred. Set it to `0` only when unlimited alert volume is explicitly desired.
+- Production sets `MAX_ALERTS_PER_SCAN=0`, which means every qualified offer is sent as its own Telegram alert in descending conservative-profit order; the digest path is not used. `ALERT_DELAY_SECONDS=3.2` spaces messages to reduce Telegram flood risk. The zero cap removes scanner-side truncation, but it cannot guarantee that the upstream feed exposes every listing or that external services never rate-limit or fail.
 - Use **Actions → MM2 Trade Scanner → Run workflow → dry_run=true** to evaluate offers without sending Telegram messages or writing alerted/delivery state. The log prints only listing IDs and the profit for the active mode (game value or cash USD). The default is false. Dry-run suppresses maintenance and failure notifications too.
 - Global log redaction includes Discord bot credentials and both manual-import secrets. Never paste a Discord bot token or raw message JSON into an issue, commit, or log.
 

@@ -123,8 +123,8 @@ def cash_filter_enabled(value=None):
 
 
 CASH_FILTER = cash_filter_enabled()
-CASH_MIN_PROFIT_USD = max(1.0, float(os.environ.get("CASH_MIN_PROFIT_USD", "1.00")))
-CASH_MIN_PROFIT_USD_SMALL = max(1.0, float(os.environ.get("CASH_MIN_PROFIT_USD_SMALL", "1.00")))
+CASH_MIN_PROFIT_USD = max(1.0, float(os.environ.get("CASH_MIN_PROFIT_USD", "2.00")))
+CASH_MIN_PROFIT_USD_SMALL = max(1.0, float(os.environ.get("CASH_MIN_PROFIT_USD_SMALL", "2.00")))
 CASH_MIN_VERIFIED_ROWS = max(0, int(os.environ.get("CASH_MIN_VERIFIED_ROWS", "8")))
 if any(not math.isfinite(value) or value < 0 for value in (
     CASH_MIN_PROFIT_USD, CASH_MIN_PROFIT_USD_SMALL
@@ -4155,7 +4155,7 @@ def format_opportunity_digest(opportunities):
     if cash_only:
         lines = [
             "💎 MM2 ROBASE <b>OPPORTUNITIES</b>",
-            f"<b>{len(opportunities)} verified offers · profit $1.00+</b>",
+            f"<b>{len(opportunities)} verified offers · profit ${min(CASH_MIN_PROFIT_USD, CASH_MIN_PROFIT_USD_SMALL):.2f}+</b>",
             "Item prices are copied from ROBASE. Every offer is open now.",
             "",
         ]

@@ -127,8 +127,8 @@ jobs:
           MAX_ALERTS_PER_RUN: "0"
           MAX_ALERTS_PER_SCAN: "0" # 0 = send every qualified offer individually; throttle via ALERT_DELAY_SECONDS
           CASH_MAX_AGE_DAYS: "1"
-          CASH_MIN_PROFIT_USD: "1.00"
-          CASH_MIN_PROFIT_USD_SMALL: "1.00"
+          CASH_MIN_PROFIT_USD: "2.00"
+          CASH_MIN_PROFIT_USD_SMALL: "2.00"
           CASH_MIN_MARGIN_PERCENT: "0"
           MAX_PENDING_RECHECK_PER_SCAN: "50"
           MAX_BACKLOG_RECHECK_PAGES: "1000"

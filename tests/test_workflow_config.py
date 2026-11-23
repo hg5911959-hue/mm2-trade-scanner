@@ -47,7 +47,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn('          BLOXSWAPS_API_ONLY: "true"\n', workflow)
         self.assertIn('          MAX_PENDING_RECHECK_PER_SCAN: "50"\n', workflow)
         self.assertIn('          MAX_BACKLOG_RECHECK_PAGES: "1000"\n', workflow)
-        self.assertIn('          CASH_MIN_PROFIT_USD: "1.00"\n', workflow)
+        self.assertIn('          CASH_MIN_PROFIT_USD: "2.00"\n', workflow)
         self.assertIn('      CASH_FILTER: "true" # only fully priced, fresh ROBASE-verified offers are eligible\n', workflow)
         weekly = (ROOT / ".github/workflows/weekly-report.yml").read_text(encoding="utf-8")
         self.assertIn('      CASH_FILTER: "false" # weekly report is separate from the cash-first production scanner\n', weekly)
