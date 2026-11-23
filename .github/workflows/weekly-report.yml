@@ -16,6 +16,7 @@ jobs:
       CASH_FILTER: "false" # weekly report is separate from the cash-first production scanner
       MM2_STATE_REPO: ${{ secrets.MM2_STATE_REPO_TOKEN != '' && 'hg5911959-hue/mm2-trade-scanner-state' || '' }}
       MM2_STATE_REPO_TOKEN: ${{ secrets.MM2_STATE_REPO_TOKEN }}
+      MM2_STATE_ALLOW_MIGRATION: "false"
     permissions:
       contents: read
     steps:
