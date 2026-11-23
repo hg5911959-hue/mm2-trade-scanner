@@ -263,6 +263,13 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
             self.assertIn("MM2_STATE_REPO_TOKEN", content, path)
         scheduler = (ROOT / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
         self.assertIn("MM2_STATE_REPO_TOKEN: ${{ secrets.MM2_STATE_REPO_TOKEN }}", scheduler)
+        scan = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        self.assertIn("prepare-private-state:", scan)
+        self.assertIn("needs: prepare-private-state", scan)
+        self.assertIn("needs: [prepare-private-state, scan]", scan)
+        for path in (".github/workflows/weekly-report.yml", ".github/workflows/dashboard-pages.yml", ".github/workflows/tests.yml"):
+            content = (ROOT / path).read_text(encoding="utf-8")
+            self.assertIn('MM2_STATE_ALLOW_MIGRATION: "false"', content, path)
 
     def test_preflight_receives_the_same_rblxvalue_budget_limit(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
