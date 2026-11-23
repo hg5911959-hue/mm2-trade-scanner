@@ -1893,9 +1893,9 @@ class RblxValueMetaPollingTests(IsolatedDataTestCase):
                 patch("scanner.RBLXVALUE_META_POLL_ENABLED", True),
                 patch("scanner.RBLXVALUE_API_KEY", "test-key"),
                 patch("scanner.time.time", return_value=1000),
-                patch("scanner.request_with_retry", return_value=json.dumps({
+                patch("scanner.api_get_json", return_value={
                     "last_updated": "2026-11-14 00:00:00", "totals": {"items": 1}
-                }).encode("utf-8")),
+                }),
             ):
                 with self.assertRaisesRegex(RuntimeError, "Implausible source item total"):
                     scanner._fetch_rblxvalue_meta()
