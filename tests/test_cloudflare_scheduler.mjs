@@ -15,9 +15,15 @@ function response(body, status = 200) {
   });
 }
 
-function mockFetch(runs, calls = []) {
+function mockFetch(runs, calls = [], workflowState = "active") {
   return async (url, options = {}) => {
     calls.push({ url: String(url), options });
+    if (String(url).endsWith("/actions/workflows/scan-scheduler.yml/enable")) {
+      return response(null, 204);
+    }
+    if (String(url).endsWith("/actions/workflows/scan-scheduler.yml")) {
+      return response({ state: workflowState });
+    }
     if (String(url).endsWith("/runs?branch=main&per_page=50")) {
       return response({ workflow_runs: runs });
     }
@@ -83,9 +89,9 @@ test("dispatches a live run when the latest success is stale", async () => {
   assert.equal(result.action, "dispatched");
   assert.equal(result.reason, "stale_success");
   assert.equal(result.last_success_age_minutes, 30);
-  assert.equal(calls.length, 2);
-  assert.equal(calls[1].options.method, "POST");
-  const body = JSON.parse(calls[1].options.body);
+  assert.equal(calls.length, 3);
+  assert.equal(calls[2].options.method, "POST");
+  const body = JSON.parse(calls[2].options.body);
   assert.equal(body.ref, "main");
   assert.equal(body.inputs.dry_run, "false");
   assert.equal(body.inputs.verify_rblxvalue_key, "false");
@@ -99,7 +105,27 @@ test("dispatches when the repository has no successful scanner run", async () =>
   });
   assert.equal(result.action, "dispatched");
   assert.equal(result.reason, "no_successful_run");
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
+});
+
+test("respects a manually disabled scanner workflow", async () => {
+  const result = await dispatchIfStale(env, {
+    now,
+    fetchImpl: mockFetch([], [], "disabled_manually"),
+  });
+  assert.equal(result.reason, "manually_disabled");
+});
+
+test("re-enables a workflow disabled by inactivity before dispatch", async () => {
+  const calls = [];
+  const result = await dispatchIfStale(env, {
+    now,
+    fetchImpl: mockFetch([], calls, "disabled_inactivity"),
+  });
+  assert.equal(result.action, "dispatched");
+  assert.equal(calls[1].options.method, "PUT");
+  assert.equal(calls[2].url.endsWith("/runs?branch=main&per_page=50"), true);
+  assert.equal(calls[3].options.method, "POST");
 });
 
 test("refuses to run without the dedicated GitHub token", async () => {
