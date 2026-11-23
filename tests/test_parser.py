@@ -1029,6 +1029,26 @@ class ReliabilityTests(IsolatedDataTestCase):
         self.assertEqual(len(captured), 1)
         self.assertTrue(captured[0].endswith("Data from rblxvalue.com"))
 
+    def test_robase_cash_telegram_messages_credit_both_data_sources(self):
+        from io import BytesIO
+
+        captured = []
+        def fake_open(req, timeout):
+            captured.append(json.loads(req.data.decode())["text"])
+            return BytesIO(b'{"ok": true}')
+
+        with patch("scanner.BOT_TOKEN", "test-token"), patch("scanner.CHAT_ID", "123"), patch(
+            "scanner.TELEGRAM_OPENER.open", side_effect=fake_open
+        ):
+            scanner.send_telegram("💵 CASH PROFIT: $4.25\\nRBLXValue: 210")
+
+        self.assertEqual(len(captured), 1)
+        self.assertIn(scanner.ROBASE_ATTRIBUTION, captured[0])
+        self.assertIn(scanner.RBLXVALUE_ATTRIBUTION, captured[0])
+        self.assertTrue(captured[0].endswith(
+            scanner.ROBASE_ATTRIBUTION + "\\n" + scanner.RBLXVALUE_ATTRIBUTION
+        ))
+
     def test_telegram_partial_multipart_delivery_is_quarantined(self):
         from io import BytesIO
         from urllib.error import HTTPError
