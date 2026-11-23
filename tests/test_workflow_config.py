@@ -102,7 +102,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         workflow = (ROOT / ".github/workflows/rblxvalue-connection-test.yml").read_text(encoding="utf-8")
         self.assertIn("  workflow_dispatch:", workflow)
         self.assertNotIn("  push:", workflow)
-        self.assertIn("vars.SUPREME_DATA_AUTHORIZED == 'true'", workflow)
+        self.assertIn("if: false", workflow)
         self.assertIn("group: mm2-trade-scanner", workflow)
         self.assertIn("rblxvalue_guard.reserve_request(key=key)", workflow)
         self.assertIn("rblxvalue_guard.mark_key_success(key=key)", workflow)
