@@ -5106,6 +5106,33 @@ def save_watch_state(ads):
     if len(active) > MAX_WATCHED_ADS: active = dict(sorted(active.items(), key=lambda pair: float(pair[1].get('updated_at', 0)))[-300:])
     atomic_write_text(WATCH_FILE, json.dumps({'version': 1, 'ads': active}, ensure_ascii=False, indent=2) + "\n")
 
+def last_cash_profit_for_listing(listing_id):
+    """Read only the previous cash-profit field needed for one-time watch migration."""
+    if not HISTORY_FILE.exists():
+        return None
+    latest = None
+    try:
+        with HISTORY_FILE.open("r", newline="", encoding="utf-8") as handle:
+            for row in csv.DictReader(handle):
+                if str(row.get("listing_id") or "") != str(listing_id):
+                    continue
+                if str(row.get("profit_basis") or "").casefold() != "cash_usd":
+                    continue
+                raw_profit = row.get("profit_cash_usd")
+                if raw_profit in (None, ""):
+                    continue
+                try:
+                    profit = float(raw_profit)
+                except (TypeError, ValueError):
+                    continue
+                if math.isfinite(profit) and profit >= 0:
+                    latest = profit
+    except (OSError, csv.Error, UnicodeDecodeError) as exc:
+        print(f"[watch-migration] Previous cash-profit history unavailable: {type(exc).__name__}")
+        return None
+    return latest
+
+
 def watch_variant_changed(previous_watch, content_hash, values_hash, cash_filter=False):
     """Ignore one legacy value-source fingerprint change during cash-mode migration."""
     if not previous_watch:
@@ -5682,6 +5709,10 @@ def scan_once(include_backlog_rechecks=True):
         variant_changed = watch_variant_changed(
             previous_watch, current_content_hash, current_values_hash, cash_filter=(CASH_FILTER and not testing_mode)
         )
+        if legacy_cash_watch and trade_id in alerted_set and not variant_changed:
+            previous_cash_profit = last_cash_profit_for_listing(trade_id)
+            if previous_cash_profit is not None and op.get("cash_profit_worst", 0) > previous_cash_profit + 0.009:
+                variant_changed = True
         if (trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids:
             if legacy_cash_watch and trade_id in alerted_set:
                 # One-time source migration: update the fingerprint without replaying old alerts.
