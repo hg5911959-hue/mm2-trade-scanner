@@ -1357,14 +1357,23 @@ def fetch_pending_posts_by_id(pending_ids):
     return posts, missing_ids
 
 
+BLOXSWAPS_IDENTITY_FIELDS = (
+    "id", "slug", "displayName", "chroma", "rarity", "type", "tradable", "year",
+)
+
+
+def _bloxswaps_identity_record(item):
+    """Keep only fields required for item identity and tradability decisions."""
+    if not isinstance(item, dict):
+        return {}
+    return {field: item[field] for field in BLOXSWAPS_IDENTITY_FIELDS if field in item}
+
+
 def fetch_bloxswaps_items_map(force_refresh=False):
     global _LAST_ITEMS_FORCE_REFRESH_AT
     force_allowed = True
     if force_refresh:
         now = time.time()
-        # A single catalogue refresh is enough to resolve newly introduced IDs.
-        # Re-fetching every 60 seconds caused several identical ~50s downloads per
-        # scan session. Keep the cooldown for ten minutes across scan cycles.
         force_allowed = now - _LAST_ITEMS_FORCE_REFRESH_AT >= 600
         if force_allowed:
             _LAST_ITEMS_FORCE_REFRESH_AT = now
@@ -1374,12 +1383,22 @@ def fetch_bloxswaps_items_map(force_refresh=False):
         try:
             cache = json.loads(BLOXSWAPS_ITEMS_FILE.read_text(encoding="utf-8"))
             age = max(0, int(time.time() - float(cache.get("fetched_at", 0))))
-            cached = cache.get("items")
-            if isinstance(cached, dict) and cached and force_refresh and not force_allowed:
-                print(f"[bloxswaps] Catalogue force-refresh suppressed by 10-minute cooldown; reusing {len(cached)} cached names")
+            raw_cached = cache.get("items")
+            cached = (
+                {str(item_id): _bloxswaps_identity_record(item)
+                 for item_id, item in raw_cached.items() if _bloxswaps_identity_record(item).get("displayName")}
+                if isinstance(raw_cached, dict) else {}
+            )
+            if cached and cached != raw_cached:
+                atomic_write_text(BLOXSWAPS_ITEMS_FILE, json.dumps({
+                    "fetched_at": cache.get("fetched_at", time.time()), "items": cached,
+                }, ensure_ascii=False) + "\n")
+                print("[bloxswaps] Removed non-identity fields from cached catalogue")
+            if cached and force_refresh and not force_allowed:
+                print(f"[bloxswaps] Catalogue force-refresh suppressed by 10-minute cooldown; reusing {len(cached)} identity records")
                 return cached
-            if not force_refresh and age <= BLOXSWAPS_ITEMS_TTL_SECONDS and isinstance(cached, dict) and cached:
-                print(f"[bloxswaps] Using fresh item catalogue ({len(cached)} names; age {age}s)")
+            if not force_refresh and age <= BLOXSWAPS_ITEMS_TTL_SECONDS and cached:
+                print(f"[bloxswaps] Using fresh item identity catalogue ({len(cached)} records; age {age}s)")
                 return cached
             if force_refresh and not force_allowed:
                 raise RuntimeError("[bloxswaps] Catalogue refresh is rate-limited and no cached catalogue is available.")
@@ -1395,14 +1414,14 @@ def fetch_bloxswaps_items_map(force_refresh=False):
     mapping = {}
     for item in payload:
         if isinstance(item, dict) and item.get("id") and item.get("displayName"):
-            mapping[str(item["id"])] = item
+            mapping[str(item["id"])] = _bloxswaps_identity_record(item)
     if not mapping:
         raise RuntimeError("[bloxswaps] Item catalogue has no id/displayName mapping.")
     BLOXSWAPS_ITEMS_FILE.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(BLOXSWAPS_ITEMS_FILE, json.dumps({
         "fetched_at": time.time(), "items": mapping,
     }, ensure_ascii=False) + "\n")
-    print(f"[bloxswaps] Refreshed {len(mapping)} item-name mappings from site catalogue")
+    print(f"[bloxswaps] Refreshed {len(mapping)} identity-only records from site catalogue")
     return mapping
 
 
