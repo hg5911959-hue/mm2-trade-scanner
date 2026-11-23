@@ -52,6 +52,25 @@ class CashFilterFlagTests(IsolatedDataTestCase):
                 self.assertFalse(scanner.cash_filter_enabled(value))
 
 
+class CashModeOutOfCatalogFilteringTests(IsolatedDataTestCase):
+    def test_items_without_a_robase_weapon_mapping_are_ignored(self):
+        missing = [
+            "Pumpkin (no exact ROBASE/BloxSwaps identity mapping)",
+            "Embergun (no exact ROBASE/BloxSwaps identity mapping)",
+        ]
+        self.assertEqual(
+            scanner.unmatched_names_from_missing(missing, cash_mode=True),
+            [],
+        )
+
+    def test_true_value_gaps_remain_visible_in_cash_mode(self):
+        missing = ["Harvester (cash price missing or unverified)"]
+        self.assertEqual(
+            scanner.unmatched_names_from_missing(missing, cash_mode=True),
+            ["Harvester"],
+        )
+
+
 class ValueModeEvaluationTests(IsolatedDataTestCase):
     def test_value_profit_qualifies_and_message_has_no_cash_wording(self):
         listing = {
