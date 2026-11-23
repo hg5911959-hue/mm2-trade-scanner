@@ -1839,7 +1839,7 @@ class SourceMetaSnapshotTests(IsolatedDataTestCase):
         self.assertFalse(scanner._source_snapshot_matches_meta({}, matching))
 
 class RblxValueMetaPollingTests(IsolatedDataTestCase):
-    def test_meta_is_cached_for_one_hour_and_refreshed_when_due(self):
+    def test_meta_is_cached_for_two_hours_and_refreshed_when_due(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "rblxvalue_meta.json"
             payload = {
@@ -1851,8 +1851,8 @@ class RblxValueMetaPollingTests(IsolatedDataTestCase):
                 patch("scanner.RBLXVALUE_META_FILE", path),
                 patch("scanner.RBLXVALUE_META_POLL_ENABLED", True),
                 patch("scanner.RBLXVALUE_API_KEY", "test-key"),
-                patch("scanner.time.time", side_effect=[1000, 1500, 4601]),
-                patch("scanner.request_with_retry", return_value=json.dumps(payload).encode("utf-8")) as api,
+                patch("scanner.time.time", side_effect=[1000, 1500, 8201]),
+                patch("scanner.api_get_json", return_value=payload) as api,
             ):
                 first = scanner._fetch_rblxvalue_meta()
                 second = scanner._fetch_rblxvalue_meta()
@@ -1861,8 +1861,7 @@ class RblxValueMetaPollingTests(IsolatedDataTestCase):
             self.assertEqual(second, first)
             self.assertEqual(third["items_total"], 1091)
             self.assertEqual(api.call_count, 2)
-            self.assertIn("/meta", api.call_args_list[0].args[0].full_url)
-            self.assertNotIn("X-api-key", api.call_args_list[0].args[0].headers)
+            self.assertEqual(api.call_args_list[0].args, ("/meta",))
 
     def test_recent_but_incomplete_meta_state_is_refetched(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1880,13 +1879,30 @@ class RblxValueMetaPollingTests(IsolatedDataTestCase):
                 patch("scanner.RBLXVALUE_META_POLL_ENABLED", True),
                 patch("scanner.RBLXVALUE_API_KEY", "test-key"),
                 patch("scanner.time.time", return_value=1000),
-                patch("scanner.request_with_retry", return_value=json.dumps(payload).encode("utf-8")) as api,
+                patch("scanner.api_get_json", return_value=payload) as api,
             ):
                 result = scanner._fetch_rblxvalue_meta()
-            api.assert_called_once()
-            self.assertIn("/meta", api.call_args.args[0].full_url)
-            self.assertNotIn("X-api-key", api.call_args.args[0].headers)
+            api.assert_called_once_with("/meta")
             self.assertEqual(result["last_updated"], payload["last_updated"])
+
+    def test_forced_meta_check_bypasses_recent_successful_poll(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "meta.json"
+            payload = {
+                "last_updated": "2026-11-14 00:00:00",
+                "totals": {"items": 1091, "sets": 40},
+            }
+            with (
+                patch("scanner.RBLXVALUE_META_FILE", path),
+                patch("scanner.RBLXVALUE_META_POLL_ENABLED", True),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.time.time", side_effect=[1000, 1100]),
+                patch("scanner.api_get_json", return_value=payload) as api,
+            ):
+                first = scanner._fetch_rblxvalue_meta()
+                second = scanner._fetch_rblxvalue_meta(force=True)
+            self.assertEqual(first["last_updated"], second["last_updated"])
+            self.assertEqual(api.call_count, 2)
 
     def test_meta_rejects_implausible_catalogue_totals(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1895,12 +1911,31 @@ class RblxValueMetaPollingTests(IsolatedDataTestCase):
                 patch("scanner.RBLXVALUE_META_POLL_ENABLED", True),
                 patch("scanner.RBLXVALUE_API_KEY", "test-key"),
                 patch("scanner.time.time", return_value=1000),
-                patch("scanner.request_with_retry", return_value=json.dumps({
+                patch("scanner.api_get_json", return_value={
                     "last_updated": "2026-11-14 00:00:00", "totals": {"items": 1}
-                }).encode("utf-8")),
+                }),
             ):
                 with self.assertRaisesRegex(RuntimeError, "Implausible source item total"):
                     scanner._fetch_rblxvalue_meta()
+
+
+    def test_failed_meta_request_is_throttled_before_next_scan_cycle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "meta.json"
+            with (
+                patch("scanner.RBLXVALUE_META_FILE", path),
+                patch("scanner.RBLXVALUE_META_POLL_ENABLED", True),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.time.time", side_effect=[1000, 1200, 1201]),
+                patch("scanner.api_get_json", side_effect=RuntimeError("temporary upstream failure")) as api,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "temporary upstream failure"):
+                    scanner._fetch_rblxvalue_meta()
+                self.assertIsNone(scanner._fetch_rblxvalue_meta())
+                self.assertIsNone(scanner._fetch_rblxvalue_meta(force=True))
+            api.assert_called_once_with("/meta")
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["last_attempt_at_epoch"], 1000)
 
 
 class CacheTTLTests(IsolatedDataTestCase):
@@ -2090,6 +2125,22 @@ class SupremePaginationIntegrityTests(IsolatedDataTestCase):
             ({"items": self._rows(100, 50), "total": 200}, '"page-100"', False),
         ])
 
+
+
+class SupremeMetadataGateTests(IsolatedDataTestCase):
+    def test_expired_or_missing_cache_never_paginates_without_verified_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch("scanner.VALUES_FILE", Path(directory) / "supreme.json"),
+                patch("scanner.VALUES_AUDIT_FILE", Path(directory) / "audit.json"),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.RBLXVALUE_META_POLL_ENABLED", True),
+                patch("scanner._fetch_rblxvalue_meta", return_value=None),
+                patch("scanner.api_get_json_conditional") as pages,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "metadata is unavailable"):
+                    scanner.load_supreme_values()
+            pages.assert_not_called()
 
 
 class RblxValueKeyHealthCheckTests(IsolatedDataTestCase):

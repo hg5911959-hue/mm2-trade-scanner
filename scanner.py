@@ -100,7 +100,8 @@ MAX_FEED_PAGES = max(1, min(1000, int(os.environ.get("MAX_FEED_PAGES", "1000")))
 VALUES_REVALIDATION_INTERVAL_SECONDS = 24 * 60 * 60
 _CASH_FILTER_REQUESTED = os.environ.get("CASH_FILTER", "false").strip().casefold() in {"1", "true", "yes", "on"}
 _DEFAULT_VALUES_TTL_SECONDS = 24 * 60 * 60 if _CASH_FILTER_REQUESTED else 12 * 60 * 60
-RBLXVALUE_META_POLL_INTERVAL_SECONDS = 60 * 60
+RBLXVALUE_META_POLL_INTERVAL_SECONDS = 2 * 60 * 60
+RBLXVALUE_META_RETRY_SECONDS = 2 * 60 * 60
 RBLXVALUE_META_FILE = Path("data/rblxvalue_meta.json")
 RBLXVALUE_DETAIL_FILE = Path("data/rblxvalue_detail_enrichment.json")
 RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY = max(
@@ -2448,9 +2449,16 @@ def _read_rblxvalue_meta_state():
 
 
 def _fetch_rblxvalue_meta(force=False):
-    """Poll the public source metadata endpoint hourly without spending keyed API budget."""
+    """Poll the authenticated RBLXValue metadata endpoint hourly.
+
+    The v2 API requires X-Api-Key on every data endpoint, including /meta.
+    Attempts are persisted before I/O and transient failures are throttled so
+    the 30-second scanner loop cannot repeatedly spend API budget.
+    """
     if not RBLXVALUE_META_POLL_ENABLED:
         return None
+    if not RBLXVALUE_API_KEY:
+        raise RuntimeError("[rblxvalue-meta] API key is required for the authenticated /meta endpoint.")
     now = time.time()
     state = _read_rblxvalue_meta_state()
     try:
@@ -2468,18 +2476,37 @@ def _fetch_rblxvalue_meta(force=False):
         and 0 <= now - checked_at < RBLXVALUE_META_POLL_INTERVAL_SECONDS
     ):
         return state
-    request = urllib.request.Request(
-        RBLXVALUE_API_BASE + "/meta",
-        headers={
-            "Accept": "application/json",
-            "User-Agent": "MM2TradeScanner/2.2 (+https://github.com/hg5911959-hue/mm2-trade-scanner)",
-        },
-    )
-    raw = request_with_retry(request, 20, "RBLXValue public metadata")
     try:
-        payload = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise RuntimeError("[rblxvalue-meta] Public metadata response was invalid JSON.") from exc
+        last_attempt = float(state.get("last_attempt_at_epoch", 0))
+    except (TypeError, ValueError):
+        last_attempt = 0
+    # A forced post-pagination check may bypass a recent successful poll,
+    # but never a failed/incomplete attempt. Otherwise a 30-second scan loop
+    # could defeat the retry cooldown by repeatedly forcing the same endpoint.
+    failed_attempt_is_recent = (
+        last_attempt > checked_at and last_attempt > 0
+        and 0 <= now - last_attempt < RBLXVALUE_META_RETRY_SECONDS
+    )
+    if failed_attempt_is_recent:
+        print("[rblxvalue-meta] Retry cooldown active; preserving last verified metadata")
+        return None
+
+    # Persist the attempt before network I/O to prevent rapid repeated requests.
+    attempt_state = dict(state)
+    attempt_state["schema_version"] = 1
+    attempt_state["last_attempt_at_epoch"] = now
+    atomic_write_text(
+        RBLXVALUE_META_FILE,
+        json.dumps(attempt_state, ensure_ascii=False, indent=2) + "\n",
+    )
+    try:
+        payload = api_get_json("/meta")
+    except Exception as exc:
+        print(
+            f"[rblxvalue-meta] Authenticated metadata request failed: "
+            f"{type(exc).__name__}; retry throttled for {RBLXVALUE_META_RETRY_SECONDS}s"
+        )
+        raise
     if not isinstance(payload, dict) or not isinstance(payload.get("last_updated"), str):
         raise RuntimeError("[rblxvalue-meta] Missing or invalid last_updated metadata")
     totals = payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
@@ -2492,6 +2519,7 @@ def _fetch_rblxvalue_meta(force=False):
     updated = {
         "schema_version": 1,
         "checked_at_epoch": now,
+        "last_attempt_at_epoch": now,
         "last_updated": payload["last_updated"],
         "items_total": item_total,
         "sets_total": int(totals.get("sets", 0) or 0),
@@ -2499,7 +2527,6 @@ def _fetch_rblxvalue_meta(force=False):
     }
     atomic_write_text(RBLXVALUE_META_FILE, json.dumps(updated, ensure_ascii=False, indent=2) + "\n")
     return updated
-
 
 def _positive_numeric_value(value):
     """Return a finite positive numeric source value, or None when it is not listed."""
@@ -2922,12 +2949,17 @@ def load_supreme_values():
         raise RuntimeError("[supreme] API key missing and no fresh cached source_b snapshot; refusing stale values.")
     if RBLXVALUE_META_POLL_ENABLED and source_meta is None:
         try:
-            source_meta = _fetch_rblxvalue_meta(force=True)
+            source_meta = _fetch_rblxvalue_meta()
         except Exception as exc:
             raise RuntimeError(
                 f"[supreme] Could not verify source version before pagination ({type(exc).__name__}); "
                 "refusing an unverified catalogue refresh"
             ) from exc
+        if source_meta is None:
+            raise RuntimeError(
+                "[supreme] Source metadata is unavailable or in retry cooldown; "
+                "refusing to paginate without a verified source version."
+            )
     if cached_values is not None:
         print(f"[supreme] Cached snapshot expired (age {cached_age}s); conditionally refreshing API")
     cached_pages = cached_document.get("pages", {}) if isinstance(cached_document, dict) else {}
