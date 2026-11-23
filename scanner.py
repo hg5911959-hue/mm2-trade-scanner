@@ -1714,12 +1714,12 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                     additions += 1
                     addition_ids.append(post_id)
                     continue
-                if wildcard_kind == "offres":
-                    offers_excluded += 1
-                    continue
                 if api_only and _api_post_is_single_sided(post):
                     single_sided_count += 1
                     single_sided_ids.append(post_id)
+                    continue
+                if wildcard_kind == "offres":
+                    offers_excluded += 1
                     continue
                 refresh_catalogue_for_post(post)
                 listing = _api_trade_post_to_listing(post, initial_item_map)
@@ -1850,14 +1850,14 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                 additions += 1
                 addition_ids.append(post_id)
                 continue
-            if wildcard_kind == "offres":
-                offers_excluded += 1
-                continue
             if _api_post_is_single_sided(raw):
                 # Single-sided posts are intentionally non-actionable, not malformed.
                 # Classify them consistently on RSC+API and API-only scans.
                 single_sided_count += 1
                 single_sided_ids.append(post_id)
+                continue
+            if wildcard_kind == "offres":
+                offers_excluded += 1
                 continue
             if item_map is None:
                 needs_catalogue = any(
@@ -5631,18 +5631,19 @@ def scan_once(include_backlog_rechecks=True):
     )
     print(f"[summary] {summary}")
     write_step_summary(summary)
-    send_maintenance_alert(
-        "scan-results-summary",
-        "📊 MM2 SCAN RESULTS\\n"
-        f"Candidates: {stats.get('candidate_count', 0)}\\n"
-        f"Excluded Ajouts: {stats.get('addition_count', 0)}\\n"
-        f"Excluded Offres: {stats.get('offers_excluded_count', 0)}\\n"
-        f"Eligible listings: {len(listings)}\\n"
-        f"Evaluated: {evaluated} · Qualified: {len(opportunities)}\\n"
-        f"Alerts sent: {sent} · Digest sent: {digest_sent} · Digest pending: {digest_not_sent}\\n"
-        f"RBLXValue API requests this run: {rblxvalue_guard.requests_this_run()}",
-        cooldown_seconds=1800,
-    )
+    if os.getenv("MM2_TELEGRAM_SCAN_SUMMARY", "").strip().casefold() in {"1", "true", "yes", "on"}:
+        send_maintenance_alert(
+            "scan-results-summary",
+            "📊 MM2 SCAN RESULTS\\n"
+            f"Candidates: {stats.get('candidate_count', 0)}\\n"
+            f"Excluded Ajouts: {stats.get('addition_count', 0)}\\n"
+            f"Excluded Offres: {stats.get('offers_excluded_count', 0)}\\n"
+            f"Eligible listings: {len(listings)}\\n"
+            f"Evaluated: {evaluated} · Qualified: {len(opportunities)}\\n"
+            f"Alerts sent: {sent} · Digest sent: {digest_sent} · Digest pending: {digest_not_sent}\\n"
+            f"RBLXValue API requests this run: {rblxvalue_guard.requests_this_run()}",
+            cooldown_seconds=1800,
+        )
     record_success_if_complete(stats)
     if CASH_FILTER:
         save_cash_catalog_snapshot(cash_catalog["sha256"])
