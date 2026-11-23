@@ -5062,9 +5062,9 @@ def listing_watch_fingerprints(listing, values, aliases=None, cash_catalog=None)
                 if len(cash_variants) == 1:
                     cash_selected = cash_variants[0]
             if cash_catalog:
-                cash_row, _cash_identity_source = _resolve_robase_cash_record(
-                    normalize_slug(item.get("catalog_slug") or ""), cash_catalog
-                )
+                catalog_slug = normalize_slug(item.get("catalog_slug") or "")
+                cash_row, _cash_identity_source = _resolve_robase_cash_record(catalog_slug, cash_catalog)
+                cash_mapping = (cash_catalog.get("bloxswaps_exact_map") or {}).get(catalog_slug, {})
                 stability = _normalize_stability((cash_selected or {}).get("stability")) if record else None
                 valuation.append((
                     side, normalize_name(name), match_source,
@@ -5074,6 +5074,9 @@ def listing_watch_fingerprints(listing, values, aliases=None, cash_catalog=None)
                     (cash_selected or {}).get("category") if cash_selected else None,
                     (cash_selected or {}).get("type") if cash_selected else None,
                     stability,
+                    cash_mapping.get("bloxswaps_type"), cash_mapping.get("bloxswaps_rarity"),
+                    cash_mapping.get("bloxswaps_chroma"), cash_mapping.get("bloxswaps_tradable"),
+                    cash_mapping.get("bloxswaps_year"),
                 ))
             else:
                 valuation.append((side, normalize_name(name), unit_value, unit_min, unit_max, match_source))
