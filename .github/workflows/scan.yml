@@ -22,6 +22,8 @@ on:
         required: false
       HEALTHCHECKS_PING_URL:
         required: false
+      MM2_STATE_REPO_TOKEN:
+        required: false
   workflow_dispatch:
     inputs:
       verify_rblxvalue_key:
@@ -50,10 +52,15 @@ jobs:
       actions: read
     env:
       HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
+      MM2_STATE_REPO: ${{ secrets.MM2_STATE_REPO_TOKEN != '' && 'hg5911959-hue/mm2-trade-scanner-state' || '' }}
+      MM2_STATE_REPO_TOKEN: ${{ secrets.MM2_STATE_REPO_TOKEN }}
       CASH_FILTER: "true" # only fully priced, fresh ROBASE-verified offers are eligible
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure private durable state repository
+        run: bash tools/configure_state_remote.sh
 
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -222,9 +229,15 @@ jobs:
     permissions:
       contents: write
       actions: read
+    env:
+      MM2_STATE_REPO: ${{ secrets.MM2_STATE_REPO_TOKEN != '' && 'hg5911959-hue/mm2-trade-scanner-state' || '' }}
+      MM2_STATE_REPO_TOKEN: ${{ secrets.MM2_STATE_REPO_TOKEN }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure private durable state repository
+        run: bash tools/configure_state_remote.sh
 
       - name: Download scanner state
         id: download
