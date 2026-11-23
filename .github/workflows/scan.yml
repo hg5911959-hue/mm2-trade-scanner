@@ -49,14 +49,14 @@ jobs:
     timeout-minutes: 3
     permissions:
       contents: write
-    env:
-      MM2_STATE_REPO: ${{ secrets.MM2_STATE_REPO_TOKEN != '' && 'hg5911959-hue/mm2-trade-scanner-state' || '' }}
-      MM2_STATE_REPO_TOKEN: ${{ secrets.MM2_STATE_REPO_TOKEN }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Migrate or verify private durable state repository
+        env:
+          MM2_STATE_REPO: ${{ secrets.MM2_STATE_REPO_TOKEN != '' && 'hg5911959-hue/mm2-trade-scanner-state' || '' }}
+          MM2_STATE_REPO_TOKEN: ${{ secrets.MM2_STATE_REPO_TOKEN }}
         run: bash tools/configure_state_remote.sh
 
   scan:
@@ -68,14 +68,15 @@ jobs:
       actions: read
     env:
       HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
-      MM2_STATE_REPO: ${{ secrets.MM2_STATE_REPO_TOKEN != '' && 'hg5911959-hue/mm2-trade-scanner-state' || '' }}
-      MM2_STATE_REPO_TOKEN: ${{ secrets.MM2_STATE_REPO_TOKEN }}
       CASH_FILTER: "true" # only fully priced, fresh ROBASE-verified offers are eligible
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Configure private durable state repository
+        env:
+          MM2_STATE_REPO: ${{ secrets.MM2_STATE_REPO_TOKEN != '' && 'hg5911959-hue/mm2-trade-scanner-state' || '' }}
+          MM2_STATE_REPO_TOKEN: ${{ secrets.MM2_STATE_REPO_TOKEN }}
         run: bash tools/configure_state_remote.sh
 
       - name: Set up Python
@@ -245,9 +246,6 @@ jobs:
     permissions:
       contents: write
       actions: read
-    env:
-      MM2_STATE_REPO: ${{ secrets.MM2_STATE_REPO_TOKEN != '' && 'hg5911959-hue/mm2-trade-scanner-state' || '' }}
-      MM2_STATE_REPO_TOKEN: ${{ secrets.MM2_STATE_REPO_TOKEN }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
