@@ -170,6 +170,41 @@ class StateValidationTests(IsolatedDataTestCase):
         self.assertTrue(any("unexpected files" in error for error in errors))
         self.assertTrue(any("budget timestamps" in error for error in errors))
 
+    def test_telegram_uncertain_context_requires_trusted_links_and_valid_schema(self):
+        self._write_valid_state()
+        (self.root / "telegram_uncertain_context.json").write_text(json.dumps({
+            "version": 1,
+            "details": {
+                "stable-id": {
+                    "source_ad_id": "post-123",
+                    "listing_url": "https://bloxswaps.com/trade-mm2?ad=post-123",
+                    "owner_url": "https://bloxswaps.com/fr/users/12345",
+                    "source": "bloxswaps",
+                    "delivery_path": "digest",
+                    "attempted_at_utc": "2026-11-23T15:00:00+00:00",
+                }
+            },
+        }), encoding="utf-8")
+        self.assertEqual(validate_state(self.root, require_cache=True), [])
+
+        context = json.loads((self.root / "telegram_uncertain_context.json").read_text(encoding="utf-8"))
+        context["details"]["stable-id"]["listing_url"] = "https://attacker.example/collect"
+        (self.root / "telegram_uncertain_context.json").write_text(json.dumps(context), encoding="utf-8")
+        self.assertTrue(any(
+            "uncertain-delivery context contains an unsafe link" in error
+            for error in validate_state(self.root, require_cache=True)
+        ))
+
+    def test_telegram_uncertain_context_rejects_invalid_version_and_delivery_path(self):
+        self._write_valid_state()
+        (self.root / "telegram_uncertain_context.json").write_text(json.dumps({
+            "version": 2, "details": {}
+        }), encoding="utf-8")
+        self.assertTrue(any(
+            "uncertain-delivery context root" in error
+            for error in validate_state(self.root, require_cache=True)
+        ))
+
     def test_valid_state_passes_strict_success_validation(self):
         self._write_valid_state()
         self.assertEqual(validate_state(self.root, require_cache=True), [])
