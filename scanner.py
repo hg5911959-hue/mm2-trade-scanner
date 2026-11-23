@@ -72,6 +72,7 @@ HISTORY_FILE = Path("data/history.csv")
 MAX_ALERTED = 5000
 ALERTED_FILE = Path("data/alerted.json")
 UNCERTAIN_FILE = Path("data/telegram_uncertain.json")
+UNCERTAIN_CONTEXT_FILE = Path("data/telegram_uncertain_context.json")
 SEEN_FILE = Path("data/seen_ads.json")
 PENDING_FILE = Path("data/pending_recheck.json")
 PENDING_RECHECK_SCHEDULE_FILE = Path("data/pending_recheck_schedule.json")
@@ -3832,6 +3833,85 @@ def save_uncertain_state(state):
     }, indent=2) + "\n")
 
 
+def load_uncertain_context():
+    """Load source links for quarantined Telegram sends; corruption fails closed."""
+    if not UNCERTAIN_CONTEXT_FILE.exists():
+        return {}
+    try:
+        data = json.loads(UNCERTAIN_CONTEXT_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(
+            "[state] Telegram uncertain-delivery context is unreadable; refusing unsafe recovery."
+        ) from exc
+    if not isinstance(data, dict) or data.get("version") != 1 or not isinstance(data.get("details"), dict):
+        raise RuntimeError("[state] Telegram uncertain-delivery context has an invalid structure.")
+    result = {}
+    allowed_hosts = {"bloxswaps.com", "www.bloxswaps.com", "discord.com", "www.discord.com"}
+    for trade_id, entry in data["details"].items():
+        if not isinstance(trade_id, str) or not trade_id or not isinstance(entry, dict):
+            raise RuntimeError("[state] Telegram uncertain-delivery context entry is invalid.")
+        for field in ("source_ad_id", "listing_url", "owner_url", "source", "delivery_path", "attempted_at_utc"):
+            value = entry.get(field, "")
+            if not isinstance(value, str):
+                raise RuntimeError("[state] Telegram uncertain-delivery context field is invalid.")
+        for field in ("listing_url", "owner_url"):
+            value = entry.get(field, "")
+            if value:
+                parsed = urlsplit(value)
+                if parsed.scheme != "https" or (parsed.hostname or "").casefold() not in allowed_hosts:
+                    raise RuntimeError("[state] Telegram uncertain-delivery context contains an unsafe link.")
+        if entry.get("delivery_path") not in {"individual", "digest", "recovered"}:
+            raise RuntimeError("[state] Telegram uncertain-delivery context delivery path is invalid.")
+        result[trade_id] = dict(entry)
+    return result
+
+
+def save_uncertain_context(context):
+    """Persist a bounded map from uncertain send IDs to their public source listings."""
+    normalized = dict(context)
+    if len(normalized) > 500:
+        normalized = dict(sorted(
+            normalized.items(),
+            key=lambda row: str(row[1].get("attempted_at_utc", "")),
+        )[-500:])
+    atomic_write_text(UNCERTAIN_CONTEXT_FILE, json.dumps({
+        "version": 1, "details": normalized,
+    }, ensure_ascii=False, sort_keys=True, indent=2) + "\\n")
+
+
+def record_uncertain_context(listing, trade_id, delivery_path):
+    """Store only public listing identifiers/links before a non-idempotent Telegram send."""
+    context = load_uncertain_context()
+    allowed_hosts = {"bloxswaps.com", "www.bloxswaps.com", "discord.com", "www.discord.com"}
+
+    def safe_link(value):
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        parsed = urlsplit(raw)
+        return raw[:2048] if parsed.scheme == "https" and (parsed.hostname or "").casefold() in allowed_hosts else ""
+
+    context[str(trade_id)] = {
+        "source_ad_id": str(listing.get("source_ad_id") or ""),
+        "listing_url": safe_link(listing.get("url")),
+        "owner_url": safe_link(listing.get("owner_url")),
+        "source": str(listing.get("source") or "bloxswaps")[:32],
+        "delivery_path": str(delivery_path),
+        "attempted_at_utc": str(
+            listing.get("alert_attempted_at_utc")
+            or datetime.now(timezone.utc).isoformat()
+        ),
+    }
+    save_uncertain_context(context)
+
+
+def clear_uncertain_context(trade_id):
+    context = load_uncertain_context()
+    if str(trade_id) in context:
+        context.pop(str(trade_id), None)
+        save_uncertain_context(context)
+
+
 def load_uncertain_state():
     if not UNCERTAIN_FILE.exists():
         return {}, []
@@ -5372,16 +5452,30 @@ def scan_once(include_backlog_rechecks=True):
     alerted_set = set(alerted)
     uncertain_state, expired_uncertain = load_uncertain_state()
     uncertain_ids = set(uncertain_state)
+    uncertain_context = load_uncertain_context()
     if expired_uncertain:
         print(
             f"[telegram] {len(expired_uncertain)} uncertain-delivery quarantine(s) expired; "
             "their feed IDs remain marked seen and will not be auto-resent."
         )
+        expired_context_lines = []
+        for expired_id in expired_uncertain[:8]:
+            entry = uncertain_context.get(expired_id, {})
+            source_id = entry.get("source_ad_id") or expired_id
+            listing_url = entry.get("listing_url")
+            expired_context_lines.append(
+                f"{source_id}: {listing_url}" if listing_url else f"{source_id} (internal ID {expired_id})"
+            )
+        context_suffix = (
+            "\\nManual review references:\\n" + "\\n".join(expired_context_lines)
+            if expired_context_lines else ""
+        )
         send_maintenance_alert(
             "telegram-quarantine-expired",
             f"{len(expired_uncertain)} Telegram delivery quarantine(s) expired after "
             f"{UNCERTAIN_TTL_SECONDS // 3600} hours. The listings remain marked seen; "
-            "check Telegram manually. No automatic resend was performed.",
+            "check Telegram manually. No automatic resend was performed."
+            + context_suffix,
             cooldown_seconds=86400,
         )
     if uncertain_ids:
@@ -5519,20 +5613,23 @@ def scan_once(include_backlog_rechecks=True):
                 print(f"[telegram] Sending ranked value trade id={trade_id}; profit={op['difference']:g}")
             # Persist a delivery guard before the non-idempotent Telegram request.
             uncertain_ids.add(trade_id)
+            record_uncertain_context(listing, trade_id, "individual")
             save_uncertain_ids(uncertain_ids)
             _SESSION_ALERTS_SENT += 1
             try:
                 send_telegram(message)
-            except TelegramDeliveryUncertain:
+            except TelegramDeliveryUncertain as exc:
+                source_id = listing.get("source_ad_id") or "unknown"
                 print(
-                    f"[telegram] Delivery uncertain for listing {trade_id}; "
-                    "quarantined, skipping this message and continuing the batch."
+                    f"[telegram] Delivery uncertain for listing {trade_id}; source_ad_id={source_id}; "
+                    f"reason={redact(exc)[:180]}; quarantined, skipping this message."
                 )
                 mark_seen_ad(listing)
                 return
             except Exception as exc:
                 uncertain_ids.discard(trade_id)
                 save_uncertain_ids(uncertain_ids)
+                clear_uncertain_context(trade_id)
                 mark_pending(listing, reason="telegram_failure")
                 print(
                     f"[telegram] Definite send failure for listing {trade_id}: "
@@ -5545,6 +5642,7 @@ def scan_once(include_backlog_rechecks=True):
         update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
         uncertain_ids.discard(trade_id)
         save_uncertain_ids(uncertain_ids)
+        clear_uncertain_context(trade_id)
         mark_seen_ad(listing)
         listing["alerted_at_utc"] = datetime.now(timezone.utc).isoformat()
         if listing.get("source") != "discord":
@@ -5592,6 +5690,7 @@ def scan_once(include_backlog_rechecks=True):
             listing = op["listing"]
             listing["alert_attempted_at_utc"] = datetime.now(timezone.utc).isoformat()
             uncertain_ids.add(listing["id"])
+            record_uncertain_context(listing, listing["id"], "digest")
             # Persist one offer at a time before its non-idempotent send.
             save_uncertain_ids(uncertain_ids)
 
@@ -5605,14 +5704,16 @@ def scan_once(include_backlog_rechecks=True):
             listing = op["listing"]
             trade_id = listing["id"]
             if status == "uncertain":
+                source_id = listing.get("source_ad_id") or "unknown"
                 print(
                     f"[telegram] Digest delivery uncertain for listing {trade_id}; "
-                    "only this offer is quarantined."
+                    f"source_ad_id={source_id}; reason={redact(error)[:180]}; only this offer is quarantined."
                 )
                 mark_seen_ad(listing)
             elif status in ("failed", "not_attempted"):
                 uncertain_ids.discard(trade_id)
                 save_uncertain_ids(uncertain_ids)
+                clear_uncertain_context(trade_id)
                 mark_pending(listing, reason="telegram_failure")
                 if status == "failed":
                     print(
@@ -5622,6 +5723,7 @@ def scan_once(include_backlog_rechecks=True):
             else:
                 uncertain_ids.discard(trade_id)
                 save_uncertain_ids(uncertain_ids)
+                clear_uncertain_context(trade_id)
                 deliver_opportunity(op, send=False)
                 delivered += 1
         save_uncertain_ids(uncertain_ids)
@@ -5651,6 +5753,7 @@ def scan_once(include_backlog_rechecks=True):
             print(f"[state-migration] Legacy uncertain-delivery ID matched; promoting quarantine for {trade_id}.")
             uncertain_ids.add(trade_id)
             save_uncertain_ids(uncertain_ids)
+            record_uncertain_context(listing, trade_id, "recovered")
             mark_seen_ad(listing)
             uncertain_skipped += 1
             continue
@@ -5672,6 +5775,7 @@ def scan_once(include_backlog_rechecks=True):
             mark_seen_ad(listing)
             continue
         if trade_id in uncertain_ids:
+            record_uncertain_context(listing, trade_id, "recovered")
             uncertain_skipped += 1
             mark_seen_ad(listing)
             continue
