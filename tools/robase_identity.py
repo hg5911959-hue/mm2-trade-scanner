@@ -29,7 +29,7 @@ def match_robase_row(row, item_map):
             image_type = "gun"
         elif re.search(r"(?:^|-)(?:k|knife)(?:-|$)", image_slug) or "knife" in image_slug:
             image_type = "knife"
-        year_match = re.search(r"(?<!\\d)(20\\d{2})(?!\\d)", image_slug)
+        year_match = re.search(r"(?<!\d)(20\d{2})(?!\d)", image_slug)
         if year_match:
             image_year = int(year_match.group(1))
     robase_slug = _slug(row.get("robase_slug") or "")
