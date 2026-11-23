@@ -5111,7 +5111,7 @@ def update_watch_entry(watch_state, listing, values, aliases=None, cash_catalog=
     previous = watch_state.get(ad_id, {})
     changed = bool(previous) and (previous.get('content_hash') != content_hash or previous.get('values_hash') != values_hash)
     created = now if changed or not previous else float(previous.get('created_at', now))
-    watch_state[ad_id] = {'content_hash': content_hash, 'values_hash': values_hash, 'created_at': created, 'updated_at': now}
+    watch_state[ad_id] = {'content_hash': content_hash, 'values_hash': values_hash, 'cash_source_version': 2 if CASH_FILTER else 1, 'created_at': created, 'updated_at': now}
     save_watch_state(watch_state)
     return changed
 
@@ -5664,11 +5664,15 @@ def scan_once(include_backlog_rechecks=True):
         watch_id = str(listing.get("source_ad_id") or "")
         previous_watch = watch_state.get(watch_id, {})
         current_content_hash, current_values_hash = listing_watch_fingerprints(listing, values, aliases, cash_catalog)
+        legacy_cash_watch = bool(previous_watch) and CASH_FILTER and previous_watch.get("cash_source_version") != 2
         variant_changed = bool(previous_watch) and (
             previous_watch.get("content_hash") != current_content_hash
-            or previous_watch.get("values_hash") != current_values_hash
+            or (not legacy_cash_watch and previous_watch.get("values_hash") != current_values_hash)
         )
         if (trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids:
+            if legacy_cash_watch and trade_id in alerted_set:
+                # One-time source migration: update the fingerprint without replaying old alerts.
+                update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
             print(f"[dedupe] Skipping unchanged or uncertain listing {trade_id} before Telegram send.")
             return
         if os.environ.get("DRY_RUN", "").strip().casefold() == "true":
