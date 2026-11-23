@@ -6,7 +6,7 @@ This repository is public, so **every branch, including `state`, is publicly rea
 
 Therefore, the state branch must not be described as private, and the current storage layout does not satisfy the no-public-redistribution boundary described below. Do not delete these files manually: the scanner currently depends on its cached value snapshot and market-history database. A safe migration requires a separate private storage destination or a dedicated encryption key, a tested restore path, and verification that no plaintext copies remain before the old public copies are removed. This migration is intentionally not performed by this change because no private destination or independent encryption key is configured here.
 
-The repository's own Supreme Values compliance notes state that written redistribution authorization is required for Supreme-derived data. No such authorization is recorded in this repository. Until that is confirmed, do not treat attribution alone as permission to republish those values.
+The repository's own Supreme Values compliance notes state that written redistribution authorization is required for Supreme-derived data. I found no authorization reference in the repository files reviewed for this audit. Until that is confirmed, do not treat attribution alone as permission to republish those values.
 
 
 Automated scanner for public **BloxSwaps MM2 P2P listings**, with concise Telegram alerts. GitHub Actions schedules a scan every 10 minutes; each scan polls the feed every 30 seconds for up to 540 seconds (9 minutes), leaving a short persistence window. GitHub cron can be delayed, so this is a target cadence, not a real-time guarantee.
