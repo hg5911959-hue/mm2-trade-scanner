@@ -166,7 +166,7 @@ class CashTelegramAttributionTests(IsolatedDataTestCase):
         payload = self._deliver_and_read_payload(message)
         self.assertIn("<b>OPPORTUNITIES</b>", payload["text"])
         self.assertIn("Prices: robase.gg · Item values: rblxvalue.com", payload["text"])
-        self.assertNotIn("Data from rblxvalue.com", payload["text"])
+        self.assertIn("Data from rblxvalue.com", payload["text"])
 
 
 class DisabledScanIntegrationTests(IsolatedDataTestCase):
