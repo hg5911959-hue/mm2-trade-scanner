@@ -3707,7 +3707,8 @@ class WorkflowSecurityTests(IsolatedDataTestCase):
     def test_scan_and_state_jobs_have_separate_permissions_and_no_legacy_cache(self):
         workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         scheduler = (Path(__file__).resolve().parents[1] / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
-        scan_job, state_job = workflow.split("  persist-state:", 1)
+        prepare_job, remaining_jobs = workflow.split("  scan:", 1)
+        scan_job, state_job = remaining_jobs.split("  persist-state:", 1)
         self.assertIn('cron: "*/10 * * * *"', scheduler)
         self.assertIn("uses: ./.github/workflows/scan.yml", scheduler)
         self.assertIn("cancel-in-progress: false", workflow)
@@ -3736,6 +3737,8 @@ class WorkflowSecurityTests(IsolatedDataTestCase):
         job_defaults = scan_job.split("    steps:", 1)[0]
         self.assertNotIn("MM2_SCAN_DURATION_SECONDS", job_defaults)
         self.assertNotIn("MM2_SCAN_INTERVAL_SECONDS", job_defaults)
+        self.assertIn("contents: write", prepare_job)
+        self.assertIn("Migrate or verify private durable state repository", prepare_job)
         self.assertIn("contents: read", scan_job)
         self.assertNotIn("contents: write", scan_job)
         self.assertIn("contents: write", state_job)
