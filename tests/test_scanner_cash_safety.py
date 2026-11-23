@@ -273,6 +273,23 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         self.assertFalse(scanner.qualifies_cash(generic_only))
 
 
+    def test_cash_digest_displays_the_configured_minimum_profit(self):
+        opportunity = {
+            "listing": {
+                "valuation_mode": "cash",
+                "source": "bloxswaps",
+                "url": "https://bloxswaps.com/trade/example",
+            },
+            "cash_profit_worst": 2.0,
+            "give_lines": [],
+            "receive_lines": [],
+        }
+        with patch.object(scanner, "CASH_MIN_PROFIT_USD", 2.0), patch.object(
+            scanner, "CASH_MIN_PROFIT_USD_SMALL", 2.0
+        ):
+            message = str(scanner.format_opportunity_digest([opportunity]))
+        self.assertIn("profit $2.00+", message)
+
     def test_digest_delivery_quarantines_only_uncertain_offer_and_continues(self):
         items = ["uncertain", "delivered"]
         prepared = []
