@@ -2108,6 +2108,22 @@ class SupremePaginationIntegrityTests(IsolatedDataTestCase):
 
 
 
+class SupremeMetadataGateTests(IsolatedDataTestCase):
+    def test_expired_or_missing_cache_never_paginates_without_verified_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch("scanner.VALUES_FILE", Path(directory) / "supreme.json"),
+                patch("scanner.VALUES_AUDIT_FILE", Path(directory) / "audit.json"),
+                patch("scanner.RBLXVALUE_API_KEY", "test-key"),
+                patch("scanner.RBLXVALUE_META_POLL_ENABLED", True),
+                patch("scanner._fetch_rblxvalue_meta", return_value=None),
+                patch("scanner.api_get_json_conditional") as pages,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "metadata is unavailable"):
+                    scanner.load_supreme_values()
+            pages.assert_not_called()
+
+
 class RblxValueKeyHealthCheckTests(IsolatedDataTestCase):
     @staticmethod
     def _fresh_cache(path):
