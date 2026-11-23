@@ -4,8 +4,10 @@ on:
   pull_request:
     paths:
       - "tools/robase_prices.py"
+      - "tools/robase_price_history.py"
       - "tools/cash_market.py"
       - "tests/test_robase_prices.py"
+      - "tests/test_robase_price_history.py"
       - "tests/test_cash_market.py"
       - "scanner.py"
       - ".github/workflows/robase-pricing-tests.yml"
@@ -13,8 +15,10 @@ on:
     branches: [main]
     paths:
       - "tools/robase_prices.py"
+      - "tools/robase_price_history.py"
       - "tools/cash_market.py"
       - "tests/test_robase_prices.py"
+      - "tests/test_robase_price_history.py"
       - "tests/test_cash_market.py"
       - "scanner.py"
       - ".github/workflows/robase-pricing-tests.yml"
@@ -37,6 +41,8 @@ jobs:
           python-version: "3.12"
       - name: Run ROBASE parser tests
         run: python -m unittest discover -s tests -p "test_robase_prices.py"
+      - name: Run daily ROBASE history archive tests
+        run: python -m unittest discover -s tests -p "test_robase_price_history.py"
       - name: Run cash valuation tests
         run: python -m unittest discover -s tests -p "test_cash_market.py"
       - name: Validate live ROBASE snapshot
@@ -61,4 +67,4 @@ jobs:
       - name: Install Ruff
         run: python -m pip install --disable-pip-version-check ruff==0.17.5
       - name: Lint ROBASE pricing changes
-        run: ruff check --select F scanner.py tools/robase_prices.py tools/cash_market.py tests/test_robase_prices.py tests/test_cash_market.py
+        run: ruff check --select F scanner.py tools/robase_prices.py tools/robase_price_history.py tools/cash_market.py tests/test_robase_prices.py tests/test_robase_price_history.py tests/test_cash_market.py
