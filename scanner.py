@@ -1796,6 +1796,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     seen_ids_skipped = []
     last_success_ts = _last_successful_scan_timestamp()
     additions = 0
+    offers_excluded = 0
     malformed = 0
     api_listings_added = 0
     api_posts_scanned = len(raw_first_items) if api_only else 0
@@ -1971,6 +1972,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     stats.update({
         "candidate_count": candidate_count,
         "addition_count": additions,
+        "offers_excluded_count": offers_excluded,
         "malformed_count": malformed,
         "html_malformed_count": html_malformed_count,
         "html_parse_warning_count": len(html_parse_warning_ids),
