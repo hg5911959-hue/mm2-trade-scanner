@@ -131,7 +131,7 @@ class CashTelegramAttributionTests(IsolatedDataTestCase):
         request = send.call_args.args[0]
         return json.loads(request.data.decode("utf-8"))
 
-    def test_cash_trade_alert_uses_robase_attribution_not_rblxvalue(self):
+    def test_cash_trade_alert_credits_robase_prices_and_rblxvalue_items(self):
         listing = {
             "id": "cash-alert", "source": "bloxswaps",
             "valuation_mode": "cash",
@@ -149,9 +149,9 @@ class CashTelegramAttributionTests(IsolatedDataTestCase):
         self.assertEqual(payload["parse_mode"], "HTML")
         self.assertIn("CASH PROFIT", payload["text"])
         self.assertIn("Prices: robase.gg · Item values: rblxvalue.com", payload["text"])
-        self.assertNotIn("Data from rblxvalue.com", payload["text"])
+        self.assertIn("Data from rblxvalue.com", payload["text"])
 
-    def test_cash_digest_uses_robase_attribution(self):
+    def test_cash_digest_credits_robase_prices_and_rblxvalue_items(self):
         listing = {
             "id": "cash-digest", "source": "bloxswaps",
             "valuation_mode": "cash", "url": "https://bloxswaps.com/trade/2",
