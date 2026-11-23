@@ -60,6 +60,7 @@ class CashMarketTests(IsolatedDataTestCase):
         self.assertEqual(low, high)
         self.assertEqual(missing, [])
         self.assertIn("$8.50", lines[0])
+        self.assertNotIn("LOW SAMPLE", lines[0])
 
     def test_13_day_old_verified_price_is_accepted(self):
         now = datetime(2026, 11, 14, tzinfo=UTC)
@@ -306,8 +307,9 @@ class CashMarketTests(IsolatedDataTestCase):
                 "robase_category": "Godly",
                 "cash_price_usd": 2.5,
                 "price_display": "$2.50",
-                "sold_7d": 1 if i == 1 else 10,
-                "sold_30d": 20,
+                "sold_7d": 1 if i == 1 else (0 if i == 0 else 10),
+                "sold_30d": 1 if i == 0 else 20,
+                "price_window_days": 30 if i == 0 else 7,
                 "status": "verified",
                 "source": f"https://robase.gg/item/item-{i}",
                 "last_checked_at_utc": checked,
@@ -340,6 +342,31 @@ class CashMarketTests(IsolatedDataTestCase):
         self.assertEqual(row["status"], "verified")
         self.assertEqual(row["price_display"], "$2.50")
         self.assertEqual(row["bloxswaps_value"], 100)
+        self.assertEqual(row["price_window_days"], 7)
+        self.assertEqual(row["price_sample_count"], 1)
+
+    def test_low_sample_robase_prices_are_labeled_without_changing_cash_value(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / "robase.json"
+        now = datetime(2026, 11, 21, tzinfo=UTC)
+        path.write_text(json.dumps(self._robase_snapshot(now)), encoding="utf-8")
+        catalog = load_robase_price_catalog(path, now=now + timedelta(minutes=10))
+
+        low, high, lines, missing = calculate_cash_side(
+            [{"canonical_name": "Item 0", "robase_slug": "item-0", "quantity_min": 1, "quantity_max": 1}],
+            catalog, "give", 0, now=now + timedelta(minutes=10),
+        )
+        self.assertEqual((low, high), (2.5, 2.5))
+        self.assertEqual(missing, [])
+        self.assertIn("[LOW SAMPLE 1/30d]", lines[0])
+
+        normal = calculate_cash_side(
+            [{"canonical_name": "Item 2", "robase_slug": "item-2", "quantity_min": 1, "quantity_max": 1}],
+            catalog, "give", 0, now=now + timedelta(minutes=10),
+        )
+        self.assertEqual(normal[0], 2.5)
+        self.assertNotIn("LOW SAMPLE", normal[2][0])
 
     def test_robase_catalog_rejects_any_stale_item_page(self):
         tmp = tempfile.TemporaryDirectory()
