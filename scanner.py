@@ -4155,7 +4155,7 @@ def format_opportunity_digest(opportunities):
     if cash_only:
         lines = [
             "💎 MM2 ROBASE <b>OPPORTUNITIES</b>",
-            f"<b>{len(opportunities)} verified offers · profit $1.00+</b>",
+            f"<b>{len(opportunities)} verified offers · profit ${min(CASH_MIN_PROFIT_USD, CASH_MIN_PROFIT_USD_SMALL):.2f}+</b>",
             "Item prices are copied from ROBASE. Every offer is open now.",
             "",
         ]
