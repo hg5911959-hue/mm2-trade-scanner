@@ -59,3 +59,76 @@ jobs:
     secrets:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+  recover-stale-scan:
+    needs: [enable-schedules, watchdog]
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch a live scan when scheduled scans stop arriving
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          workflow_id="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows" \
+            --jq '.workflows[] | select(.path == ".github/workflows/scan-scheduler.yml") | .id' 2>/dev/null || true)"
+          if [ -z "$workflow_id" ]; then
+            echo "::warning::Could not resolve scan-scheduler workflow id; recovery skipped."
+            exit 0
+          fi
+
+          workflow_state="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id" --jq '.state' 2>/dev/null || echo unknown)"
+          if [ "$workflow_state" != "active" ]; then
+            echo "[recovery] scanner workflow state is '$workflow_state'; respecting disabled or unknown state."
+            exit 0
+          fi
+
+          active_count=0
+          for workflow in scan-scheduler.yml scan.yml; do
+            for status in queued in_progress; do
+              count="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?status=$status&per_page=20" \
+                --jq '[.workflow_runs[] | select(.status == "queued" or .status == "in_progress")] | length')"
+              active_count=$((active_count + count))
+            done
+          done
+          if [ "$active_count" -gt 0 ]; then
+            echo "[recovery] $active_count queued or running scanner workflow(s); no duplicate dispatch."
+            exit 0
+          fi
+
+          latest_success=""
+          for workflow in scan-scheduler.yml scan.yml; do
+            value="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?status=completed&per_page=100" \
+              --jq '[.workflow_runs[] | select(.conclusion == "success") | (.completed_at // .updated_at)] | map(select(. != null)) | max // empty')"
+            if [ -n "$value" ] && { [ -z "$latest_success" ] || [[ "$value" > "$latest_success" ]]; }; then
+              latest_success="$value"
+            fi
+          done
+
+          age_minutes="$(python - "$latest_success" <<'PY'
+          import sys
+          from datetime import datetime, timezone
+          value = sys.argv[1].strip()
+          if not value:
+              print(999999)
+          else:
+              completed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+              print(max(0, int((datetime.now(timezone.utc) - completed).total_seconds() / 60)))
+          PY
+          )"
+
+          echo "[recovery] latest successful scan age: $age_minutes minutes"
+          if [ "$age_minutes" -lt 25 ]; then
+            echo "[recovery] last successful scan is still within the recovery window."
+            exit 0
+          fi
+
+          echo "::warning::No successful scan for $age_minutes minutes; dispatching one live recovery scan."
+          gh workflow run scan-scheduler.yml --ref main \
+            -f dry_run=false \
+            -f verify_rblxvalue_key=false
+          echo "[recovery] live scan dispatched without forcing an RBLXValue key check."
