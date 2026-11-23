@@ -53,9 +53,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn('      CASH_FILTER: "false" # weekly report is separate from the cash-first production scanner\n', weekly)
         self.assertIn("env.CASH_FILTER == '1' || env.CASH_FILTER == 'true'", workflow)
         self.assertNotIn("env.CASH_FILTER", weekly)
-        self.assertIn('          RBLXVALUE_META_POLL_ENABLED: "false"\n', workflow)
-        self.assertIn('          VALUES_TTL_SECONDS: "43200"\n', workflow)
-        self.assertIn('          RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY: "6"\n', workflow)
+        self.assertNotIn("RBLXVALUE_META_POLL_ENABLED", workflow)
         self.assertIn('          MM2_SCAN_DURATION_SECONDS: "540"\n', workflow)
         self.assertIn('          MM2_SCAN_INTERVAL_SECONDS: "30"\n', workflow)
         self.assertIn('          MAX_BACKLOG_RECHECK_PAGES: "1000"\n', workflow)
@@ -76,7 +74,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("workflow_dispatch:", scheduler)
         self.assertIn("uses: ./.github/workflows/scan.yml", scheduler)
         self.assertNotIn("secrets: inherit", scheduler)
-        for secret in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "RBLXVALUE_API_KEY", "HEALTHCHECKS_PING_URL"):
+        for secret in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "HEALTHCHECKS_PING_URL"):
             self.assertIn(f"{secret}: ${{{{ secrets.{secret} }}}}", scheduler)
         self.assertIn("contents: write", scheduler)
         self.assertIn("actions: read", scheduler)
@@ -92,7 +90,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         watchdog_call = watchdog.split("  workflow_call:", 1)[1].split("  workflow_dispatch:", 1)[0]
         scan_secrets = (
             "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
-            "RBLXVALUE_API_KEY", "HEALTHCHECKS_PING_URL",
+            "HEALTHCHECKS_PING_URL",
         )
         for secret in scan_secrets:
             self.assertIn(f"{secret}:\n        required: false", scan_call)
@@ -104,6 +102,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         workflow = (ROOT / ".github/workflows/rblxvalue-connection-test.yml").read_text(encoding="utf-8")
         self.assertIn("  workflow_dispatch:", workflow)
         self.assertNotIn("  push:", workflow)
+        self.assertIn("vars.SUPREME_DATA_AUTHORIZED == 'true'", workflow)
         self.assertIn("group: mm2-trade-scanner", workflow)
         self.assertIn("rblxvalue_guard.reserve_request(key=key)", workflow)
         self.assertIn("rblxvalue_guard.mark_key_success(key=key)", workflow)
@@ -127,7 +126,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("default: true", dispatch)
         self.assertIn("default: true", scheduler)
         self.assertIn("dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}", scheduler)
-        self.assertIn("verify_rblxvalue_key: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_rblxvalue_key || false }}", scheduler)
+        self.assertNotIn("verify_rblxvalue_key", scheduler)
 
     def test_api_safety_ledger_is_persisted_when_scan_fails_without_replacing_cache(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
