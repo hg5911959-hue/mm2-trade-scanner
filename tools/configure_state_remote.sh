@@ -71,6 +71,11 @@ if [[ "$source_status" -ne 0 ]]; then
   exit 1
 fi
 
+if [[ "${MM2_STATE_ALLOW_MIGRATION:-true}" != "true" ]]; then
+  echo "[state-remote] Private state branch is not initialized yet; this read-only consumer will not seed it."
+  exit 0
+fi
+
 git fetch --no-tags source refs/heads/state:refs/remotes/source/state
 git push origin refs/remotes/source/state:refs/heads/state
 echo "[state-remote] Migrated the existing state snapshot to the private repository."
