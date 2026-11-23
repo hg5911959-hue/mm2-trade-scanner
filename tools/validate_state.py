@@ -347,6 +347,7 @@ DEDUPE_STATE_FILES = (
     "pending_recheck_schedule.json",
     "first_seen_ads.json",
     "watch_ads.json",
+    "maintenance_alerts.json",
 )
 
 
@@ -496,6 +497,17 @@ def validate_dedupe_state(directory: str | Path) -> list[str]:
                     break
         if not valid:
             errors.append("watch-window state has an invalid schema or timestamp")
+
+    maintenance = documents.get("maintenance_alerts.json")
+    if "maintenance_alerts.json" in documents and (
+        not isinstance(maintenance, dict)
+        or len(maintenance) > 5000
+        or any(
+            not isinstance(key, str) or not key or not _finite_positive(value)
+            for key, value in maintenance.items()
+        )
+    ):
+        errors.append("maintenance alert cooldown state has an invalid key or timestamp")
 
     context = documents.get("telegram_uncertain_context.json")
     if "telegram_uncertain_context.json" in documents:
