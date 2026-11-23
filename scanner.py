@@ -3513,6 +3513,12 @@ def send_telegram(message):
                 "[telegram] Invalid response; delivery status is uncertain, not retrying."
             ) from exc
         if result.get("ok"):
+            message_result = result.get("result") if isinstance(result.get("result"), dict) else {}
+            message_id = message_result.get("message_id")
+            if message_id is not None:
+                print(f"[telegram] Bot API accepted message; message_id={message_id}")
+            else:
+                print("[telegram] Bot API accepted message; response omitted message_id")
             return
         if int(result.get("error_code", 0) or 0) == 429 and attempt < 1:
             retry_after = result.get("parameters", {}).get("retry_after", 2 ** (attempt + 1))

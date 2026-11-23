@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from tools.preflight import collect_preflight_checks, send_daily_notice, main
+from tools.preflight import collect_preflight_checks, send_daily_notice, main, check_telegram_connection
 
 
 class PreflightTests(IsolatedDataTestCase):
@@ -51,6 +51,43 @@ class PreflightTests(IsolatedDataTestCase):
             state_checker=kwargs.pop("state_checker", lambda: True), **kwargs,
         )["checks"]
 
+
+    def test_telegram_connection_check_verifies_bot_and_chat_without_sending(self):
+        class Response:
+            status = 200
+            def __init__(self, payload):
+                self.payload = payload
+            def read(self, limit):
+                return json.dumps(self.payload).encode("utf-8")
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+
+        with patch(
+            "tools.preflight.TELEGRAM_OPENER.open",
+            side_effect=[Response({"ok": True, "result": {"id": 1}}),
+                         Response({"ok": True, "result": {"id": 123}})],
+        ) as opener:
+            self.assertEqual(check_telegram_connection(env=self.env), [])
+        self.assertEqual(opener.call_count, 2)
+        self.assertIn("/getMe", opener.call_args_list[0].args[0].full_url)
+        self.assertIn("/getChat?chat_id=123", opener.call_args_list[1].args[0].full_url)
+
+    def test_telegram_connection_check_reports_invalid_token_or_chat(self):
+        class Response:
+            status = 200
+            def read(self, limit):
+                return b'{"ok":false,"description":"Unauthorized"}'
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+
+        with patch("tools.preflight.TELEGRAM_OPENER.open", return_value=Response()) as opener:
+            checks = check_telegram_connection(env=self.env)
+        self.assertEqual(checks, ["Telegram Bot API rejected the bot token"])
+        self.assertEqual(opener.call_count, 1)
 
     def test_daily_notice_failure_is_not_recorded_and_can_retry(self):
         with patch("tools.preflight.TELEGRAM_OPENER.open", side_effect=OSError("network down")):

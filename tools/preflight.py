@@ -38,6 +38,35 @@ def _state_branch_readable():
         return False
 
 
+def check_telegram_connection(*, env=None):
+    """Verify bot authentication and target-chat access without sending a message."""
+    environment = os.environ if env is None else env
+    token = str(environment.get("TELEGRAM_BOT_TOKEN", "")).strip()
+    chat = str(environment.get("TELEGRAM_CHAT_ID", "")).strip()
+    if not token or not chat:
+        return ["Telegram credentials are missing"]
+
+    for method, params, failure in (
+        ("getMe", {}, "Telegram Bot API rejected the bot token"),
+        ("getChat", {"chat_id": chat}, "Telegram bot cannot access the configured target chat"),
+    ):
+        url = f"https://api.telegram.org/bot{token}/{method}"
+        if params:
+            url += "?" + urllib.parse.urlencode(params)
+        request = urllib.request.Request(url, headers={"Accept": "application/json"})
+        try:
+            with TELEGRAM_OPENER.open(request, timeout=10) as response:
+                if response.status != 200:
+                    return [failure]
+                payload = json.loads(response.read(8192).decode("utf-8"))
+            if not isinstance(payload, dict) or payload.get("ok") is not True:
+                return [failure]
+        except (OSError, TimeoutError, ValueError, urllib.error.URLError):
+            return [f"{failure} (connection or response error)"]
+    print("[preflight] Telegram getMe and getChat checks passed; no message was sent.")
+    return []
+
+
 def collect_preflight_checks(data_dir="data", *, env=None, now=None,
                              state_checker=None, catalog_path=None):
     environment = os.environ if env is None else env
@@ -90,6 +119,8 @@ def collect_preflight_checks(data_dir="data", *, env=None, now=None,
 
     if not environment.get("TELEGRAM_BOT_TOKEN") or not environment.get("TELEGRAM_CHAT_ID"):
         checks.append("Telegram credentials are missing")
+    elif environment.get("TELEGRAM_PREFLIGHT_CHECK", "false").strip().casefold() in {"1", "true", "yes", "on"}:
+        checks.extend(check_telegram_connection(env=environment))
 
     checker = state_checker or _state_branch_readable
     try:
