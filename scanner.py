@@ -4505,6 +4505,7 @@ def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
     missing_robase = []
     ambiguous_robase = []
     seen_blox_slugs = {}
+    known_non_weapon_slugs = set()
     for row in robase_rows:
         matched, identity_source = _match_robase_row_to_bloxswaps(row, item_map)
         if not matched:
@@ -4516,6 +4517,7 @@ def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
         item_type = str(matched.get("type") or "").strip().casefold()
         if item_type not in {"knife", "gun"}:
             non_weapons.append(row.get("name") or row.get("robase_slug"))
+            known_non_weapon_slugs.add(normalize_slug(row.get("robase_slug") or ""))
             continue
         catalog_slug = normalize_slug(matched.get("slug") or "")
         if catalog_slug in seen_blox_slugs:
@@ -4590,7 +4592,11 @@ def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
     value_variants = list(_iter_value_variants(values))
     for row in robase_rows:
         robase_slug = normalize_slug(row.get("robase_slug") or "")
-        if not robase_slug or robase_slug in exact_map:
+        # An authoritative BloxSwaps catalogue match to a non-weapon (for
+        # example, a Pet) must not be overridden by a conflicting RBLXValue
+        # type merely because the slugs happen to match exactly. The fallback
+        # is only for genuinely unavailable BloxSwaps metadata.
+        if not robase_slug or robase_slug in exact_map or robase_slug in known_non_weapon_slugs:
             continue
         direct_values = [
             variant for variant in value_variants
