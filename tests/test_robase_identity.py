@@ -1,7 +1,8 @@
 import unittest
+from test_support import IsolatedDataTestCase
 from tools.robase_identity import build_robase_bloxswaps_map, match_robase_row
 
-class RobaseBloxswapsIdentityTests(unittest.TestCase):
+class RobaseBloxswapsIdentityTests(IsolatedDataTestCase):
     def row(self, name="Laser", slug="laser", category="godly"):
         return {"name": name, "robase_slug": slug, "robase_category": category}
 
