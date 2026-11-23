@@ -77,6 +77,11 @@ SEEN_FILE = Path("data/seen_ads.json")
 PENDING_FILE = Path("data/pending_recheck.json")
 PENDING_RECHECK_SCHEDULE_FILE = Path("data/pending_recheck_schedule.json")
 PENDING_RECHECK_BACKOFF_SECONDS = (300, 900, 1800, 3600, 21600)
+PENDING_RECHECK_BACKOFF_BY_REASON = {
+    # Technical failures are time-sensitive: retry within minutes, not hours.
+    "telegram_failure": (30, 60, 120, 300),
+    "unparsed_feed": (60, 120, 300, 600),
+}
 VALID_PENDING_REASONS = frozenset({
     "legacy_unclassified", "unmatched_value", "stability_unverified",
     "stability_blocked", "quantity_uncertain", "unparsed_feed",
@@ -3716,10 +3721,11 @@ def record_pending_recheck_attempts(due_ids, pending, schedule, now=None):
             continue
         previous = updated.get(key, {})
         attempts = int(previous.get("attempts", 0)) + 1
-        delay = PENDING_RECHECK_BACKOFF_SECONDS[
-            min(attempts - 1, len(PENDING_RECHECK_BACKOFF_SECONDS) - 1)
-        ]
         reason = previous.get("reason", "legacy_unclassified")
+        backoff = PENDING_RECHECK_BACKOFF_BY_REASON.get(
+            reason, PENDING_RECHECK_BACKOFF_SECONDS
+        )
+        delay = backoff[min(attempts - 1, len(backoff) - 1)]
         updated[key] = {
             "attempts": attempts, "next_check_at": current + delay, "reason": reason,
         }
