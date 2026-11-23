@@ -3421,9 +3421,7 @@ def send_telegram(message):
     message = str(message)
     is_robase_cash_message = "CASH PROFIT" in message or "ROBASE PRICE" in message or "MM2 ROBASE" in message
     required_attributions = (
-        [ROBASE_ATTRIBUTION, RBLXVALUE_ATTRIBUTION]
-        if is_robase_cash_message and os.environ.get("MM2_TESTING", "").strip().casefold() == "true"
-        else ([ROBASE_ATTRIBUTION] if is_robase_cash_message else [RBLXVALUE_ATTRIBUTION])
+        [ROBASE_ATTRIBUTION] if is_robase_cash_message else [RBLXVALUE_ATTRIBUTION]
     )
     existing_lines = set(message.rstrip().splitlines())
     missing_attributions = [
