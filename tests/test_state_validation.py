@@ -123,8 +123,8 @@ class StateValidationTests(IsolatedDataTestCase):
             "version": 1,
             "ads": {
                 "legacy-post": {
-                    "created_at": 1_800_000_000,
-                    "updated_at": 1_800_000_001,
+                    "created_at": "1800000000",
+                    "updated_at": "1800000001",
                 }
             },
         }), encoding="utf-8")
