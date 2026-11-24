@@ -447,3 +447,50 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ConfirmedTelegramDeliveryFinalizationTests(IsolatedDataTestCase):
+    def test_alerted_checkpoint_precedes_quarantine_release(self):
+        uncertain = {"trade-1"}
+        events = []
+
+        scanner.finalize_confirmed_telegram_delivery(
+            "trade-1",
+            uncertain,
+            lambda trade_id: events.append(("alerted", trade_id)),
+            lambda: events.append(("watch", None)),
+            lambda ids: events.append(("persist_quarantine", set(ids))),
+            lambda trade_id: events.append(("clear_context", trade_id)),
+        )
+
+        self.assertEqual(
+            events,
+            [
+                ("alerted", "trade-1"),
+                ("watch", None),
+                ("persist_quarantine", set()),
+                ("clear_context", "trade-1"),
+            ],
+        )
+        self.assertNotIn("trade-1", uncertain)
+
+    def test_failed_checkpoint_keeps_quarantine_intact(self):
+        uncertain = {"trade-1"}
+        events = []
+
+        def fail_watch():
+            events.append(("watch_failed", None))
+            raise OSError("simulated state write failure")
+
+        with self.assertRaisesRegex(OSError, "simulated state write failure"):
+            scanner.finalize_confirmed_telegram_delivery(
+                "trade-1",
+                uncertain,
+                lambda trade_id: events.append(("alerted", trade_id)),
+                fail_watch,
+                lambda ids: events.append(("persist_quarantine", set(ids))),
+                lambda trade_id: events.append(("clear_context", trade_id)),
+            )
+
+        self.assertIn("trade-1", uncertain)
+        self.assertEqual(events, [("alerted", "trade-1"), ("watch_failed", None)])
