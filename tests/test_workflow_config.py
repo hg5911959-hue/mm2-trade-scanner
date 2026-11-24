@@ -233,7 +233,10 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
 
     def test_bloxswaps_scanner_step_has_no_duplicate_environment_keys(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        preflight_step = workflow.split("      - name: Run scanner preflight checks", 1)[1].split("      - name:", 1)[0]
         step = workflow.split("      - name: Run BloxSwaps scanner", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("id: preflight", preflight_step)
+        self.assertIn("TELEGRAM_CHAT_TYPE: ${{ steps.preflight.outputs.telegram_chat_type || 'unknown' }}", step)
         self.assertEqual(step.count("CASH_MAX_AGE_DAYS:"), 1)
 
 
