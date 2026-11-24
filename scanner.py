@@ -62,7 +62,23 @@ FAILURE_THRESHOLD = int(os.environ.get("FAILURE_ALERT_THRESHOLD", "3"))
 MAX_ALERTS_PER_RUN = max(0, int(os.environ.get("MAX_ALERTS_PER_RUN", "0")))
 _SESSION_ALERTS_SENT = 0
 _SESSION_ALERT_LIMIT = MAX_ALERTS_PER_RUN
-ALERT_DELAY_SECONDS = max(0.0, float(os.environ.get("ALERT_DELAY_SECONDS", "3.2")) )
+TELEGRAM_CHAT_TYPE = os.environ.get("TELEGRAM_CHAT_TYPE", "").strip().casefold()
+
+
+def telegram_alert_delay(chat_type, configured_delay=3.2):
+    """Use Telegram's documented per-chat limits without assuming the target is private."""
+    configured = max(0.0, float(configured_delay))
+    if str(chat_type or "").strip().casefold() == "private":
+        # Telegram allows roughly one message per second in a private chat.
+        # Keep a small safety margin and never accept a faster configured value.
+        return 1.05
+    # Groups are limited to 20 messages per minute; keep the existing margin.
+    return max(3.2, configured)
+
+
+ALERT_DELAY_SECONDS = telegram_alert_delay(
+    TELEGRAM_CHAT_TYPE, os.environ.get("ALERT_DELAY_SECONDS", "3.2")
+)
 VALUES_FILE = Path("data/supreme_values.json")
 VALUES_AUDIT_FILE = Path("data/supreme_values_audit.json")
 RBLXVALUE_KEY_HEALTH_FILE = Path("data/rblxvalue_key_health.json")
@@ -6310,6 +6326,11 @@ def run_scan_loop(duration_seconds=720, interval_seconds=45):
 
 def main():
     install_redacting_streams()
+    if BOT_TOKEN and CHAT_ID:
+        print(
+            f"[telegram-rate-limit] target_type={TELEGRAM_CHAT_TYPE or 'unknown'} "
+            f"minimum_interval={ALERT_DELAY_SECONDS:.2f}s"
+        )
     rblxvalue_guard.reset_run_counter()
     if os.environ.get("RBLXVALUE_FORCE_KEY_CHECK", "").strip().casefold() == "true":
         print("[rblxvalue-key-check] Starting one-request credential verification")
