@@ -1068,6 +1068,16 @@ class ReliabilityTests(IsolatedDataTestCase):
                 scanner.send_telegram("X" * 5000)
         self.assertEqual(len(calls), 2)
 
+    def test_telegram_rate_limit_is_selected_from_safe_chat_type(self):
+        self.assertEqual(scanner.telegram_alert_delay("private", 3.2), 1.05)
+        self.assertEqual(scanner.telegram_alert_delay("group", 3.2), 3.2)
+        self.assertEqual(scanner.telegram_alert_delay("supergroup", 3.2), 3.2)
+        self.assertEqual(scanner.telegram_alert_delay("channel", 3.2), 3.2)
+        self.assertEqual(scanner.telegram_alert_delay("unknown", 3.2), 3.2)
+        self.assertEqual(scanner.telegram_alert_delay("", 4.5), 4.5)
+        self.assertEqual(scanner.telegram_alert_delay("private", 0.2), 1.05)
+        self.assertEqual(scanner.telegram_alert_delay("group", 1.0), 3.2)
+
     def test_telegram_respects_minimum_chat_interval(self):
         from io import BytesIO
 

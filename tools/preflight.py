@@ -44,6 +44,7 @@ def check_telegram_connection(*, env=None):
     if not token or not chat:
         return ["Telegram credentials are missing"]
 
+    chat_type = "unknown"
     for method, params, failure in (
         ("getMe", {}, "Telegram Bot API rejected the bot token"),
         ("getChat", {"chat_id": chat}, "Telegram bot cannot access the configured target chat"),
@@ -59,9 +60,24 @@ def check_telegram_connection(*, env=None):
                 payload = json.loads(response.read(8192).decode("utf-8"))
             if not isinstance(payload, dict) or payload.get("ok") is not True:
                 return [failure]
+            if method == "getChat":
+                result = payload.get("result")
+                candidate = result.get("type") if isinstance(result, dict) else None
+                if candidate in {"private", "group", "supergroup", "channel"}:
+                    chat_type = candidate
         except (OSError, TimeoutError, ValueError, urllib.error.URLError):
             return [f"{failure} (connection or response error)"]
-    print("[preflight] Telegram getMe and getChat checks passed; no message was sent.")
+
+    # Export only a fixed, non-identifying chat type. Never write chat IDs,
+    # usernames, titles, or other Telegram account metadata to workflow outputs.
+    output_path = str(environment.get("GITHUB_OUTPUT", "")).strip()
+    if output_path:
+        try:
+            with open(output_path, "a", encoding="utf-8") as output:
+                output.write(f"telegram_chat_type={chat_type}\n")
+        except OSError:
+            print("[preflight] Safe Telegram chat-type export unavailable; conservative rate limit will be used.")
+    print(f"[preflight] Telegram getMe/getChat passed; target_type={chat_type}; no message was sent.")
     return []
 
 

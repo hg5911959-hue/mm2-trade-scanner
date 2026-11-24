@@ -61,13 +61,17 @@ class PreflightTests(IsolatedDataTestCase):
             def __exit__(self, *args):
                 return False
 
+        output_path = self.root / "github-output.txt"
+        env = {**self.env, "GITHUB_OUTPUT": str(output_path)}
         with patch(
             "tools.preflight.TELEGRAM_OPENER.open",
             side_effect=[Response({"ok": True, "result": {"id": 1}}),
-                         Response({"ok": True, "result": {"id": 123}})],
+                         Response({"ok": True, "result": {"id": 123, "type": "private", "username": "must-not-leak"}})],
         ) as opener:
-            self.assertEqual(check_telegram_connection(env=self.env), [])
+            self.assertEqual(check_telegram_connection(env=env), [])
         self.assertEqual(opener.call_count, 2)
+        self.assertEqual(output_path.read_text(encoding="utf-8"), "telegram_chat_type=private\n")
+        self.assertNotIn("must-not-leak", output_path.read_text(encoding="utf-8"))
         self.assertIn("/getMe", opener.call_args_list[0].args[0].full_url)
         self.assertIn("/getChat?chat_id=123", opener.call_args_list[1].args[0].full_url)
 
