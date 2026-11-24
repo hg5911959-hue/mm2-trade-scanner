@@ -68,7 +68,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("tar --exclude='data/cash_prices.csv' -x", weekly)
         artifact = workflow.split("      - name: Prepare state artifact", 1)[1].split("      - name:", 1)[0]
         self.assertIn("rm -f state-bundle/data/cash_prices.csv", artifact)
-        self.assertIn('cron: "*/10 * * * *"', scheduler)
+        self.assertIn('cron: "3-59/10 * * * *"', scheduler)
         self.assertIn('      - "scanner.py"\n', scheduler)
         self.assertIn('      - "tools/**"\n', scheduler)
         self.assertIn("workflow_dispatch:", scheduler)
@@ -153,7 +153,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("  workflow_call:", workflow)
         self.assertIn("  workflow_dispatch:", workflow)
         self.assertNotIn("  schedule:", workflow)
-        self.assertIn('cron: "*/5 * * * *"', scheduler)
+        self.assertIn('cron: "2-59/5 * * * *"', scheduler)
         self.assertIn("uses: ./.github/workflows/watchdog.yml", scheduler)
         self.assertNotIn("secrets: inherit", scheduler)
         self.assertIn("TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}", scheduler)
@@ -161,6 +161,8 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("actions: write", scheduler)
         self.assertIn('workflows: ["MM2 Scanner Scheduler"]', scheduler)
         self.assertIn("types: [completed]", scheduler)
+        self.assertIn("-f 'inputs[dry_run]=false'", scheduler)
+        self.assertNotIn("verify_rblxvalue_key", scheduler)
 
     def test_all_workflows_use_least_privilege_and_immutable_action_pins(self):
         import re
