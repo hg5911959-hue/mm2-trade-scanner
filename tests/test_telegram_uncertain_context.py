@@ -1,5 +1,6 @@
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -56,6 +57,52 @@ class TelegramUncertainContextTests(IsolatedDataTestCase):
         self.path.write_text(json.dumps({"version": 9, "details": {}}), encoding="utf-8")
         with self.assertRaisesRegex(RuntimeError, "invalid structure"):
             scanner.load_uncertain_context()
+
+
+
+class TelegramUncertainStateTests(IsolatedDataTestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.path = Path(self.directory.name) / "telegram_uncertain.json"
+        self.patch_state = patch("scanner.UNCERTAIN_FILE", self.path)
+        self.patch_state.start()
+        self.addCleanup(self.patch_state.stop)
+
+    def test_old_uncertain_delivery_remains_quarantined_indefinitely(self):
+        old_timestamp = time.time() - 90 * 24 * 60 * 60
+        self.path.write_text(
+            json.dumps({
+                "version": 2,
+                "ids": ["old-trade"],
+                "created_at": {"old-trade": old_timestamp},
+            }),
+            encoding="utf-8",
+        )
+
+        state, expired = scanner.load_uncertain_state()
+
+        self.assertEqual(state, {"old-trade": old_timestamp})
+        self.assertEqual(expired, [])
+        self.assertEqual(scanner.load_uncertain_ids(), {"old-trade"})
+
+    def test_non_finite_uncertain_timestamp_fails_closed(self):
+        self.path.write_text(
+            '{"version":2,"ids":["bad-trade"],"created_at":{"bad-trade":NaN}}',
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "timestamp is invalid"):
+            scanner.load_uncertain_state()
+
+    def test_uncertain_quarantine_over_limit_fails_closed(self):
+        ids = [f"trade-{index}" for index in range(scanner.MAX_UNCERTAIN_DELIVERIES + 1)]
+        self.path.write_text(json.dumps({"version": 2, "ids": ids}), encoding="utf-8")
+
+        with self.assertRaisesRegex(RuntimeError, "safety limit"):
+            scanner.load_uncertain_state()
+
+
 
 
 if __name__ == "__main__":
