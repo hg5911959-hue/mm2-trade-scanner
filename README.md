@@ -2,11 +2,17 @@
 
 Automated scanner for public **BloxSwaps MM2 P2P listings**, with concise Telegram alerts. GitHub Actions schedules a scan every 10 minutes; each scan polls the feed every 30 seconds for up to 540 seconds (9 minutes), leaving a short persistence window. GitHub cron can be delayed, so this is a target cadence, not a real-time guarantee.
 
-## Current source-isolated implementation (PR #162)
+## Current production architecture (verified 2026-11-24)
 
-The proposed cash-only scanner path in PR #162 removes Supreme Values and RBLXValue from production cash evaluation. It uses ROBASE USD prices plus BloxSwaps item identity metadata only; it does not display Supreme values, Stability, Demand, or RBLXValue-derived fields. The legacy value-mode and weekly valuation report are disabled in the proposed workflow until third-party data rights are verified. The legacy dashboard is paused pending a cash-only export.
+The live GitHub Actions scanner runs with `CASH_FILTER=true`. Its cash qualification path uses the complete ROBASE price snapshot and exact BloxSwaps item-identity metadata; it does not load Supreme Values or query RBLXValue to calculate cash profit. The production workflow uses a **$2.00 minimum conservative cash profit** and sends each qualified offer individually, subject to Telegram pacing and duplicate-delivery safeguards.
 
-This is a code-path separation, not a blanket legal clearance for every upstream source. ROBASE's public page describes its prices as aggregated completed sales from other marketplaces, but an explicit redistribution/automation licence still needs confirmation. BloxSwaps' terms prohibit automated tools that disrupt its service; they do not expressly grant a general data-republication licence. Do not treat this PR as production-ready until upstream use conditions, full CI, state cleanup, and an end-to-end dry run are confirmed.
+### ROBASE price methodology
+
+ROBASE states that its prices are derived from completed sales on **StarPets, chromas.gg, and bhopp.com**. The combined price is weighted by copies sold across those marketplaces, after each marketplace's fee. It is therefore the seller-proceeds figure, not the buyer checkout price or an asking price. The default is the rolling 7-day average; when there have been no sales in the 7-day window, ROBASE uses its 30-day average fallback. The item page also exposes a Combined chart and a separate By marketplace view. The scanner extracts the combined average shown on the item page, not an individual marketplace quote.
+
+The scanner refreshes/revalidates the 222-item ROBASE catalogue before scanning. Each item must have a complete identity, a valid price, and a fresh verification timestamp; the cash evaluator fails closed if any required row is missing, stale, or unverified. The separate daily archive stores one snapshot per UTC day, but each archived price remains a rolling 7-day average (or the 30-day fallback)—it is **not** a measure of sales that occurred only on that calendar day.
+
+This architecture description is not legal clearance. ROBASE publicly describes its data methodology, but the project has not established a separate written redistribution or automation licence. BloxSwaps' published terms prohibit automated tools that disrupt its service; they do not expressly grant blanket permission for every automated use of its public pages or endpoints. Keep collection read-only, bounded, and respectful of service limits, and seek written permission from the relevant providers before expanding collection or republishing their data.
 
 ## Production mode and alert eligibility
 
@@ -32,13 +38,13 @@ From the scanner user's perspective:
 - **BloxSwaps Propose** = items you receive.
 - **BloxSwaps Recherche** = items you give.
 - Any listing containing **Ajout / Ajouts** or a structured **Offre / Offres / Offer / Offers** requested wildcard is excluded before valuation. The filter reads the individual card and structured `requestedWildcards` metadata; it does not discard a concrete weapon merely because the free-text description contains the word “offers”.
-- The ROBASE snapshot contains **222 catalogue entries**. The proposed identity audit matches weapons against BloxSwaps item metadata only; non-weapons, non-tradable items, and missing or ambiguous identities are excluded.
-- The proposed cash-only path does not load Supreme Values or RBLXValue. Item identity, type, rarity, Chroma status, year hints, and tradability are checked against BloxSwaps metadata; uncertain identities remain excluded.
-- The proposed cash-only path calculates profit from fresh, verified ROBASE seller-proceeds USD prices. It does not use a second item-value list, Stability, Demand, or Supreme-derived fields. `data/cash_prices.csv` remains a legacy/manual file and is not used by live cash evaluation.
+- The ROBASE snapshot contains **222 catalogue entries**. The production identity crosswalk matches weapons against BloxSwaps item metadata only; non-weapons, non-tradable items, and missing or ambiguous identities are excluded.
+- The production cash-only path does not load Supreme Values or RBLXValue. Item identity, type, rarity, Chroma status, year hints, and tradability are checked against BloxSwaps metadata; uncertain identities remain excluded.
+- The production cash-only path calculates profit from fresh, verified ROBASE seller-proceeds USD prices. It does not use a second item-value list, Stability, Demand, or Supreme-derived fields. `data/cash_prices.csv` remains a legacy/manual file and is not used by live cash evaluation.
 - **Current cash-only mode:** an item is eligible only when BloxSwaps explicitly marks it tradable and its identity maps unambiguously to a fresh, verified ROBASE price. The old Stability-based value mode is disabled.
 - **Estimate-only dry run:** when `DRY_RUN=true`, the scanner may use unverified legacy references for exploratory calculations, applying a ±30% uncertainty band and the resale haircut. Every dry-run cash result is labelled as estimate-only and is hard-blocked from the live alert eligibility gate. This uncertainty band is an engineering assumption, not a statistically measured confidence interval or proof of current market prices. Normal production runs continue to reject unverified rows.
 - The scanner never uses BloxSwaps' own Win/Loss label, never uses the visible listing price as an item value, and never invents a missing item value or quantity.
-- The proposed cash-only path has no Stability field. It rejects items that BloxSwaps does not explicitly mark as tradable and does not infer tradability from item value.
+- The production cash-only path has no Stability field. It rejects items that BloxSwaps does not explicitly mark as tradable and does not infer tradability from item value.
 
 ### Legacy manual CSV catalogue (not used by production)
 
@@ -70,7 +76,7 @@ If a quantity is uncertain, the scanner computes a conservative best/worst profi
 - If only the best-case profit is positive, it is held for recheck/manual review and is not advertised as a WIN.
 - If even the best-case profit is not positive, it does not send a trade alert.
 
-In the proposed cash-only path, Telegram alerts show owner/listing links, every item, verified ROBASE USD prices, and conservative cash profit. They do not show Supreme values, Stability, Demand, or RBLXValue data. Items with uncertain quantities or identities are rejected; no alert is sent unless worst-case profit is at least $2.00. Parser diagnostics remain in GitHub Actions logs.
+In the production cash-only path, Telegram alerts show owner/listing links, every item, verified ROBASE USD prices, and conservative cash profit. They do not show Supreme values, Stability, Demand, or RBLXValue data. Items with uncertain quantities or identities are rejected; no alert is sent unless worst-case profit is at least $2.00. Parser diagnostics remain in GitHub Actions logs.
 
 ### Legacy manual cash-price catalogue
 
@@ -142,7 +148,7 @@ Never commit or share these secrets. The scanner does not print API keys or Tele
 
 ## Item identity and cash-source safety
 
-The following section documents the legacy value-mode implementation only; it is not used by the proposed cash-only scanner path in PR #162.
+The following section documents the legacy value-mode implementation only; it is not used by the production cash scanner.
 
 - BloxSwaps catalogue metadata (slug, rarity, weapon type, and chroma flag) is carried with each item ID. A missing catalogue ID is never rescued by a similarly named weapon.
 - Supreme records retain their own source slug, category, type, ID, scalar value, explicit numeric range, and published stability label. In cash-first mode, Supreme numeric values and non-tradability Stability labels are not used in profit arithmetic or alert gating; verified ROBASE prices determine cash profit, while explicit `Untradeable` labels remain blocked. In value mode, received-side Stability remains a safety gate. The cache schema is versioned so an older snapshot without stability is refreshed before it can be used. Same-display-name records are never merged into a synthetic high/low range.
