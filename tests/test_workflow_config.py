@@ -161,17 +161,10 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("actions: write", scheduler)
         self.assertIn('workflows: ["MM2 Scanner Scheduler"]', scheduler)
         self.assertIn("types: [completed]", scheduler)
-        self.assertIn("-f 'inputs[dry_run]=false'", scheduler)
-        self.assertNotIn("verify_rblxvalue_key", scheduler)
-        self.assertIn("  continue-scan-loop:", scheduler)
-        self.assertIn("github.event.workflow_run.conclusion == 'success'", scheduler)
-        self.assertIn("github.event.workflow_run.run_started_at", scheduler)
-        self.assertIn("timedelta(minutes=10)", scheduler)
-        self.assertIn("-f 'inputs[auto_chain]=true'", scheduler)
-        self.assertIn("gh api \"/repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID\" --jq '.display_title // \"\"'", scheduler)
-        self.assertIn("RUN_EVENT: ${{ github.event.workflow_run.event }}", scheduler)
+        self.assertIn("recover-stale-scan:", scheduler)
         self.assertIn("20-minute cooldown", scheduler)
-        self.assertEqual(scheduler.count('select(.head_branch == "main" and .status != "completed")'), 2)
+        self.assertEqual(scheduler.count('select(.head_branch == "main" and .status != "completed")'), 1)
+        self.assertNotIn("continue-scan-loop:", scheduler)
         self.assertNotIn("status=$status&per_page=20", scheduler)
 
     def test_scheduler_manual_runs_do_not_chain_unless_explicitly_internal(self):
@@ -179,8 +172,24 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("run-name: MM2 Scanner Scheduler", scheduler)
         self.assertIn("auto_chain:", scheduler)
         self.assertIn("default: false", scheduler.split("auto_chain:", 1)[1].split("permissions:", 1)[0])
-        self.assertIn("inputs.auto_chain && 'chain'", scheduler)
         self.assertIn("inputs.dry_run && 'dry-run'", scheduler)
+        self.assertIn("inputs.auto_chain && 'chain'", scheduler)
+        self.assertLess(scheduler.index("inputs.dry_run && 'dry-run'"), scheduler.index("inputs.auto_chain && 'chain'"))
+        self.assertIn("  continue-scan-loop:", scheduler)
+        self.assertIn("needs: scan", scheduler)
+        self.assertIn("needs.scan.result == 'success'", scheduler)
+        self.assertIn("(inputs.auto_chain && !inputs.dry_run)", scheduler)
+        self.assertIn("RUN_STARTED_AT: ${{ github.run_started_at }}", scheduler)
+        self.assertIn("timedelta(minutes=10)", scheduler)
+        self.assertIn("CURRENT_RUN_ID: ${{ github.run_id }}", scheduler)
+        self.assertIn("status != \"completed\"", scheduler)
+        self.assertIn("((.id | tostring) != $current)", scheduler)
+        self.assertIn("workflow_state", scheduler)
+        self.assertIn("actions: write", scheduler)
+        self.assertIn("inputs[auto_chain]=true", scheduler)
+        self.assertIn("inputs[dry_run]=false", scheduler)
+        watchdog = (ROOT / ".github/workflows/watchdog-scheduler.yml").read_text(encoding="utf-8")
+        self.assertNotIn("continue-scan-loop:", watchdog)
 
     def test_all_workflows_use_least_privilege_and_immutable_action_pins(self):
         import re
@@ -204,8 +213,12 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
                     prefix = text[:match.start()]
                     job_match = list(re.finditer(r"(?m)^  ([a-zA-Z0-9_-]+):\s*$", prefix))
                     job_name = job_match[-1].group(1) if job_match else ""
-                    allowed_jobs = {"enable-schedules", "recover-stale-scan", "continue-scan-loop"}
-                    self.assertEqual(path.name, "watchdog-scheduler.yml")
+                    if path.name == "watchdog-scheduler.yml":
+                        allowed_jobs = {"enable-schedules", "recover-stale-scan"}
+                    elif path.name == "scan-scheduler.yml":
+                        allowed_jobs = {"continue-scan-loop"}
+                    else:
+                        allowed_jobs = set()
                     self.assertIn(job_name, allowed_jobs)
 
     def test_dashboard_skips_deploy_when_pages_is_not_enabled(self):

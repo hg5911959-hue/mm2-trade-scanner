@@ -1,5 +1,5 @@
 name: MM2 Scanner Scheduler
-run-name: MM2 Scanner Scheduler · ${{ inputs.auto_chain && 'chain' || (inputs.dry_run && 'dry-run' || 'live') }}
+run-name: MM2 Scanner Scheduler · ${{ inputs.dry_run && 'dry-run' || (inputs.auto_chain && 'chain' || 'live') }}
 
 on:
   # Ten-minute cadence; watchdog recovery covers missed scheduled dispatches.
@@ -45,3 +45,81 @@ jobs:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
+
+  continue-scan-loop:
+    name: Continue the ten-minute scan loop
+    needs: scan
+    if: >-
+      ${{
+        needs.scan.result == 'success' &&
+        (
+          github.event_name != 'workflow_dispatch' ||
+          (inputs.auto_chain && !inputs.dry_run)
+        )
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Wait until ten minutes after this scan started
+        env:
+          RUN_STARTED_AT: ${{ github.run_started_at }}
+        run: |
+          set -euo pipefail
+          delay="$(python - "$RUN_STARTED_AT" <<'PY'
+          import sys
+          from datetime import datetime, timedelta, timezone
+          value = sys.argv[1].strip()
+          if not value:
+              print(90)
+          else:
+              try:
+                  started = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                  target = started + timedelta(minutes=10)
+                  print(max(0, min(600, int((target - datetime.now(timezone.utc)).total_seconds()))))
+              except ValueError:
+                  print(90)
+          PY
+          )"
+          echo "[chain] waiting $delay seconds to preserve the ten-minute scan cadence."
+          if [ "$delay" -gt 0 ]; then sleep "$delay"; fi
+
+      - name: Dispatch the next live scan when no other scan is active
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          workflow_id="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows" \
+            --jq '.workflows[] | select(.path == ".github/workflows/scan-scheduler.yml") | .id' 2>/dev/null || true)"
+          if [ -z "$workflow_id" ]; then
+            echo "::warning::Could not resolve scan-scheduler workflow id; automatic continuation skipped."
+            exit 0
+          fi
+
+          workflow_state="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id" --jq '.state' 2>/dev/null || echo unknown)"
+          if [ "$workflow_state" != "active" ]; then
+            echo "[chain] scanner workflow state is '$workflow_state'; respecting disabled or unknown state."
+            exit 0
+          fi
+
+          active_count=0
+          for workflow in scan-scheduler.yml scan.yml; do
+            response="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?per_page=100")"
+            count="$(printf '%s' "$response" | jq --arg current "$CURRENT_RUN_ID" \
+              '[.workflow_runs[] | select(.head_branch == "main" and .status != "completed" and ((.id | tostring) != $current))] | length')"
+            active_count=$((active_count + count))
+          done
+          if [ "$active_count" -gt 0 ]; then
+            echo "[chain] $active_count other active scanner workflow(s); no duplicate dispatch."
+            exit 0
+          fi
+
+          gh api --method POST \
+            "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id/dispatches" \
+            -f ref=main \
+            -f 'inputs[dry_run]=false' \
+            -f 'inputs[auto_chain]=true'
+          echo "[chain] next live scan dispatched from the scheduler; continuation no longer depends on workflow_run events."
