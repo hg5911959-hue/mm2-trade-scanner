@@ -201,7 +201,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
                     prefix = text[:match.start()]
                     job_match = list(re.finditer(r"(?m)^  ([a-zA-Z0-9_-]+):\s*$", prefix))
                     job_name = job_match[-1].group(1) if job_match else ""
-                    allowed_jobs = {"enable-schedules", "recover-stale-scan"}
+                    allowed_jobs = {"enable-schedules", "recover-stale-scan", "continue-scan-loop"}
                     self.assertEqual(path.name, "watchdog-scheduler.yml")
                     self.assertIn(job_name, allowed_jobs)
 
