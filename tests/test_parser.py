@@ -768,11 +768,12 @@ class ReliabilityTests(IsolatedDataTestCase):
             path = Path(directory) / "alerted.json"
             history = Path(directory) / "history.csv"
             with patch("scanner.ALERTED_FILE", path), patch("scanner.HISTORY_FILE", history):
-                scanner.save_alerted([f"id-{i}" for i in range(5005)])
+                total_ids = scanner.MAX_ALERTED + 5
+                scanner.save_alerted([f"id-{i}" for i in range(total_ids)])
                 saved = scanner.load_alerted()
-        self.assertEqual(len(saved), 5000)
+        self.assertEqual(len(saved), scanner.MAX_ALERTED)
         self.assertEqual(saved[0], "id-5")
-        self.assertEqual(saved[-1], "id-5004")
+        self.assertEqual(saved[-1], f"id-{scanner.MAX_ALERTED + 4}")
 
 
     def test_state_writer_is_atomic_and_cleans_temp_file(self):
