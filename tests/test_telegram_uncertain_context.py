@@ -105,5 +105,22 @@ class TelegramUncertainStateTests(IsolatedDataTestCase):
 
 
 
+
+class AlertedRetentionTests(IsolatedDataTestCase):
+    def test_alerted_ids_are_retained_for_the_full_seen_ad_window(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "alerted.json"
+            with patch("scanner.ALERTED_FILE", path):
+                ids = [f"listing-{index}" for index in range(scanner.MAX_ALERTED + 1)]
+                scanner.save_alerted(ids)
+                stored = json.loads(path.read_text(encoding="utf-8"))["alerted"]
+
+        self.assertEqual(scanner.MAX_ALERTED, scanner.MAX_SEEN_ADS)
+        self.assertEqual(len(stored), scanner.MAX_SEEN_ADS)
+        self.assertEqual(stored[0], "listing-1")
+        self.assertEqual(stored[-1], f"listing-{scanner.MAX_SEEN_ADS}")
+
+
+
 if __name__ == "__main__":
     unittest.main()
