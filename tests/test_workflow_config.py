@@ -128,6 +128,15 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}", scheduler)
         self.assertNotIn("verify_rblxvalue_key", scheduler)
 
+    def test_successful_scan_requires_durable_state_before_continuation(self):
+        workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        self.assertIn("Require scanner state artifact after successful scan", workflow)
+        self.assertIn("needs.scan.result == 'success' && steps.download.outcome != 'success'", workflow)
+        self.assertIn("Verify successful scan timestamp is durable", workflow)
+        self.assertIn("state-artifact/data/last_successful_scan.json", workflow)
+        self.assertIn("refs/remotes/origin/state:data/last_successful_scan.json", workflow)
+        self.assertIn("Durable last_successful_scan timestamp does not match", workflow)
+
     def test_api_safety_ledger_is_persisted_when_scan_fails_without_replacing_cache(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         self.assertIn("name: Upload API safety ledger", workflow)

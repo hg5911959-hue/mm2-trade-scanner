@@ -211,6 +211,12 @@ jobs:
           name: mm2-scanner-state
           path: state-artifact
 
+      - name: Require scanner state artifact after successful scan
+        if: needs.scan.result == 'success' && steps.download.outcome != 'success'
+        run: |
+          echo "::error::Scanner state artifact is unavailable after a successful scan; refusing to mark the reusable workflow successful."
+          exit 1
+
       - name: Download API safety ledger
         id: safety-download
         continue-on-error: true
@@ -321,6 +327,25 @@ jobs:
           git commit -m "chore(state): persist MM2 scanner state"
           git push --force origin state-new:state
           echo "Replaced durable scanner state with a single-commit history."
+
+      - name: Verify successful scan timestamp is durable
+        if: needs.scan.result == 'success' && steps.download.outcome == 'success' && steps.validate-state.outcome == 'success'
+        run: |
+          set -euo pipefail
+          expected_file="state-artifact/data/last_successful_scan.json"
+          if [ ! -f "$expected_file" ]; then
+            echo "::error::Successful scan artifact is missing last_successful_scan.json."
+            exit 1
+          fi
+          git fetch origin refs/heads/state:refs/remotes/origin/state
+          expected="$(python -c "import json; print(json.load(open('$expected_file', encoding='utf-8'))['completed_at_utc'])")"
+          actual="$(git show refs/remotes/origin/state:data/last_successful_scan.json | python -c "import json,sys; print(json.load(sys.stdin)['completed_at_utc'])")"
+          if [ -z "$expected" ] || [ "$actual" != "$expected" ]; then
+            echo "::error::Durable last_successful_scan timestamp does not match the successful scan artifact."
+            echo "[state-persist-audit] expected=$expected actual=$actual"
+            exit 1
+          fi
+          echo "[state-persist-audit] verified last_successful_scan=$actual"
 
       - name: Verify legacy valuation data is absent from durable state
         if: steps.persist-state.outcome == 'success'
