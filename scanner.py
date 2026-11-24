@@ -86,7 +86,8 @@ RBLXVALUE_KEY_HEALTH_INTERVAL_SECONDS = 6 * 60 * 60
 RBLXVALUE_KEY_HEALTH_RETRY_SECONDS = 3 * 60 * 60
 FAILURE_FILE = Path("data/failure_state.json")
 HISTORY_FILE = Path("data/history.csv")
-MAX_ALERTED = 5000
+MAX_SEEN_ADS = 50000
+MAX_ALERTED = MAX_SEEN_ADS
 ALERTED_FILE = Path("data/alerted.json")
 UNCERTAIN_FILE = Path("data/telegram_uncertain.json")
 UNCERTAIN_CONTEXT_FILE = Path("data/telegram_uncertain_context.json")
@@ -131,7 +132,8 @@ VALUES_TTL_SECONDS = min(VALUES_REVALIDATION_INTERVAL_SECONDS, max(60, int(os.en
 BLOXSWAPS_ITEMS_TTL_SECONDS = max(300, int(os.environ.get("BLOXSWAPS_ITEMS_TTL_SECONDS", "3600")))
 PENDING_TTL_SECONDS = max(86400, int(os.environ.get("PENDING_TTL_SECONDS", str(7 * 86400))))
 MAX_SUCCESS_GAP_SECONDS = max(3600, int(os.environ.get("MAX_SUCCESS_GAP_SECONDS", str(24 * 3600))))
-UNCERTAIN_TTL_SECONDS = max(3600, int(os.environ.get("UNCERTAIN_TTL_SECONDS", str(24 * 3600))))
+MAX_UNCERTAIN_DELIVERIES = 500
+UNCERTAIN_REVIEW_AFTER_SECONDS = 24 * 60 * 60
 BLOXSWAPS_ITEMS_FILE = Path("data/bloxswaps_items.json")
 SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "100"))
 def cash_filter_enabled(value=None):
@@ -3771,7 +3773,7 @@ def record_pending_recheck_attempts(due_ids, pending, schedule, now=None):
 
 
 def save_seen_ads(ad_ids):
-    ordered = sorted(set(str(value) for value in ad_ids if value))[-50000:]
+    ordered = sorted(set(str(value) for value in ad_ids if value))[-MAX_SEEN_ADS:]
     atomic_write_text(SEEN_FILE, json.dumps({
         "version": 1, "updated_at": datetime.now(timezone.utc).isoformat(),
         "ad_ids": ordered,
@@ -3861,6 +3863,13 @@ def save_uncertain_state(state):
         str(ad_id): float(timestamp)
         for ad_id, timestamp in state.items()
     }
+    if len(normalized) > MAX_UNCERTAIN_DELIVERIES:
+        raise RuntimeError(
+            "[state] Telegram uncertain-delivery quarantine exceeds its safety limit; "
+            "manual reconciliation is required before scanning can continue."
+        )
+    if any(not ad_id or not math.isfinite(timestamp) or timestamp <= 0 for ad_id, timestamp in normalized.items()):
+        raise RuntimeError("[state] Telegram uncertain-delivery state contains an invalid ID or timestamp.")
     atomic_write_text(UNCERTAIN_FILE, json.dumps({
         "version": 2,
         "ids": sorted(normalized),
@@ -3948,6 +3957,7 @@ def clear_uncertain_context(trade_id):
 
 
 def load_uncertain_state():
+    """Keep uncertain sends quarantined until an operator explicitly reconciles them."""
     if not UNCERTAIN_FILE.exists():
         return {}, []
     try:
@@ -3967,20 +3977,23 @@ def load_uncertain_state():
         raise RuntimeError(
             "[state] Telegram uncertain-delivery file has an invalid structure; refusing duplicate-risk sends."
         )
+    if len(set(raw_ids)) > MAX_UNCERTAIN_DELIVERIES:
+        raise RuntimeError(
+            "[state] Telegram uncertain-delivery quarantine exceeds its safety limit; "
+            "manual reconciliation is required before scanning can continue."
+        )
     active = {}
-    expired = []
     for ad_id in raw_ids:
+        if not ad_id:
+            raise RuntimeError("[state] Telegram uncertain-delivery ID is empty.")
         try:
             timestamp = float(created_at.get(ad_id, now))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             raise RuntimeError("[state] Telegram uncertain-delivery timestamp is invalid.")
-        if timestamp > 0 and now - timestamp > UNCERTAIN_TTL_SECONDS:
-            expired.append(ad_id)
-        else:
-            active[ad_id] = timestamp
-    if expired:
-        save_uncertain_state(active)
-    return active, expired
+        if not math.isfinite(timestamp) or timestamp <= 0:
+            raise RuntimeError("[state] Telegram uncertain-delivery timestamp is invalid.")
+        active[ad_id] = timestamp
+    return active, []
 
 
 def load_uncertain_ids():
@@ -5642,31 +5655,32 @@ def scan_once(include_backlog_rechecks=True):
                     )
     alerted = load_alerted()
     alerted_set = set(alerted)
-    uncertain_state, expired_uncertain = load_uncertain_state()
+    uncertain_state, _ = load_uncertain_state()
     uncertain_ids = set(uncertain_state)
     uncertain_context = load_uncertain_context()
-    if expired_uncertain:
-        print(
-            f"[telegram] {len(expired_uncertain)} uncertain-delivery quarantine(s) expired; "
-            "their feed IDs remain marked seen and will not be auto-resent."
-        )
-        expired_context_lines = []
-        for expired_id in expired_uncertain[:8]:
-            entry = uncertain_context.get(expired_id, {})
-            source_id = entry.get("source_ad_id") or expired_id
+    now = time.time()
+    aged_uncertain = [
+        ad_id for ad_id, timestamp in uncertain_state.items()
+        if now - timestamp >= UNCERTAIN_REVIEW_AFTER_SECONDS
+    ]
+    if aged_uncertain:
+        review_lines = []
+        for uncertain_id in aged_uncertain[:8]:
+            entry = uncertain_context.get(uncertain_id, {})
+            source_id = entry.get("source_ad_id") or uncertain_id
             listing_url = entry.get("listing_url")
-            expired_context_lines.append(
-                f"{source_id}: {listing_url}" if listing_url else f"{source_id} (internal ID {expired_id})"
+            review_lines.append(
+                f"{source_id}: {listing_url}" if listing_url else f"{source_id} (internal ID {uncertain_id})"
             )
         context_suffix = (
-            "\nManual review references:\n" + "\n".join(expired_context_lines)
-            if expired_context_lines else ""
+            "\nManual review references:\n" + "\n".join(review_lines)
+            if review_lines else ""
         )
         send_maintenance_alert(
-            "telegram-quarantine-expired",
-            f"{len(expired_uncertain)} Telegram delivery quarantine(s) expired after "
-            f"{UNCERTAIN_TTL_SECONDS // 3600} hours. The listings remain marked seen; "
-            "check Telegram manually. No automatic resend was performed."
+            "telegram-quarantine-review",
+            f"{len(aged_uncertain)} Telegram delivery status(es) remain unresolved for at least 24 hours. "
+            "They remain quarantined indefinitely; check Telegram manually before clearing any entry. "
+            "No automatic resend will occur."
             + context_suffix,
             cooldown_seconds=86400,
         )
