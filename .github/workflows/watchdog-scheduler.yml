@@ -133,6 +133,5 @@ jobs:
           gh api --method POST \
             "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id/dispatches" \
             -f ref=main \
-            -f 'inputs[dry_run]=false' \
-            -f 'inputs[verify_rblxvalue_key]=false'
-          echo "[recovery] live scan dispatched through the GitHub Actions API without forcing an RBLXValue key check."
+            -f 'inputs[dry_run]=false'
+          echo "[recovery] live scan dispatched through the GitHub Actions API."
