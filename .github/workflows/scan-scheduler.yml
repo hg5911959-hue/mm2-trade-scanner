@@ -65,10 +65,11 @@ jobs:
     steps:
       - name: Wait until ten minutes after this scan started
         env:
-          RUN_STARTED_AT: ${{ github.run_started_at }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          delay="$(python - "$RUN_STARTED_AT" <<'PY'
+          run_started_at="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.run_started_at' 2>/dev/null || true)"
+          delay="$(python - "$run_started_at" <<'PY'
           import sys
           from datetime import datetime, timedelta, timezone
           value = sys.argv[1].strip()
