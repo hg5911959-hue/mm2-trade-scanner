@@ -158,7 +158,7 @@ jobs:
   continue-scan-loop:
     needs: enable-schedules
     if: >-
-      \${{
+      ${{
         github.event_name == 'workflow_run' &&
         github.event.workflow_run.conclusion == 'success' &&
         github.event.workflow_run.head_branch == 'main' &&
@@ -175,7 +175,7 @@ jobs:
     steps:
       - name: Wait until ten minutes after the previous scan started
         env:
-          PREVIOUS_SCAN_STARTED_AT: \${{ github.event.workflow_run.run_started_at }}
+          PREVIOUS_SCAN_STARTED_AT: ${{ github.event.workflow_run.run_started_at }}
         run: |
           set -euo pipefail
           delay="$(python - "$PREVIOUS_SCAN_STARTED_AT" <<'PY'
@@ -198,10 +198,10 @@ jobs:
 
       - name: Dispatch the next live scan when no scan is active
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          workflow_id="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows" \\
+          workflow_id="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows" \
             --jq '.workflows[] | select(.path == ".github/workflows/scan-scheduler.yml") | .id' 2>/dev/null || true)"
           if [ -z "$workflow_id" ]; then
             echo "::warning::Could not resolve scan-scheduler workflow id; automatic continuation skipped."
@@ -217,7 +217,7 @@ jobs:
           active_count=0
           for workflow in scan-scheduler.yml scan.yml; do
             for status in queued in_progress; do
-              count="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?status=$status&per_page=20" \\
+              count="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?status=$status&per_page=20" \
                 --jq '[.workflow_runs[] | select(.status == "queued" or .status == "in_progress")] | length')"
               active_count=$((active_count + count))
             done
@@ -227,9 +227,9 @@ jobs:
             exit 0
           fi
 
-          gh api --method POST \\
-            "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id/dispatches" \\
-            -f ref=main \\
-            -f 'inputs[dry_run]=false' \\
+          gh api --method POST \
+            "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id/dispatches" \
+            -f ref=main \
+            -f 'inputs[dry_run]=false' \
             -f 'inputs[auto_chain]=true'
           echo "[chain] next live scan dispatched; the loop will continue after its successful completion."
