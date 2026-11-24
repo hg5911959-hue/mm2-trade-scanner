@@ -84,6 +84,7 @@ jobs:
           }
 
       - name: Run scanner preflight checks (warnings do not block the scan)
+        id: preflight
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -119,6 +120,7 @@ jobs:
           BLOXSWAPS_ITEMS_TTL_SECONDS: "3600"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CHAT_TYPE: ${{ steps.preflight.outputs.telegram_chat_type || 'unknown' }}
           MM2_TELEGRAM_SCAN_SUMMARY: "true"
         run: |
           mkdir -p data
