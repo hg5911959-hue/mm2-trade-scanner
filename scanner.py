@@ -86,7 +86,8 @@ RBLXVALUE_KEY_HEALTH_INTERVAL_SECONDS = 6 * 60 * 60
 RBLXVALUE_KEY_HEALTH_RETRY_SECONDS = 3 * 60 * 60
 FAILURE_FILE = Path("data/failure_state.json")
 HISTORY_FILE = Path("data/history.csv")
-MAX_ALERTED = 5000
+MAX_SEEN_ADS = 50000
+MAX_ALERTED = MAX_SEEN_ADS
 ALERTED_FILE = Path("data/alerted.json")
 UNCERTAIN_FILE = Path("data/telegram_uncertain.json")
 UNCERTAIN_CONTEXT_FILE = Path("data/telegram_uncertain_context.json")
@@ -3772,7 +3773,7 @@ def record_pending_recheck_attempts(due_ids, pending, schedule, now=None):
 
 
 def save_seen_ads(ad_ids):
-    ordered = sorted(set(str(value) for value in ad_ids if value))[-50000:]
+    ordered = sorted(set(str(value) for value in ad_ids if value))[-MAX_SEEN_ADS:]
     atomic_write_text(SEEN_FILE, json.dumps({
         "version": 1, "updated_at": datetime.now(timezone.utc).isoformat(),
         "ad_ids": ordered,
