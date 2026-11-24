@@ -163,6 +163,21 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("types: [completed]", scheduler)
         self.assertIn("-f 'inputs[dry_run]=false'", scheduler)
         self.assertNotIn("verify_rblxvalue_key", scheduler)
+        self.assertIn("  continue-scan-loop:", scheduler)
+        self.assertIn("github.event.workflow_run.conclusion == 'success'", scheduler)
+        self.assertIn("github.event.workflow_run.run_started_at", scheduler)
+        self.assertIn("timedelta(minutes=10)", scheduler)
+        self.assertIn("-f 'inputs[auto_chain]=true'", scheduler)
+        self.assertIn("contains(github.event.workflow_run.display_title, 'chain')", scheduler)
+        self.assertIn("20-minute cooldown", scheduler)
+
+    def test_scheduler_manual_runs_do_not_chain_unless_explicitly_internal(self):
+        scheduler = (ROOT / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
+        self.assertIn("run-name: MM2 Scanner Scheduler", scheduler)
+        self.assertIn("auto_chain:", scheduler)
+        self.assertIn("default: false", scheduler.split("auto_chain:", 1)[1].split("permissions:", 1)[0])
+        self.assertIn("inputs.auto_chain && 'chain'", scheduler)
+        self.assertIn("inputs.dry_run && 'dry-run'", scheduler)
 
     def test_all_workflows_use_least_privilege_and_immutable_action_pins(self):
         import re
