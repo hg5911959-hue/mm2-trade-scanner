@@ -163,6 +163,22 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("types: [completed]", scheduler)
         self.assertIn("-f 'inputs[dry_run]=false'", scheduler)
         self.assertNotIn("verify_rblxvalue_key", scheduler)
+        self.assertIn("  continue-scan-loop:", scheduler)
+        self.assertIn("github.event.workflow_run.conclusion == 'success'", scheduler)
+        self.assertIn("github.event.workflow_run.run_started_at", scheduler)
+        self.assertIn("timedelta(minutes=10)", scheduler)
+        self.assertIn("-f 'inputs[auto_chain]=true'", scheduler)
+        self.assertIn("gh api \"/repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID\" --jq '.display_title // \"\"'", scheduler)
+        self.assertIn("RUN_EVENT: ${{ github.event.workflow_run.event }}", scheduler)
+        self.assertIn("20-minute cooldown", scheduler)
+
+    def test_scheduler_manual_runs_do_not_chain_unless_explicitly_internal(self):
+        scheduler = (ROOT / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
+        self.assertIn("run-name: MM2 Scanner Scheduler", scheduler)
+        self.assertIn("auto_chain:", scheduler)
+        self.assertIn("default: false", scheduler.split("auto_chain:", 1)[1].split("permissions:", 1)[0])
+        self.assertIn("inputs.auto_chain && 'chain'", scheduler)
+        self.assertIn("inputs.dry_run && 'dry-run'", scheduler)
 
     def test_all_workflows_use_least_privilege_and_immutable_action_pins(self):
         import re
@@ -186,7 +202,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
                     prefix = text[:match.start()]
                     job_match = list(re.finditer(r"(?m)^  ([a-zA-Z0-9_-]+):\s*$", prefix))
                     job_name = job_match[-1].group(1) if job_match else ""
-                    allowed_jobs = {"enable-schedules", "recover-stale-scan"}
+                    allowed_jobs = {"enable-schedules", "recover-stale-scan", "continue-scan-loop"}
                     self.assertEqual(path.name, "watchdog-scheduler.yml")
                     self.assertIn(job_name, allowed_jobs)
 

@@ -127,11 +127,127 @@ jobs:
             exit 0
           fi
 
-          echo "::warning::No successful scan for $age_minutes minutes; dispatching one live recovery scan."
+          echo "::warning::No successful scan for $age_minutes minutes; checking the recovery cooldown."
+          last_chain_dispatch="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id/runs?event=workflow_dispatch&per_page=20" \
+            --jq '[.workflow_runs[] | select(.head_branch == "main" and ((.display_title // "") | contains("chain"))) | .created_at] | map(select(. != null)) | max // empty')"
+          chain_age_minutes="$(python - "$last_chain_dispatch" <<'PY'
+          import sys
+          from datetime import datetime, timezone
+          value = sys.argv[1].strip()
+          if not value:
+              print(999999)
+          else:
+              created = datetime.fromisoformat(value.replace("Z", "+00:00"))
+              print(max(0, int((datetime.now(timezone.utc) - created).total_seconds() / 60)))
+          PY
+          )"
+          if [ "$chain_age_minutes" -lt 20 ]; then
+            echo "[recovery] a chained recovery scan was dispatched $chain_age_minutes minutes ago; respecting the 20-minute cooldown."
+            exit 0
+          fi
+
           # Use the REST dispatch endpoint: unlike `gh workflow run`, this
           # does not require a checked-out local git repository in the runner.
           gh api --method POST \
             "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id/dispatches" \
             -f ref=main \
-            -f 'inputs[dry_run]=false'
-          echo "[recovery] live scan dispatched through the GitHub Actions API."
+            -f 'inputs[dry_run]=false' \
+            -f 'inputs[auto_chain]=true'
+          echo "[recovery] live recovery scan dispatched; successful completion will resume the 10-minute chain."
+
+  continue-scan-loop:
+    needs: enable-schedules
+    if: >-
+      ${{
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main'
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Confirm automatic continuation is enabled for this run
+        id: chain
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          if [ "$RUN_EVENT" != "workflow_dispatch" ]; then
+            echo "continue=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          title="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.display_title // ""')"
+          if [[ "$title" == *chain* ]]; then
+            echo "continue=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "[chain] manual workflow_dispatch run is not marked for automatic continuation."
+            echo "continue=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Wait until ten minutes after the previous scan started
+        if: steps.chain.outputs.continue == 'true'
+        env:
+          PREVIOUS_SCAN_STARTED_AT: ${{ github.event.workflow_run.run_started_at }}
+        run: |
+          set -euo pipefail
+          delay="$(python - "$PREVIOUS_SCAN_STARTED_AT" <<'PY'
+          import sys
+          from datetime import datetime, timedelta, timezone
+          value = sys.argv[1].strip()
+          if not value:
+              print(90)
+          else:
+              try:
+                  started = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                  target = started + timedelta(minutes=10)
+                  print(max(0, min(600, int((target - datetime.now(timezone.utc)).total_seconds()))))
+              except ValueError:
+                  print(90)
+          PY
+          )"
+          echo "[chain] waiting $delay seconds to preserve the ten-minute scan cadence."
+          if [ "$delay" -gt 0 ]; then sleep "$delay"; fi
+
+      - name: Dispatch the next live scan when no scan is active
+        if: steps.chain.outputs.continue == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          workflow_id="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows" \
+            --jq '.workflows[] | select(.path == ".github/workflows/scan-scheduler.yml") | .id' 2>/dev/null || true)"
+          if [ -z "$workflow_id" ]; then
+            echo "::warning::Could not resolve scan-scheduler workflow id; automatic continuation skipped."
+            exit 0
+          fi
+
+          workflow_state="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id" --jq '.state' 2>/dev/null || echo unknown)"
+          if [ "$workflow_state" != "active" ]; then
+            echo "[chain] scanner workflow state is '$workflow_state'; respecting disabled or unknown state."
+            exit 0
+          fi
+
+          active_count=0
+          for workflow in scan-scheduler.yml scan.yml; do
+            for status in queued in_progress; do
+              count="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?status=$status&per_page=20" \
+                --jq '[.workflow_runs[] | select(.status == "queued" or .status == "in_progress")] | length')"
+              active_count=$((active_count + count))
+            done
+          done
+          if [ "$active_count" -gt 0 ]; then
+            echo "[chain] $active_count queued or running scanner workflow(s); no duplicate dispatch."
+            exit 0
+          fi
+
+          gh api --method POST \
+            "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id/dispatches" \
+            -f ref=main \
+            -f 'inputs[dry_run]=false' \
+            -f 'inputs[auto_chain]=true'
+          echo "[chain] next live scan dispatched; the loop will continue after its successful completion."
