@@ -4165,6 +4165,17 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
     return TelegramHTML("\n".join(lines))
 
 
+def finalize_confirmed_telegram_delivery(
+    trade_id, uncertain_ids, mark_alerted, update_watch, save_uncertain, clear_context
+):
+    """Persist confirmed delivery before releasing its duplicate-send quarantine."""
+    mark_alerted(trade_id)
+    update_watch()
+    uncertain_ids.discard(trade_id)
+    save_uncertain(uncertain_ids)
+    clear_context(trade_id)
+
+
 def deliver_digest_items_individually(items, prepare_one, send_one):
     """Send each digest offer independently so partial delivery cannot hide unsent offers."""
     outcomes = []
@@ -5826,11 +5837,14 @@ def scan_once(include_backlog_rechecks=True):
                 return
         else:
             print(f"[telegram] Finalizing listing {trade_id} already delivered in the digest.")
-        mark_alerted(trade_id)
-        update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
-        uncertain_ids.discard(trade_id)
-        save_uncertain_ids(uncertain_ids)
-        clear_uncertain_context(trade_id)
+        finalize_confirmed_telegram_delivery(
+            trade_id,
+            uncertain_ids,
+            mark_alerted,
+            lambda: update_watch_entry(watch_state, listing, values, aliases, cash_catalog),
+            save_uncertain_ids,
+            clear_uncertain_context,
+        )
         mark_seen_ad(listing)
         listing["alerted_at_utc"] = datetime.now(timezone.utc).isoformat()
         if listing.get("source") != "discord":
@@ -5917,9 +5931,9 @@ def scan_once(include_backlog_rechecks=True):
                         f"{type(error).__name__}; remaining offers queued for retry."
                     )
             else:
+                # Remove only from this process's in-memory set. Keep the durable
+                # quarantine until the alerted/watch checkpoints are persisted.
                 uncertain_ids.discard(trade_id)
-                save_uncertain_ids(uncertain_ids)
-                clear_uncertain_context(trade_id)
                 deliver_opportunity(op, send=False)
                 delivered += 1
         save_uncertain_ids(uncertain_ids)
