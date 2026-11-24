@@ -171,6 +171,8 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("gh api \"/repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID\" --jq '.display_title // \"\"'", scheduler)
         self.assertIn("RUN_EVENT: ${{ github.event.workflow_run.event }}", scheduler)
         self.assertIn("20-minute cooldown", scheduler)
+        self.assertEqual(scheduler.count('select(.head_branch == "main" and .status != "completed")'), 2)
+        self.assertNotIn("status=$status&per_page=20", scheduler)
 
     def test_scheduler_manual_runs_do_not_chain_unless_explicitly_internal(self):
         scheduler = (ROOT / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")

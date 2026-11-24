@@ -89,14 +89,12 @@ jobs:
 
           active_count=0
           for workflow in scan-scheduler.yml scan.yml; do
-            for status in queued in_progress; do
-              count="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?status=$status&per_page=20" \
-                --jq '[.workflow_runs[] | select(.status == "queued" or .status == "in_progress")] | length')"
-              active_count=$((active_count + count))
-            done
+            count="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?per_page=100" \
+              --jq '[.workflow_runs[] | select(.head_branch == "main" and .status != "completed")] | length')"
+            active_count=$((active_count + count))
           done
           if [ "$active_count" -gt 0 ]; then
-            echo "[recovery] $active_count queued or running scanner workflow(s); no duplicate dispatch."
+            echo "[recovery] $active_count active scanner workflow(s); no duplicate dispatch."
             exit 0
           fi
 
@@ -234,14 +232,12 @@ jobs:
 
           active_count=0
           for workflow in scan-scheduler.yml scan.yml; do
-            for status in queued in_progress; do
-              count="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?status=$status&per_page=20" \
-                --jq '[.workflow_runs[] | select(.status == "queued" or .status == "in_progress")] | length')"
-              active_count=$((active_count + count))
-            done
+            count="$(gh api "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?per_page=100" \
+              --jq '[.workflow_runs[] | select(.head_branch == "main" and .status != "completed")] | length')"
+            active_count=$((active_count + count))
           done
           if [ "$active_count" -gt 0 ]; then
-            echo "[chain] $active_count queued or running scanner workflow(s); no duplicate dispatch."
+            echo "[chain] $active_count active scanner workflow(s); no duplicate dispatch."
             exit 0
           fi
 
