@@ -168,7 +168,8 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("github.event.workflow_run.run_started_at", scheduler)
         self.assertIn("timedelta(minutes=10)", scheduler)
         self.assertIn("-f 'inputs[auto_chain]=true'", scheduler)
-        self.assertIn("contains(github.event.workflow_run.display_title, 'chain')", scheduler)
+        self.assertIn("gh api \"/repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID\" --jq '.display_title // \"\"'", scheduler)
+        self.assertIn("RUN_EVENT: ${{ github.event.workflow_run.event }}", scheduler)
         self.assertIn("20-minute cooldown", scheduler)
 
     def test_scheduler_manual_runs_do_not_chain_unless_explicitly_internal(self):
