@@ -3777,6 +3777,8 @@ class WorkflowSecurityTests(IsolatedDataTestCase):
         self.assertIn("rm -f state-bundle/data/supreme_values.json", scan_job)
         self.assertIn("[state-persist-audit] absent=", state_job)
         self.assertIn("data/rblxvalue_key_health.json", state_job)
+        safety_download = state_job.split("      - name: Download API safety ledger", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("if: needs.scan.result != 'success'", safety_download)
         self.assertIn("data/market_history.sqlite3", state_job)
         self.assertNotIn("RBLXVALUE_DAILY_REQUEST_LIMIT", scan_job)
         self.assertIn("No scanner data files found", state_job)
