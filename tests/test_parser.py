@@ -3748,7 +3748,7 @@ class WorkflowSecurityTests(IsolatedDataTestCase):
         workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         scheduler = (Path(__file__).resolve().parents[1] / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
         scan_job, state_job = workflow.split("  persist-state:", 1)
-        self.assertIn('cron: "*/10 * * * *"', scheduler)
+        self.assertIn('cron: "3-59/10 * * * *"', scheduler)
         self.assertIn("uses: ./.github/workflows/scan.yml", scheduler)
         self.assertIn("cancel-in-progress: false", workflow)
         self.assertIn('MM2_SCAN_DURATION_SECONDS: "540"', scan_job)
