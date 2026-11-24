@@ -1,4 +1,5 @@
 name: MM2 Scanner Scheduler
+run-name: MM2 Scanner Scheduler · ${{ inputs.auto_chain && 'chain' || (inputs.dry_run && 'dry-run' || 'live') }}
 
 on:
   # Ten-minute cadence; watchdog recovery covers missed scheduled dispatches.
@@ -21,6 +22,11 @@ on:
         required: false
         type: boolean
         default: true
+      auto_chain:
+        description: "Internal: continue the automated scan loop after this run"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   actions: read
