@@ -215,6 +215,19 @@ def calculate_cash_side(
         if not entry:
             missing.append(f"{name} (cash price missing)")
             continue
+        if entry.get("tier") == "robase":
+            sample_count = entry.get("price_sample_count")
+            sample_window = entry.get("price_window_days")
+            if type(sample_count) is not int or sample_count < 3:
+                sample_label = (
+                    f"{sample_count}/{sample_window}d"
+                    if type(sample_count) is int and sample_window in (7, 30)
+                    else "unknown"
+                )
+                missing.append(
+                    f"{name} (cash price low sample: {sample_label}; minimum 3 completed sales)"
+                )
+                continue
         estimate_only = False
         if entry.get("status") == "unverified" and allow_unverified_estimates:
             estimate_only = True
