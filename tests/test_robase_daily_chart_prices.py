@@ -68,6 +68,18 @@ class DailyChartPriceLookupTests(IsolatedDataTestCase):
         path = Path(temp.name) / "identity.json"
         path.write_text(json.dumps({"a": {"robase_slug": "bat"}, "b": {"robase_slug": "heat"}}), encoding="utf-8")
         self.assertEqual(expected_weapon_slugs(path, expected_count=2), {"bat", "heat"})
+        history = self._write([
+            {"robase_slug": "bat", "item_id": "628", "item_name": "Bat", "date": "2026-11-24", "all_marketplaces_sold": "142", "all_marketplaces_price_after_fee": "3.7252331"},
+            {"robase_slug": "heat", "item_id": "1", "item_name": "Heat", "date": "2026-11-24", "all_marketplaces_sold": "0", "all_marketplaces_price_after_fee": ""},
+        ])
+        target, prices = load_exact_previous_day_prices(
+            history,
+            path,
+            now=datetime(2026, 11, 25, 12, 0, tzinfo=timezone.utc),
+            expected_count=2,
+        )
+        self.assertEqual(target, "2026-11-24")
+        self.assertEqual(prices["bat"]["cash_price_usd"], 3.7252331)
 
 
 if __name__ == "__main__":
