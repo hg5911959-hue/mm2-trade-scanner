@@ -13,7 +13,7 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   inspect-public-chart:
@@ -529,6 +529,130 @@ jobs:
           if not weapon_archive_complete:
               raise SystemExit("Daily weapon archive failed its completeness gate; inspect report and manifest.")
           PY
+      - name: Checkout persistent daily-history branch
+        uses: actions/checkout@v4
+        with:
+          ref: robase-daily-history
+          path: robase-daily-history
+          fetch-depth: 1
+      - name: Append validated daily weapon observations
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv, json
+          from collections import defaultdict
+          from datetime import date
+          from pathlib import Path
+
+          source = Path("robase-chart-diagnostics/weapons_daily_archive.csv")
+          manifest_path = Path("robase-chart-diagnostics/archive_manifest.json")
+          target_dir = Path("robase-daily-history/data")
+          target_dir.mkdir(parents=True, exist_ok=True)
+          target = target_dir / "weapons_daily_all_marketplaces_after_fees.csv"
+          manifest_target = target_dir / "manifest.json"
+          fields = ["robase_slug", "item_id", "item_name", "date", "all_marketplaces_sold", "all_marketplaces_price_after_fee"]
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          summary = manifest.get("weapon_archive", {})
+          identity = manifest.get("weapon_mapping", {})
+          if summary.get("complete") is not True or identity.get("mapping_complete") is not True:
+              raise SystemExit("Incoming weapon archive did not pass completeness and identity gates")
+          weapon_slugs = {
+              entry.get("robase_slug")
+              for entry in manifest.get("exact_weapon_map", {}).values()
+              if isinstance(entry, dict) and entry.get("robase_slug")
+          }
+          if len(weapon_slugs) != 214 or identity.get("exact_weapon_matches") != 214:
+              raise SystemExit("Expected exactly 214 exact weapon identities")
+
+          def load_rows(path):
+              if not path.exists():
+                  return []
+              with path.open(encoding="utf-8", newline="") as handle:
+                  reader = csv.DictReader(handle)
+                  if reader.fieldnames != fields:
+                      raise SystemExit("Persistent archive CSV schema mismatch")
+                  return list(reader)
+
+          existing = load_rows(target)
+          incoming = load_rows(source)
+          if len(incoming) != 214 * 365:
+              raise SystemExit(f"Incoming archive row count invalid: {len(incoming)}")
+          def validate(rows, label):
+              keys = set()
+              per_day = defaultdict(set)
+              for row in rows:
+                  slug, day = row["robase_slug"], row["date"]
+                  if slug not in weapon_slugs:
+                      raise SystemExit(f"{label}: unexpected weapon slug {slug}")
+                  try:
+                      date.fromisoformat(day)
+                      sold = int(row["all_marketplaces_sold"])
+                  except Exception as exc:
+                      raise SystemExit(f"{label}: invalid date or sales count") from exc
+                  if sold < 0:
+                      raise SystemExit(f"{label}: negative sales count")
+                  price = row["all_marketplaces_price_after_fee"]
+                  if price != "":
+                      value = float(price)
+                      if value <= 0:
+                          raise SystemExit(f"{label}: price must be blank or positive")
+                  key = (slug, day)
+                  if key in keys:
+                      raise SystemExit(f"{label}: duplicate item/day key {key}")
+                  keys.add(key)
+                  per_day[day].add(slug)
+              for day, slugs in per_day.items():
+                  if slugs != weapon_slugs:
+                      raise SystemExit(f"{label}: incomplete day {day}: {len(slugs)}/214")
+              return per_day
+
+          incoming_days = validate(incoming, "incoming")
+          existing_days = validate(existing, "existing")
+          old_keys = {(r["robase_slug"], r["date"]) for r in existing}
+          new_rows = [r for r in incoming if (r["robase_slug"], r["date"]) not in old_keys]
+          merged = existing + new_rows
+          merged_days = validate(merged, "merged")
+          merged.sort(key=lambda r: (r["date"], r["robase_slug"]))
+          if len(merged) != len(merged_days) * 214:
+              raise SystemExit("Merged archive is not a complete 214-weapon matrix")
+          with target.open("w", encoding="utf-8", newline="") as handle:
+              writer = csv.DictWriter(handle, fieldnames=fields)
+              writer.writeheader()
+              writer.writerows(merged)
+          latest = max(merged_days)
+          manifest_out = {
+              "schema_version": 1,
+              "source": "ROBASE daily chart API",
+              "price_basis": "all_marketplaces_price_after_fee",
+              "formula": "sales-weighted average of each marketplace daily price after its ROBASE fee; weighted by sold copies with priced observations",
+              "buyer_price_used": False,
+              "weapon_count": 214,
+              "daily_rows": len(merged),
+              "dates_covered": len(merged_days),
+              "first_date": min(merged_days),
+              "last_date": latest,
+              "rows_appended_this_run": len(new_rows),
+              "latest_api_range": {
+                  "first_date": min(incoming_days),
+                  "last_date": max(incoming_days),
+                  "days": len(incoming_days)
+              },
+              "identity_mapping": "exact mapping from tools/robase_identity.py",
+              "missing_day_price_policy": "blank price when no priced sales; never impute zero",
+              "updated_by": "GitHub Actions"
+          }
+          manifest_target.write_text(json.dumps(manifest_out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps(manifest_out, ensure_ascii=False, indent=2))
+          PY
+          git -C robase-daily-history config user.name "github-actions[bot]"
+          git -C robase-daily-history config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C robase-daily-history add data/weapons_daily_all_marketplaces_after_fees.csv data/manifest.json
+          if ! git -C robase-daily-history diff --cached --quiet; then
+            git -C robase-daily-history commit -m "Update ROBASE daily All marketplaces after-fee history"
+            git -C robase-daily-history push origin HEAD:robase-daily-history
+          else
+            echo "No new daily observations; persistent history is already current."
+          fi
       - name: Upload diagnostic report
         if: always()
         uses: actions/upload-artifact@v4
