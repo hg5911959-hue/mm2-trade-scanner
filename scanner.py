@@ -27,6 +27,7 @@ from tools.metrics import update_metrics
 from tools.alert_policy import rank_and_split
 from tools.cash_market import calculate_cash_side, cash_profit_bounds, normalize_cash_name, cash_price_is_fresh, strict_quantity
 from tools.robase_identity import build_robase_bloxswaps_map
+from tools.daily_chart_shadow import build_daily_chart_shadow_catalog
 
 
 def load_cash_price_catalog(*args, **kwargs):
@@ -5307,6 +5308,10 @@ def accumulate_cash_blockers(missing, counts, groups):
 
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
+    daily_shadow_mode = os.environ.get("ROBASE_DAILY_CHART_SHADOW_ENABLED", "").strip().casefold() == "true"
+    if daily_shadow_mode:
+        # Shadow mode is strictly non-delivering, even if a caller misconfigures DRY_RUN.
+        os.environ["DRY_RUN"] = "true"
     dry_run = os.environ.get("DRY_RUN", "").strip().casefold() == "true"
     if not dry_run and (not BOT_TOKEN or not CHAT_ID):
         raise RuntimeError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in GitHub Actions secrets.")
@@ -5468,6 +5473,54 @@ def scan_once(include_backlog_rechecks=True):
     pending_schedule = record_pending_recheck_attempts(
         due_pending_ids, pending_ids, pending_schedule
     )
+    if daily_shadow_mode:
+        if not CASH_FILTER or not cash_catalog or not cash_catalog.get("bloxswaps_exact_map"):
+            print("[daily-shadow] FAIL-CLOSED: cash mode or exact BloxSwaps identity map is unavailable.")
+            return 0
+        try:
+            from tools.robase_daily_chart_prices import load_exact_previous_day_prices
+            target_day, daily_prices = load_exact_previous_day_prices()
+            daily_shadow_catalog, daily_stats = build_daily_chart_shadow_catalog(
+                cash_catalog, daily_prices
+            )
+        except Exception as shadow_error:
+            print(
+                f"[daily-shadow] FAIL-CLOSED: previous-day chart archive unavailable or invalid: "
+                f"{type(shadow_error).__name__}: {str(shadow_error)[:240]}"
+            )
+            return 0
+        print(
+            f"[daily-shadow] date={target_day}; weapons={daily_stats['weapons_total']}; "
+            f"eligible={daily_stats['eligible']}; excluded={daily_stats['unavailable_or_low_sample']}; "
+            f"non_daily_catalogue_entries_disabled={daily_stats['non_daily_catalogue_entries_disabled']}"
+        )
+        shadow_evaluated = shadow_qualified = shadow_rejected = 0
+        shadow_samples = []
+        for shadow_listing in listings:
+            result, missing = evaluate_cash_listing_robase_only(dict(shadow_listing), daily_shadow_catalog)
+            shadow_evaluated += 1
+            if result is None:
+                shadow_rejected += 1
+                if missing and len(shadow_samples) < 8:
+                    shadow_samples.append(
+                        f"{shadow_listing.get('id', 'unknown')}: " + "; ".join(str(x) for x in missing[:3])
+                    )
+                continue
+            if result["cash_profit_worst"] >= CASH_MIN_PROFIT_USD:
+                shadow_qualified += 1
+                print(
+                    f"[daily-shadow] QUALIFIED listing={shadow_listing.get('id')} "
+                    f"profit={result['cash_profit_worst']:.2f}..{result['cash_profit_best']:.2f} USD "
+                    f"date={target_day}"
+                )
+        print(
+            f"[daily-shadow] COMPLETE date={target_day}; listings={shadow_evaluated}; "
+            f"qualified_at_{CASH_MIN_PROFIT_USD:.2f}_USD_floor={shadow_qualified}; "
+            f"rejected_or_ineligible={shadow_rejected}; telegram_sends=0; live_catalog_mutations=0"
+        )
+        for sample in shadow_samples:
+            print(f"[daily-shadow] REJECTED {sample}")
+        return 0
     if CASH_FILTER:
         # Cash opportunities are intentionally BloxSwaps-only; never mix Discord
         # or manually imported listings into the ROBASE cash pipeline.
