@@ -113,6 +113,14 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertNotIn("urllib.request.urlopen(request", workflow)
 
 
+    def test_read_only_shadow_core_stays_identical_to_live_scan_job(self):
+        live = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        core = (ROOT / ".github/workflows/scan-core.yml").read_text(encoding="utf-8")
+        live_job = live.split("  scan:\n", 1)[1].split("  persist-state:\n", 1)[0]
+        core_job = core.split("  scan:\n", 1)[1]
+        self.assertEqual(live_job.strip(), core_job.strip())
+        self.assertNotIn("persist-state:", core)
+
     def test_existing_state_branch_is_validated_before_scanning(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         restore = workflow.split("      - name: Restore durable state branch", 1)[1].split("      - name:", 1)[0]

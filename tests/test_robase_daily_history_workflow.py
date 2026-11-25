@@ -32,6 +32,13 @@ class DailyArchiveWorkflowTests(IsolatedDataTestCase):
     def test_append_rejects_non_canonical_dates(self):
         self.assertIn("parsed_day.isoformat() != day", self.content)
 
+    def test_post_append_verification_requires_manifest_consistency(self):
+        verify_start = self.content.index("- name: Verify previous completed-day selector")
+        verify_end = self.content.index("- name: Upload diagnostic report", verify_start)
+        verify_block = self.content[verify_start:verify_end]
+        self.assertIn('manifest.get("last_date") != target', verify_block)
+        self.assertIn('manifest.get("daily_rows") != manifest.get("dates_covered", 0) * 214', verify_block)
+
     def test_post_append_verification_requires_full_weapon_coverage(self):
         verify_start = self.content.index("- name: Verify previous completed-day selector")
         verify_end = self.content.index("- name: Upload diagnostic report", verify_start)

@@ -697,7 +697,9 @@ jobs:
       - name: Verify previous completed-day selector against persistent archive
         run: |
           python - <<'PY'
+          import json
           from datetime import datetime, timedelta
+          from pathlib import Path
           from zoneinfo import ZoneInfo
           from tools.robase_daily_chart_prices import load_exact_previous_day_prices
 
@@ -710,6 +712,11 @@ jobs:
           expected = (now.date() - timedelta(days=1)).isoformat()
           if target != expected or len(prices) != 214:
               raise SystemExit("Previous-day lookup returned the wrong date or incomplete weapon coverage")
+          manifest = json.loads(Path("robase-daily-history/data/manifest.json").read_text(encoding="utf-8"))
+          if manifest.get("last_date") != target or manifest.get("weapon_count") != 214:
+              raise SystemExit("Persistent archive manifest does not match the selected previous completed day")
+          if manifest.get("daily_rows") != manifest.get("dates_covered", 0) * 214:
+              raise SystemExit("Persistent archive manifest row count is inconsistent with its date coverage")
           bat = prices.get("bat")
           if target == "2026-11-24":
               if not bat or bat["all_marketplaces_sold"] != 142 or bat["cash_price_usd"] is None or abs(bat["cash_price_usd"] - 3.7252331) > 1e-9:
