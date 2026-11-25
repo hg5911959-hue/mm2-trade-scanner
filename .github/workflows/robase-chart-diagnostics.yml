@@ -228,6 +228,7 @@ jobs:
                       time.sleep(0.35)
                   if not isinstance(item_data, dict) or not isinstance(item_data.get("markets"), dict) or not isinstance(item_data.get("item"), dict):
                       raise ValueError("Unexpected item API response shape")
+                  api_cache[item_slug] = item_data
                   scanned += 1
                   # Reproduce ROBASE's own daily All marketplaces line. Preserve empty days
                   # as sold=0 and price="" (never as a zero-dollar observation).
