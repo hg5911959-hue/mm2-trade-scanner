@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import UTC, datetime
+import math
 
 
 def build_daily_chart_shadow_catalog(
@@ -41,6 +42,10 @@ def build_daily_chart_shadow_catalog(
         if id(entry) in seen:
             continue
         seen.add(id(entry))
+        entry["cash_price_usd"] = None
+        entry["price_low_usd"] = None
+        entry["price_high_usd"] = None
+        entry["price_display"] = ""
         entry["status"] = "unverified"
         entry["verified_at_utc"] = ""
         entry["price_sample_count"] = 0
@@ -64,7 +69,7 @@ def build_daily_chart_shadow_catalog(
             entry["price_sample_count"] = sold
             entry["notes"] = f"Excluded from daily shadow: {observation.get('status', 'unavailable')}"
             continue
-        if not isinstance(price, (int, float)) or price <= 0:
+        if type(price) not in (int, float) or not math.isfinite(price) or price <= 0:
             raise ValueError(f"invalid daily after-fee price for {slug}")
         entry.update({
             "cash_price_usd": float(price),
