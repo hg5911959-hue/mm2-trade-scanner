@@ -1,0 +1,670 @@
+name: ROBASE daily All marketplaces history
+
+on:
+  schedule:
+    - cron: "20 2 * * *"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/robase-daily-history.yml"
+  workflow_dispatch:
+    inputs:
+      item_slug:
+        description: "ROBASE item page slug to inspect"
+        required: false
+        default: "heat"
+        type: string
+
+concurrency:
+  group: robase-daily-history
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  inspect-public-chart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Inspect public page and same-origin JavaScript assets
+        env:
+          ITEM_SLUG: ${{ inputs.item_slug || 'heat' }}
+        run: |
+          python - <<'PY'
+          import csv, html as html_lib, json, os, re, sys, time
+          sys.path.insert(0, os.path.join(os.getcwd(), "tools"))
+          from robase_identity import build_robase_bloxswaps_map
+          from urllib.error import HTTPError
+          from html.parser import HTMLParser
+          from datetime import date, timedelta
+          from urllib.parse import quote, urljoin, urlsplit
+          from urllib.request import Request, urlopen
+
+          slug = os.environ.get("ITEM_SLUG", "heat").strip()
+          if not re.fullmatch(r"[a-z0-9-]{1,80}", slug):
+              raise SystemExit("Invalid item slug")
+          base = f"https://robase.gg/item/{slug}?days=365"
+          headers = {"User-Agent": "Mozilla/5.0 (compatible; ROBASEChartDiagnostics/1.0)"}
+
+          class Assets(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.urls = []
+                  self.inline_scripts = []
+                  self.in_inline_script = False
+                  self.body_attrs = {}
+                  self.item_slugs = set()
+
+              def handle_starttag(self, tag, attrs):
+                  attrs = dict(attrs)
+                  tag = tag.lower()
+                  if tag == "body":
+                      self.body_attrs = attrs
+                  if tag == "a" and attrs.get("href"):
+                      linked = urlsplit(urljoin(base, attrs["href"]))
+                      if linked.netloc == "robase.gg" and linked.path.startswith("/item/"):
+                          candidate = linked.path.rstrip("/").rsplit("/", 1)[-1]
+                          if re.fullmatch(r"[a-z0-9-]{1,80}", candidate):
+                              self.item_slugs.add(candidate)
+                  if tag == "script":
+                      if attrs.get("src"):
+                          self.urls.append(urljoin(base, attrs["src"]))
+                          self.in_inline_script = False
+                      else:
+                          self.inline_scripts.append("")
+                          self.in_inline_script = True
+                  elif tag == "link" and attrs.get("rel", "").lower() in ("modulepreload", "preload") and attrs.get("href"):
+                      if attrs.get("as", "script") == "script":
+                          self.urls.append(urljoin(base, attrs["href"]))
+
+              def handle_endtag(self, tag):
+                  if tag.lower() == "script":
+                      self.in_inline_script = False
+
+              def handle_data(self, data):
+                  if self.in_inline_script and self.inline_scripts:
+                      self.inline_scripts[-1] += data
+
+          def get(url, limit=2_000_000):
+              req = Request(url, headers=headers)
+              with urlopen(req, timeout=20) as response:
+                  data = response.read(limit + 1)
+                  if len(data) > limit:
+                      raise ValueError("response exceeds size cap")
+                  return data.decode("utf-8", "replace")
+
+          html = get(base)
+          parser = Assets()
+          parser.feed(html)
+          origin = urlsplit(base).netloc
+          scripts = [(f"inline-script-{i}", source) for i, source in enumerate(parser.inline_scripts) if source.strip()]
+          for url in dict.fromkeys(parser.urls):
+              parts = urlsplit(url)
+              if parts.scheme != "https" or parts.netloc != origin:
+                  continue
+              try:
+                  scripts.append((url, get(url, 2_000_000)))
+              except Exception as exc:
+                  print(f"ASSET_FETCH_FAILED {url}: {type(exc).__name__}: {exc}")
+
+          patterns = re.compile(r"(?:fetch\s*\(|XMLHttpRequest|axios|/api/|graphql|price.?history|sales.?history|chart.?data|marketplace)", re.I)
+          item_page_sections = []
+          item_api_candidates = []
+          for asset, source in scripts:
+              start = source.find("function itemPage()")
+              if start < 0:
+                  continue
+              end = source.find("// ---------- marketplaces", start)
+              if end < 0:
+                  end = min(len(source), start + 30000)
+              section = source[start:end]
+              item_page_sections.append({"asset": asset, "code": section[:40000], "section_length": len(section)})
+              for match in re.finditer(r"""(?:getJson|fetch)\s*\(\s*(['"])(.*?)\1""", section, re.I):
+                  item_api_candidates.append({"asset": asset, "call": match.group(0)[:1000]})
+              for match in re.finditer(r"""['"]([^'"]*/api\.php[^'"]*)['"]""", section, re.I):
+                  item_api_candidates.append({"asset": asset, "endpoint": match.group(1)[:1000]})
+                  left, right = max(0, match.start()-350), min(len(section), match.end()+900)
+                  item_api_candidates.append({"asset": asset, "context": section[left:right]})
+          report = {
+              "page": base,
+              "page_bytes": len(html.encode()),
+              "script_assets": [url for url, _ in scripts],
+              "inline_script_count": len(parser.inline_scripts),
+              "item_page_sections": item_page_sections,
+              "item_api_candidates": item_api_candidates,
+              "findings": [],
+          }
+          for url, source in scripts:
+              for match in patterns.finditer(source):
+                  start, end = max(0, match.start()-180), min(len(source), match.end()+320)
+                  excerpt = re.sub(r"\s+", " ", source[start:end])
+                  report["findings"].append({"asset": url, "excerpt": excerpt[:600]})
+                  if len(report["findings"]) >= 100:
+                      break
+              if len(report["findings"]) >= 100:
+                  break
+          api_url = "https://robase.gg/api.php?item=" + quote(slug, safe="") + "&days=365"
+          api_text = get(api_url, 5_000_000)
+          api_data = json.loads(api_text)
+          raw_fees = parser.body_attrs.get("data-fees", "{}")
+          fees = json.loads(html_lib.unescape(raw_fees))
+          if not isinstance(fees, dict):
+              raise ValueError("ROBASE page data-fees is not a JSON object")
+          start_day = date.fromisoformat(api_data["from"])
+          end_day = date.fromisoformat(api_data["to"])
+          day_count = (end_day - start_day).days + 1
+          if day_count < 1 or day_count > 366:
+              raise ValueError("ROBASE chart date range is outside the 366-day safety bound")
+          codes = sorted(api_data["markets"])
+          market_days = {code: {row["day"]: row for row in api_data["markets"][code]} for code in codes}
+          daily_rows = []
+          day = start_day
+          while day <= end_day:
+              key = day.isoformat()
+              total_sold = 0
+              total_amount = 0.0
+              total_priced_sold = 0
+              for code in codes:
+                  point = market_days[code].get(key, {})
+                  sold = point.get("sold", 0) or 0
+                  price = point.get("price")
+                  fee = fees.get(code, 0)
+                  if not isinstance(fee, (int, float)) or not 0 <= fee < 1:
+                      raise ValueError("Invalid marketplace fee for " + code)
+                  net_price = price * (1 - fee) if isinstance(price, (int, float)) else None
+                  total_sold += sold
+                  if net_price is not None and sold:
+                      total_amount += net_price * sold
+                      total_priced_sold += sold
+              row = {
+                  "date": key,
+                  "all_marketplaces_sold": total_sold,
+                  "all_marketplaces_price_after_fee": round(total_amount / total_priced_sold, 8) if total_priced_sold else "",
+              }
+              daily_rows.append(row)
+              day += timedelta(days=1)
+          home_html = get("https://robase.gg/", 5_000_000)
+          home_parser = Assets()
+          home_parser.feed(home_html)
+          all_slugs = sorted(home_parser.item_slugs)
+          candidates = [value for value in all_slugs if value != slug]
+          if len(candidates) < 9:
+              raise ValueError("ROBASE homepage exposed fewer than 10 item links")
+          sample_slugs = [slug]
+          for index in range(9):
+              position = round(index * (len(candidates) - 1) / 8)
+              sample_slugs.append(candidates[position])
+          sample_results = []
+          api_cache = {slug: api_data}
+          for sample_slug in sample_slugs:
+              if sample_slug == slug:
+                  sample_data = api_data
+              else:
+                  sample_url = "https://robase.gg/api.php?item=" + quote(sample_slug, safe="") + "&days=365"
+                  sample_data = json.loads(get(sample_url, 5_000_000))
+                  time.sleep(0.25)
+              if not isinstance(sample_data, dict) or not isinstance(sample_data.get("item"), dict) or not isinstance(sample_data.get("markets"), dict):
+                  raise ValueError("Unexpected ROBASE item API schema for " + sample_slug)
+              api_cache[sample_slug] = sample_data
+              sample_results.append({
+                  "slug": sample_slug,
+                  "name": sample_data["item"].get("name"),
+                  "id": sample_data["item"].get("id"),
+                  "market_codes": sorted(sample_data["markets"]),
+                  "daily_points": sum(len(rows) for rows in sample_data["markets"].values() if isinstance(rows, list)),
+                  "date_from": sample_data.get("from"),
+                  "date_to": sample_data.get("to"),
+                  "sales_points": sum(sum((point.get("sold", 0) or 0) for point in rows if isinstance(point, dict)) for rows in sample_data["markets"].values() if isinstance(rows, list)),
+              })
+          tooltip_target = {"date": "2026-11-23", "all_marketplaces_sold": 21, "all_marketplaces_price_after_fee": 1.55}
+          tooltip_matches = []
+          tooltip_candidates = []
+          scan_errors = []
+          archive_rows = []
+          archive_items = []
+          scanned = 0
+          for item_slug in all_slugs:
+              try:
+                  item_data = api_cache.get(item_slug)
+                  if item_data is None:
+                      item_url = "https://robase.gg/api.php?item=" + quote(item_slug, safe="") + "&days=365"
+                      item_data = json.loads(get(item_url, 5_000_000))
+                      time.sleep(0.35)
+                  if not isinstance(item_data, dict) or not isinstance(item_data.get("markets"), dict) or not isinstance(item_data.get("item"), dict):
+                      raise ValueError("Unexpected item API response shape")
+                  api_cache[item_slug] = item_data
+                  scanned += 1
+                  # Reproduce ROBASE's own daily All marketplaces line. Preserve empty days
+                  # as sold=0 and price="" (never as a zero-dollar observation).
+                  archive_start = date.fromisoformat(item_data["from"])
+                  archive_end = date.fromisoformat(item_data["to"])
+                  archive_days = (archive_end - archive_start).days + 1
+                  if archive_days < 1 or archive_days > 366:
+                      raise ValueError("Invalid daily chart date range")
+                  by_market = {}
+                  for market_code, market_points in item_data["markets"].items():
+                      if not isinstance(market_points, list):
+                          raise ValueError("Invalid market series for " + market_code)
+                      by_market[market_code] = {}
+                      for market_point in market_points:
+                          if not isinstance(market_point, dict) or not market_point.get("day"):
+                              raise ValueError("Invalid daily point for " + market_code)
+                          point_day = market_point["day"]
+                          if point_day in by_market[market_code]:
+                              raise ValueError("Duplicate market/day point: " + market_code + "/" + point_day)
+                          by_market[market_code][point_day] = market_point
+                  item_archive_rows = []
+                  current_day = archive_start
+                  while current_day <= archive_end:
+                      day_key = current_day.isoformat()
+                      all_sold = 0
+                      weighted_amount = 0.0
+                      priced_sold = 0
+                      for market_code, points_by_day in by_market.items():
+                          point = points_by_day.get(day_key)
+                          if point is None:
+                              continue
+                          sold = point.get("sold", 0) or 0
+                          if not isinstance(sold, int) or sold < 0:
+                              raise ValueError("Invalid sold count for " + market_code + "/" + day_key)
+                          all_sold += sold
+                          price = point.get("price")
+                          fee = fees.get(market_code, 0)
+                          if not isinstance(fee, (int, float)) or not 0 <= fee < 1:
+                              raise ValueError("Invalid marketplace fee for " + market_code)
+                          if price is not None and sold:
+                              if not isinstance(price, (int, float)) or price < 0:
+                                  raise ValueError("Invalid marketplace price for " + market_code + "/" + day_key)
+                              weighted_amount += price * (1 - fee) * sold
+                              priced_sold += sold
+                      item_archive_rows.append({
+                          "robase_slug": item_slug,
+                          "item_id": item_data["item"].get("id"),
+                          "item_name": item_data["item"].get("name"),
+                          "date": day_key,
+                          "all_marketplaces_sold": all_sold,
+                          "all_marketplaces_price_after_fee": round(weighted_amount / priced_sold, 8) if priced_sold else "",
+                      })
+                      current_day += timedelta(days=1)
+                  archive_rows.extend(item_archive_rows)
+                  archive_items.append({
+                      "robase_slug": item_slug,
+                      "item_id": item_data["item"].get("id"),
+                      "item_name": item_data["item"].get("name"),
+                      "days": len(item_archive_rows),
+                      "days_with_sales": sum(1 for row in item_archive_rows if row["all_marketplaces_sold"] > 0),
+                      "days_with_price": sum(1 for row in item_archive_rows if row["all_marketplaces_price_after_fee"] != ""),
+                  })
+                  total_sold = 0
+                  net_amount = 0.0
+                  total_priced = 0
+                  for code, points in item_data["markets"].items():
+                      point = next((p for p in points if p.get("day") == tooltip_target["date"]), None)
+                      sold = (point or {}).get("sold", 0) or 0
+                      price = (point or {}).get("price")
+                      fee = fees.get(code, 0)
+                      net_price = price * (1 - fee) if isinstance(price, (int, float)) else None
+                      total_sold += sold
+                      if net_price is not None and sold:
+                          net_amount += net_price * sold
+                          total_priced += sold
+                  net_total = net_amount / total_priced if total_priced else None
+                  result = {
+                      "slug": item_slug,
+                      "name": item_data.get("item", {}).get("name"),
+                      "id": item_data.get("item", {}).get("id"),
+                      "date": tooltip_target["date"],
+                      "all_marketplaces_sold": total_sold,
+                      "all_marketplaces_price_after_fee": round(net_total, 2) if net_total is not None else None,
+                  }
+                  if total_sold == tooltip_target["all_marketplaces_sold"]:
+                      tooltip_candidates.append(result)
+                  if total_sold == tooltip_target["all_marketplaces_sold"] and net_total is not None and round(net_total, 2) == tooltip_target["all_marketplaces_price_after_fee"]:
+                      tooltip_matches.append(result)
+              except HTTPError as exc:
+                  if exc.code in (403, 429):
+                      scan_errors.append({"slug": item_slug, "error": "HTTP " + str(exc.code) + "; scan stopped to respect site controls"})
+                      break
+                  scan_errors.append({"slug": item_slug, "error": "HTTP " + str(exc.code)})
+              except Exception as exc:
+                  scan_errors.append({"slug": item_slug, "error": type(exc).__name__ + ": " + str(exc)[:180]})
+          # Reuse the repository's strict identity crosswalk to isolate weapons.
+          # This avoids fuzzy name matching and excludes pets/misc items.
+          robase_catalog = json.loads(get(
+              "https://raw.githubusercontent.com/hg5911959-hue/mm2-trade-scanner/state/data/robase_prices.json",
+              8_000_000,
+          ))
+          bloxswaps_catalog = json.loads(get(
+              "https://raw.githubusercontent.com/hg5911959-hue/mm2-trade-scanner/state/data/bloxswaps_items.json",
+              8_000_000,
+          ))
+          if robase_catalog.get("catalog_complete") is not True or not isinstance(robase_catalog.get("items"), list):
+              raise ValueError("State-branch ROBASE catalog is not complete")
+          item_map = bloxswaps_catalog.get("items")
+          if not isinstance(item_map, dict):
+              raise ValueError("State-branch BloxSwaps item map is missing")
+          cash_catalog = {
+              "items_by_slug": {
+                  row["robase_slug"]: row
+                  for row in robase_catalog["items"]
+                  if isinstance(row, dict) and row.get("robase_slug")
+              }
+          }
+          identity = build_robase_bloxswaps_map(cash_catalog, item_map)
+          weapon_mapping = identity["bloxswaps_exact_map"]
+          weapon_robase_slugs = {entry["robase_slug"] for entry in weapon_mapping.values()}
+          weapon_archive_rows = [row for row in archive_rows if row["robase_slug"] in weapon_robase_slugs]
+          archived_slugs = {item["robase_slug"] for item in archive_items}
+          catalog_slugs = {
+              row["robase_slug"] for row in robase_catalog["items"]
+              if isinstance(row, dict) and row.get("robase_slug")
+          }
+          missing_archive_slugs = sorted(set(all_slugs) - archived_slugs)
+          missing_weapon_slugs = sorted(weapon_robase_slugs - archived_slugs)
+          expected_weapon_rows = len(weapon_robase_slugs) * 365
+          if len(weapon_archive_rows) != sum(
+              item["days"] for item in archive_items if item["robase_slug"] in weapon_robase_slugs
+          ):
+              raise ValueError("Weapon-only archive row count does not match mapped catalog")
+          weapon_mapping_complete = not identity["missing"] and not identity["ambiguous"]
+          all_catalog_complete = (
+              set(all_slugs) == catalog_slugs
+              and len(archive_items) == len(all_slugs)
+              and not missing_archive_slugs
+              and not scan_errors
+              and all(item["days"] == 365 for item in archive_items)
+          )
+          weapon_archive_complete = (
+              all_catalog_complete
+              and weapon_mapping_complete
+              and not missing_weapon_slugs
+              and len(weapon_robase_slugs) == identity["exact"]
+              and len(weapon_archive_rows) == expected_weapon_rows
+          )
+          # Focused screenshot verification for Bat on 2026-11-24.
+          # Preserve raw market rows only in this diagnostic artifact; public archive stays aggregate-only.
+          bat_api = api_cache.get("bat")
+          if bat_api is None:
+              raise ValueError("Bat item API response was not collected during catalogue scan")
+          bat_day = "2026-11-24"
+          bat_market_tooltip = []
+          bat_total_sold = 0
+          bat_weighted_amount = 0.0
+          bat_priced_sold = 0
+          for market_code, market_points in bat_api["markets"].items():
+              point = next((p for p in market_points if p.get("day") == bat_day), None)
+              if point is None:
+                  sold, raw_price = 0, None
+              else:
+                  sold, raw_price = point.get("sold", 0) or 0, point.get("price")
+              fee = fees.get(market_code, 0)
+              after_fee_price = raw_price * (1 - fee) if raw_price is not None else None
+              if sold and after_fee_price is not None:
+                  bat_total_sold += sold
+                  bat_weighted_amount += after_fee_price * sold
+                  bat_priced_sold += sold
+              bat_market_tooltip.append({
+                  "market": market_code,
+                  "sold": sold,
+                  "raw_api_price": raw_price,
+                  "fee_percent": round(fee * 100, 4),
+                  "after_fee_price": round(after_fee_price, 8) if after_fee_price is not None else None,
+              })
+          bat_market_tooltip.sort(key=lambda x: x["market"])
+          bat_verification = {
+              "slug": "bat",
+              "item_id": bat_api["item"].get("id"),
+              "item_name": bat_api["item"].get("name"),
+              "date": bat_day,
+              "markets": bat_market_tooltip,
+              "all_marketplaces_sold": bat_total_sold,
+              "all_marketplaces_price_after_fee": round(bat_weighted_amount / bat_priced_sold, 8) if bat_priced_sold else None,
+              "all_marketplaces_price_display_2dp": round(bat_weighted_amount / bat_priced_sold + 1e-12, 2) if bat_priced_sold else None,
+              "all_marketplaces_matches_screenshot": bat_total_sold == 142 and round(bat_weighted_amount / bat_priced_sold + 1e-12, 2) == 3.73 if bat_priced_sold else False,
+              "expected_screenshot": {
+                  "starpets": {"after_fee_price": 3.86, "sold": 126},
+                  "chromas": {"after_fee_price": 2.67, "sold": 9},
+                  "bhopp": {"after_fee_price": 2.74, "sold": 7},
+                  "all_marketplaces": {"after_fee_price": 3.73, "sold": 142},
+              },
+          }
+          report["bat_nov24_screenshot_verification"] = bat_verification
+          report["homepage_item_links"] = len(all_slugs)
+          report["weapon_mapping"] = {
+              "robase_total": identity["robase_total"],
+              "exact_weapon_matches": identity["exact"],
+              "non_weapons_excluded": len(identity["non_weapons"]),
+              "missing": identity["missing"],
+              "ambiguous": identity["ambiguous"],
+              "mapping_complete": weapon_mapping_complete,
+              "missing_weapon_archive_slugs": missing_weapon_slugs,
+              "mapping_source": "tools/robase_identity.py with state-branch ROBASE and BloxSwaps catalogs",
+          }
+          report["weapon_daily_archive"] = {
+              "items_archived": len(weapon_robase_slugs & archived_slugs),
+              "rows": len(weapon_archive_rows),
+              "expected_rows": expected_weapon_rows,
+              "complete": weapon_archive_complete,
+              "price_definition": "ROBASE All marketplaces sales-weighted daily average after each marketplace fee.",
+          }
+          report["daily_archive"] = {
+              "items_archived": len(archive_items),
+              "rows": len(archive_rows),
+              "expected_rows": len(all_slugs) * 365,
+              "complete": all_catalog_complete,
+              "missing_archive_slugs": missing_archive_slugs,
+              "days_with_sales": sum(item["days_with_sales"] for item in archive_items),
+              "days_with_price": sum(item["days_with_price"] for item in archive_items),
+              "schema": ["robase_slug", "item_id", "item_name", "date", "all_marketplaces_sold", "all_marketplaces_price_after_fee"],
+              "price_definition": "ROBASE All marketplaces: sales-weighted daily average after each marketplace fee; blank when no priced sales; missing dates represented by sold=0 and blank price.",
+              "note": "Includes all ROBASE catalog items; weapon-only filtering is a separate downstream step."
+          }
+          report["sample_10_items"] = sample_results
+          report["tooltip_target_scan"] = {
+              "date": "2026-11-23",
+              "expected_all_marketplaces_after_fee": tooltip_target,
+              "items_scanned": scanned,
+              "errors": scan_errors,
+              "same_sales_count_candidates": tooltip_candidates,
+              "same_sales_count_candidate_count": len(tooltip_candidates),
+              "exact_all_marketplaces_after_fee_matches": tooltip_matches,
+              "exact_all_marketplaces_after_fee_match_count": len(tooltip_matches),
+          }
+          report["item_api_url"] = api_url
+          report["marketplace_fees"] = fees
+          report["daily_series"] = {
+              "days": len(daily_rows),
+              "days_with_sales": sum(1 for row in daily_rows if row["all_marketplaces_sold"]),
+              "days_with_price": sum(1 for row in daily_rows if row["all_marketplaces_price_after_fee"] != ""),
+              "definition": "ROBASE chart total: sales-weighted daily average of marketplace daily prices after each marketplace fee.",
+          }
+          report["item_api_summary"] = {
+              "root_type": type(api_data).__name__,
+              "root_keys": sorted(api_data.keys()) if isinstance(api_data, dict) else [],
+              "from": api_data.get("from") if isinstance(api_data, dict) else None,
+              "to": api_data.get("to") if isinstance(api_data, dict) else None,
+              "market_codes": sorted(api_data.get("markets", {}).keys()) if isinstance(api_data, dict) and isinstance(api_data.get("markets"), dict) else [],
+              "market_point_counts": {
+                  code: len(rows) if isinstance(rows, list) else None
+                  for code, rows in api_data.get("markets", {}).items()
+              } if isinstance(api_data, dict) and isinstance(api_data.get("markets"), dict) else {},
+              "item": api_data.get("item") if isinstance(api_data, dict) else None,
+          }
+          os.makedirs("robase-chart-diagnostics", exist_ok=True)
+          with open("robase-chart-diagnostics/report.json", "w", encoding="utf-8") as f:
+              json.dump(report, f, ensure_ascii=False, indent=2)
+          with open("robase-chart-diagnostics/bat_nov24_verification.json", "w", encoding="utf-8") as f:
+              json.dump(bat_verification, f, ensure_ascii=False, indent=2)
+          with open("robase-chart-diagnostics/bat_item_api.json", "w", encoding="utf-8") as f:
+              json.dump(bat_api, f, ensure_ascii=False, indent=2)
+          with open("robase-chart-diagnostics/item_api.json", "w", encoding="utf-8") as f:
+              json.dump(api_data, f, ensure_ascii=False, indent=2)
+          csv_fields = ["date", "all_marketplaces_sold", "all_marketplaces_price_after_fee"]
+          with open("robase-chart-diagnostics/daily_series.csv", "w", encoding="utf-8", newline="") as f:
+              writer = csv.DictWriter(f, fieldnames=csv_fields)
+              writer.writeheader()
+              writer.writerows(daily_rows)
+          with open("robase-chart-diagnostics/sample_10.csv", "w", encoding="utf-8", newline="") as f:
+              writer = csv.DictWriter(f, fieldnames=["slug", "name", "id", "market_codes", "daily_points", "date_from", "date_to", "sales_points"])
+              writer.writeheader()
+              for sample in sample_results:
+                  writer.writerow({**sample, "market_codes": ",".join(sample["market_codes"])})
+          with open("robase-chart-diagnostics/tooltip_matches.json", "w", encoding="utf-8") as f:
+              json.dump(report["tooltip_target_scan"], f, ensure_ascii=False, indent=2)
+          with open("robase-chart-diagnostics/all_items_daily_archive.csv", "w", encoding="utf-8", newline="") as f:
+              archive_fields = ["robase_slug", "item_id", "item_name", "date", "all_marketplaces_sold", "all_marketplaces_price_after_fee"]
+              writer = csv.DictWriter(f, fieldnames=archive_fields)
+              writer.writeheader()
+              writer.writerows(archive_rows)
+          with open("robase-chart-diagnostics/archive_manifest.json", "w", encoding="utf-8") as f:
+              json.dump({
+                  "items": archive_items,
+                  "summary": report["daily_archive"],
+                  "weapon_mapping": report["weapon_mapping"],
+                  "weapon_archive": report["weapon_daily_archive"],
+                  "exact_weapon_map": weapon_mapping,
+              }, f, ensure_ascii=False, indent=2)
+          with open("robase-chart-diagnostics/weapons_daily_archive.csv", "w", encoding="utf-8", newline="") as f:
+              weapon_fields = ["robase_slug", "item_id", "item_name", "date", "all_marketplaces_sold", "all_marketplaces_price_after_fee"]
+              writer = csv.DictWriter(f, fieldnames=weapon_fields)
+              writer.writeheader()
+              writer.writerows(weapon_archive_rows)
+          print(json.dumps(report, ensure_ascii=False, indent=2))
+          if not weapon_archive_complete:
+              raise SystemExit("Daily weapon archive failed its completeness gate; inspect report and manifest.")
+          PY
+      - name: Checkout persistent daily-history branch
+        uses: actions/checkout@v4
+        with:
+          ref: robase-daily-history
+          path: robase-daily-history
+          fetch-depth: 1
+      - name: Append validated daily weapon observations
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv, json
+          from collections import defaultdict
+          from datetime import date
+          from pathlib import Path
+
+          source = Path("robase-chart-diagnostics/weapons_daily_archive.csv")
+          manifest_path = Path("robase-chart-diagnostics/archive_manifest.json")
+          target_dir = Path("robase-daily-history/data")
+          target_dir.mkdir(parents=True, exist_ok=True)
+          target = target_dir / "weapons_daily_all_marketplaces_after_fees.csv"
+          manifest_target = target_dir / "manifest.json"
+          fields = ["robase_slug", "item_id", "item_name", "date", "all_marketplaces_sold", "all_marketplaces_price_after_fee"]
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          summary = manifest.get("weapon_archive", {})
+          identity = manifest.get("weapon_mapping", {})
+          if summary.get("complete") is not True or identity.get("mapping_complete") is not True:
+              raise SystemExit("Incoming weapon archive did not pass completeness and identity gates")
+          weapon_slugs = {
+              entry.get("robase_slug")
+              for entry in manifest.get("exact_weapon_map", {}).values()
+              if isinstance(entry, dict) and entry.get("robase_slug")
+          }
+          if len(weapon_slugs) != 214 or identity.get("exact_weapon_matches") != 214:
+              raise SystemExit("Expected exactly 214 exact weapon identities")
+
+          def load_rows(path):
+              if not path.exists():
+                  return []
+              with path.open(encoding="utf-8", newline="") as handle:
+                  reader = csv.DictReader(handle)
+                  if reader.fieldnames != fields:
+                      raise SystemExit("Persistent archive CSV schema mismatch")
+                  return list(reader)
+
+          existing = load_rows(target)
+          incoming = load_rows(source)
+          if len(incoming) != 214 * 365:
+              raise SystemExit(f"Incoming archive row count invalid: {len(incoming)}")
+          def validate(rows, label):
+              keys = set()
+              per_day = defaultdict(set)
+              for row in rows:
+                  slug, day = row["robase_slug"], row["date"]
+                  if slug not in weapon_slugs:
+                      raise SystemExit(f"{label}: unexpected weapon slug {slug}")
+                  try:
+                      date.fromisoformat(day)
+                      sold = int(row["all_marketplaces_sold"])
+                  except Exception as exc:
+                      raise SystemExit(f"{label}: invalid date or sales count") from exc
+                  if sold < 0:
+                      raise SystemExit(f"{label}: negative sales count")
+                  price = row["all_marketplaces_price_after_fee"]
+                  if price != "":
+                      value = float(price)
+                      if value <= 0:
+                          raise SystemExit(f"{label}: price must be blank or positive")
+                  key = (slug, day)
+                  if key in keys:
+                      raise SystemExit(f"{label}: duplicate item/day key {key}")
+                  keys.add(key)
+                  per_day[day].add(slug)
+              for day, slugs in per_day.items():
+                  if slugs != weapon_slugs:
+                      raise SystemExit(f"{label}: incomplete day {day}: {len(slugs)}/214")
+              return per_day
+
+          incoming_days = validate(incoming, "incoming")
+          existing_days = validate(existing, "existing")
+          old_keys = {(r["robase_slug"], r["date"]) for r in existing}
+          new_rows = [r for r in incoming if (r["robase_slug"], r["date"]) not in old_keys]
+          merged = existing + new_rows
+          merged_days = validate(merged, "merged")
+          merged.sort(key=lambda r: (r["date"], r["robase_slug"]))
+          if len(merged) != len(merged_days) * 214:
+              raise SystemExit("Merged archive is not a complete 214-weapon matrix")
+          with target.open("w", encoding="utf-8", newline="") as handle:
+              writer = csv.DictWriter(handle, fieldnames=fields)
+              writer.writeheader()
+              writer.writerows(merged)
+          latest = max(merged_days)
+          manifest_out = {
+              "schema_version": 1,
+              "source": "ROBASE daily chart API",
+              "price_basis": "all_marketplaces_price_after_fee",
+              "formula": "sales-weighted average of each marketplace daily price after its ROBASE fee; weighted by sold copies with priced observations",
+              "buyer_price_used": False,
+              "weapon_count": 214,
+              "daily_rows": len(merged),
+              "dates_covered": len(merged_days),
+              "first_date": min(merged_days),
+              "last_date": latest,
+              "rows_appended_this_run": len(new_rows),
+              "latest_api_range": {
+                  "first_date": min(incoming_days),
+                  "last_date": max(incoming_days),
+                  "days": len(incoming_days)
+              },
+              "identity_mapping": "exact mapping from tools/robase_identity.py",
+              "missing_day_price_policy": "blank price when no priced sales; never impute zero",
+              "updated_by": "GitHub Actions"
+          }
+          manifest_target.write_text(json.dumps(manifest_out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps(manifest_out, ensure_ascii=False, indent=2))
+          PY
+          git -C robase-daily-history config user.name "github-actions[bot]"
+          git -C robase-daily-history config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C robase-daily-history add -f data/weapons_daily_all_marketplaces_after_fees.csv data/manifest.json
+          if ! git -C robase-daily-history diff --cached --quiet; then
+            git -C robase-daily-history commit -m "Update ROBASE daily All marketplaces after-fee history"
+            git -C robase-daily-history push origin HEAD:robase-daily-history
+          else
+            echo "No new daily observations; persistent history is already current."
+          fi
+      - name: Upload diagnostic report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: robase-chart-diagnostics
+          path: robase-chart-diagnostics/
+          retention-days: 7
