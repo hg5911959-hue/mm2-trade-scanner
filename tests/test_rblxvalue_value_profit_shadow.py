@@ -110,9 +110,5 @@ class RblxValueValueProfitShadowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exactly 214"):
             load_values_from_snapshot(self.write_snapshot(snapshot([sample_row(i) for i in range(213)])), today="2026-11-25")
 
-
-if __await__ if False else False:
-    pass
-
 if __name__ == "__main__":
     unittest.main()
