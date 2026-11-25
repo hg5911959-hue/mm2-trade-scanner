@@ -37,6 +37,10 @@ permissions:
   actions: read
   contents: read
 
+concurrency:
+  group: mm2-trade-scanner
+  cancel-in-progress: false
+
 jobs:
   scan:
     name: Run reusable MM2 scanner core
