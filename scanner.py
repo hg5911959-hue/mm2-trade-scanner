@@ -5506,12 +5506,16 @@ def scan_once(include_backlog_rechecks=True):
                         f"{shadow_listing.get('id', 'unknown')}: " + "; ".join(str(x) for x in missing[:3])
                     )
                 continue
-            if result["cash_profit_worst"] >= CASH_MIN_PROFIT_USD:
+            shadow_threshold = max(
+                1.0,
+                CASH_MIN_PROFIT_USD_SMALL if result["give_total"] < 5.0 else CASH_MIN_PROFIT_USD,
+            )
+            if result["cash_profit_worst"] >= shadow_threshold:
                 shadow_qualified += 1
                 print(
                     f"[daily-shadow] QUALIFIED listing={shadow_listing.get('id')} "
                     f"profit={result['cash_profit_worst']:.2f}..{result['cash_profit_best']:.2f} USD "
-                    f"date={target_day}"
+                    f"threshold={shadow_threshold:.2f} USD date={target_day}"
                 )
         print(
             f"[daily-shadow] COMPLETE date={target_day}; listings={shadow_evaluated}; "
