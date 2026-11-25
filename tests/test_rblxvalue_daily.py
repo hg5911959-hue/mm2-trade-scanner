@@ -15,7 +15,7 @@ class RBLXValueDailyTests(IsolatedDataTestCase):
         for robase_slug, alias in EXACT_IDENTITY_ALIASES.items():
             identity = {
                 "robase_slug": robase_slug,
-                "robase_name": alias["name"],
+                "robase_name": alias["robase_name"],
                 "bloxswaps_slug": alias["bloxswaps_slug"],
                 "bloxswaps_type": alias["type"],
                 "bloxswaps_rarity": alias["category"],
