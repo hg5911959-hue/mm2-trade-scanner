@@ -40,10 +40,17 @@ jobs:
               def __init__(self):
                   super().__init__()
                   self.urls = []
+                  self.inline_scripts = []
               def handle_starttag(self, tag, attrs):
                   attrs = dict(attrs)
-                  if tag.lower() == "script" and attrs.get("src"):
-                      self.urls.append(urljoin(base, attrs["src"]))
+                  if tag.lower() == "script":
+                      if attrs.get("src"):
+                          self.urls.append(urljoin(base, attrs["src"]))
+                      else:
+                          self.inline_scripts.append("")
+              def handle_data(self, data):
+                  if self.inline_scripts:
+                      self.inline_scripts[-1] += data
                   if tag.lower() == "link" and attrs.get("rel", "").lower() in ("modulepreload", "preload") and attrs.get("href"):
                       if attrs.get("as", "script") == "script":
                           self.urls.append(urljoin(base, attrs["href"]))
@@ -60,7 +67,7 @@ jobs:
           parser = Assets()
           parser.feed(html)
           origin = urlsplit(base).netloc
-          scripts = []
+          scripts = [(f"inline-script-{i}", source) for i, source in enumerate(parser.inline_scripts) if source.strip()]
           for url in dict.fromkeys(parser.urls):
               parts = urlsplit(url)
               if parts.scheme != "https" or parts.netloc != origin:
@@ -75,6 +82,7 @@ jobs:
               "page": base,
               "page_bytes": len(html.encode()),
               "script_assets": [url for url, _ in scripts],
+              "inline_script_count": len(parser.inline_scripts),
               "findings": [],
           }
           for url, source in scripts:
