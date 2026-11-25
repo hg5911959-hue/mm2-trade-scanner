@@ -126,3 +126,21 @@ def load_previous_day_prices(
     """Resolve the previous completed local day and require its full weapon matrix."""
     target = previous_completed_day(now=now, timezone_name=timezone_name)
     return target, load_daily_prices(history_path, target, weapon_slugs)
+
+
+def load_exact_previous_day_prices(
+    history_path: str | Path = DEFAULT_HISTORY,
+    identity_map_path: str | Path = DEFAULT_IDENTITY_MAP,
+    *,
+    now: datetime | None = None,
+    timezone_name: str = DEFAULT_TIMEZONE,
+    expected_count: int = 214,
+) -> tuple[str, dict[str, dict]]:
+    """Resolve yesterday using only the persisted exact weapon identity map."""
+    slugs = expected_weapon_slugs(identity_map_path, expected_count=expected_count)
+    return load_previous_day_prices(
+        history_path,
+        slugs,
+        now=now,
+        timezone_name=timezone_name,
+    )
