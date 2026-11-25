@@ -10,6 +10,7 @@ from test_support import IsolatedDataTestCase
 from tools.robase_daily_chart_prices import (
     FIELDS,
     expected_weapon_slugs,
+    get_marketplace_fee,
     load_daily_prices,
     load_exact_previous_day_prices,
     load_previous_day_prices,
@@ -27,6 +28,20 @@ class DailyChartPriceLookupTests(IsolatedDataTestCase):
             writer.writeheader()
             writer.writerows(rows)
         return path
+
+    def test_marketplace_fee_requires_explicit_finite_rate(self):
+        self.assertAlmostEqual(get_marketplace_fee({"star": 0.32}, "star"), 0.32)
+        for fees, code in (
+            ({}, "new-market"),
+            ({"star": float("nan")}, "star"),
+            ({"star": float("inf")}, "star"),
+            ({"star": -0.01}, "star"),
+            ({"star": 1.0}, "star"),
+            ({"star": True}, "star"),
+        ):
+            with self.subTest(fees=fees, code=code):
+                with self.assertRaises(ValueError):
+                    get_marketplace_fee(fees, code)
 
     def test_previous_day_uses_algeria_calendar_date_not_utc_date(self):
         now = datetime(2026, 11, 25, 23, 30, tzinfo=timezone.utc)
