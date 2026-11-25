@@ -9,6 +9,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/rblxvalue-daily-history.yml"
+      - "tools/rblxvalue_daily.py"
 
 concurrency:
   group: rblxvalue-daily-history

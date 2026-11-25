@@ -15,6 +15,22 @@ MIN_REQUEST_INTERVAL_SECONDS = 2.1
 CSV_FIELDS = ("snapshot_date","fetched_at_utc","dataset_last_updated","item_last_updated","robase_slug","robase_name","bloxswaps_slug","item_type","item_rarity","is_chroma","rblxvalue_slug","rblxvalue_name","category","api_type","value","value_source_a","value_source_b","stability","demand","rarity","range","status")
 CATEGORY_MAP = {"godly":"godly","ancient":"ancient","vintage":"vintage","classic":"vintage","legendary":"legendary","rare":"rare","uncommon":"uncommon","common":"common","unique":"unique","chroma":"chroma"}
 
+# These are explicit identity aliases, not fuzzy guesses. Each entry was
+# cross-checked against the public RBLXValue item page and the ROBASE/BloxSwaps
+# exact weapon identity (type + category + catalogue slug). The API response
+# is still revalidated on every daily collection.
+EXACT_IDENTITY_ALIASES = {
+    "bat": {"robase_name":"Bat","bloxswaps_slug":"bat","slug":"bat-knife","name":"Bat Knife","category":"godly","type":"knife","url":"https://rblxvalue.com/item/bat-knife"},
+    "cane-562": {"robase_name":"Cane","bloxswaps_slug":"cane-k-2018","slug":"cane-knife-2018","name":"Cane Knife 2018","category":"rare","type":"knife","url":"https://rblxvalue.com/item/cane-knife-2018"},
+    "ghost-1149": {"robase_name":"Ghost","bloxswaps_slug":"ghost-g-2026","slug":"ghost-gun","name":"Ghost Gun","category":"uncommon","type":"gun","url":"https://rblxvalue.com/item/ghost-gun"},
+    "laser": {"robase_name":"Laser","bloxswaps_slug":"disint","slug":"vintage-laser","name":"Vintage Laser","category":"vintage","type":"gun","url":"https://rblxvalue.com/item/vintage-laser"},
+    "laser-1148": {"robase_name":"Laser","bloxswaps_slug":"laser-k-2026","slug":"laser-knife","name":"Laser Knife","category":"rare","type":"knife","url":"https://rblxvalue.com/item/laser-knife"},
+    "latte": {"robase_name":"Latte","bloxswaps_slug":"latte","slug":"latte-gun","name":"Latte gun","category":"legendary","type":"gun","url":"https://rblxvalue.com/item/latte-gun"},
+    "latte-915": {"robase_name":"Latte","bloxswaps_slug":"latte-k-2023","slug":"latte-knife","name":"Latte Knife","category":"legendary","type":"knife","url":"https://rblxvalue.com/item/latte-knife"},
+    "phaser-1151": {"robase_name":"Phaser","bloxswaps_slug":"phaser-k-2026","slug":"phaser-knife","name":"Phaser Knife","category":"rare","type":"knife","url":"https://rblxvalue.com/item/phaser-knife"},
+    "prince-1152": {"robase_name":"Prince","bloxswaps_slug":"prince-g-2026","slug":"prince-gun","name":"Prince Gun","category":"rare","type":"gun","url":"https://rblxvalue.com/item/prince-gun"},
+}
+
 def normalize_name(value):
     text = unicodedata.normalize("NFKD", str(value or ""))
     text = "".join(c for c in text if not unicodedata.combining(c)).casefold()
@@ -99,12 +115,37 @@ def candidate_matches(identity, source_items):
     category = expected_category(identity)
     kind = str(identity.get("bloxswaps_type") or "").casefold()
     if not target_name or not category or kind not in {"knife","gun"}: return []
+    # Prefer a normal exact match first. This preserves legacy fixtures/items
+    # whose current API display name or slug already matches ROBASE directly.
     matches = []
     for item in source_items:
         if str(item.get("category") or "").casefold() != category or str(item.get("type") or "").casefold() != kind: continue
         if normalize_name(item.get("name")) == target_name or normalize_slug(item.get("slug")) in target_slugs:
             matches.append(item)
-    return list({str(x.get("slug") or "").casefold(): x for x in matches}.values())
+    matches = list({str(x.get("slug") or "").casefold(): x for x in matches}.values())
+    if matches:
+        return matches
+
+    alias = EXACT_IDENTITY_ALIASES.get(str(identity.get("robase_slug") or "").casefold())
+    if not alias:
+        return []
+    # An alias is valid only for this exact ROBASE row, exact BloxSwaps slug,
+    # exact API slug/name, and exact category/type. Any mismatch fails closed.
+    if (
+        str(identity.get("robase_name") or "").casefold() != alias["robase_name"].casefold()
+        or str(identity.get("bloxswaps_slug") or "").casefold() != alias["bloxswaps_slug"]
+        or category != alias["category"]
+        or kind != alias["type"]
+    ):
+        return []
+    alias_matches = [
+        item for item in source_items
+        if normalize_slug(item.get("slug")) == normalize_slug(alias["slug"])
+        and normalize_name(item.get("name")) == normalize_name(alias["name"])
+        and str(item.get("category") or "").casefold() == alias["category"]
+        and str(item.get("type") or "").casefold() == alias["type"]
+    ]
+    return alias_matches if len(alias_matches) == 1 else []
 
 def build_snapshot(identity_map, source_items, meta, *, snapshot_date, fetched_at_utc, expected_count=214):
     if not isinstance(identity_map, dict) or len(identity_map) != expected_count: raise ValueError(f"Expected exactly {expected_count} ROBASE weapon identities")
@@ -114,12 +155,12 @@ def build_snapshot(identity_map, source_items, meta, *, snapshot_date, fetched_a
     for blox_slug, identity in sorted(identity_map.items()):
         if not isinstance(identity, dict): raise ValueError(f"Invalid identity for {blox_slug}")
         candidates, category = candidate_matches(identity, source_items), expected_category(identity)
-        row = {"snapshot_date":snapshot_date,"fetched_at_utc":fetched_at_utc,"dataset_last_updated":meta["last_updated"],"item_last_updated":None,"robase_slug":str(identity.get("robase_slug") or ""),"robase_name":str(identity.get("robase_name") or ""),"bloxswaps_slug":str(blox_slug),"item_type":str(identity.get("bloxswaps_type") or "").casefold(),"item_rarity":str(identity.get("bloxswaps_rarity") or ""),"is_chroma":identity.get("bloxswaps_chroma") is True,"rblxvalue_slug":None,"rblxvalue_name":None,"category":category,"api_type":None,"value":None,"value_source_a":None,"value_source_b":None,"stability":None,"demand":None,"rarity":None,"range":None,"status":"missing" if category else "unsupported_category_or_type"}
+        row = {"snapshot_date":snapshot_date,"fetched_at_utc":fetched_at_utc,"dataset_last_updated":meta["last_updated"],"item_last_updated":None,"robase_slug":str(identity.get("robase_slug") or ""),"robase_name":str(identity.get("robase_name") or ""),"bloxswaps_slug":str(blox_slug),"item_type":str(identity.get("bloxswaps_type") or "").casefold(),"item_rarity":str(identity.get("bloxswaps_rarity") or ""),"is_chroma":identity.get("bloxswaps_chroma") is True,"identity_method":"explicit_verified_alias" if str(identity.get("robase_slug") or "").casefold() in EXACT_IDENTITY_ALIASES else "exact_name_or_slug","identity_source_url":EXACT_IDENTITY_ALIASES.get(str(identity.get("robase_slug") or "").casefold(),{}).get("url"),"rblxvalue_slug":None,"rblxvalue_name":None,"category":category,"api_type":None,"value":None,"value_source_a":None,"value_source_b":None,"stability":None,"demand":None,"rarity":None,"range":None,"status":"missing" if category else "unsupported_category_or_type"}
         if len(candidates) == 1:
             item = candidates[0]; slug = str(item.get("slug") or "").casefold()
             row.update({"item_last_updated":item.get("last_updated"),"rblxvalue_slug":slug,"rblxvalue_name":item.get("name"),"category":item.get("category"),"api_type":item.get("type"),"value":parse_number(item.get("value")),"value_source_a":parse_number(item.get("value_source_a")),"value_source_b":parse_number(item.get("value_source_b")),"stability":str(item.get("stability") or "").strip() or None,"demand":parse_number(item.get("demand")),"rarity":parse_number(item.get("rarity")),"range":str(item.get("range") or "").strip() or None,"status":"matched"})
             if row["value"] is None: row["status"] = "matched_missing_blended_value"
-            elif row["value_source_b"] is None: row["status"] = "matched_missing_supreme_value"
+            elif row["value_source_b"] is None or row["value_source_b"] <= 0: row["status"] = "matched_missing_supreme_value"
             claims.setdefault(slug, []).append(len(rows))
         elif len(candidates) > 1: row["status"] = "ambiguous"
         rows.append(row)
@@ -128,8 +169,8 @@ def build_snapshot(identity_map, source_items, meta, *, snapshot_date, fetched_a
             for i in indexes:
                 rows[i]["status"] = "ambiguous_identity_collision"
                 for field in ("value","value_source_a","value_source_b","stability","demand","rarity","range"): rows[i][field] = None
-    counts = {"weapons":len(rows),"matched":sum(x["status"]=="matched" for x in rows),"matched_missing_blended_value":sum(x["status"]=="matched_missing_blended_value" for x in rows),"matched_missing_supreme_value":sum(x["status"]=="matched_missing_supreme_value" for x in rows),"missing":sum(x["status"]=="missing" for x in rows),"ambiguous":sum(x["status"] in {"ambiguous","ambiguous_identity_collision"} for x in rows),"unsupported_category_or_type":sum(x["status"]=="unsupported_category_or_type" for x in rows),"with_blended_value":sum(x["value"] is not None for x in rows),"with_supreme_value":sum(x["value_source_b"] is not None for x in rows),"with_stability":sum(x["stability"] is not None for x in rows)}
-    return {"schema_version":1,"source":"RBLXValue official API v2","source_url":API_BASE,"source_fields":{"value":"RBLXValue blended estimate","value_source_a":"MM2Values","value_source_b":"Supreme Values","stability":"RBLXValue stability field; not independently attributed to Supreme Values"},"snapshot_date":snapshot_date,"fetched_at_utc":fetched_at_utc,"dataset_last_updated":meta["last_updated"],"source_total_items":meta["total_items"],"expected_weapons":expected_count,"counts":counts,"policy":{"identity":"exact normalized ROBASE display name or exact ROBASE/BloxSwaps slug within matching category and weapon type","ambiguous_identity":"rejected; no fuzzy matching","missing_values":"null; never treated as zero","production":"research archive only; no live scanner or Telegram behavior is changed"},"items":rows}
+    counts = {"weapons":len(rows),"exactly_mapped":sum(bool(x["rblxvalue_slug"]) for x in rows),"explicit_verified_aliases":sum(x["identity_method"]=="explicit_verified_alias" and bool(x["rblxvalue_slug"]) for x in rows),"matched":sum(x["status"]=="matched" for x in rows),"matched_missing_blended_value":sum(x["status"]=="matched_missing_blended_value" for x in rows),"matched_missing_supreme_value":sum(x["status"]=="matched_missing_supreme_value" for x in rows),"missing":sum(x["status"]=="missing" for x in rows),"ambiguous":sum(x["status"] in {"ambiguous","ambiguous_identity_collision"} for x in rows),"unsupported_category_or_type":sum(x["status"]=="unsupported_category_or_type" for x in rows),"with_blended_value":sum(x["value"] is not None and x["value"] > 0 for x in rows),"with_supreme_value":sum(x["value_source_b"] is not None and x["value_source_b"] > 0 for x in rows),"with_stability":sum(x["stability"] is not None for x in rows)}
+    return {"schema_version":1,"source":"RBLXValue official API v2","source_url":API_BASE,"source_fields":{"value":"RBLXValue blended estimate","value_source_a":"MM2Values","value_source_b":"Supreme Values","stability":"RBLXValue stability field; not independently attributed to Supreme Values"},"snapshot_date":snapshot_date,"fetched_at_utc":fetched_at_utc,"dataset_last_updated":meta["last_updated"],"source_total_items":meta["total_items"],"expected_weapons":expected_count,"counts":counts,"policy":{"identity":"exact normalized ROBASE display name or exact ROBASE/BloxSwaps slug within matching category/type, plus the explicit verified aliases listed in identity_method","ambiguous_identity":"rejected; no fuzzy matching","missing_values":"null; never treated as zero","production":"research archive only; no live scanner or Telegram behavior is changed"},"items":rows}
 
 def collect_snapshot(identity_path, api_key, *, now=None):
     identities = json.loads(Path(identity_path).read_text(encoding="utf-8"))
