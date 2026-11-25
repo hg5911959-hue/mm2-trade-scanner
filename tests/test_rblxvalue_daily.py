@@ -1,6 +1,6 @@
 import unittest
 from test_support import IsolatedDataTestCase
-from tools.rblxvalue_daily import RBLXValueClient, candidate_matches, build_snapshot, normalize_name, parse_number
+from tools.rblxvalue_daily import RBLXValueClient, candidate_matches, build_snapshot, normalize_name, parse_number, EXACT_IDENTITY_ALIASES
 
 class RBLXValueDailyTests(IsolatedDataTestCase):
     def identity(self, name="Bat", slug="bat", rarity="godly", kind="knife", chroma=False):
@@ -9,6 +9,66 @@ class RBLXValueDailyTests(IsolatedDataTestCase):
         return {"name":name,"slug":slug,"category":category,"type":kind,"value":155,"value_source_a":150,"value_source_b":160,"stability":"Stable","demand":5,"rarity":4,"range":"150-165","last_updated":"2026-11-25 05:00:00",**extra}
     def test_exact_name_category_and_type_match(self):
         self.assertEqual(len(candidate_matches(self.identity(),[self.source()])),1)
+
+    def test_explicit_aliases_require_exact_slug_name_category_and_type(self):
+        self.assertEqual(len(EXACT_IDENTITY_ALIASES), 9)
+        for robase_slug, alias in EXACT_IDENTITY_ALIASES.items():
+            identity = {
+                "robase_slug": robase_slug,
+                "robase_name": alias["name"],
+                "bloxswaps_slug": alias["bloxswaps_slug"],
+                "bloxswaps_type": alias["type"],
+                "bloxswaps_rarity": alias["category"],
+                "bloxswaps_chroma": False,
+            }
+            source = {
+                "name": alias["name"],
+                "slug": alias["slug"],
+                "category": alias["category"],
+                "type": alias["type"].title(),
+            }
+            self.assertEqual(candidate_matches(identity, [source]), [source], robase_slug)
+            wrong_slug = dict(source, slug="not-the-reviewed-slug")
+            self.assertEqual(candidate_matches(identity, [wrong_slug]), [], robase_slug)
+            wrong_type = dict(source, type="Gun" if alias["type"] == "knife" else "Knife")
+            self.assertEqual(candidate_matches(identity, [wrong_type]), [], robase_slug)
+            wrong_category = dict(source, category="ancient")
+            self.assertEqual(candidate_matches(identity, [wrong_category]), [], robase_slug)
+
+    def test_zero_supreme_source_is_not_counted_as_a_supreme_value(self):
+        identity = {
+            "ghost-g-2026": {
+                "robase_slug": "ghost-1149",
+                "robase_name": "Ghost",
+                "bloxswaps_slug": "ghost-g-2026",
+                "bloxswaps_type": "gun",
+                "bloxswaps_rarity": "uncommon",
+                "bloxswaps_chroma": False,
+            }
+        }
+        source = [{
+            "name": "Ghost Gun",
+            "slug": "ghost-gun",
+            "category": "uncommon",
+            "type": "Gun",
+            "value": 10,
+            "value_source_a": 10,
+            "value_source_b": 0,
+            "stability": "Stable",
+            "demand": 3,
+            "rarity": 3,
+            "last_updated": "2026-11-25 12:00:00",
+        }]
+        snapshot = build_snapshot(
+            identity, source, {"total_items": 1, "last_updated": "2026-11-25 12:00:00"},
+            snapshot_date="2026-11-25", fetched_at_utc="2026-11-25T12:00:00+00:00", expected_count=1,
+        )
+        row = snapshot["items"][0]
+        self.assertEqual(row["status"], "matched_missing_supreme_value")
+        self.assertEqual(snapshot["counts"]["with_supreme_value"], 0)
+        self.assertEqual(snapshot["counts"]["with_stability"], 1)
+        self.assertEqual(row["identity_method"], "explicit_verified_alias")
+        self.assertIn("/item/ghost-gun", row["identity_source_url"])
     def test_slug_match_still_requires_category_and_type(self):
         self.assertEqual(len(candidate_matches(self.identity(name="Renamed Bat"),[self.source()])),1)
         self.assertEqual(len(candidate_matches(self.identity(),[self.source(category="ancient")])),0)
