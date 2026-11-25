@@ -616,9 +616,9 @@ jobs:
               raise SystemExit(f"ROBASE chart does not yet contain the completed previous day {yesterday_key}")
           if len(incoming) != len(incoming_days) * 214:
               raise SystemExit("Incoming archive does not contain a complete 214-weapon matrix")
-          if (max(incoming_days) - min(incoming_days)).days + 1 != len(incoming_days):
+          if (date.fromisoformat(max(incoming_days)) - date.fromisoformat(min(incoming_days))).days + 1 != len(incoming_days):
               raise SystemExit("Incoming archive has missing calendar dates")
-          if existing_days and (max(existing_days) - min(existing_days)).days + 1 != len(existing_days):
+          if existing_days and (date.fromisoformat(max(existing_days)) - date.fromisoformat(min(existing_days))).days + 1 != len(existing_days):
               raise SystemExit("Persistent archive has a gap in calendar dates")
           old_keys = {(r["robase_slug"], r["date"]) for r in existing}
           new_rows = [r for r in incoming if (r["robase_slug"], r["date"]) not in old_keys]
