@@ -19,6 +19,8 @@ on:
       - "tools/robase_prices.py"
       - "tools/robase_price_history.py"
       - "tools/cash_market.py"
+      - "tools/robase_daily_chart_prices.py"
+      - "tests/test_robase_daily_chart_prices.py"
       - "tests/test_robase_prices.py"
       - "tests/test_robase_price_history.py"
       - "tests/test_cash_market.py"
