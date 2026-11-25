@@ -25,6 +25,21 @@ DEFAULT_IDENTITY_MAP = Path("robase-daily-history/data/weapon_identity_map.json"
 MIN_DAILY_SALES_FOR_ALERTS = 3
 
 
+def get_marketplace_fee(fees: dict, marketplace_code: str) -> float:
+    """Return an explicit, finite ROBASE fee rate; never assume an unknown market is fee-free."""
+    if not isinstance(fees, dict) or marketplace_code not in fees:
+        raise ValueError(f"ROBASE fee is missing for marketplace {marketplace_code}")
+    fee = fees[marketplace_code]
+    if (
+        isinstance(fee, bool)
+        or not isinstance(fee, (int, float))
+        or not math.isfinite(fee)
+        or not 0 <= fee < 1
+    ):
+        raise ValueError(f"Invalid ROBASE fee for marketplace {marketplace_code}")
+    return float(fee)
+
+
 def previous_completed_day(now: datetime | None = None, timezone_name: str = DEFAULT_TIMEZONE) -> str:
     """Return yesterday in the requested local timezone; reject naive timestamps."""
     zone = ZoneInfo(timezone_name)
