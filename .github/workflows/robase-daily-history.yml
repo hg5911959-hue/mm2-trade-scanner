@@ -549,7 +549,7 @@ jobs:
           python - <<'PY'
           import csv, json
           from collections import defaultdict
-          from datetime import date
+          from datetime import date, datetime, timedelta, timezone
           from pathlib import Path
 
           source = Path("robase-chart-diagnostics/weapons_daily_archive.csv")
@@ -581,10 +581,12 @@ jobs:
                       raise SystemExit("Persistent archive CSV schema mismatch")
                   return list(reader)
 
-          existing = load_rows(target)
-          incoming = load_rows(source)
-          if len(incoming) != 214 * 365:
-              raise SystemExit(f"Incoming archive row count invalid: {len(incoming)}")
+          today_utc = datetime.now(timezone.utc).date()
+          today_key = today_utc.isoformat()
+          yesterday_key = (today_utc - timedelta(days=1)).isoformat()
+          # A same-day chart point is still forming. Never persist it as a completed daily close.
+          existing = [row for row in load_rows(target) if row["date"] < today_key]
+          incoming = [row for row in load_rows(source) if row["date"] < today_key]
           def validate(rows, label):
               keys = set()
               per_day = defaultdict(set)
@@ -616,6 +618,14 @@ jobs:
 
           incoming_days = validate(incoming, "incoming")
           existing_days = validate(existing, "existing")
+          if not incoming_days or max(incoming_days) != yesterday_key or yesterday_key not in incoming_days:
+              raise SystemExit(f"ROBASE chart does not yet contain the completed previous day {yesterday_key}")
+          if len(incoming) != len(incoming_days) * 214:
+              raise SystemExit("Incoming archive does not contain a complete 214-weapon matrix")
+          if (max(incoming_days) - min(incoming_days)).days + 1 != len(incoming_days):
+              raise SystemExit("Incoming archive has missing calendar dates")
+          if existing_days and (max(existing_days) - min(existing_days)).days + 1 != len(existing_days):
+              raise SystemExit("Persistent archive has a gap in calendar dates")
           old_keys = {(r["robase_slug"], r["date"]) for r in existing}
           new_rows = [r for r in incoming if (r["robase_slug"], r["date"]) not in old_keys]
           merged = existing + new_rows
