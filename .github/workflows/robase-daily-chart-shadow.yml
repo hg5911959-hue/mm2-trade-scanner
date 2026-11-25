@@ -8,14 +8,16 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  actions: read
+  contents: write
 
 jobs:
   shadow:
     if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     name: Evaluate yesterday's ROBASE chart prices without alerts
     permissions:
-      contents: read
+      actions: read
+      contents: write
     uses: ./.github/workflows/scan.yml
     with:
       dry_run: true
