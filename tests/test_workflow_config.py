@@ -10,9 +10,9 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
 
     def test_telegram_connection_test_uses_real_newlines_in_html_message(self):
         workflow = (ROOT / ".github/workflows/telegram-test.yml").read_text(encoding="utf-8")
-        self.assertIn('ALERT — TEST ONLY</b>\\n"', workflow)
-        self.assertIn('DELIVERY CHECK</b>\\n\\n"', workflow)
-        self.assertNotIn(r"\\n", workflow)
+        self.assertIn('ALERT — TEST ONLY</b>\n"', workflow)
+        self.assertIn('DELIVERY CHECK</b>\n\n"', workflow)
+        self.assertNotIn(r"\n", workflow)
 
     def test_ci_linter_version_is_pinned(self):
         workflow = (ROOT / ".github/workflows/tests.yml").read_text(encoding="utf-8")
@@ -116,8 +116,8 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
     def test_read_only_shadow_core_stays_identical_to_live_scan_job(self):
         live = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         core = (ROOT / ".github/workflows/scan-core.yml").read_text(encoding="utf-8")
-        live_job = live.split("  scan:\\n", 1)[1].split("  persist-state:\\n", 1)[0]
-        core_job = core.split("  scan:\\n", 1)[1]
+        live_job = live.split("  scan:\n", 1)[1].split("  persist-state:\n", 1)[0]
+        core_job = core.split("  scan:\n", 1)[1]
         self.assertEqual(live_job.strip(), core_job.strip())
         self.assertNotIn("persist-state:", core)
 
