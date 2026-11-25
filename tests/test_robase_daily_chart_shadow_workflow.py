@@ -36,7 +36,8 @@ class DailyChartShadowWorkflowTests(IsolatedDataTestCase):
         self.assertIn("robase_daily_chart_shadow: true", self.shadow)
 
     def test_shadow_never_persists_live_scanner_state(self):
-        self.assertIn("inputs.robase_daily_chart_shadow != true", self.scan)
-        self.assertIn("uses: ./.github/workflows/scan-core.yml", self.scan)
+        self.assertNotIn("persist-state:", self.core)
+        self.assertIn("persist-state:", self.scan)
+        self.assertIn("uses: ./.github/workflows/scan-core.yml", self.shadow)
 
 
