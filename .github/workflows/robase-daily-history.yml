@@ -664,6 +664,9 @@ jobs:
               writer.writeheader()
               writer.writerows(merged)
           latest = max(merged_days)
+          latest_rows = [row for row in merged if row["date"] == latest]
+          latest_priced = sum(1 for row in latest_rows if row["all_marketplaces_price_after_fee"] != "")
+          latest_unpriced = len(latest_rows) - latest_priced
           manifest_out = {
               "schema_version": 1,
               "source": "ROBASE daily chart API",
@@ -675,6 +678,9 @@ jobs:
               "dates_covered": len(merged_days),
               "first_date": min(merged_days),
               "last_date": latest,
+              "latest_completed_day_priced_weapons": latest_priced,
+              "latest_completed_day_unpriced_weapons": latest_unpriced,
+              "latest_completed_day_sales_total": sum(int(row["all_marketplaces_sold"]) for row in latest_rows),
               "rows_appended_this_run": len(new_rows),
               "latest_api_range": {
                   "first_date": min(incoming_days),
