@@ -98,11 +98,13 @@ jobs:
               if end < 0:
                   end = min(len(source), start + 30000)
               section = source[start:end]
-              item_page_sections.append({"asset": asset, "code": section[:20000]})
+              item_page_sections.append({"asset": asset, "code": section[:40000], "section_length": len(section)})
               for match in re.finditer(r"""(?:getJson|fetch)\s*\(\s*(['"])(.*?)\1""", section, re.I):
                   item_api_candidates.append({"asset": asset, "call": match.group(0)[:1000]})
               for match in re.finditer(r"""['"]([^'"]*/api\.php[^'"]*)['"]""", section, re.I):
                   item_api_candidates.append({"asset": asset, "endpoint": match.group(1)[:1000]})
+                  left, right = max(0, match.start()-350), min(len(section), match.end()+900)
+                  item_api_candidates.append({"asset": asset, "context": section[left:right]})
           report = {
               "page": base,
               "page_bytes": len(html.encode()),
