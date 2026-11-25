@@ -330,4 +330,4 @@ This branch is separate from production scanner valuation, trade alerts, Telegra
 
 **Intended scanner date rule:** for a scan on calendar date D, use the chart point for D-1. A missing or unpriced D-1 observation is unavailable; do not replace it with Buyer Price, a rolling average, or an older date silently.
 
-Initial snapshot: 2025-11-26 through 2026-11-25; 78,110 rows; 214 weapons; 365 days.
+Current completed-day snapshot (2026-11-25 UTC): 2025-11-26 through 2026-11-24; 77,896 rows; 214 weapons; 364 completed days. The current UTC day is intentionally excluded; the 2026-11-25 point becomes eligible after that day closes.
