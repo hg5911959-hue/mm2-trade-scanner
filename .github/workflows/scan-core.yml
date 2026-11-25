@@ -13,6 +13,11 @@ on:
         required: false
         type: boolean
         default: false
+      rblxvalue_value_profit_shadow:
+        description: "Run offline Supreme value-profit analysis from the archived RBLXValue snapshot; never send Telegram alerts or call the API"
+        required: false
+        type: boolean
+        default: false
     secrets:
       TELEGRAM_BOT_TOKEN:
         required: false
@@ -37,8 +42,10 @@ jobs:
       actions: read
     env:
       HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
-      CASH_FILTER: "true" # only fully priced, fresh ROBASE-verified offers are eligible
+      CASH_FILTER: ${{ inputs.rblxvalue_value_profit_shadow && 'false' || 'true' }} # value-profit shadow is isolated from the production cash filter
       ROBASE_DAILY_CHART_SHADOW_ENABLED: ${{ inputs.robase_daily_chart_shadow && 'true' || 'false' }}
+      RBLXVALUE_VALUE_PROFIT_SHADOW_ENABLED: ${{ inputs.rblxvalue_value_profit_shadow && 'true' || 'false' }}
+      RBLXVALUE_DAILY_ARCHIVE_FILE: rblxvalue-archive/data/rblxvalue_latest.json
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -93,6 +100,16 @@ jobs:
           test -s robase-daily-history/data/weapons_daily_all_marketplaces_after_fees.csv
           test -s robase-daily-history/data/weapon_identity_map.json
           echo "Restored previous-day ROBASE daily chart archive for shadow evaluation only."
+
+      - name: Restore RBLXValue daily snapshot for offline Value-profit shadow
+        if: env.RBLXVALUE_VALUE_PROFIT_SHADOW_ENABLED == 'true'
+        run: |
+          set -euo pipefail
+          git fetch origin refs/heads/robase-daily-history:refs/remotes/origin/robase-daily-history
+          mkdir -p rblxvalue-archive/data
+          git show origin/robase-daily-history:data/rblxvalue_latest.json > rblxvalue-archive/data/rblxvalue_latest.json
+          test -s rblxvalue-archive/data/rblxvalue_latest.json
+          echo "Restored the completed daily RBLXValue snapshot; scanner will use value_source_b only and make no API requests."
 
       - name: Run scanner preflight checks (warnings do not block the scan)
         id: preflight
