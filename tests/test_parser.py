@@ -3886,6 +3886,7 @@ class RealAlertReevaluationIntegrationTests(IsolatedDataTestCase):
     def test_previously_alerted_ad_realerts_when_cash_prices_make_it_profitable(self):
         listing = {
             "id": "stable-ad-id", "source_ad_id": "same-source-ad", "source": "bloxswaps",
+            "posted_at": datetime.now(timezone.utc).isoformat(),
             "owner_url": "https://bloxswaps.com/fr/users/123",
             "url": "https://bloxswaps.com/fr/trade-mm2?ad=same-source-ad",
             "give_items": [{"name": "Knife A", "catalog_slug": "knife-a", "catalog_rarity": "Godly", "catalog_type": "Knife", "catalog_chroma": False, "quantity": 1, "quantity_source": "structured", "quantity_min": 1, "quantity_max": 1}],
@@ -4238,6 +4239,7 @@ class CashFirstEvaluatorTests(IsolatedDataTestCase):
         self.listing = {
             "id": "cash-test",
             "source": "bloxswaps",
+            "posted_at": datetime.now(timezone.utc).isoformat(),
             "give_items": [{
                 "name": "Chroma Laser", "catalog_slug": "chroma-laser",
                 "catalog_rarity": "Godly", "catalog_type": "Knife", "catalog_chroma": True,

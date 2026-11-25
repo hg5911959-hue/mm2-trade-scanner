@@ -50,6 +50,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
             "cash_estimate_only": True, "manual_review": False,
             "cash_profit_worst": 10000.0, "margin": 500.0, "give_total_max": 10.0,
             "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "listing": {"posted_at": datetime.now(UTC).isoformat()},
         }
         self.assertFalse(scanner.qualifies_cash(result))
 
@@ -58,6 +59,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
             "cash_estimate_only": False, "manual_review": True,
             "cash_profit_worst": 10000.0, "margin": 500.0, "give_total_max": 10.0,
             "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "listing": {"posted_at": datetime.now(UTC).isoformat()},
         }
         self.assertFalse(scanner.qualifies_cash(result))
 
@@ -67,6 +69,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
                 result = {
                     "cash_estimate_only": False, "manual_review": False,
                     "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+                    "listing": {"posted_at": datetime.now(UTC).isoformat()},
                     "cash_profit_worst": profit, "margin": 1000.0, "give_total_max": 10.0,
                 }
                 self.assertFalse(scanner.qualifies_cash(result))
@@ -77,6 +80,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
                 result = {
                     "cash_estimate_only": False, "manual_review": False,
                     "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+                    "listing": {"posted_at": datetime.now(UTC).isoformat()},
                     "cash_profit_worst": 1000.0, "margin": margin, "give_total_max": 10.0,
                 }
                 self.assertFalse(scanner.qualifies_cash(result))
@@ -85,6 +89,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         result = {
             "cash_estimate_only": False, "manual_review": False,
             "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "listing": {"posted_at": datetime.now(UTC).isoformat()},
             "cash_profit_worst": -1000.0, "margin": 1000.0, "give_total_max": 10.0,
         }
         self.assertFalse(scanner.qualifies_cash(result))
@@ -93,6 +98,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         result = {
             "cash_estimate_only": False, "manual_review": False,
             "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "listing": {"posted_at": datetime.now(UTC).isoformat()},
             "cash_profit_worst": 2.0, "margin": 0.01, "give_total_max": 10000.0,
         }
         self.assertTrue(scanner.qualifies_cash(result))
@@ -101,6 +107,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         base = {
             "cash_estimate_only": False, "manual_review": False,
             "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "listing": {"posted_at": datetime.now(UTC).isoformat()},
             "cash_profit_worst": 2.0, "margin": 0.01, "give_total_max": 10000.0,
         }
         with patch.object(scanner, "CASH_MIN_MARGIN_PERCENT", 0.5):
@@ -229,6 +236,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
                 result = {
                     "cash_estimate_only": False, "manual_review": False,
                     "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+                    "listing": {"posted_at": datetime.now(UTC).isoformat()},
                     "cash_profit_worst": 100.0, "margin": 20.0, "give_total_max": 10.0,
                 }
                 result[field] = value
@@ -238,6 +246,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         base = {
             "manual_review": False, "cash_estimate_only": False,
             "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "listing": {"posted_at": datetime.now(UTC).isoformat()},
             "margin": 0.01, "give_total_max": 4.99,
         }
         self.assertTrue(scanner.qualifies_cash({**base, "cash_profit_worst": 2.00}))
@@ -255,6 +264,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         base = {
             "manual_review": False, "cash_estimate_only": False,
             "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "listing": {"posted_at": datetime.now(UTC).isoformat()},
             "cash_profit_worst": 100.0, "margin": 20.0, "give_total_max": 10.0,
         }
         self.assertTrue(scanner.qualifies_cash(base))

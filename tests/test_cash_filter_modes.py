@@ -17,6 +17,48 @@ from test_support import IsolatedDataTestCase
 
 
 
+class CashListingFreshnessTests(IsolatedDataTestCase):
+    def test_cash_listing_requires_a_recent_valid_feed_refresh(self):
+        now = datetime(2026, 11, 25, 10, 0, tzinfo=timezone.utc).timestamp()
+        fresh = {"posted_at": "2026-11-25T09:30:00Z"}
+        stale = {"posted_at": "2026-11-25T08:59:59Z"}
+        future = {"posted_at": "2026-11-25T10:02:00Z"}
+        self.assertTrue(scanner.cash_listing_is_fresh(fresh, now=now, max_age_seconds=3600))
+        self.assertFalse(scanner.cash_listing_is_fresh(stale, now=now, max_age_seconds=3600))
+        self.assertFalse(scanner.cash_listing_is_fresh(future, now=now, max_age_seconds=3600))
+        self.assertFalse(scanner.cash_listing_is_fresh({}, now=now, max_age_seconds=3600))
+        self.assertFalse(scanner.cash_listing_is_fresh(None, now=now, max_age_seconds=3600))
+
+    def test_cash_qualification_rejects_stale_offers(self):
+        now = datetime.now(timezone.utc)
+        base = {
+            "manual_review": False,
+            "cash_estimate_only": False,
+            "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "cash_profit_worst": 5.0,
+            "margin": 10.0,
+            "give_total_max": 50.0,
+            "listing": {"posted_at": now.isoformat()},
+        }
+        self.assertTrue(scanner.qualifies_cash(base))
+        stale = dict(base, listing={"posted_at": "2026-11-20T00:00:00Z"})
+        self.assertFalse(scanner.qualifies_cash(stale))
+        missing = dict(base, listing={})
+        self.assertFalse(scanner.qualifies_cash(missing))
+
+    def test_watch_fingerprint_changes_when_listing_is_refreshed(self):
+        listing = {
+            "give_items": [{"name": "Knife A", "quantity": 1}],
+            "receive_items": [{"name": "Knife B", "quantity": 1}],
+            "posted_at": "2026-11-25T09:00:00Z",
+        }
+        cash_catalog = {"items_by_slug": {}}
+        before = scanner.listing_watch_fingerprints(listing, {}, cash_catalog=cash_catalog)[0]
+        refreshed = dict(listing, posted_at="2026-11-25T09:30:00Z")
+        after = scanner.listing_watch_fingerprints(refreshed, {}, cash_catalog=cash_catalog)[0]
+        self.assertNotEqual(before, after)
+
+
 class CashConfigurationValidationTests(IsolatedDataTestCase):
     def test_negative_and_non_finite_margin_thresholds_fail_at_startup(self):
         for value in ("-0.01", "nan", "inf", "-inf"):
