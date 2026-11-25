@@ -156,7 +156,6 @@ jobs:
               total_sold = 0
               total_amount = 0.0
               total_priced_sold = 0
-              row = {"date": key}
               for code in codes:
                   point = market_days[code].get(key, {})
                   sold = point.get("sold", 0) or 0
@@ -165,14 +164,15 @@ jobs:
                   if not isinstance(fee, (int, float)) or not 0 <= fee < 1:
                       raise ValueError("Invalid marketplace fee for " + code)
                   net_price = price * (1 - fee) if isinstance(price, (int, float)) else None
-                  row[code + "_sold"] = sold
-                  row[code + "_price_after_fee"] = round(net_price, 8) if net_price is not None else ""
                   total_sold += sold
                   if net_price is not None and sold:
                       total_amount += net_price * sold
                       total_priced_sold += sold
-              row["all_marketplaces_sold"] = total_sold
-              row["all_marketplaces_price_after_fee"] = round(total_amount / total_priced_sold, 8) if total_priced_sold else ""
+              row = {
+                  "date": key,
+                  "all_marketplaces_sold": total_sold,
+                  "all_marketplaces_price_after_fee": round(total_amount / total_priced_sold, 8) if total_priced_sold else "",
+              }
               daily_rows.append(row)
               day += timedelta(days=1)
           home_html = get("https://robase.gg/", 5_000_000)
@@ -208,11 +208,7 @@ jobs:
                   "date_to": sample_data.get("to"),
                   "sales_points": sum(sum((point.get("sold", 0) or 0) for point in rows if isinstance(point, dict)) for rows in sample_data["markets"].values() if isinstance(rows, list)),
               })
-          tooltip_target = {
-              "starpets": {"sold": 16, "price_after_fee": 1.45},
-              "chromas": {"sold": 3, "price_after_fee": 1.88},
-              "bhopp": {"sold": 2, "price_after_fee": 1.87},
-          }
+          tooltip_target = {"date": "2026-11-23", "all_marketplaces_sold": 21, "all_marketplaces_price_after_fee": 1.55}
           tooltip_matches = []
           tooltip_candidates = []
           scan_errors = []
@@ -227,45 +223,31 @@ jobs:
                   if not isinstance(item_data, dict) or not isinstance(item_data.get("markets"), dict):
                       raise ValueError("Unexpected item API response shape")
                   scanned += 1
-                  day_markets = {}
                   total_sold = 0
                   net_amount = 0.0
                   total_priced = 0
-                  for code, expected in tooltip_target.items():
-                      points = item_data["markets"].get(code, [])
-                      point = next((p for p in points if p.get("day") == "2026-11-23"), None)
+                  for code, points in item_data["markets"].items():
+                      point = next((p for p in points if p.get("day") == tooltip_target["date"]), None)
                       sold = (point or {}).get("sold", 0) or 0
                       price = (point or {}).get("price")
                       fee = fees.get(code, 0)
                       net_price = price * (1 - fee) if isinstance(price, (int, float)) else None
-                      day_markets[code] = {
-                          "sold": sold,
-                          "price_after_fee": round(net_price, 2) if net_price is not None else None,
-                      }
                       total_sold += sold
                       if net_price is not None and sold:
                           net_amount += net_price * sold
                           total_priced += sold
                   net_total = net_amount / total_priced if total_priced else None
-                  counts_match = all(day_markets[code]["sold"] == expected["sold"] for code, expected in tooltip_target.items()) and total_sold == 21
                   result = {
                       "slug": item_slug,
                       "name": item_data.get("item", {}).get("name"),
                       "id": item_data.get("item", {}).get("id"),
-                      "date": "2026-11-23",
-                      "markets_after_fee": day_markets,
+                      "date": tooltip_target["date"],
                       "all_marketplaces_sold": total_sold,
                       "all_marketplaces_price_after_fee": round(net_total, 2) if net_total is not None else None,
                   }
-                  if counts_match:
+                  if total_sold == tooltip_target["all_marketplaces_sold"]:
                       tooltip_candidates.append(result)
-                  exact_after_fee_match = (
-                      counts_match
-                      and all(day_markets[code]["price_after_fee"] == expected["price_after_fee"] for code, expected in tooltip_target.items())
-                      and net_total is not None
-                      and round(net_total, 2) == 1.55
-                  )
-                  if exact_after_fee_match:
+                  if total_sold == tooltip_target["all_marketplaces_sold"] and net_total is not None and round(net_total, 2) == tooltip_target["all_marketplaces_price_after_fee"]:
                       tooltip_matches.append(result)
               except HTTPError as exc:
                   if exc.code in (403, 429):
@@ -278,13 +260,13 @@ jobs:
           report["sample_10_items"] = sample_results
           report["tooltip_target_scan"] = {
               "date": "2026-11-23",
-              "expected": tooltip_target,
+              "expected_all_marketplaces_after_fee": tooltip_target,
               "items_scanned": scanned,
               "errors": scan_errors,
-              "count_match_candidates": tooltip_candidates,
-              "count_candidate_count": len(tooltip_candidates),
-              "exact_after_fee_matches": tooltip_matches,
-              "exact_after_fee_match_count": len(tooltip_matches),
+              "same_sales_count_candidates": tooltip_candidates,
+              "same_sales_count_candidate_count": len(tooltip_candidates),
+              "exact_all_marketplaces_after_fee_matches": tooltip_matches,
+              "exact_all_marketplaces_after_fee_match_count": len(tooltip_matches),
           }
           report["item_api_url"] = api_url
           report["marketplace_fees"] = fees
@@ -311,7 +293,7 @@ jobs:
               json.dump(report, f, ensure_ascii=False, indent=2)
           with open("robase-chart-diagnostics/item_api.json", "w", encoding="utf-8") as f:
               json.dump(api_data, f, ensure_ascii=False, indent=2)
-          csv_fields = ["date"] + [field for code in codes for field in (code + "_sold", code + "_price_after_fee")] + ["all_marketplaces_sold", "all_marketplaces_price_after_fee"]
+          csv_fields = ["date", "all_marketplaces_sold", "all_marketplaces_price_after_fee"]
           with open("robase-chart-diagnostics/daily_series.csv", "w", encoding="utf-8", newline="") as f:
               writer = csv.DictWriter(f, fieldnames=csv_fields)
               writer.writeheader()
