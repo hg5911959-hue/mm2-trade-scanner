@@ -29,6 +29,19 @@ def build_daily_chart_shadow_catalog(
     items_by_slug = live_catalog["items_by_slug"]
     if any(slug not in items_by_slug for slug in daily_prices):
         raise ValueError("daily chart contains a weapon absent from the live exact-slug catalogue")
+    exact_map = live_catalog.get("bloxswaps_exact_map")
+    if not isinstance(exact_map, dict) or len(exact_map) != expected_count:
+        raise ValueError(f"exact BloxSwaps identity map must contain exactly {expected_count} weapons")
+    mapped_robase_slugs = [
+        value.get("robase_slug") for value in exact_map.values()
+        if isinstance(value, dict)
+    ]
+    if (
+        len(mapped_robase_slugs) != expected_count
+        or len(set(mapped_robase_slugs)) != expected_count
+        or set(mapped_robase_slugs) != set(daily_prices)
+    ):
+        raise ValueError("daily chart weapon set does not exactly match the BloxSwaps identity map")
     dates = {row.get("date") for row in daily_prices.values() if isinstance(row, dict)}
     if len(dates) != 1 or None in dates:
         raise ValueError("daily chart rows must share one completed date")
