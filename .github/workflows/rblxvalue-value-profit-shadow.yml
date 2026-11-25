@@ -4,6 +4,11 @@ on:
   workflow_run:
     workflows: ["RBLXValue Daily Weapon History"]
     types: [completed]
+  # Run once when this shadow workflow is first merged; later runs follow the daily archive.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/rblxvalue-value-profit-shadow.yml"
 
 permissions:
   actions: read
@@ -11,7 +16,7 @@ permissions:
 
 jobs:
   shadow:
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    if: github.event_name == 'push' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     name: Analyze Supreme value-profit without alerts or API access
     permissions:
       actions: read
