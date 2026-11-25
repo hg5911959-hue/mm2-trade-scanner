@@ -1,0 +1,110 @@
+name: RBLXValue Daily Weapon History
+
+on:
+  schedule:
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: rblxvalue-daily-history
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  collect-and-archive:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out main branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.12"
+      - name: Load exact ROBASE weapon crosswalk
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin robase-daily-history:refs/remotes/origin/robase-daily-history
+          git show origin/robase-daily-history:data/weapon_identity_map.json > /tmp/weapon_identity_map.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("/tmp/weapon_identity_map.json").read_text(encoding="utf-8"))
+          if not isinstance(data, dict) or len(data) != 214:
+              raise SystemExit("Expected exactly 214 weapon identities")
+          print(f"Loaded {len(data)} exact ROBASE weapon identities")
+          PY
+      - name: Fetch RBLXValue API dataset
+        env:
+          RBLXVALUE_API_KEY: \${{ secrets.RBLXVALUE_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "\${RBLXVALUE_API_KEY:-}" ]; then
+            echo "::error::Missing repository secret RBLXVALUE_API_KEY. Add a valid key from the official RBLXValue developer portal."
+            exit 1
+          fi
+          python tools/rblxvalue_daily.py --identity-map /tmp/weapon_identity_map.json --json-output /tmp/rblxvalue_latest.json --csv-output /tmp/rblxvalue_snapshot.csv
+      - name: Append validated snapshot to persistent history branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp /tmp/rblxvalue_latest.json /tmp/rblxvalue_latest.json.keep
+          cp /tmp/rblxvalue_snapshot.csv /tmp/rblxvalue_snapshot.csv.keep
+          git checkout -B robase-daily-history origin/robase-daily-history
+          python - <<'PY'
+          import csv, json
+          from pathlib import Path
+          latest = json.loads(Path("/tmp/rblxvalue_latest.json.keep").read_text(encoding="utf-8"))
+          incoming = list(csv.DictReader(Path("/tmp/rblxvalue_snapshot.csv.keep").open(encoding="utf-8", newline="")))
+          if len(incoming) != 214 or latest.get("expected_weapons") != 214:
+              raise SystemExit("Refusing incomplete RBLXValue snapshot")
+          if {row.get("snapshot_date") for row in incoming} != {latest.get("snapshot_date")}:
+              raise SystemExit("CSV and JSON snapshot dates differ")
+          data_dir = Path("data")
+          latest_path, history_path, manifest_path = data_dir/"rblxvalue_latest.json", data_dir/"rblxvalue_daily_history.csv", data_dir/"rblxvalue_manifest.json"
+          fields = list(incoming[0]); existing = []
+          if history_path.exists():
+              with history_path.open(encoding="utf-8", newline="") as handle:
+                  reader = csv.DictReader(handle)
+                  if reader.fieldnames != fields: raise SystemExit("History CSV schema mismatch")
+                  existing = list(reader)
+          day = latest["snapshot_date"]
+          combined = [row for row in existing if row.get("snapshot_date") != day] + incoming
+          combined.sort(key=lambda row: (row["snapshot_date"], row["robase_slug"]))
+          temp = history_path.with_suffix(".csv.tmp")
+          with temp.open("w", encoding="utf-8", newline="") as handle:
+              writer = csv.DictWriter(handle, fieldnames=fields); writer.writeheader(); writer.writerows(combined)
+          temp.replace(history_path)
+          latest_path.write_text(json.dumps(latest, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
+          manifest = {"schema_version":1,"source":latest["source"],"source_url":latest["source_url"],"dataset_last_updated":latest["dataset_last_updated"],"last_snapshot_date":day,"expected_weapons":latest["expected_weapons"],"history_rows":len(combined),"snapshot_counts":latest["counts"],"usage":"Research archive only; not connected to production valuation or Telegram filters"}
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
+          print(json.dumps(manifest, ensure_ascii=False, sort_keys=True))
+          PY
+          git add data/rblxvalue_latest.json data/rblxvalue_daily_history.csv data/rblxvalue_manifest.json
+          if git diff --cached --quiet; then
+            echo "RBLXValue snapshot unchanged; no commit needed."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "data: archive daily RBLXValue weapon values"
+            git push origin HEAD:robase-daily-history
+          fi
+      - name: Upload snapshot diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: rblxvalue-daily-diagnostics
+          path: |
+            /tmp/rblxvalue_latest.json
+            /tmp/rblxvalue_snapshot.csv
+          if-no-files-found: ignore
+          retention-days: 14
