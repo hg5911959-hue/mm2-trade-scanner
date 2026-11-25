@@ -90,7 +90,7 @@ def load_values_from_snapshot(
     seen_blox: set[str] = set()
     seen_rblx: set[str] = set()
     grouped: dict[str, dict] = {}
-    matched = supreme_numeric = stability_count = demand_count = unmapped = 0
+    matched = supreme_numeric = stability_count = demand_count = alias_count = unmapped = 0
     for row in rows:
         if not isinstance(row, dict):
             raise ValueError("snapshot contains a malformed weapon row")
@@ -132,6 +132,8 @@ def load_values_from_snapshot(
         if category != expected_category:
             raise ValueError(f"RBLXValue rarity/category mismatch for {robase_slug}")
         matched += 1
+        if row.get("identity_method") == "explicit_verified_alias":
+            alias_count += 1
 
         # Critical source rule: Supreme Values only. Never fall back to blended
         # value or MM2Values when value_source_b is absent or invalid.
@@ -191,6 +193,7 @@ def load_values_from_snapshot(
         "source": SOURCE,
         "weapons": expected_count,
         "exactly_mapped": matched,
+        "explicit_verified_aliases": alias_count,
         "unmapped": unmapped,
         "supreme_numeric": supreme_numeric,
         "stability_available": stability_count,
