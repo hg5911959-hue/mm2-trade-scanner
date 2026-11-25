@@ -16,6 +16,7 @@ on:
       - ".github/workflows/robase-daily-history.yml"
       - ".github/workflows/robase-daily-chart-shadow.yml"
       - ".github/workflows/scan.yml"
+      - ".github/workflows/scan-core.yml"
       - "tests/test_robase_daily_history_workflow.py"
       - "tests/test_robase_daily_chart_shadow_workflow.py"
   push:
