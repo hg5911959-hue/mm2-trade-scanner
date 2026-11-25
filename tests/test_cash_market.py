@@ -450,8 +450,8 @@ class CashMarketTests(IsolatedDataTestCase):
         path = Path(tmp.name) / "robase.json"
         now = datetime(2026, 11, 21, tzinfo=UTC)
         snapshot = self._robase_snapshot(now)
-        snapshot["items"][0].update({"name": "Latte", "robase_slug": "latte-gun", "source": "https://robase.gg/item/latte-gun", "cash_price_usd": 3.03, "price_display": "$3.03"})
-        snapshot["items"][1].update({"name": "Latte", "robase_slug": "latte-knife", "source": "https://robase.gg/item/latte-knife", "cash_price_usd": 3.30, "price_display": "$3.30"})
+        snapshot["items"][0].update({"name": "Latte", "robase_slug": "latte-gun", "source": "https://robase.gg/item/latte-gun", "cash_price_usd": 3.03, "price_display": "$3.03", "sold_7d": 5, "sold_30d": 5})
+        snapshot["items"][1].update({"name": "Latte", "robase_slug": "latte-knife", "source": "https://robase.gg/item/latte-knife", "cash_price_usd": 3.30, "price_display": "$3.30", "sold_7d": 5, "sold_30d": 5})
         path.write_text(json.dumps(snapshot), encoding="utf-8")
         catalog = load_robase_price_catalog(path, now=now)
         result = calculate_cash_side(
