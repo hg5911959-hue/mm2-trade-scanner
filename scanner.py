@@ -5470,9 +5470,6 @@ def scan_once(include_backlog_rechecks=True):
                 f"{type(audit_error).__name__}. Cash opportunities remain fail-closed.",
                 cooldown_seconds=6 * 60 * 60,
             )
-    pending_schedule = record_pending_recheck_attempts(
-        due_pending_ids, pending_ids, pending_schedule
-    )
     if daily_shadow_mode:
         if not CASH_FILTER or not cash_catalog or not cash_catalog.get("bloxswaps_exact_map"):
             print("[daily-shadow] FAIL-CLOSED: cash mode or exact BloxSwaps identity map is unavailable.")
@@ -5525,6 +5522,9 @@ def scan_once(include_backlog_rechecks=True):
         for sample in shadow_samples:
             print(f"[daily-shadow] REJECTED {sample}")
         return 0
+    pending_schedule = record_pending_recheck_attempts(
+        due_pending_ids, pending_ids, pending_schedule
+    )
     if CASH_FILTER:
         # Cash opportunities are intentionally BloxSwaps-only; never mix Discord
         # or manually imported listings into the ROBASE cash pipeline.
