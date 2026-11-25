@@ -560,6 +560,7 @@ jobs:
           target_dir.mkdir(parents=True, exist_ok=True)
           target = target_dir / "weapons_daily_all_marketplaces_after_fees.csv"
           manifest_target = target_dir / "manifest.json"
+          identity_target = target_dir / "weapon_identity_map.json"
           fields = ["robase_slug", "item_id", "item_name", "date", "all_marketplaces_sold", "all_marketplaces_price_after_fee"]
           manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
           summary = manifest.get("weapon_archive", {})
@@ -662,11 +663,12 @@ jobs:
               "updated_by": "GitHub Actions"
           }
           manifest_target.write_text(json.dumps(manifest_out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          identity_target.write_text(json.dumps(manifest["exact_weapon_map"], ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
           print(json.dumps(manifest_out, ensure_ascii=False, indent=2))
           PY
           git -C robase-daily-history config user.name "github-actions[bot]"
           git -C robase-daily-history config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C robase-daily-history add -f data/weapons_daily_all_marketplaces_after_fees.csv data/manifest.json
+          git -C robase-daily-history add -f data/weapons_daily_all_marketplaces_after_fees.csv data/manifest.json data/weapon_identity_map.json
           if ! git -C robase-daily-history diff --cached --quiet; then
             git -C robase-daily-history commit -m "Update ROBASE daily All marketplaces after-fee history"
             git -C robase-daily-history push origin HEAD:robase-daily-history
