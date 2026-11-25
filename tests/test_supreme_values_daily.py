@@ -144,5 +144,55 @@ class SupremeValuesDailyTests(IsolatedDataTestCase):
         self.assertEqual(result["counts"]["missing"], 1)
 
 
+    def test_gun_and_knife_suffixes_disambiguate_same_display_name(self):
+        identity = {
+            "latte-g": {
+                "robase_slug": "latte-g", "robase_name": "Latte",
+                "bloxswaps_type": "gun", "bloxswaps_rarity": "legendary",
+                "bloxswaps_chroma": False,
+            },
+            "latte-k": {
+                "robase_slug": "latte-k", "robase_name": "Latte",
+                "bloxswaps_type": "knife", "bloxswaps_rarity": "legendary",
+                "bloxswaps_chroma": False,
+            },
+        }
+        pages = {category: {} for category in SOURCE_CATEGORIES}
+        pages["legendaries"] = {
+            "Latte (Gun)": {"value": "140", "stability": "Stable"},
+            "Latte (Knife)": {"value": "140", "stability": "Stable"},
+        }
+        result = build_weapon_snapshot(
+            identity, pages, "update",
+            fetched_at_utc="2026-11-25T00:00:00+00:00",
+            snapshot_date="2026-11-25", expected_count=2,
+        )
+        self.assertEqual(result["counts"]["matched_numeric"], 2)
+        self.assertEqual({row["supreme_name"] for row in result["items"]}, {"Latte (Gun)", "Latte (Knife)"})
+
+    def test_vintage_qualifier_and_chroma_abbreviation_are_type_scoped(self):
+        identity = {
+            "laser-v": {
+                "robase_slug": "laser-v", "robase_name": "Laser",
+                "bloxswaps_type": "gun", "bloxswaps_rarity": "vintage",
+                "bloxswaps_chroma": False,
+            },
+            "chroma-traveler": {
+                "robase_slug": "chroma-traveler", "robase_name": "Chroma Traveler's Gun",
+                "bloxswaps_type": "gun", "bloxswaps_rarity": "godly",
+                "bloxswaps_chroma": True,
+            },
+        }
+        pages = {category: {} for category in SOURCE_CATEGORIES}
+        pages["vintages"] = {"Laser (Vintage)": {"value": "8", "stability": "Stable"}}
+        pages["chromas"] = {"C. Traveler's Gun": {"value": "140,000", "stability": "Stable"}}
+        result = build_weapon_snapshot(
+            identity, pages, "update",
+            fetched_at_utc="2026-11-25T00:00:00+00:00",
+            snapshot_date="2026-11-25", expected_count=2,
+        )
+        self.assertEqual(result["counts"]["matched_numeric"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()
