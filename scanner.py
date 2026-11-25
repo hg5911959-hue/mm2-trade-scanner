@@ -5556,7 +5556,7 @@ def scan_once(include_backlog_rechecks=True):
                 print(
                     f"[daily-shadow] QUALIFIED listing={shadow_listing.get('id')} "
                     f"profit={result['cash_profit_worst']:.2f}..{result['cash_profit_best']:.2f} USD "
-                    f"threshold={shadow_threshold:.2f} USD date={target_day}"
+                    f"threshold={daily_threshold:.2f} USD date={target_day}"
                 )
         print(
             f"[daily-shadow] COMPLETE date={target_day}; listings={shadow_evaluated}; "
