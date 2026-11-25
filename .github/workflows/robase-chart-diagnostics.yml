@@ -1,0 +1,97 @@
+name: ROBASE chart source diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      item_slug:
+        description: "ROBASE item page slug to inspect"
+        required: false
+        default: "heat"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-public-chart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Inspect public page and same-origin JavaScript assets
+        env:
+          ITEM_SLUG: ${{ inputs.item_slug }}
+        run: |
+          python - <<'PY'
+          import json, os, re
+          from html.parser import HTMLParser
+          from urllib.parse import urljoin, urlsplit
+          from urllib.request import Request, urlopen
+
+          slug = os.environ.get("ITEM_SLUG", "heat").strip()
+          if not re.fullmatch(r"[a-z0-9-]{1,80}", slug):
+              raise SystemExit("Invalid item slug")
+          base = f"https://robase.gg/item/{slug}?days=365"
+          headers = {"User-Agent": "Mozilla/5.0 (compatible; ROBASEChartDiagnostics/1.0)"}
+
+          class Assets(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.urls = []
+              def handle_starttag(self, tag, attrs):
+                  attrs = dict(attrs)
+                  if tag.lower() == "script" and attrs.get("src"):
+                      self.urls.append(urljoin(base, attrs["src"]))
+                  if tag.lower() == "link" and attrs.get("rel", "").lower() in ("modulepreload", "preload") and attrs.get("href"):
+                      if attrs.get("as", "script") == "script":
+                          self.urls.append(urljoin(base, attrs["href"]))
+
+          def get(url, limit=2_000_000):
+              req = Request(url, headers=headers)
+              with urlopen(req, timeout=20) as response:
+                  data = response.read(limit + 1)
+                  if len(data) > limit:
+                      raise ValueError("response exceeds size cap")
+                  return data.decode("utf-8", "replace")
+
+          html = get(base)
+          parser = Assets()
+          parser.feed(html)
+          origin = urlsplit(base).netloc
+          scripts = []
+          for url in dict.fromkeys(parser.urls):
+              parts = urlsplit(url)
+              if parts.scheme != "https" or parts.netloc != origin:
+                  continue
+              try:
+                  scripts.append((url, get(url, 2_000_000)))
+              except Exception as exc:
+                  print(f"ASSET_FETCH_FAILED {url}: {type(exc).__name__}: {exc}")
+
+          patterns = re.compile(r"(?:fetch\\s*\\(|XMLHttpRequest|axios|/api/|graphql|price.?history|sales.?history|chart.?data|marketplace)", re.I)
+          report = {
+              "page": base,
+              "page_bytes": len(html.encode()),
+              "script_assets": [url for url, _ in scripts],
+              "findings": [],
+          }
+          for url, source in scripts:
+              for match in patterns.finditer(source):
+                  start, end = max(0, match.start()-180), min(len(source), match.end()+320)
+                  excerpt = re.sub(r"\\s+", " ", source[start:end])
+                  report["findings"].append({"asset": url, "excerpt": excerpt[:600]})
+                  if len(report["findings"]) >= 100:
+                      break
+              if len(report["findings"]) >= 100:
+                  break
+          # Include only script references and bounded source excerpts; no cookies or browser storage.
+          os.makedirs("robase-chart-diagnostics", exist_ok=True)
+          with open("robase-chart-diagnostics/report.json", "w", encoding="utf-8") as f:
+              json.dump(report, f, ensure_ascii=False, indent=2)
+          print(json.dumps(report, ensure_ascii=False, indent=2))
+          PY
+      - name: Upload diagnostic report
+        uses: actions/upload-artifact@v4
+        with:
+          name: robase-chart-diagnostics
+          path: robase-chart-diagnostics/report.json
+          retention-days: 7
