@@ -1,4 +1,5 @@
 import csv
+import json
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -8,7 +9,9 @@ from test_support import IsolatedDataTestCase
 
 from tools.robase_daily_chart_prices import (
     FIELDS,
+    expected_weapon_slugs,
     load_daily_prices,
+    load_exact_previous_day_prices,
     load_previous_day_prices,
     previous_completed_day,
 )
@@ -58,6 +61,13 @@ class DailyChartPriceLookupTests(IsolatedDataTestCase):
         path = self._write([row, row])
         with self.assertRaisesRegex(ValueError, "duplicate weapon/date"):
             load_daily_prices(path, "2026-11-24", {"bat"})
+
+    def test_exact_identity_map_is_required_for_weapon_universe(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        path = Path(temp.name) / "identity.json"
+        path.write_text(json.dumps({"a": {"robase_slug": "bat"}, "b": {"robase_slug": "heat"}}), encoding="utf-8")
+        self.assertEqual(expected_weapon_slugs(path, expected_count=2), {"bat", "heat"})
 
 
 if __name__ == "__main__":
