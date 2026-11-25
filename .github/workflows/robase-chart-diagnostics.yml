@@ -27,7 +27,7 @@ jobs:
           python - <<'PY'
           import json, os, re
           from html.parser import HTMLParser
-          from urllib.parse import urljoin, urlsplit
+          from urllib.parse import quote, urljoin, urlsplit
           from urllib.request import Request, urlopen
 
           slug = os.environ.get("ITEM_SLUG", "heat").strip()
@@ -123,14 +123,32 @@ jobs:
                       break
               if len(report["findings"]) >= 100:
                   break
+          api_url = "https://robase.gg/api.php?item=" + quote(slug, safe="") + "&days=365"
+          api_text = get(api_url, 5_000_000)
+          api_data = json.loads(api_text)
+          report["item_api_url"] = api_url
+          report["item_api_summary"] = {
+              "root_type": type(api_data).__name__,
+              "root_keys": sorted(api_data.keys()) if isinstance(api_data, dict) else [],
+              "from": api_data.get("from") if isinstance(api_data, dict) else None,
+              "to": api_data.get("to") if isinstance(api_data, dict) else None,
+              "market_codes": sorted(api_data.get("markets", {}).keys()) if isinstance(api_data, dict) and isinstance(api_data.get("markets"), dict) else [],
+              "market_point_counts": {
+                  code: len(rows) if isinstance(rows, list) else None
+                  for code, rows in api_data.get("markets", {}).items()
+              } if isinstance(api_data, dict) and isinstance(api_data.get("markets"), dict) else {},
+              "item": api_data.get("item") if isinstance(api_data, dict) else None,
+          }
           os.makedirs("robase-chart-diagnostics", exist_ok=True)
           with open("robase-chart-diagnostics/report.json", "w", encoding="utf-8") as f:
               json.dump(report, f, ensure_ascii=False, indent=2)
+          with open("robase-chart-diagnostics/item_api.json", "w", encoding="utf-8") as f:
+              json.dump(api_data, f, ensure_ascii=False, indent=2)
           print(json.dumps(report, ensure_ascii=False, indent=2))
           PY
       - name: Upload diagnostic report
         uses: actions/upload-artifact@v4
         with:
           name: robase-chart-diagnostics
-          path: robase-chart-diagnostics/report.json
+          path: robase-chart-diagnostics/
           retention-days: 7
