@@ -345,7 +345,7 @@ class CashMarketTests(IsolatedDataTestCase):
         self.assertEqual(row["price_window_days"], 7)
         self.assertEqual(row["price_sample_count"], 1)
 
-    def test_low_sample_robase_prices_are_labeled_without_changing_cash_value(self):
+    def test_low_sample_robase_prices_are_blocked_from_live_cash_qualification(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         path = Path(tmp.name) / "robase.json"
@@ -353,20 +353,22 @@ class CashMarketTests(IsolatedDataTestCase):
         path.write_text(json.dumps(self._robase_snapshot(now)), encoding="utf-8")
         catalog = load_robase_price_catalog(path, now=now + timedelta(minutes=10))
 
-        low, high, lines, missing = calculate_cash_side(
-            [{"canonical_name": "Item 0", "robase_slug": "item-0", "quantity_min": 1, "quantity_max": 1}],
-            catalog, "give", 0, now=now + timedelta(minutes=10),
-        )
-        self.assertEqual((low, high), (2.5, 2.5))
-        self.assertEqual(missing, [])
-        self.assertIn("[LOW SAMPLE 1/30d]", lines[0])
+        for slug, expected in (("item-0", "1/30d"), ("item-1", "1/7d")):
+            with self.subTest(slug=slug):
+                low, high, lines, missing = calculate_cash_side(
+                    [{"canonical_name": slug, "robase_slug": slug, "quantity_min": 1, "quantity_max": 1}],
+                    catalog, "give", 0, now=now + timedelta(minutes=10),
+                )
+                self.assertEqual((low, high, lines), (0.0, 0.0, []))
+                self.assertIn(f"low sample: {expected}", missing[0])
+                self.assertIn("minimum 3 completed sales", missing[0])
 
         normal = calculate_cash_side(
             [{"canonical_name": "Item 2", "robase_slug": "item-2", "quantity_min": 1, "quantity_max": 1}],
             catalog, "give", 0, now=now + timedelta(minutes=10),
         )
         self.assertEqual(normal[0], 2.5)
-        self.assertNotIn("LOW SAMPLE", normal[2][0])
+        self.assertEqual(normal[3], [])
 
     def test_robase_catalog_rejects_any_stale_item_page(self):
         tmp = tempfile.TemporaryDirectory()
