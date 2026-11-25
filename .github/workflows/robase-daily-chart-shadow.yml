@@ -1,0 +1,17 @@
+name: ROBASE Daily Chart Shadow Validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shadow:
+    name: Evaluate yesterday's ROBASE chart prices without alerts
+    permissions:
+      contents: read
+    uses: ./.github/workflows/scan.yml
+    with:
+      dry_run: true
+      robase_daily_chart_shadow: true
