@@ -11,6 +11,9 @@
   "last_date": "2026-11-24",
   "latest_completed_day_priced_weapons": 197,
   "latest_completed_day_unpriced_weapons": 17,
+  "latest_completed_day_low_sample_weapons": 21,
+  "latest_completed_day_alert_eligible_weapons": 176,
+  "minimum_daily_sales_for_alerts": 3,
   "latest_completed_day_sales_total": 9219,
   "rows_appended_this_run": 0,
   "latest_api_range": {
