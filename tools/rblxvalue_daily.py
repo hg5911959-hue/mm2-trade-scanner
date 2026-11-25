@@ -20,15 +20,15 @@ CATEGORY_MAP = {"godly":"godly","ancient":"ancient","vintage":"vintage","classic
 # exact weapon identity (type + category + catalogue slug). The API response
 # is still revalidated on every daily collection.
 EXACT_IDENTITY_ALIASES = {
-    "bat": {"bloxswaps_slug":"bat","slug":"bat-knife","name":"Bat Knife","category":"godly","type":"knife","url":"https://rblxvalue.com/item/bat-knife"},
-    "cane-562": {"bloxswaps_slug":"cane-k-2018","slug":"cane-knife-2018","name":"Cane Knife 2018","category":"rare","type":"knife","url":"https://rblxvalue.com/item/cane-knife-2018"},
-    "ghost-1149": {"bloxswaps_slug":"ghost-g-2026","slug":"ghost-gun","name":"Ghost Gun","category":"uncommon","type":"gun","url":"https://rblxvalue.com/item/ghost-gun"},
-    "laser": {"bloxswaps_slug":"disint","slug":"vintage-laser","name":"Vintage Laser","category":"vintage","type":"gun","url":"https://rblxvalue.com/item/vintage-laser"},
-    "laser-1148": {"bloxswaps_slug":"laser-k-2026","slug":"laser-knife","name":"Laser Knife","category":"rare","type":"knife","url":"https://rblxvalue.com/item/laser-knife"},
-    "latte": {"bloxswaps_slug":"latte","slug":"latte-gun","name":"Latte gun","category":"legendary","type":"gun","url":"https://rblxvalue.com/item/latte-gun"},
-    "latte-915": {"bloxswaps_slug":"latte-k-2023","slug":"latte-knife","name":"Latte Knife","category":"legendary","type":"knife","url":"https://rblxvalue.com/item/latte-knife"},
-    "phaser-1151": {"bloxswaps_slug":"phaser-k-2026","slug":"phaser-knife","name":"Phaser Knife","category":"rare","type":"knife","url":"https://rblxvalue.com/item/phaser-knife"},
-    "prince-1152": {"bloxswaps_slug":"prince-g-2026","slug":"prince-gun","name":"Prince Gun","category":"rare","type":"gun","url":"https://rblxvalue.com/item/prince-gun"},
+    "bat": {"robase_name":"Bat","bloxswaps_slug":"bat","slug":"bat-knife","name":"Bat Knife","category":"godly","type":"knife","url":"https://rblxvalue.com/item/bat-knife"},
+    "cane-562": {"robase_name":"Cane","bloxswaps_slug":"cane-k-2018","slug":"cane-knife-2018","name":"Cane Knife 2018","category":"rare","type":"knife","url":"https://rblxvalue.com/item/cane-knife-2018"},
+    "ghost-1149": {"robase_name":"Ghost","bloxswaps_slug":"ghost-g-2026","slug":"ghost-gun","name":"Ghost Gun","category":"uncommon","type":"gun","url":"https://rblxvalue.com/item/ghost-gun"},
+    "laser": {"robase_name":"Laser","bloxswaps_slug":"disint","slug":"vintage-laser","name":"Vintage Laser","category":"vintage","type":"gun","url":"https://rblxvalue.com/item/vintage-laser"},
+    "laser-1148": {"robase_name":"Laser","bloxswaps_slug":"laser-k-2026","slug":"laser-knife","name":"Laser Knife","category":"rare","type":"knife","url":"https://rblxvalue.com/item/laser-knife"},
+    "latte": {"robase_name":"Latte","bloxswaps_slug":"latte","slug":"latte-gun","name":"Latte gun","category":"legendary","type":"gun","url":"https://rblxvalue.com/item/latte-gun"},
+    "latte-915": {"robase_name":"Latte","bloxswaps_slug":"latte-k-2023","slug":"latte-knife","name":"Latte Knife","category":"legendary","type":"knife","url":"https://rblxvalue.com/item/latte-knife"},
+    "phaser-1151": {"robase_name":"Phaser","bloxswaps_slug":"phaser-k-2026","slug":"phaser-knife","name":"Phaser Knife","category":"rare","type":"knife","url":"https://rblxvalue.com/item/phaser-knife"},
+    "prince-1152": {"robase_name":"Prince","bloxswaps_slug":"prince-g-2026","slug":"prince-gun","name":"Prince Gun","category":"rare","type":"gun","url":"https://rblxvalue.com/item/prince-gun"},
 }
 
 def normalize_name(value):
@@ -120,7 +120,8 @@ def candidate_matches(identity, source_items):
         # An alias is valid only for this exact ROBASE row, exact BloxSwaps slug,
         # exact API slug/name, and exact category/type. Any mismatch fails closed.
         if (
-            str(identity.get("bloxswaps_slug") or "").casefold() != alias["bloxswaps_slug"]
+            str(identity.get("robase_name") or "").casefold() != alias["robase_name"].casefold()
+            or str(identity.get("bloxswaps_slug") or "").casefold() != alias["bloxswaps_slug"]
             or category != alias["category"]
             or kind != alias["type"]
         ):
