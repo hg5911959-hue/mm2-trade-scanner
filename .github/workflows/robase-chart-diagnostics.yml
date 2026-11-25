@@ -92,7 +92,7 @@ jobs:
           print(json.dumps(report, ensure_ascii=False, indent=2))
           PY
       - name: Upload diagnostic report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: robase-chart-diagnostics
           path: robase-chart-diagnostics/report.json
