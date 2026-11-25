@@ -32,186 +32,21 @@ on:
         required: false
         type: boolean
         default: false
+
 permissions:
   contents: read
 
-concurrency:
-  group: mm2-trade-scanner
-  cancel-in-progress: false
-
 jobs:
   scan:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      actions: read
-    env:
+    name: Run reusable MM2 scanner core
+    uses: ./.github/workflows/scan-core.yml
+    with:
+      dry_run: ${{ inputs.dry_run }}
+      robase_daily_chart_shadow: ${{ inputs.robase_daily_chart_shadow }}
+    secrets:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
-      CASH_FILTER: "true" # only fully priced, fresh ROBASE-verified offers are eligible
-      ROBASE_DAILY_CHART_SHADOW_ENABLED: ${{ inputs.robase_daily_chart_shadow && 'true' || 'false' }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.12"
-
-      - name: Restore durable state branch
-        run: |
-          set -euo pipefail
-          mkdir -p data
-          if git ls-remote --exit-code --heads origin state >/dev/null 2>&1; then
-            git fetch origin refs/heads/state:refs/remotes/origin/state
-            rm -rf data
-            mkdir -p data
-            # Keep the cash catalogue untouched when restoring durable runtime state.
-            git archive origin/state data | tar --exclude='data/cash_prices.csv' -x
-            echo "Restored scanner state from branch 'state'."
-            # Refuse to scan if restored dedupe/cache state is incomplete or unsafe.
-            python tools/validate_state.py --directory data
-          else
-            echo "State branch not found; cold-start safety window will evaluate recent posts."
-            python tools/validate_state.py --directory data
-          fi
-
-
-      - name: Refresh public ROBASE completed-sales prices
-        if: env.CASH_FILTER == '1' || env.CASH_FILTER == 'true' || env.CASH_FILTER == 'yes' || env.CASH_FILTER == 'on'
-        continue-on-error: true
-        run: |
-          python -m tools.robase_prices --output data/robase_prices.json || {
-            echo "ROBASE refresh failed; the scanner will use only a still-fresh cached snapshot."
-          }
-
-      - name: Archive one daily ROBASE rolling-sales snapshot
-        if: env.CASH_FILTER == '1' || env.CASH_FILTER == 'true' || env.CASH_FILTER == 'yes' || env.CASH_FILTER == 'on'
-        continue-on-error: true
-        run: |
-          python -m tools.robase_price_history --snapshot data/robase_prices.json --output data/robase_price_history.json || {
-            echo "Daily ROBASE history was not updated; live scanning will continue unchanged."
-          }
-
-      - name: Restore ROBASE daily chart archive for isolated shadow mode
-        if: env.ROBASE_DAILY_CHART_SHADOW_ENABLED == 'true'
-        run: |
-          set -euo pipefail
-          git fetch origin refs/heads/robase-daily-history:refs/remotes/origin/robase-daily-history
-          mkdir -p robase-daily-history
-          git archive origin/robase-daily-history | tar -x -C robase-daily-history
-          test -s robase-daily-history/data/weapons_daily_all_marketplaces_after_fees.csv
-          test -s robase-daily-history/data/weapon_identity_map.json
-          echo "Restored previous-day ROBASE daily chart archive for shadow evaluation only."
-
-      - name: Run scanner preflight checks (warnings do not block the scan)
-        id: preflight
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TELEGRAM_PREFLIGHT_CHECK: "true"
-          CASH_MAX_AGE_DAYS: "1"
-          CASH_MIN_VERIFIED_ROWS: "8"
-          PREFLIGHT_SEND_NOTICES: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow) && 'false' || 'true' }}
-        run: python -m tools.preflight --warn
-
-      - name: Run BloxSwaps scanner
-        id: scan
-        env:
-          BLOXSWAPS_URL: "https://bloxswaps.com/trade-mm2?trade-type=P2P"
-          BLOXSWAPS_API_ONLY: "true"
-          MIN_VALUE_DIFFERENCE: "0"
-          MIN_PROFIT_PERCENT: "5"
-          FAILURE_ALERT_THRESHOLD: "3"
-          MAX_ALERTS_PER_RUN: "0"
-          MAX_ALERTS_PER_SCAN: "0" # 0 = send every qualified offer individually; throttle via ALERT_DELAY_SECONDS
-          CASH_MAX_AGE_DAYS: "1"
-          CASH_MIN_PROFIT_USD: "2.00"
-          CASH_MIN_PROFIT_USD_SMALL: "2.00"
-          CASH_MIN_MARGIN_PERCENT: "0"
-          MAX_PENDING_RECHECK_PER_SCAN: "50"
-          MAX_BACKLOG_RECHECK_PAGES: "1000"
-          BACKLOG_RECHECK_EVERY_CYCLES: "4"
-          DRY_RUN: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow) && 'true' || 'false' }}
-          MAX_ALERTS_PER_SESSION: "0"
-          MM2_SCAN_DURATION_SECONDS: "540"
-          MM2_SCAN_INTERVAL_SECONDS: "30"
-          ALERT_DELAY_SECONDS: "3.2"
-          MAX_FEED_PAGES: "1000"
-          BLOXSWAPS_ITEMS_TTL_SECONDS: "3600"
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TELEGRAM_CHAT_TYPE: ${{ steps.preflight.outputs.telegram_chat_type || 'unknown' }}
-          MM2_TELEGRAM_SCAN_SUMMARY: "true"
-        run: |
-          mkdir -p data
-          set -o pipefail
-          python -u scanner.py 2>&1 | tee scanner.log
-
-      - name: Send external uptime heartbeat
-        if: always() && env.HEALTHCHECKS_PING_URL != ''
-        run: |
-          if [ "${{ steps.scan.outcome }}" = "success" ]; then
-            curl --fail --silent --show-error "$HEALTHCHECKS_PING_URL"
-          else
-            curl --fail --silent --show-error "$HEALTHCHECKS_PING_URL/fail"
-          fi
-
-      - name: Prepare state artifact
-        if: always()
-        run: |
-          mkdir -p state-bundle/data
-          if [ -d data ]; then cp -a data/. state-bundle/data/; fi
-          # Discord messages may come from private servers; process them in this
-          # job only and never publish raw message bodies to the public state branch.
-          rm -f state-bundle/data/discord_messages.json state-bundle/data/discord_messages.json.tmp
-          # Never persist manual prices or legacy third-party valuation caches/history.
-          rm -f state-bundle/data/cash_prices.csv
-          rm -f state-bundle/data/supreme_values.json state-bundle/data/supreme_values_audit.json
-          rm -f state-bundle/data/market_history.sqlite3 state-bundle/data/history.csv
-          rm -f state-bundle/data/rblxvalue_meta.json state-bundle/data/rblxvalue_detail_enrichment.json
-          rm -f state-bundle/data/rblxvalue_key_health.json state-bundle/data/rblxvalue_request_budget.json
-          rm -f state-bundle/data/api_key_blocked.json
-          printf '%s\n' "${GITHUB_SHA}" > state-bundle/source-commit.txt
-
-      - name: Upload durable state
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: mm2-scanner-state
-          path: state-bundle/
-          if-no-files-found: warn
-          retention-days: 1
-
-      - name: Upload scanner diagnostics
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: mm2-scanner-diagnostics
-          path: scanner.log
-          if-no-files-found: warn
-          retention-days: 7
-
-      - name: Prepare API safety ledger artifact
-        if: always()
-        run: |
-          set -euo pipefail
-          mkdir -p api-safety-bundle/data
-          for file in rblxvalue_request_budget.json api_key_blocked.json; do
-            if [ -f "data/$file" ]; then
-              cp "data/$file" "api-safety-bundle/data/$file"
-            fi
-          done
-
-      - name: Upload API safety ledger
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: mm2-api-safety-ledger
-          path: api-safety-bundle/
-          if-no-files-found: ignore
-          retention-days: 1
 
   persist-state:
     needs: scan
