@@ -646,7 +646,7 @@ jobs:
           PY
           git -C robase-daily-history config user.name "github-actions[bot]"
           git -C robase-daily-history config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C robase-daily-history add data/weapons_daily_all_marketplaces_after_fees.csv data/manifest.json
+          git -C robase-daily-history add -f data/weapons_daily_all_marketplaces_after_fees.csv data/manifest.json
           if ! git -C robase-daily-history diff --cached --quiet; then
             git -C robase-daily-history commit -m "Update ROBASE daily All marketplaces after-fee history"
             git -C robase-daily-history push origin HEAD:robase-daily-history
