@@ -215,7 +215,9 @@ jobs:
 
   persist-state:
     needs: scan
-    if: always()
+    # A daily-chart shadow run is an isolated comparison: never publish its
+    # local first-seen/dedupe state over the live scanner's durable state.
+    if: always() && inputs.robase_daily_chart_shadow != true
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
