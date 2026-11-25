@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "source": "ROBASE daily chart API",
+  "price_basis": "all_marketplaces_price_after_fee",
+  "formula": "sales-weighted average of each marketplace daily price after its ROBASE fee; weighted by sold copies with priced observations",
+  "buyer_price_used": false,
+  "weapon_count": 214,
+  "daily_rows": 78110,
+  "dates_covered": 365,
+  "first_date": "2025-11-26",
+  "last_date": "2026-11-25",
+  "rows_appended_this_run": 78110,
+  "latest_api_range": {
+    "first_date": "2025-11-26",
+    "last_date": "2026-11-25",
+    "days": 365
+  },
+  "identity_mapping": "exact mapping from tools/robase_identity.py",
+  "missing_day_price_policy": "blank price when no priced sales; never impute zero",
+  "updated_by": "GitHub Actions"
+}
