@@ -316,9 +316,11 @@ Scanner and tool path defaults are module constants or explicit function argumen
 The daily-chart price archive is kept separate from the production rolling completed-sales catalogue. The optional shadow mode tests yesterday's **ROBASE All marketplaces price after fee** without changing production valuation or sending Telegram messages.
 
 To run it manually:
-1. Open **Actions → MM2 Trade Scanner → Run workflow**.
-2. Keep **dry_run** enabled and set **robase_daily_chart_shadow** to true.
-3. Start the workflow and inspect the `[daily-shadow]` lines in the scanner job log.
+1. Open **Actions → ROBASE Daily Chart Shadow Validation → Run workflow**.
+2. Start the workflow; it always invokes the scanner with `dry_run=true` and `robase_daily_chart_shadow=true`.
+3. Inspect the `[daily-shadow]` lines in the reusable scanner job log.
+
+The general **MM2 Trade Scanner** workflow also exposes the shadow input, but the dedicated workflow is safer because it has no live-mode option.
 
 Safety rules:
 - The shadow flag defaults to false; scheduled production scans continue using the existing live catalogue.
