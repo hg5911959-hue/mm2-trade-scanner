@@ -42,23 +42,28 @@ jobs:
                   self.urls = []
                   self.inline_scripts = []
                   self.in_inline_script = False
+
               def handle_starttag(self, tag, attrs):
                   attrs = dict(attrs)
-                  if tag.lower() == "script":
+                  tag = tag.lower()
+                  if tag == "script":
                       if attrs.get("src"):
                           self.urls.append(urljoin(base, attrs["src"]))
+                          self.in_inline_script = False
                       else:
                           self.inline_scripts.append("")
                           self.in_inline_script = True
+                  elif tag == "link" and attrs.get("rel", "").lower() in ("modulepreload", "preload") and attrs.get("href"):
+                      if attrs.get("as", "script") == "script":
+                          self.urls.append(urljoin(base, attrs["href"]))
+
               def handle_endtag(self, tag):
                   if tag.lower() == "script":
                       self.in_inline_script = False
+
               def handle_data(self, data):
                   if self.in_inline_script and self.inline_scripts:
                       self.inline_scripts[-1] += data
-                  if tag.lower() == "link" and attrs.get("rel", "").lower() in ("modulepreload", "preload") and attrs.get("href"):
-                      if attrs.get("as", "script") == "script":
-                          self.urls.append(urljoin(base, attrs["href"]))
 
           def get(url, limit=2_000_000):
               req = Request(url, headers=headers)
@@ -82,7 +87,7 @@ jobs:
               except Exception as exc:
                   print(f"ASSET_FETCH_FAILED {url}: {type(exc).__name__}: {exc}")
 
-          patterns = re.compile(r"(?:fetch\s*\(|XMLHttpRequest|axios|/api/|graphql|price.?history|sales.?history|chart.?data|marketplace)", re.I)
+          patterns = re.compile(r"(?:fetch\\s*\\(|XMLHttpRequest|axios|/api/|graphql|price.?history|sales.?history|chart.?data|marketplace)", re.I)
           report = {
               "page": base,
               "page_bytes": len(html.encode()),
@@ -93,7 +98,7 @@ jobs:
           for url, source in scripts:
               for match in patterns.finditer(source):
                   start, end = max(0, match.start()-180), min(len(source), match.end()+320)
-                  excerpt = re.sub(r"\s+", " ", source[start:end])
+                  excerpt = re.sub(r"\\s+", " ", source[start:end])
                   report["findings"].append({"asset": url, "excerpt": excerpt[:600]})
                   if len(report["findings"]) >= 100:
                       break
