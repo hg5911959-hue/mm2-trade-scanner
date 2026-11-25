@@ -37,9 +37,10 @@ jobs:
           ITEM_SLUG: ${{ inputs.item_slug || 'heat' }}
         run: |
           python - <<'PY'
-          import csv, html as html_lib, json, os, re, sys, time
+          import csv, html as html_lib, json, math, os, re, sys, time
           sys.path.insert(0, os.path.join(os.getcwd(), "tools"))
           from robase_identity import build_robase_bloxswaps_map
+          from robase_daily_chart_prices import get_marketplace_fee
           from urllib.error import HTTPError
           from html.parser import HTMLParser
           from datetime import date, timedelta
@@ -156,6 +157,7 @@ jobs:
           fees = json.loads(html_lib.unescape(raw_fees))
           if not isinstance(fees, dict):
               raise ValueError("ROBASE page data-fees is not a JSON object")
+
           start_day = date.fromisoformat(api_data["from"])
           end_day = date.fromisoformat(api_data["to"])
           day_count = (end_day - start_day).days + 1
@@ -174,7 +176,7 @@ jobs:
                   point = market_days[code].get(key, {})
                   sold = point.get("sold", 0) or 0
                   price = point.get("price")
-                  fee = fees.get(code, 0)
+                  fee = get_marketplace_fee(fees, code)
                   if not isinstance(fee, (int, float)) or not 0 <= fee < 1:
                       raise ValueError("Invalid marketplace fee for " + code)
                   net_price = price * (1 - fee) if isinstance(price, (int, float)) else None
@@ -275,7 +277,7 @@ jobs:
                               raise ValueError("Invalid sold count for " + market_code + "/" + day_key)
                           all_sold += sold
                           price = point.get("price")
-                          fee = fees.get(market_code, 0)
+                          fee = get_marketplace_fee(fees, market_code)
                           if not isinstance(fee, (int, float)) or not 0 <= fee < 1:
                               raise ValueError("Invalid marketplace fee for " + market_code)
                           if price is not None and sold:
@@ -308,7 +310,7 @@ jobs:
                       point = next((p for p in points if p.get("day") == tooltip_target["date"]), None)
                       sold = (point or {}).get("sold", 0) or 0
                       price = (point or {}).get("price")
-                      fee = fees.get(code, 0)
+                      fee = get_marketplace_fee(fees, code)
                       net_price = price * (1 - fee) if isinstance(price, (int, float)) else None
                       total_sold += sold
                       if net_price is not None and sold:
@@ -403,7 +405,7 @@ jobs:
                   sold, raw_price = 0, None
               else:
                   sold, raw_price = point.get("sold", 0) or 0, point.get("price")
-              fee = fees.get(market_code, 0)
+              fee = get_marketplace_fee(fees, market_code)
               after_fee_price = raw_price * (1 - fee) if raw_price is not None else None
               if sold and after_fee_price is not None:
                   bat_total_sold += sold
@@ -632,8 +634,8 @@ jobs:
                   price = row["all_marketplaces_price_after_fee"]
                   if price != "":
                       value = float(price)
-                      if value <= 0:
-                          raise SystemExit(f"{label}: price must be blank or positive")
+                      if not math.isfinite(value) or value <= 0 or sold == 0:
+                          raise SystemExit(f"{label}: price must be finite, positive, and backed by sales")
                   key = (slug, day)
                   if key in keys:
                       raise SystemExit(f"{label}: duplicate item/day key {key}")
