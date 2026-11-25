@@ -60,6 +60,7 @@ class RblxValueValueProfitShadowTests(IsolatedDataTestCase):
 
     def test_uses_supreme_source_b_only_and_exact_bloxswaps_slug(self):
         data = snapshot([sample_row(i) for i in range(214)])
+        data["items"][0]["identity_method"] = "explicit_verified_alias"
         values, summary = load_values_from_snapshot(self.write_snapshot(data), today="2026-11-25")
         variant = values["weapon 0"]["variants"][0]
         self.assertEqual(variant["value"], 123)
@@ -69,6 +70,7 @@ class RblxValueValueProfitShadowTests(IsolatedDataTestCase):
         self.assertEqual(variant["slug"], "weapon-0")
         self.assertEqual(summary["supreme_numeric"], 214)
         self.assertEqual(summary["api_requests"], 0)
+        self.assertEqual(summary["explicit_verified_aliases"], 1)
 
     def test_missing_supreme_value_never_falls_back_to_other_sources(self):
         rows = [sample_row(i) for i in range(214)]
