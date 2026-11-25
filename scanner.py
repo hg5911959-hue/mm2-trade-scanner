@@ -6053,7 +6053,10 @@ def scan_once(include_backlog_rechecks=True):
             skipped_unknown += 1
             if CASH_FILTER and missing and all("cash price" in str(value).casefold() for value in missing):
                 accumulate_cash_blockers(missing, cash_blocker_counts, cash_blocker_groups)
-                print("[cash] Listing held from alerts: one or more manual USD prices are missing/unverified.")
+                print(
+                    "[cash] Listing held from alerts: one or more ROBASE prices are missing, "
+                    "unverified, stale, or below the minimum sales sample."
+                )
                 update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
                 mark_seen_ad(listing, clear_pending=False)
                 continue
