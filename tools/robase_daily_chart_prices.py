@@ -22,6 +22,7 @@ FIELDS = (
 DEFAULT_TIMEZONE = "Africa/Algiers"
 DEFAULT_HISTORY = Path("robase-daily-history/data/weapons_daily_all_marketplaces_after_fees.csv")
 DEFAULT_IDENTITY_MAP = Path("robase-daily-history/data/weapon_identity_map.json")
+MIN_DAILY_SALES_FOR_ALERTS = 3
 
 
 def previous_completed_day(now: datetime | None = None, timezone_name: str = DEFAULT_TIMEZONE) -> str:
@@ -106,7 +107,12 @@ def load_daily_prices(
                 "all_marketplaces_sold": sold,
                 "cash_price_usd": price,
                 "price_display": f"${price:.2f}" if price is not None else "",
-                "status": "verified_daily_close" if price is not None else "unavailable_no_priced_sales",
+                "status": (
+                    "unavailable_no_priced_sales" if price is None
+                    else "low_sample_daily_close" if sold < MIN_DAILY_SALES_FOR_ALERTS
+                    else "verified_daily_close"
+                ),
+                "eligible_for_cash_alerts": price is not None and sold >= MIN_DAILY_SALES_FOR_ALERTS,
                 "source": "ROBASE All marketplaces price after fee",
             }
 
