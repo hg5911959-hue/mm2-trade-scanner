@@ -396,6 +396,36 @@ class CashMarketTests(IsolatedDataTestCase):
         with self.assertRaisesRegex(RuntimeError, "Duplicate ROBASE source slug"):
             load_robase_price_catalog(path, now=now)
 
+    def test_robase_snapshot_rejects_naive_or_non_utc_check_timestamps(self):
+        now = datetime(2026, 11, 21, tzinfo=UTC)
+        for timestamp in ("2026-11-21T00:00:00", "2026-11-21T01:00:00+01:00"):
+            with self.subTest(timestamp=timestamp), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "robase.json"
+                snapshot = self._robase_snapshot(now)
+                snapshot["items"][0]["last_checked_at_utc"] = timestamp
+                path.write_text(json.dumps(snapshot), encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "verification timestamp"):
+                    load_robase_price_catalog(path, now=now)
+
+    def test_robase_snapshot_rejects_invalid_sales_sample_counts(self):
+        now = datetime(2026, 11, 21, tzinfo=UTC)
+        for field, value in (("sold_7d", True), ("sold_7d", 1.5), ("sold_30d", -1), ("sold_30d", "2")):
+            with self.subTest(field=field, value=value), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "robase.json"
+                snapshot = self._robase_snapshot(now)
+                snapshot["items"][0][field] = value
+                path.write_text(json.dumps(snapshot), encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "sales sample counts"):
+                    load_robase_price_catalog(path, now=now)
+
+    def test_robase_snapshot_rejects_naive_current_clock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "robase.json"
+            now = datetime(2026, 11, 21, tzinfo=UTC)
+            path.write_text(json.dumps(self._robase_snapshot(now)), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "Current time"):
+                load_robase_price_catalog(path, now=datetime(2026, 11, 21))
+
     def test_robase_catalog_preserves_duplicate_names_by_unique_slug(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
