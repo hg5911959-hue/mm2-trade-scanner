@@ -309,3 +309,24 @@ Supreme numeric values are never converted into cash prices; the USD catalogue r
 Every unittest case uses its own temporary working directory. Tests that need catalogue data use synthetic fixtures under `tests/fixtures`; no test reads or writes the repository's real `data/` directory. CI runs `python -m unittest discover -s tests` twice and checks `git status --porcelain data` after each pass. `tests/test_no_data_pollution.py` hashes every file in the real data directory before and after a mocked scan.
 
 Scanner and tool path defaults are module constants or explicit function arguments so tests can patch them. Workflow permissions default to read-only; write access is scoped to state persistence, schedule enablement, repository keepalive, or Pages deployment. Third-party Actions are pinned to full 40-character commit SHAs, and workflow steps must never echo secrets.
+
+
+## ROBASE daily-chart shadow valuation
+
+The daily-chart price archive is kept separate from the production rolling completed-sales catalogue. The optional shadow mode tests yesterday's **ROBASE All marketplaces price after fee** without changing production valuation or sending Telegram messages.
+
+To run it manually:
+1. Open **Actions → MM2 Trade Scanner → Run workflow**.
+2. Keep **dry_run** enabled and set **robase_daily_chart_shadow** to true.
+3. Start the workflow and inspect the `[daily-shadow]` lines in the scanner job log.
+
+Safety rules:
+- The shadow flag defaults to false; scheduled production scans continue using the existing live catalogue.
+- Enabling shadow mode forces `DRY_RUN=true`, even if the caller supplies a conflicting value.
+- It loads only the previous completed Algeria calendar day from the separate `robase-daily-history` branch.
+- The shadow catalogue is an in-memory deep copy. All prices are disabled first; only exact weapon slugs with at least 3 sales on that day become eligible.
+- Missing or low-sample observations never fall back to the current rolling price. Non-daily catalogue entries are disabled in the shadow copy.
+- It reuses the existing BloxSwaps identity checks and cash-profit calculation, then exits before offer-state processing or Telegram delivery.
+- An incomplete archive, identity map, or catalogue causes a fail-closed shadow result.
+
+This is a diagnostic mode, not a production price switch. Production valuation remains unchanged until shadow results are reviewed and separately approved.
