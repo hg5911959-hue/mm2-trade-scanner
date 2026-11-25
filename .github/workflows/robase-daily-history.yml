@@ -37,7 +37,7 @@ jobs:
           ITEM_SLUG: ${{ inputs.item_slug || 'heat' }}
         run: |
           python - <<'PY'
-          import csv, html as html_lib, json, os, re, sys, time
+          import csv, html as html_lib, json, math, os, re, sys, time
           sys.path.insert(0, os.path.join(os.getcwd(), "tools"))
           from robase_identity import build_robase_bloxswaps_map
           from urllib.error import HTTPError
