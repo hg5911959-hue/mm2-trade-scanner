@@ -99,9 +99,9 @@ jobs:
                   end = min(len(source), start + 30000)
               section = source[start:end]
               item_page_sections.append({"asset": asset, "code": section[:20000]})
-              for match in re.finditer(r"""(?:getJson|fetch)\\s*\\(\\s*(['"])(.*?)\\1""", section, re.I):
+              for match in re.finditer(r"""(?:getJson|fetch)\s*\(\s*(['"])(.*?)\\1""", section, re.I):
                   item_api_candidates.append({"asset": asset, "call": match.group(0)[:1000]})
-              for match in re.finditer(r"""['"]([^'"]*/api\\.php[^'"]*)['"]""", section, re.I):
+              for match in re.finditer(r"""['"]([^'"]*/api\.php[^'"]*)['"]""", section, re.I):
                   item_api_candidates.append({"asset": asset, "endpoint": match.group(1)[:1000]})
           report = {
               "page": base,
