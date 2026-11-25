@@ -25,8 +25,9 @@ jobs:
           ITEM_SLUG: ${{ inputs.item_slug || 'heat' }}
         run: |
           python - <<'PY'
-          import json, os, re
+          import csv, html as html_lib, json, os, re
           from html.parser import HTMLParser
+          from datetime import date, timedelta
           from urllib.parse import quote, urljoin, urlsplit
           from urllib.request import Request, urlopen
 
@@ -42,10 +43,13 @@ jobs:
                   self.urls = []
                   self.inline_scripts = []
                   self.in_inline_script = False
+                  self.body_attrs = {}
 
               def handle_starttag(self, tag, attrs):
                   attrs = dict(attrs)
                   tag = tag.lower()
+                  if tag == "body":
+                      self.body_attrs = attrs
                   if tag == "script":
                       if attrs.get("src"):
                           self.urls.append(urljoin(base, attrs["src"]))
@@ -126,7 +130,51 @@ jobs:
           api_url = "https://robase.gg/api.php?item=" + quote(slug, safe="") + "&days=365"
           api_text = get(api_url, 5_000_000)
           api_data = json.loads(api_text)
+          raw_fees = parser.body_attrs.get("data-fees", "{}")
+          fees = json.loads(html_lib.unescape(raw_fees))
+          if not isinstance(fees, dict):
+              raise ValueError("ROBASE page data-fees is not a JSON object")
+          start_day = date.fromisoformat(api_data["from"])
+          end_day = date.fromisoformat(api_data["to"])
+          day_count = (end_day - start_day).days + 1
+          if day_count < 1 or day_count > 366:
+              raise ValueError("ROBASE chart date range is outside the 366-day safety bound")
+          codes = sorted(api_data["markets"])
+          market_days = {code: {row["day"]: row for row in api_data["markets"][code]} for code in codes}
+          daily_rows = []
+          day = start_day
+          while day <= end_day:
+              key = day.isoformat()
+              total_sold = 0
+              total_amount = 0.0
+              total_priced_sold = 0
+              row = {"date": key}
+              for code in codes:
+                  point = market_days[code].get(key, {})
+                  sold = point.get("sold", 0) or 0
+                  price = point.get("price")
+                  fee = fees.get(code, 0)
+                  if not isinstance(fee, (int, float)) or not 0 <= fee < 1:
+                      raise ValueError("Invalid marketplace fee for " + code)
+                  net_price = price * (1 - fee) if isinstance(price, (int, float)) else None
+                  row[code + "_sold"] = sold
+                  row[code + "_price_after_fee"] = round(net_price, 8) if net_price is not None else ""
+                  total_sold += sold
+                  if net_price is not None and sold:
+                      total_amount += net_price * sold
+                      total_priced_sold += sold
+              row["all_marketplaces_sold"] = total_sold
+              row["all_marketplaces_price_after_fee"] = round(total_amount / total_priced_sold, 8) if total_priced_sold else ""
+              daily_rows.append(row)
+              day += timedelta(days=1)
           report["item_api_url"] = api_url
+          report["marketplace_fees"] = fees
+          report["daily_series"] = {
+              "days": len(daily_rows),
+              "days_with_sales": sum(1 for row in daily_rows if row["all_marketplaces_sold"]),
+              "days_with_price": sum(1 for row in daily_rows if row["all_marketplaces_price_after_fee"] != ""),
+              "definition": "ROBASE chart total: sales-weighted daily average of marketplace daily prices after each marketplace fee.",
+          }
           report["item_api_summary"] = {
               "root_type": type(api_data).__name__,
               "root_keys": sorted(api_data.keys()) if isinstance(api_data, dict) else [],
@@ -144,6 +192,11 @@ jobs:
               json.dump(report, f, ensure_ascii=False, indent=2)
           with open("robase-chart-diagnostics/item_api.json", "w", encoding="utf-8") as f:
               json.dump(api_data, f, ensure_ascii=False, indent=2)
+          csv_fields = ["date"] + [field for code in codes for field in (code + "_sold", code + "_price_after_fee")] + ["all_marketplaces_sold", "all_marketplaces_price_after_fee"]
+          with open("robase-chart-diagnostics/daily_series.csv", "w", encoding="utf-8", newline="") as f:
+              writer = csv.DictWriter(f, fieldnames=csv_fields)
+              writer.writeheader()
+              writer.writerows(daily_rows)
           print(json.dumps(report, ensure_ascii=False, indent=2))
           PY
       - name: Upload diagnostic report
