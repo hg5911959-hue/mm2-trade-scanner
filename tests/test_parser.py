@@ -2782,6 +2782,58 @@ class LiveBloxSwapsFixtureTests(IsolatedDataTestCase):
         self.assertTrue(any(re.search(r"\d+\.\d{1,2}", item.get("raw_excerpt", "")) for item in all_items))
 
 
+class StructuredApiQuantitySafetyTests(IsolatedDataTestCase):
+    def test_api_listing_preserves_repeated_same_weapon_rows_and_exact_quantities(self):
+        post = {
+            "id": "duplicate-stack-post",
+            "user": {"robloxUserId": "123", "robloxUsername": "trader", "robloxDisplayName": "Trader"},
+            "lastRefreshedAt": datetime.now(timezone.utc).isoformat(),
+            "tradePostItems": [
+                {"itemDetailsId": "harvester-id", "quantity": 2, "tradeRole": "OFFERED"},
+                {"itemDetailsId": "harvester-id", "quantity": 3, "tradeRole": "OFFERED"},
+                {"itemDetailsId": "spirit-id", "quantity": 1, "tradeRole": "REQUESTED"},
+            ],
+            "requestedWildcards": [],
+        }
+        item_map = {
+            "harvester-id": {"displayName": "Harvester", "slug": "harvester", "rarity": "ANCIENT", "type": "Knife", "chroma": False},
+            "spirit-id": {"displayName": "Spirit", "slug": "spirit", "rarity": "GODLY", "type": "Knife", "chroma": False},
+        }
+        listing = scanner._api_trade_post_to_listing(post, item_map)
+        self.assertEqual(
+            [(item["name"], item["quantity"]) for item in listing["receive_items"]],
+            [("Harvester", 2), ("Harvester", 3)],
+        )
+        self.assertEqual(
+            sum(item["quantity"] for item in listing["receive_items"]),
+            5,
+        )
+
+    def test_api_listing_rejects_fractional_boolean_and_malformed_quantities(self):
+        bad_values = [1.7, True, "2.5", 0, -1, 10000, None]
+        for value in bad_values:
+            with self.subTest(value=value):
+                post = {
+                    "id": "bad-quantity-post",
+                    "user": {"robloxUserId": "123", "robloxUsername": "trader", "robloxDisplayName": "Trader"},
+                    "lastRefreshedAt": datetime.now(timezone.utc).isoformat(),
+                    "tradePostItems": [
+                        {"itemDetailsId": "harvester-id", "quantity": value, "tradeRole": "OFFERED"},
+                        {"itemDetailsId": "spirit-id", "quantity": 1, "tradeRole": "REQUESTED"},
+                    ],
+                    "requestedWildcards": [],
+                }
+                item_map = {
+                    "harvester-id": {"displayName": "Harvester", "slug": "harvester", "rarity": "ANCIENT", "type": "Knife", "chroma": False},
+                    "spirit-id": {"displayName": "Spirit", "slug": "spirit", "rarity": "GODLY", "type": "Knife", "chroma": False},
+                }
+                listing = scanner._api_trade_post_to_listing(post, item_map)
+                item = listing["receive_items"][0]
+                self.assertIsNone(item["quantity"])
+                self.assertEqual(item["quantity_source"], "uncertain")
+                self.assertIsNone(item["quantity_max"])
+
+
 class SingleSidedApiPostTests(IsolatedDataTestCase):
     def test_single_sided_api_posts_are_excluded_without_unparsed_retry(self):
         post = {

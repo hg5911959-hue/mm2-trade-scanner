@@ -1483,10 +1483,10 @@ def _api_trade_post_to_listing(post, item_map):
             row.get("displayName") or row.get("name") or f"Unknown item ID {item_id or 'missing'}"
         )
         try:
-            quantity = int(row.get("quantity"))
+            # Do not coerce booleans or truncate fractional quantities (e.g. 1.7 -> 1).
+            # A malformed stack must stay uncertain and cannot qualify for cash alerts.
+            quantity = strict_quantity(row.get("quantity"))
         except (TypeError, ValueError):
-            quantity = None
-        if quantity is not None and not 1 <= quantity <= MAX_ITEM_QUANTITY:
             quantity = None
         item = {
             "name": name,
