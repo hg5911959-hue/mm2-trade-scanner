@@ -113,9 +113,9 @@ jobs:
           with temp.open("w", encoding="utf-8", newline="") as handle:
               writer = csv.DictWriter(handle, fieldnames=fields); writer.writeheader(); writer.writerows(combined)
           temp.replace(history_path)
-          latest_path.write_text(json.dumps(latest, ensure_ascii=False, indent=2)+"\\n", encoding="utf-8")
+          latest_path.write_text(json.dumps(latest, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
           manifest = {"schema_version":1,"source":latest["source"],"source_url":latest["source_url"],"dataset_last_updated":latest["dataset_last_updated"],"last_snapshot_date":day,"expected_weapons":latest["expected_weapons"],"history_rows":len(combined),"snapshot_counts":latest["counts"],"usage":"Research archive only; not connected to production valuation or Telegram filters"}
-          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+"\\n", encoding="utf-8")
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
           print(json.dumps(manifest, ensure_ascii=False, sort_keys=True))
           PY
           git add data/rblxvalue_latest.json data/rblxvalue_daily_history.csv data/rblxvalue_manifest.json
