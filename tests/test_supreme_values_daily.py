@@ -1,5 +1,6 @@
 import unittest
 
+from test_support import IsolatedDataTestCase
 from tools.supreme_values_daily import (
     SOURCE_CATEGORIES,
     build_weapon_snapshot,
@@ -10,7 +11,7 @@ from tools.supreme_values_daily import (
 )
 
 
-class SupremeValuesDailyTests(unittest.TestCase):
+class SupremeValuesDailyTests(IsolatedDataTestCase):
     def test_extracts_nested_json_object_with_braces_inside_strings(self):
         html = '<script>var _svPopup={"Bat":{"value":"155","origin":"x } {; \\"ok\\"","stability":"Stable"}};</script>'
         parsed = extract_sv_popup(html)
