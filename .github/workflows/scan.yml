@@ -8,6 +8,11 @@ on:
         required: false
         type: boolean
         default: false
+      robase_daily_chart_shadow:
+        description: "Run previous-day ROBASE chart valuation in isolated shadow mode; never send Telegram alerts"
+        required: false
+        type: boolean
+        default: false
     secrets:
       TELEGRAM_BOT_TOKEN:
         required: false
@@ -22,6 +27,11 @@ on:
         required: false
         type: boolean
         default: true
+      robase_daily_chart_shadow:
+        description: "Use yesterday's ROBASE All marketplaces after-fee chart prices for a no-alert shadow run"
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: read
 
@@ -39,6 +49,7 @@ jobs:
     env:
       HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
       CASH_FILTER: "true" # only fully priced, fresh ROBASE-verified offers are eligible
+      ROBASE_DAILY_CHART_SHADOW_ENABLED: ${{ inputs.robase_daily_chart_shadow && 'true' || 'false' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -83,6 +94,17 @@ jobs:
             echo "Daily ROBASE history was not updated; live scanning will continue unchanged."
           }
 
+      - name: Restore ROBASE daily chart archive for isolated shadow mode
+        if: env.ROBASE_DAILY_CHART_SHADOW_ENABLED == 'true'
+        run: |
+          set -euo pipefail
+          git fetch origin refs/heads/robase-daily-history:refs/remotes/origin/robase-daily-history
+          mkdir -p robase-daily-history
+          git archive origin/robase-daily-history | tar -x -C robase-daily-history
+          test -s robase-daily-history/data/weapons_daily_all_marketplaces_after_fees.csv
+          test -s robase-daily-history/data/weapon_identity_map.json
+          echo "Restored previous-day ROBASE daily chart archive for shadow evaluation only."
+
       - name: Run scanner preflight checks (warnings do not block the scan)
         id: preflight
         env:
@@ -91,7 +113,7 @@ jobs:
           TELEGRAM_PREFLIGHT_CHECK: "true"
           CASH_MAX_AGE_DAYS: "1"
           CASH_MIN_VERIFIED_ROWS: "8"
-          PREFLIGHT_SEND_NOTICES: ${{ inputs.dry_run && 'false' || 'true' }}
+          PREFLIGHT_SEND_NOTICES: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow) && 'false' || 'true' }}
         run: python -m tools.preflight --warn
 
       - name: Run BloxSwaps scanner
@@ -111,7 +133,7 @@ jobs:
           MAX_PENDING_RECHECK_PER_SCAN: "50"
           MAX_BACKLOG_RECHECK_PAGES: "1000"
           BACKLOG_RECHECK_EVERY_CYCLES: "4"
-          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+          DRY_RUN: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow) && 'true' || 'false' }}
           MAX_ALERTS_PER_SESSION: "0"
           MM2_SCAN_DURATION_SECONDS: "540"
           MM2_SCAN_INTERVAL_SECONDS: "30"
