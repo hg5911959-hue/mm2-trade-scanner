@@ -349,12 +349,33 @@ jobs:
           weapon_mapping = identity["bloxswaps_exact_map"]
           weapon_robase_slugs = {entry["robase_slug"] for entry in weapon_mapping.values()}
           weapon_archive_rows = [row for row in archive_rows if row["robase_slug"] in weapon_robase_slugs]
-          expected_weapon_rows = sum(
+          archived_slugs = {item["robase_slug"] for item in archive_items}
+          catalog_slugs = {
+              row["robase_slug"] for row in robase_catalog["items"]
+              if isinstance(row, dict) and row.get("robase_slug")
+          }
+          missing_archive_slugs = sorted(set(all_slugs) - archived_slugs)
+          missing_weapon_slugs = sorted(weapon_robase_slugs - archived_slugs)
+          expected_weapon_rows = len(weapon_robase_slugs) * 365
+          if len(weapon_archive_rows) != sum(
               item["days"] for item in archive_items if item["robase_slug"] in weapon_robase_slugs
-          )
-          if len(weapon_archive_rows) != expected_weapon_rows:
+          ):
               raise ValueError("Weapon-only archive row count does not match mapped catalog")
           weapon_mapping_complete = not identity["missing"] and not identity["ambiguous"]
+          all_catalog_complete = (
+              set(all_slugs) == catalog_slugs
+              and len(archive_items) == len(all_slugs)
+              and not missing_archive_slugs
+              and not scan_errors
+              and all(item["days"] == 365 for item in archive_items)
+          )
+          weapon_archive_complete = (
+              all_catalog_complete
+              and weapon_mapping_complete
+              and not missing_weapon_slugs
+              and len(weapon_robase_slugs) == identity["exact"]
+              and len(weapon_archive_rows) == expected_weapon_rows
+          )
           report["homepage_item_links"] = len(all_slugs)
           report["weapon_mapping"] = {
               "robase_total": identity["robase_total"],
@@ -363,19 +384,22 @@ jobs:
               "missing": identity["missing"],
               "ambiguous": identity["ambiguous"],
               "mapping_complete": weapon_mapping_complete,
+              "missing_weapon_archive_slugs": missing_weapon_slugs,
               "mapping_source": "tools/robase_identity.py with state-branch ROBASE and BloxSwaps catalogs",
           }
           report["weapon_daily_archive"] = {
-              "items_archived": len(weapon_robase_slugs),
+              "items_archived": len(weapon_robase_slugs & archived_slugs),
               "rows": len(weapon_archive_rows),
               "expected_rows": expected_weapon_rows,
-              "complete": weapon_mapping_complete and len(weapon_robase_slugs) == identity["exact"],
+              "complete": weapon_archive_complete,
               "price_definition": "ROBASE All marketplaces sales-weighted daily average after each marketplace fee.",
           }
           report["daily_archive"] = {
               "items_archived": len(archive_items),
               "rows": len(archive_rows),
-              "expected_rows": sum(item["days"] for item in archive_items),
+              "expected_rows": len(all_slugs) * 365,
+              "complete": all_catalog_complete,
+              "missing_archive_slugs": missing_archive_slugs,
               "days_with_sales": sum(item["days_with_sales"] for item in archive_items),
               "days_with_price": sum(item["days_with_price"] for item in archive_items),
               "schema": ["robase_slug", "item_id", "item_name", "date", "all_marketplaces_sold", "all_marketplaces_price_after_fee"],
@@ -449,8 +473,11 @@ jobs:
               writer.writeheader()
               writer.writerows(weapon_archive_rows)
           print(json.dumps(report, ensure_ascii=False, indent=2))
+          if not weapon_archive_complete:
+              raise SystemExit("Daily weapon archive failed its completeness gate; inspect report and manifest.")
           PY
       - name: Upload diagnostic report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: robase-chart-diagnostics
