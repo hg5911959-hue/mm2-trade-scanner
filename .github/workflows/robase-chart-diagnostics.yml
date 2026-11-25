@@ -25,7 +25,7 @@ jobs:
           ITEM_SLUG: ${{ inputs.item_slug || 'heat' }}
         run: |
           python - <<'PY'
-          import csv, html as html_lib, json, os, re
+          import csv, html as html_lib, json, os, re, time
           from html.parser import HTMLParser
           from datetime import date, timedelta
           from urllib.parse import quote, urljoin, urlsplit
@@ -44,12 +44,19 @@ jobs:
                   self.inline_scripts = []
                   self.in_inline_script = False
                   self.body_attrs = {}
+                  self.item_slugs = set()
 
               def handle_starttag(self, tag, attrs):
                   attrs = dict(attrs)
                   tag = tag.lower()
                   if tag == "body":
                       self.body_attrs = attrs
+                  if tag == "a" and attrs.get("href"):
+                      linked = urlsplit(urljoin(base, attrs["href"]))
+                      if linked.netloc == "robase.gg" and linked.path.startswith("/item/"):
+                          candidate = linked.path.rstrip("/").rsplit("/", 1)[-1]
+                          if re.fullmatch(r"[a-z0-9-]{1,80}", candidate):
+                              self.item_slugs.add(candidate)
                   if tag == "script":
                       if attrs.get("src"):
                           self.urls.append(urljoin(base, attrs["src"]))
@@ -167,6 +174,39 @@ jobs:
               row["all_marketplaces_price_after_fee"] = round(total_amount / total_priced_sold, 8) if total_priced_sold else ""
               daily_rows.append(row)
               day += timedelta(days=1)
+          home_html = get("https://robase.gg/", 5_000_000)
+          home_parser = Assets()
+          home_parser.feed(home_html)
+          all_slugs = sorted(home_parser.item_slugs)
+          candidates = [value for value in all_slugs if value != slug]
+          if len(candidates) < 9:
+              raise ValueError("ROBASE homepage exposed fewer than 10 item links")
+          sample_slugs = [slug]
+          for index in range(9):
+              position = round(index * (len(candidates) - 1) / 8)
+              sample_slugs.append(candidates[position])
+          sample_results = []
+          for sample_slug in sample_slugs:
+              if sample_slug == slug:
+                  sample_data = api_data
+              else:
+                  sample_url = "https://robase.gg/api.php?item=" + quote(sample_slug, safe="") + "&days=365"
+                  sample_data = json.loads(get(sample_url, 5_000_000))
+                  time.sleep(0.25)
+              if not isinstance(sample_data, dict) or not isinstance(sample_data.get("item"), dict) or not isinstance(sample_data.get("markets"), dict):
+                  raise ValueError("Unexpected ROBASE item API schema for " + sample_slug)
+              sample_results.append({
+                  "slug": sample_slug,
+                  "name": sample_data["item"].get("name"),
+                  "id": sample_data["item"].get("id"),
+                  "market_codes": sorted(sample_data["markets"]),
+                  "daily_points": sum(len(rows) for rows in sample_data["markets"].values() if isinstance(rows, list)),
+                  "date_from": sample_data.get("from"),
+                  "date_to": sample_data.get("to"),
+                  "sales_points": sum(sum((point.get("sold", 0) or 0) for point in rows if isinstance(point, dict)) for rows in sample_data["markets"].values() if isinstance(rows, list)),
+              })
+          report["homepage_item_links"] = len(all_slugs)
+          report["sample_10_items"] = sample_results
           report["item_api_url"] = api_url
           report["marketplace_fees"] = fees
           report["daily_series"] = {
@@ -197,6 +237,11 @@ jobs:
               writer = csv.DictWriter(f, fieldnames=csv_fields)
               writer.writeheader()
               writer.writerows(daily_rows)
+          with open("robase-chart-diagnostics/sample_10.csv", "w", encoding="utf-8", newline="") as f:
+              writer = csv.DictWriter(f, fieldnames=["slug", "name", "id", "market_codes", "daily_points", "date_from", "date_to", "sales_points"])
+              writer.writeheader()
+              for sample in sample_results:
+                  writer.writerow({**sample, "market_codes": ",".join(sample["market_codes"])})
           print(json.dumps(report, ensure_ascii=False, indent=2))
           PY
       - name: Upload diagnostic report
