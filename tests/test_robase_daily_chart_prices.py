@@ -87,7 +87,7 @@ class DailyChartPriceLookupTests(IsolatedDataTestCase):
         path = Path(temp.name) / "history.csv"
         path.write_text(
             ",".join(FIELDS) + "\n"
-            + "bat,628,Bat,2026-11-24,3,3.72,unexpected\\n",
+            + "bat,628,Bat,2026-11-24,3,3.72,unexpected\n",
             encoding="utf-8",
         )
         with self.assertRaisesRegex(ValueError, "malformed CSV row"):
