@@ -5116,7 +5116,7 @@ def listing_watch_fingerprints(listing, values, aliases=None, cash_catalog=None)
                 normalize_slug(item.get('catalog_slug')), str(item.get('catalog_rarity') or ''),
                 str(item.get('catalog_type') or ''), bool(item.get('catalog_chroma')),
                 item.get('quantity'), item.get('quantity_min'), item.get('quantity_max'),
-                listing.get("posted_at")
+                listing.get("posted_at") if cash_catalog else None
             ))
             record, match_source, _ = resolve_value_record(name, values, aliases, item=item)
             unit_value = None
