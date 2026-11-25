@@ -553,7 +553,7 @@ jobs:
           python - <<'PY'
           import csv, json, math
           from collections import defaultdict
-          from datetime import date, datetime, timedelta, timezone
+          from datetime import date, datetime, timedelta
           from pathlib import Path
           from zoneinfo import ZoneInfo
 
@@ -602,7 +602,9 @@ jobs:
                   if slug not in weapon_slugs:
                       raise SystemExit(f"{label}: unexpected weapon slug {slug}")
                   try:
-                      date.fromisoformat(day)
+                      parsed_day = date.fromisoformat(day)
+                      if parsed_day.isoformat() != day:
+                          raise ValueError("non-canonical date")
                       sold = int(row["all_marketplaces_sold"])
                   except Exception as exc:
                       raise SystemExit(f"{label}: invalid date or sales count") from exc
