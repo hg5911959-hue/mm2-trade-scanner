@@ -70,6 +70,40 @@ class DailyChartPriceLookupTests(IsolatedDataTestCase):
         with self.assertRaisesRegex(ValueError, "duplicate weapon/date"):
             load_daily_prices(path, "2026-11-24", {"bat"})
 
+    def test_non_finite_daily_prices_are_rejected(self):
+        for bad_price in ("NaN", "Infinity", "-Infinity", "0", "-1"):
+            with self.subTest(price=bad_price):
+                path = self._write([
+                    {"robase_slug": "bat", "item_id": "628", "item_name": "Bat",
+                     "date": "2026-11-24", "all_marketplaces_sold": "3",
+                     "all_marketplaces_price_after_fee": bad_price},
+                ])
+                with self.assertRaisesRegex(ValueError, "invalid priced-sales observation"):
+                    load_daily_prices(path, "2026-11-24", {"bat"})
+
+    def test_malformed_csv_row_is_rejected(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        path = Path(temp.name) / "history.csv"
+        path.write_text(
+            ",".join(FIELDS) + "\\n"
+            + "bat,628,Bat,2026-11-24,3,3.72,unexpected\\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "malformed CSV row"):
+            load_daily_prices(path, "2026-11-24", {"bat"})
+
+    def test_exact_identity_map_rejects_duplicate_robase_slugs(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        path = Path(temp.name) / "identity.json"
+        path.write_text(json.dumps({
+            "a": {"robase_slug": "bat"},
+            "b": {"robase_slug": "bat"},
+        }), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "unique, non-empty ROBASE slugs"):
+            expected_weapon_slugs(path, expected_count=2)
+
     def test_exact_identity_map_is_required_for_weapon_universe(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
