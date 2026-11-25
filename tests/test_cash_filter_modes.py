@@ -52,9 +52,10 @@ class CashListingFreshnessTests(IsolatedDataTestCase):
             "receive_items": [{"name": "Knife B", "quantity": 1}],
             "posted_at": "2026-11-25T09:00:00Z",
         }
-        before = scanner.listing_watch_fingerprints(listing, {})[0]
+        cash_catalog = {"items_by_slug": {}}
+        before = scanner.listing_watch_fingerprints(listing, {}, cash_catalog=cash_catalog)[0]
         refreshed = dict(listing, posted_at="2026-11-25T09:30:00Z")
-        after = scanner.listing_watch_fingerprints(refreshed, {})[0]
+        after = scanner.listing_watch_fingerprints(refreshed, {}, cash_catalog=cash_catalog)[0]
         self.assertNotEqual(before, after)
 
 
