@@ -34,7 +34,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git fetch origin robase-daily-history
+          git fetch origin robase-daily-history:refs/remotes/origin/robase-daily-history
           git show FETCH_HEAD:data/weapon_identity_map.json > /tmp/weapon_identity_map.json
           python - <<'PY'
           import json
@@ -60,7 +60,7 @@ jobs:
           set -euo pipefail
           cp /tmp/supreme_values_latest.json /tmp/supreme_values_latest.json.keep
           cp /tmp/supreme_values_snapshot.csv /tmp/supreme_values_snapshot.csv.keep
-          git checkout robase-daily-history
+          git checkout -B robase-daily-history origin/robase-daily-history
           python - <<'PY'
           import csv, json
           from pathlib import Path
