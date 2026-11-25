@@ -44,11 +44,11 @@ jobs:
           PY
       - name: Fetch RBLXValue API dataset
         env:
-          RBLXVALUE_API_KEY: \${{ secrets.RBLXVALUE_API_KEY }}
+          RBLXVALUE_API_KEY: ${{ secrets.RBLXVALUE_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "\${RBLXVALUE_API_KEY:-}" ]; then
+          if [ -z "${RBLXVALUE_API_KEY:-}" ]; then
             echo "::error::Missing repository secret RBLXVALUE_API_KEY. Add a valid key from the official RBLXValue developer portal."
             exit 1
           fi
