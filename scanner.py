@@ -5500,9 +5500,27 @@ def scan_once(include_backlog_rechecks=True):
         shadow_samples = []
         shadow_rejection_reasons = {}
         shadow_qualified_ids = set()
+        shadow_baseline_qualified_ids = set()
+        shadow_baseline_profit_by_id = {}
+        shadow_daily_profit_by_id = {}
         for shadow_listing in listings:
-            result, missing = evaluate_cash_listing_robase_only(dict(shadow_listing), daily_shadow_catalog)
             shadow_evaluated += 1
+            listing_id = str(shadow_listing.get("id") or "")
+            baseline_result, _baseline_missing = evaluate_cash_listing_robase_only(
+                dict(shadow_listing), cash_catalog
+            )
+            if baseline_result is not None:
+                baseline_threshold = max(
+                    1.0,
+                    CASH_MIN_PROFIT_USD_SMALL
+                    if baseline_result["give_total"] < 5.0
+                    else CASH_MIN_PROFIT_USD,
+                )
+                if baseline_result["cash_profit_worst"] >= baseline_threshold and listing_id:
+                    shadow_baseline_qualified_ids.add(listing_id)
+                    shadow_baseline_profit_by_id[listing_id] = baseline_result["cash_profit_worst"]
+
+            result, missing = evaluate_cash_listing_robase_only(dict(shadow_listing), daily_shadow_catalog)
             if result is None:
                 shadow_rejected += 1
                 for reason in (missing or ["unspecified rejection"]):
@@ -5525,22 +5543,45 @@ def scan_once(include_backlog_rechecks=True):
                         f"{shadow_listing.get('id', 'unknown')}: " + "; ".join(str(x) for x in missing[:3])
                     )
                 continue
-            shadow_threshold = max(
+            daily_threshold = max(
                 1.0,
                 CASH_MIN_PROFIT_USD_SMALL if result["give_total"] < 5.0 else CASH_MIN_PROFIT_USD,
             )
-            if result["cash_profit_worst"] >= shadow_threshold:
+            if listing_id:
+                shadow_daily_profit_by_id[listing_id] = result["cash_profit_worst"]
+            if result["cash_profit_worst"] >= daily_threshold:
                 shadow_qualified += 1
-                shadow_qualified_ids.add(str(shadow_listing.get("id") or "unknown"))
+                if listing_id:
+                    shadow_qualified_ids.add(listing_id)
                 print(
                     f"[daily-shadow] QUALIFIED listing={shadow_listing.get('id')} "
                     f"profit={result['cash_profit_worst']:.2f}..{result['cash_profit_best']:.2f} USD "
-                    f"threshold={shadow_threshold:.2f} USD date={target_day}"
+                    f"threshold={daily_threshold:.2f} USD date={target_day}"
                 )
         print(
             f"[daily-shadow] COMPLETE date={target_day}; listings={shadow_evaluated}; "
             f"qualified_at_{CASH_MIN_PROFIT_USD:.2f}_USD_floor={shadow_qualified}; "
             f"rejected_or_ineligible={shadow_rejected}; telegram_sends=0; live_catalog_mutations=0"
+        )
+        comparable_ids = shadow_qualified_ids & shadow_baseline_qualified_ids
+        profit_deltas = sorted(
+            shadow_daily_profit_by_id[item_id] - shadow_baseline_profit_by_id[item_id]
+            for item_id in comparable_ids
+            if item_id in shadow_daily_profit_by_id and item_id in shadow_baseline_profit_by_id
+        )
+        median_profit_delta = None
+        if profit_deltas:
+            middle = len(profit_deltas) // 2
+            median_profit_delta = (
+                profit_deltas[middle] if len(profit_deltas) % 2
+                else (profit_deltas[middle - 1] + profit_deltas[middle]) / 2
+            )
+        print(
+            f"[daily-shadow] COMPARISON baseline_qualified={len(shadow_baseline_qualified_ids)} "
+            f"daily_qualified={len(shadow_qualified_ids)} overlap={len(comparable_ids)} "
+            f"daily_only={len(shadow_qualified_ids - shadow_baseline_qualified_ids)} "
+            f"baseline_only={len(shadow_baseline_qualified_ids - shadow_qualified_ids)} "
+            f"common_profit_delta_daily_minus_baseline_median={median_profit_delta}"
         )
         print(
             f"[daily-shadow] SUMMARY unique_qualified_ids={len(shadow_qualified_ids)} "
