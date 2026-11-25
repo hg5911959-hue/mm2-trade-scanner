@@ -153,6 +153,9 @@ CASH_MIN_MARGIN_PERCENT = float(os.environ.get("CASH_MIN_MARGIN_PERCENT", "0"))
 if not math.isfinite(CASH_MIN_MARGIN_PERCENT) or CASH_MIN_MARGIN_PERCENT < 0:
     raise ValueError("CASH_MIN_MARGIN_PERCENT must be finite and non-negative")
 CASH_MAX_AGE_DAYS = max(1, int(os.environ.get("CASH_MAX_AGE_DAYS", "1")))
+CASH_MAX_LISTING_AGE_SECONDS = max(
+    60, int(os.environ.get("CASH_MAX_LISTING_AGE_SECONDS", "3600"))
+)
 CASH_PRICE_FILE = Path("data/cash_prices.csv")
 CASH_PRICE_SNAPSHOT_FILE = Path("data/cash_price_snapshot.json")
 TELEGRAM_MAX_CHARS = 4000
@@ -5014,6 +5017,8 @@ def qualifies_cash(result):
     """Cash-only alert gate; missing provenance and uncertain results fail closed."""
     if not isinstance(result, dict):
         return False
+    if not cash_listing_is_fresh(result.get("listing")):
+        return False
     if (
         result.get("manual_review") is not False
         or result.get("cash_estimate_only") is not False
@@ -5038,6 +5043,30 @@ def qualifies_cash(result):
         and profit >= threshold
         and margin >= CASH_MIN_MARGIN_PERCENT
     )
+
+
+def cash_listing_is_fresh(listing, now=None, max_age_seconds=None):
+    """Require a recent BloxSwaps refresh before a cash opportunity can alert."""
+    if not isinstance(listing, dict):
+        return False
+    posted_at = _parse_feed_timestamp(listing.get("posted_at"))
+    if posted_at is None:
+        return False
+    try:
+        current = time.time() if now is None else float(now)
+        maximum_age = (
+            CASH_MAX_LISTING_AGE_SECONDS
+            if max_age_seconds is None else float(max_age_seconds)
+        )
+    except (TypeError, ValueError, OverflowError):
+        return False
+    if (
+        not math.isfinite(current) or not math.isfinite(maximum_age)
+        or maximum_age < 0 or posted_at > current + 60
+    ):
+        return False
+    age = current - posted_at
+    return 0 <= age <= maximum_age
 
 
 def cash_catalog_snapshot_hash():
@@ -5086,7 +5115,8 @@ def listing_watch_fingerprints(listing, values, aliases=None, cash_catalog=None)
                 side, normalize_name(name), str(item.get('structured_item_id') or ''),
                 normalize_slug(item.get('catalog_slug')), str(item.get('catalog_rarity') or ''),
                 str(item.get('catalog_type') or ''), bool(item.get('catalog_chroma')),
-                item.get('quantity'), item.get('quantity_min'), item.get('quantity_max')
+                item.get('quantity'), item.get('quantity_min'), item.get('quantity_max'),
+                listing.get("posted_at")
             ))
             record, match_source, _ = resolve_value_record(name, values, aliases, item=item)
             unit_value = None
