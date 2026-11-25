@@ -28,6 +28,7 @@ from tools.alert_policy import rank_and_split
 from tools.cash_market import calculate_cash_side, cash_profit_bounds, normalize_cash_name, cash_price_is_fresh, strict_quantity
 from tools.robase_identity import build_robase_bloxswaps_map
 from tools.daily_chart_shadow import build_daily_chart_shadow_catalog
+from tools.rblxvalue_value_profit_shadow import load_values_from_snapshot
 
 
 def load_cash_price_catalog(*args, **kwargs):
@@ -5309,8 +5310,11 @@ def accumulate_cash_blockers(missing, counts, groups):
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     daily_shadow_mode = os.environ.get("ROBASE_DAILY_CHART_SHADOW_ENABLED", "").strip().casefold() == "true"
-    if daily_shadow_mode:
-        # Shadow mode is strictly non-delivering, even if a caller misconfigures DRY_RUN.
+    value_profit_shadow_mode = os.environ.get("RBLXVALUE_VALUE_PROFIT_SHADOW_ENABLED", "").strip().casefold() == "true"
+    if daily_shadow_mode and value_profit_shadow_mode:
+        raise RuntimeError("ROBASE cash-chart shadow and Supreme value-profit shadow must run separately.")
+    if daily_shadow_mode or value_profit_shadow_mode:
+        # Shadow modes are strictly non-delivering, even if a caller misconfigures DRY_RUN.
         os.environ["DRY_RUN"] = "true"
     dry_run = os.environ.get("DRY_RUN", "").strip().casefold() == "true"
     if not dry_run and (not BOT_TOKEN or not CHAT_ID):
@@ -5319,7 +5323,23 @@ def scan_once(include_backlog_rechecks=True):
 
     print("[stage] Third-party valuation sources disabled; cash eligibility uses ROBASE + BloxSwaps only")
     testing_mode = os.environ.get("MM2_TESTING", "").strip().casefold() == "true"
-    if CASH_FILTER and not testing_mode:
+    if value_profit_shadow_mode:
+        if CASH_FILTER:
+            raise RuntimeError("Value-profit shadow requires CASH_FILTER=false; refusing mixed valuation modes.")
+        archive_path = os.environ.get(
+            "RBLXVALUE_DAILY_ARCHIVE_FILE",
+            "rblxvalue-archive/data/rblxvalue_latest.json",
+        )
+        values, archive_summary = load_values_from_snapshot(archive_path)
+        print(
+            "[value-profit-shadow] "
+            + json.dumps(archive_summary, ensure_ascii=False, sort_keys=True)
+        )
+        print(
+            f"[value-profit-shadow] thresholds: minimum Supreme value profit={MIN_DIFF:g}; "
+            f"minimum margin={MIN_PROFIT_PERCENT:g}%"
+        )
+    elif CASH_FILTER and not testing_mode:
         print("[mode] ROBASE cash-only: Supreme Values and RBLXValue are not loaded or queried")
         values = {}
     elif testing_mode:
@@ -5361,8 +5381,8 @@ def scan_once(include_backlog_rechecks=True):
         print("[mode] mode=value")
     values_snapshot_changed = False
     history_store = None
-    if CASH_FILTER and not testing_mode:
-        # Do not open or mutate the legacy database: it may contain third-party valuation records.
+    if (CASH_FILTER and not testing_mode) or value_profit_shadow_mode:
+        # Shadow modes do not open or mutate the legacy market-history database.
         history_store = None
     else:
         try:
