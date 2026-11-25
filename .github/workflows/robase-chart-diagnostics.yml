@@ -376,6 +376,54 @@ jobs:
               and len(weapon_robase_slugs) == identity["exact"]
               and len(weapon_archive_rows) == expected_weapon_rows
           )
+          # Focused screenshot verification for Bat on 2026-11-24.
+          # Preserve raw market rows only in this diagnostic artifact; public archive stays aggregate-only.
+          bat_api = api_cache.get("bat")
+          if bat_api is None:
+              raise ValueError("Bat item API response was not collected during catalogue scan")
+          bat_day = "2026-11-24"
+          bat_market_tooltip = []
+          bat_total_sold = 0
+          bat_weighted_amount = 0.0
+          bat_priced_sold = 0
+          for market_code, market_points in bat_api["markets"].items():
+              point = next((p for p in market_points if p.get("day") == bat_day), None)
+              if point is None:
+                  sold, raw_price = 0, None
+              else:
+                  sold, raw_price = point.get("sold", 0) or 0, point.get("price")
+              fee = fees.get(market_code, 0)
+              after_fee_price = raw_price * (1 - fee) if raw_price is not None else None
+              if sold and after_fee_price is not None:
+                  bat_total_sold += sold
+                  bat_weighted_amount += after_fee_price * sold
+                  bat_priced_sold += sold
+              bat_market_tooltip.append({
+                  "market": market_code,
+                  "sold": sold,
+                  "raw_api_price": raw_price,
+                  "fee_percent": round(fee * 100, 4),
+                  "after_fee_price": round(after_fee_price, 8) if after_fee_price is not None else None,
+              })
+          bat_market_tooltip.sort(key=lambda x: x["market"])
+          bat_verification = {
+              "slug": "bat",
+              "item_id": bat_api["item"].get("id"),
+              "item_name": bat_api["item"].get("name"),
+              "date": bat_day,
+              "markets": bat_market_tooltip,
+              "all_marketplaces_sold": bat_total_sold,
+              "all_marketplaces_price_after_fee": round(bat_weighted_amount / bat_priced_sold, 8) if bat_priced_sold else None,
+              "all_marketplaces_price_display_2dp": round(bat_weighted_amount / bat_priced_sold + 1e-12, 2) if bat_priced_sold else None,
+              "all_marketplaces_matches_screenshot": bat_total_sold == 142 and round(bat_weighted_amount / bat_priced_sold + 1e-12, 2) == 3.73 if bat_priced_sold else False,
+              "expected_screenshot": {
+                  "starpets": {"after_fee_price": 3.86, "sold": 126},
+                  "chromas": {"after_fee_price": 2.67, "sold": 9},
+                  "bhopp": {"after_fee_price": 2.74, "sold": 7},
+                  "all_marketplaces": {"after_fee_price": 3.73, "sold": 142},
+              },
+          }
+          report["bat_nov24_screenshot_verification"] = bat_verification
           report["homepage_item_links"] = len(all_slugs)
           report["weapon_mapping"] = {
               "robase_total": identity["robase_total"],
@@ -440,6 +488,10 @@ jobs:
           os.makedirs("robase-chart-diagnostics", exist_ok=True)
           with open("robase-chart-diagnostics/report.json", "w", encoding="utf-8") as f:
               json.dump(report, f, ensure_ascii=False, indent=2)
+          with open("robase-chart-diagnostics/bat_nov24_verification.json", "w", encoding="utf-8") as f:
+              json.dump(bat_verification, f, ensure_ascii=False, indent=2)
+          with open("robase-chart-diagnostics/bat_item_api.json", "w", encoding="utf-8") as f:
+              json.dump(bat_api, f, ensure_ascii=False, indent=2)
           with open("robase-chart-diagnostics/item_api.json", "w", encoding="utf-8") as f:
               json.dump(api_data, f, ensure_ascii=False, indent=2)
           csv_fields = ["date", "all_marketplaces_sold", "all_marketplaces_price_after_fee"]
