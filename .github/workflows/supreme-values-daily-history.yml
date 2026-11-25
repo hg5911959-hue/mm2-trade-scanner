@@ -1,0 +1,133 @@
+name: Supreme Values Daily Weapon History
+
+on:
+  schedule:
+    - cron: "50 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: supreme-values-daily-history
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  collect-and-archive:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out main branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.12"
+
+      - name: Load exact ROBASE weapon crosswalk
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin robase-daily-history
+          git show FETCH_HEAD:data/weapon_identity_map.json > /tmp/weapon_identity_map.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("/tmp/weapon_identity_map.json").read_text(encoding="utf-8"))
+          if not isinstance(data, dict) or len(data) != 214:
+              raise SystemExit(f"Expected 214 exact ROBASE weapon identities; got {len(data) if isinstance(data, dict) else 'invalid'}")
+          print(f"Loaded {len(data)} exact weapon identities")
+          PY
+
+      - name: Fetch and validate official Supreme Values categories
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/supreme_values_daily.py \
+            --identity-map /tmp/weapon_identity_map.json \
+            --json-output /tmp/supreme_values_latest.json \
+            --csv-output /tmp/supreme_values_snapshot.csv
+
+      - name: Append validated snapshot to persistent history branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp /tmp/supreme_values_latest.json /tmp/supreme_values_latest.json.keep
+          cp /tmp/supreme_values_snapshot.csv /tmp/supreme_values_snapshot.csv.keep
+          git checkout robase-daily-history
+          python - <<'PY'
+          import csv, json
+          from pathlib import Path
+
+          latest = json.loads(Path("/tmp/supreme_values_latest.json.keep").read_text(encoding="utf-8"))
+          incoming = list(csv.DictReader(Path("/tmp/supreme_values_snapshot.csv.keep").open(encoding="utf-8", newline="")))
+          if len(incoming) != 214 or latest.get("expected_weapons") != 214:
+              raise SystemExit("Refusing to archive an incomplete Supreme weapon snapshot")
+          if {row.get("snapshot_date") for row in incoming} != {latest.get("snapshot_date")}:
+              raise SystemExit("Supreme CSV date does not match JSON snapshot")
+          data_dir = Path("data")
+          data_dir.mkdir(exist_ok=True)
+          latest_path = data_dir / "supreme_values_latest.json"
+          history_path = data_dir / "supreme_values_daily_history.csv"
+          manifest_path = data_dir / "supreme_values_manifest.json"
+          fields = list(incoming[0])
+          existing = []
+          if history_path.exists():
+              with history_path.open(encoding="utf-8", newline="") as handle:
+                  reader = csv.DictReader(handle)
+                  if reader.fieldnames != fields:
+                      raise SystemExit("Existing Supreme history CSV schema mismatch")
+                  existing = list(reader)
+          # A manual rerun replaces that date's snapshot instead of duplicating it.
+          day = latest["snapshot_date"]
+          existing = [row for row in existing if row.get("snapshot_date") != day]
+          combined = existing + incoming
+          combined.sort(key=lambda row: (row["snapshot_date"], row["robase_slug"]))
+          temp = history_path.with_suffix(".csv.tmp")
+          with temp.open("w", encoding="utf-8", newline="") as handle:
+              writer = csv.DictWriter(handle, fieldnames=fields)
+              writer.writeheader()
+              writer.writerows(combined)
+          temp.replace(history_path)
+          latest_path.write_text(json.dumps(latest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          manifest = {
+              "schema_version": 1,
+              "source": latest["source"],
+              "source_base_url": latest["source_base_url"],
+              "source_updated": latest["source_updated"],
+              "last_snapshot_date": day,
+              "expected_weapons": latest["expected_weapons"],
+              "history_rows": len(combined),
+              "snapshot_counts": latest["counts"],
+              "updated_by": "GitHub Actions",
+              "usage": "Research snapshot only; not yet wired into live scanner or Telegram filter",
+          }
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps(manifest, ensure_ascii=False, sort_keys=True))
+          PY
+          git add data/supreme_values_latest.json data/supreme_values_daily_history.csv data/supreme_values_manifest.json
+          if git diff --cached --quiet; then
+            echo "Supreme snapshot unchanged; no commit needed."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "data: archive daily Supreme weapon values"
+            git push origin HEAD:robase-daily-history
+          fi
+
+      - name: Upload snapshot diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: supreme-values-daily-diagnostics
+          path: |
+            /tmp/supreme_values_latest.json
+            /tmp/supreme_values_snapshot.csv
+          if-no-files-found: ignore
+          retention-days: 14
