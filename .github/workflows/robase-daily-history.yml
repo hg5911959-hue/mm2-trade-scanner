@@ -566,7 +566,9 @@ jobs:
               if not bat or bat["all_marketplaces_sold"] != 142 or bat["cash_price_usd"] is None or abs(bat["cash_price_usd"] - 3.7252331) > 1e-9:
                   raise SystemExit("Bat 2026-11-24 reference does not match the verified ROBASE tooltip")
           priced = sum(1 for row in prices.values() if row["cash_price_usd"] is not None)
-          print(f"Previous completed day: {target}; weapons: {len(prices)}; priced: {priced}; Bat: {bat}")
+          eligible = sum(1 for row in prices.values() if row["eligible_for_cash_alerts"])
+          low_sample = sum(1 for row in prices.values() if row["status"] == "low_sample_daily_close")
+          print(f"Previous completed day: {target}; weapons: {len(prices)}; priced: {priced}; alert_eligible: {eligible}; low_sample: {low_sample}; Bat: {bat}")
           PY
       - name: Append validated daily weapon observations
         shell: bash
