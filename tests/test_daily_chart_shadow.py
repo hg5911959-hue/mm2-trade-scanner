@@ -1,11 +1,13 @@
 import unittest
 from datetime import UTC, datetime
 
+from test_support import IsolatedDataTestCase
+
 from tools.cash_market import calculate_cash_side
 from tools.daily_chart_shadow import build_daily_chart_shadow_catalog
 
 
-class DailyChartShadowTests(unittest.TestCase):
+class DailyChartShadowTests(IsolatedDataTestCase):
     def setUp(self):
         self.now = datetime(2026, 11, 25, 12, 0, tzinfo=UTC)
         self.live = {
