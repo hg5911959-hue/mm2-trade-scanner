@@ -1,13 +1,14 @@
 """Regression guards for the daily ROBASE archive workflow ordering and timezone."""
 
 from pathlib import Path
-import unittest
+
+from test_support import IsolatedDataTestCase
 
 
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "robase-daily-history.yml"
 
 
-class DailyArchiveWorkflowTests(unittest.TestCase):
+class DailyArchiveWorkflowTests(IsolatedDataTestCase):
     @classmethod
     def setUpClass(cls):
         cls.content = WORKFLOW.read_text(encoding="utf-8")
@@ -38,6 +39,3 @@ class DailyArchiveWorkflowTests(unittest.TestCase):
         self.assertIn("load_exact_previous_day_prices", verify_block)
         self.assertIn("len(prices) != 214", verify_block)
 
-
-if __name__ == "__main__":
-    unittest.main()
