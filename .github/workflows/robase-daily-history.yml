@@ -631,9 +631,10 @@ jobs:
                       raise SystemExit(f"{label}: negative sales count")
                   price = row["all_marketplaces_price_after_fee"]
                   if price != "":
+                      import math
                       value = float(price)
-                      if value <= 0:
-                          raise SystemExit(f"{label}: price must be blank or positive")
+                      if not math.isfinite(value) or value <= 0 or sold == 0:
+                          raise SystemExit(f"{label}: price must be finite, positive, and backed by sales")
                   key = (slug, day)
                   if key in keys:
                       raise SystemExit(f"{label}: duplicate item/day key {key}")
