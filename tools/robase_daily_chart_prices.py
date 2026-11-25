@@ -44,12 +44,17 @@ def expected_weapon_slugs(identity_map_path: str | Path = DEFAULT_IDENTITY_MAP, 
         raise ValueError("exact weapon identity map is missing or invalid") from exc
     if not isinstance(mapping, dict):
         raise ValueError("exact weapon identity map must be an object")
-    slugs = {
-        value.get("robase_slug")
-        for value in mapping.values()
-        if isinstance(value, dict) and isinstance(value.get("robase_slug"), str)
-    }
-    if len(slugs) != expected_count or any(not slug for slug in slugs):
+    if len(mapping) != expected_count:
+        raise ValueError(f"exact weapon identity map must contain exactly {expected_count} BloxSwaps identities")
+    slugs = set()
+    for bloxswaps_slug, value in mapping.items():
+        if not isinstance(bloxswaps_slug, str) or not bloxswaps_slug.strip() or not isinstance(value, dict):
+            raise ValueError("exact weapon identity map contains an invalid BloxSwaps identity")
+        slug = value.get("robase_slug")
+        if not isinstance(slug, str) or not slug.strip() or slug in slugs:
+            raise ValueError("exact weapon identity map must contain unique, non-empty ROBASE slugs")
+        slugs.add(slug)
+    if len(slugs) != expected_count:
         raise ValueError(f"exact weapon identity map must contain {expected_count} unique ROBASE slugs")
     return slugs
 
@@ -61,9 +66,11 @@ def load_daily_prices(
 ) -> dict[str, dict]:
     """Load exactly one complete weapon/date matrix; blank prices remain unavailable."""
     try:
-        date.fromisoformat(target_date)
+        parsed_target = date.fromisoformat(target_date)
+        if parsed_target.isoformat() != target_date:
+            raise ValueError("non-canonical date")
     except (TypeError, ValueError) as exc:
-        raise ValueError("target_date must be an ISO calendar date") from exc
+        raise ValueError("target_date must be an ISO calendar date (YYYY-MM-DD)") from exc
     if not isinstance(weapon_slugs, set) or not weapon_slugs or any(not isinstance(x, str) or not x for x in weapon_slugs):
         raise ValueError("weapon_slugs must be a non-empty set of exact ROBASE slugs")
 
@@ -78,6 +85,8 @@ def load_daily_prices(
         if tuple(reader.fieldnames or ()) != FIELDS:
             raise ValueError("ROBASE daily history CSV schema mismatch")
         for row in reader:
+            if None in row or any(row.get(field) is None for field in FIELDS):
+                raise ValueError("ROBASE daily history contains a malformed CSV row")
             if row.get("date") != target_date:
                 continue
             slug = row.get("robase_slug", "")
