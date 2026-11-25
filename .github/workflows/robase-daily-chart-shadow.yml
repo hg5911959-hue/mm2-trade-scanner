@@ -9,7 +9,7 @@ on:
 
 permissions:
   actions: read
-  contents: write
+  contents: read
 
 jobs:
   shadow:
@@ -17,8 +17,8 @@ jobs:
     name: Evaluate yesterday's ROBASE chart prices without alerts
     permissions:
       actions: read
-      contents: write
-    uses: ./.github/workflows/scan.yml
+      contents: read
+    uses: ./.github/workflows/scan-core.yml
     with:
       dry_run: true
       robase_daily_chart_shadow: true
