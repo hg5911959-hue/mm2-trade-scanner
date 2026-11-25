@@ -118,7 +118,8 @@ jobs:
           manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
           print(json.dumps(manifest, ensure_ascii=False, sort_keys=True))
           PY
-          git add data/rblxvalue_latest.json data/rblxvalue_daily_history.csv data/rblxvalue_manifest.json
+          # The archive branch ignores generated data/ by default; force-add only these three validated research outputs.
+          git add -f data/rblxvalue_latest.json data/rblxvalue_daily_history.csv data/rblxvalue_manifest.json
           if git diff --cached --quiet; then
             echo "RBLXValue snapshot unchanged; no commit needed."
           else
