@@ -38,7 +38,7 @@ def _positive_number(value: object) -> float | None:
 def _range_bounds(raw_range: object, value: float | None) -> tuple[float | None, float | None]:
     if value is None:
         return None, None
-    match = re.search(r"(\d+(?:\.\d+)?)\s*(?:-|–|to)\s*(\d+(?:\.\d+)?)", str(raw_range or ""), re.I)
+    match = re.search(r"(\d+(?:\.\d+)?)\s*(?:-|–|to)\s*(\d+(?:\.\d+)?)", str(raw_range or "").replace(",", ""), re.I)
     if not match:
         return value, value
     low, high = float(match.group(1)), float(match.group(2))
