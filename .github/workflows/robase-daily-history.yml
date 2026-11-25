@@ -37,7 +37,7 @@ jobs:
           ITEM_SLUG: ${{ inputs.item_slug || 'heat' }}
         run: |
           python - <<'PY'
-          import csv, html as html_lib, json, math, os, re, sys, time
+          import csv, html as html_lib, json, os, re, sys, time
           sys.path.insert(0, os.path.join(os.getcwd(), "tools"))
           from robase_identity import build_robase_bloxswaps_map
           from robase_daily_chart_prices import get_marketplace_fee
@@ -576,7 +576,7 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
-          import csv, json
+          import csv, json, math
           from collections import defaultdict
           from datetime import date, datetime, timedelta, timezone
           from pathlib import Path
