@@ -4,6 +4,8 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
+from test_support import IsolatedDataTestCase
+
 from tools.robase_daily_chart_prices import (
     FIELDS,
     load_daily_prices,
@@ -12,7 +14,7 @@ from tools.robase_daily_chart_prices import (
 )
 
 
-class DailyChartPriceLookupTests(unittest.TestCase):
+class DailyChartPriceLookupTests(IsolatedDataTestCase):
     def _write(self, rows):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
