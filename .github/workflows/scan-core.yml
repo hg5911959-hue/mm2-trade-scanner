@@ -24,6 +24,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: mm2-trade-scanner-core
+  cancel-in-progress: false
+
 jobs:
   scan:
     runs-on: ubuntu-latest
