@@ -547,31 +547,6 @@ jobs:
           ref: robase-daily-history
           path: robase-daily-history
           fetch-depth: 1
-      - name: Verify previous completed-day selector against persistent archive
-        run: |
-          python - <<'PY'
-          from datetime import datetime, timedelta
-          from zoneinfo import ZoneInfo
-          from tools.robase_daily_chart_prices import load_exact_previous_day_prices
-
-          now = datetime.now(ZoneInfo("Africa/Algiers"))
-          target, prices = load_exact_previous_day_prices(
-              history_path="robase-daily-history/data/weapons_daily_all_marketplaces_after_fees.csv",
-              identity_map_path="robase-daily-history/data/weapon_identity_map.json",
-              now=now,
-          )
-          expected = (now.date() - timedelta(days=1)).isoformat()
-          if target != expected or len(prices) != 214:
-              raise SystemExit("Previous-day lookup returned the wrong date or incomplete weapon coverage")
-          bat = prices.get("bat")
-          if target == "2026-11-24":
-              if not bat or bat["all_marketplaces_sold"] != 142 or bat["cash_price_usd"] is None or abs(bat["cash_price_usd"] - 3.7252331) > 1e-9:
-                  raise SystemExit("Bat 2026-11-24 reference does not match the verified ROBASE tooltip")
-          priced = sum(1 for row in prices.values() if row["cash_price_usd"] is not None)
-          eligible = sum(1 for row in prices.values() if row["eligible_for_cash_alerts"])
-          low_sample = sum(1 for row in prices.values() if row["status"] == "low_sample_daily_close")
-          print(f"Previous completed day: {target}; weapons: {len(prices)}; priced: {priced}; alert_eligible: {eligible}; low_sample: {low_sample}; Bat: {bat}")
-          PY
       - name: Append validated daily weapon observations
         shell: bash
         run: |
@@ -580,6 +555,7 @@ jobs:
           from collections import defaultdict
           from datetime import date, datetime, timedelta, timezone
           from pathlib import Path
+          from zoneinfo import ZoneInfo
 
           source = Path("robase-chart-diagnostics/weapons_daily_archive.csv")
           manifest_path = Path("robase-chart-diagnostics/archive_manifest.json")
@@ -611,9 +587,10 @@ jobs:
                       raise SystemExit("Persistent archive CSV schema mismatch")
                   return list(reader)
 
-          today_utc = datetime.now(timezone.utc).date()
-          today_key = today_utc.isoformat()
-          yesterday_key = (today_utc - timedelta(days=1)).isoformat()
+          # ROBASE day boundaries must follow the user's Algeria-local calendar, not UTC.
+          today_local = datetime.now(ZoneInfo("Africa/Algiers")).date()
+          today_key = today_local.isoformat()
+          yesterday_key = (today_local - timedelta(days=1)).isoformat()
           # A same-day chart point is still forming. Never persist it as a completed daily close.
           existing = [row for row in load_rows(target) if row["date"] < today_key]
           incoming = [row for row in load_rows(source) if row["date"] < today_key]
@@ -715,6 +692,31 @@ jobs:
           else
             echo "No new daily observations; persistent history is already current."
           fi
+      - name: Verify previous completed-day selector against persistent archive
+        run: |
+          python - <<'PY'
+          from datetime import datetime, timedelta
+          from zoneinfo import ZoneInfo
+          from tools.robase_daily_chart_prices import load_exact_previous_day_prices
+
+          now = datetime.now(ZoneInfo("Africa/Algiers"))
+          target, prices = load_exact_previous_day_prices(
+              history_path="robase-daily-history/data/weapons_daily_all_marketplaces_after_fees.csv",
+              identity_map_path="robase-daily-history/data/weapon_identity_map.json",
+              now=now,
+          )
+          expected = (now.date() - timedelta(days=1)).isoformat()
+          if target != expected or len(prices) != 214:
+              raise SystemExit("Previous-day lookup returned the wrong date or incomplete weapon coverage")
+          bat = prices.get("bat")
+          if target == "2026-11-24":
+              if not bat or bat["all_marketplaces_sold"] != 142 or bat["cash_price_usd"] is None or abs(bat["cash_price_usd"] - 3.7252331) > 1e-9:
+                  raise SystemExit("Bat 2026-11-24 reference does not match the verified ROBASE tooltip")
+          priced = sum(1 for row in prices.values() if row["cash_price_usd"] is not None)
+          eligible = sum(1 for row in prices.values() if row["eligible_for_cash_alerts"])
+          low_sample = sum(1 for row in prices.values() if row["status"] == "low_sample_daily_close")
+          print(f"Previous completed day: {target}; weapons: {len(prices)}; priced: {priced}; alert_eligible: {eligible}; low_sample: {low_sample}; Bat: {bat}")
+          PY
       - name: Upload diagnostic report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
