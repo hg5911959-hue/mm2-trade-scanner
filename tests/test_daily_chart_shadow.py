@@ -26,6 +26,10 @@ class DailyChartShadowTests(IsolatedDataTestCase):
                         "price_window_days": 7, "robase_slug": "pet"},
             },
             "items": {},
+            "bloxswaps_exact_map": {
+                "bat": {"bloxswaps_slug": "bat", "robase_slug": "bat"},
+                "heat": {"bloxswaps_slug": "heat", "robase_slug": "heat"},
+            },
         }
 
     def matrix(self):
@@ -87,6 +91,25 @@ class DailyChartShadowTests(IsolatedDataTestCase):
         with self.assertRaisesRegex(ValueError, "invalid daily after-fee price"):
             build_daily_chart_shadow_catalog(
                 self.live, matrix, now=self.now, expected_count=2
+            )
+
+    def test_partial_or_mismatched_identity_map_fails_closed(self):
+        live = self.live.copy()
+        live["bloxswaps_exact_map"] = {
+            "bat": {"bloxswaps_slug": "bat", "robase_slug": "bat"}
+        }
+        with self.assertRaisesRegex(ValueError, "exact BloxSwaps identity map"):
+            build_daily_chart_shadow_catalog(
+                live, self.matrix(), now=self.now, expected_count=2
+            )
+
+        live["bloxswaps_exact_map"] = {
+            "bat": {"bloxswaps_slug": "bat", "robase_slug": "bat"},
+            "heat": {"bloxswaps_slug": "heat", "robase_slug": "different"},
+        }
+        with self.assertRaisesRegex(ValueError, "does not exactly match"):
+            build_daily_chart_shadow_catalog(
+                live, self.matrix(), now=self.now, expected_count=2
             )
 
 
