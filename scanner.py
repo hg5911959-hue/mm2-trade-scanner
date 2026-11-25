@@ -5321,7 +5321,10 @@ def scan_once(include_backlog_rechecks=True):
         raise RuntimeError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in GitHub Actions secrets.")
     update_metrics(increments={"scans": 1})
 
-    print("[stage] Third-party valuation sources disabled; cash eligibility uses ROBASE + BloxSwaps only")
+    if value_profit_shadow_mode:
+        print("[stage] Offline Supreme value-profit shadow from the daily RBLXValue archive; no API key or API requests")
+    else:
+        print("[stage] Third-party valuation sources disabled; cash eligibility uses ROBASE + BloxSwaps only")
     testing_mode = os.environ.get("MM2_TESTING", "").strip().casefold() == "true"
     if value_profit_shadow_mode:
         if CASH_FILTER:
