@@ -115,31 +115,37 @@ def candidate_matches(identity, source_items):
     category = expected_category(identity)
     kind = str(identity.get("bloxswaps_type") or "").casefold()
     if not target_name or not category or kind not in {"knife","gun"}: return []
-    alias = EXACT_IDENTITY_ALIASES.get(str(identity.get("robase_slug") or "").casefold())
-    if alias:
-        # An alias is valid only for this exact ROBASE row, exact BloxSwaps slug,
-        # exact API slug/name, and exact category/type. Any mismatch fails closed.
-        if (
-            str(identity.get("robase_name") or "").casefold() != alias["robase_name"].casefold()
-            or str(identity.get("bloxswaps_slug") or "").casefold() != alias["bloxswaps_slug"]
-            or category != alias["category"]
-            or kind != alias["type"]
-        ):
-            return []
-        matches = [
-            item for item in source_items
-            if normalize_slug(item.get("slug")) == normalize_slug(alias["slug"])
-            and normalize_name(item.get("name")) == normalize_name(alias["name"])
-            and str(item.get("category") or "").casefold() == alias["category"]
-            and str(item.get("type") or "").casefold() == alias["type"]
-        ]
-        return matches if len(matches) == 1 else []
+    # Prefer a normal exact match first. This preserves legacy fixtures/items
+    # whose current API display name or slug already matches ROBASE directly.
     matches = []
     for item in source_items:
         if str(item.get("category") or "").casefold() != category or str(item.get("type") or "").casefold() != kind: continue
         if normalize_name(item.get("name")) == target_name or normalize_slug(item.get("slug")) in target_slugs:
             matches.append(item)
-    return list({str(x.get("slug") or "").casefold(): x for x in matches}.values())
+    matches = list({str(x.get("slug") or "").casefold(): x for x in matches}.values())
+    if matches:
+        return matches
+
+    alias = EXACT_IDENTITY_ALIASES.get(str(identity.get("robase_slug") or "").casefold())
+    if not alias:
+        return []
+    # An alias is valid only for this exact ROBASE row, exact BloxSwaps slug,
+    # exact API slug/name, and exact category/type. Any mismatch fails closed.
+    if (
+        str(identity.get("robase_name") or "").casefold() != alias["robase_name"].casefold()
+        or str(identity.get("bloxswaps_slug") or "").casefold() != alias["bloxswaps_slug"]
+        or category != alias["category"]
+        or kind != alias["type"]
+    ):
+        return []
+    alias_matches = [
+        item for item in source_items
+        if normalize_slug(item.get("slug")) == normalize_slug(alias["slug"])
+        and normalize_name(item.get("name")) == normalize_name(alias["name"])
+        and str(item.get("category") or "").casefold() == alias["category"]
+        and str(item.get("type") or "").casefold() == alias["type"]
+    ]
+    return alias_matches if len(alias_matches) == 1 else []
 
 def build_snapshot(identity_map, source_items, meta, *, snapshot_date, fetched_at_utc, expected_count=214):
     if not isinstance(identity_map, dict) or len(identity_map) != expected_count: raise ValueError(f"Expected exactly {expected_count} ROBASE weapon identities")
