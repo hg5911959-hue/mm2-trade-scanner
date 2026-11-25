@@ -28,6 +28,9 @@ class DailyArchiveWorkflowTests(unittest.TestCase):
         self.assertIn("yesterday_key not in incoming_days", self.content)
         self.assertIn("Expected exactly 214 exact weapon identities", self.content)
 
+    def test_append_rejects_non_canonical_dates(self):
+        self.assertIn("parsed_day.isoformat() != day", self.content)
+
     def test_post_append_verification_requires_full_weapon_coverage(self):
         verify_start = self.content.index("- name: Verify previous completed-day selector")
         verify_end = self.content.index("- name: Upload diagnostic report", verify_start)
