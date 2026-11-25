@@ -13,9 +13,10 @@ permissions:
   contents: read
 
 jobs:
-  collect-and-archive:
+  collect:
+    name: Collect RBLXValue data (secret-isolated)
     permissions:
-      contents: write
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -23,7 +24,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
@@ -52,19 +53,47 @@ jobs:
             echo "::error::Missing repository secret RBLXVALUE_API_KEY. Add a valid key from the official RBLXValue developer portal."
             exit 1
           fi
+          echo "::add-mask::${RBLXVALUE_API_KEY}"
           python tools/rblxvalue_daily.py --identity-map /tmp/weapon_identity_map.json --json-output /tmp/rblxvalue_latest.json --csv-output /tmp/rblxvalue_snapshot.csv
-      - name: Append validated snapshot to persistent history branch
+      - name: Upload validated snapshot for isolated archive job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: rblxvalue-validated-snapshot
+          path: |
+            /tmp/rblxvalue_latest.json
+            /tmp/rblxvalue_snapshot.csv
+          if-no-files-found: error
+          retention-days: 1
+
+  archive:
+    name: Archive snapshot (no API secret)
+    needs: collect
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out archive branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: robase-daily-history
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Download validated snapshot
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: rblxvalue-validated-snapshot
+          path: /tmp/rblxvalue-snapshot
+      - name: Validate and append snapshot
         shell: bash
         run: |
           set -euo pipefail
-          cp /tmp/rblxvalue_latest.json /tmp/rblxvalue_latest.json.keep
-          cp /tmp/rblxvalue_snapshot.csv /tmp/rblxvalue_snapshot.csv.keep
-          git checkout -B robase-daily-history origin/robase-daily-history
           python - <<'PY'
           import csv, json
           from pathlib import Path
-          latest = json.loads(Path("/tmp/rblxvalue_latest.json.keep").read_text(encoding="utf-8"))
-          incoming = list(csv.DictReader(Path("/tmp/rblxvalue_snapshot.csv.keep").open(encoding="utf-8", newline="")))
+          root = Path("/tmp/rblxvalue-snapshot")
+          latest = json.loads((root/"rblxvalue_latest.json").read_text(encoding="utf-8"))
+          incoming = list(csv.DictReader((root/"rblxvalue_snapshot.csv").open(encoding="utf-8", newline="")))
           if len(incoming) != 214 or latest.get("expected_weapons") != 214:
               raise SystemExit("Refusing incomplete RBLXValue snapshot")
           if {row.get("snapshot_date") for row in incoming} != {latest.get("snapshot_date")}:
@@ -84,9 +113,9 @@ jobs:
           with temp.open("w", encoding="utf-8", newline="") as handle:
               writer = csv.DictWriter(handle, fieldnames=fields); writer.writeheader(); writer.writerows(combined)
           temp.replace(history_path)
-          latest_path.write_text(json.dumps(latest, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
+          latest_path.write_text(json.dumps(latest, ensure_ascii=False, indent=2)+"\\n", encoding="utf-8")
           manifest = {"schema_version":1,"source":latest["source"],"source_url":latest["source_url"],"dataset_last_updated":latest["dataset_last_updated"],"last_snapshot_date":day,"expected_weapons":latest["expected_weapons"],"history_rows":len(combined),"snapshot_counts":latest["counts"],"usage":"Research archive only; not connected to production valuation or Telegram filters"}
-          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+"\\n", encoding="utf-8")
           print(json.dumps(manifest, ensure_ascii=False, sort_keys=True))
           PY
           git add data/rblxvalue_latest.json data/rblxvalue_daily_history.csv data/rblxvalue_manifest.json
@@ -98,13 +127,3 @@ jobs:
             git commit -m "data: archive daily RBLXValue weapon values"
             git push origin HEAD:robase-daily-history
           fi
-      - name: Upload snapshot diagnostics
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: rblxvalue-daily-diagnostics
-          path: |
-            /tmp/rblxvalue_latest.json
-            /tmp/rblxvalue_snapshot.csv
-          if-no-files-found: ignore
-          retention-days: 14
