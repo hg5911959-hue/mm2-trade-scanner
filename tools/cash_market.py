@@ -342,7 +342,10 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
     ):
         raise RuntimeError("[cash] ROBASE full catalogue is incomplete; refusing cash alerts.")
 
-    current = now.timestamp() if isinstance(now, datetime) else datetime.now(UTC).timestamp()
+    current_dt = now if isinstance(now, datetime) else datetime.now(UTC)
+    if current_dt.tzinfo is None or current_dt.utcoffset() != timedelta(0):
+        raise RuntimeError("[cash] Current time must be timezone-aware UTC.")
+    current = current_dt.timestamp()
     items_by_slug = {}
     name_groups = {}
     for row in rows:
@@ -360,9 +363,12 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
         try:
             price = float(row.get("cash_price_usd"))
             display_price = float(display.removeprefix("$").replace(",", ""))
-            checked_at = datetime.fromisoformat(
+            checked_dt = datetime.fromisoformat(
                 str(row.get("last_checked_at_utc") or "")
-            ).timestamp()
+            )
+            if checked_dt.tzinfo is None or checked_dt.utcoffset() != timedelta(0):
+                raise ValueError("last_checked_at_utc must be UTC-aware")
+            checked_at = checked_dt.timestamp()
         except (TypeError, ValueError, OverflowError):
             raise RuntimeError("[cash] Invalid ROBASE price or verification timestamp.")
         age = current - checked_at
@@ -382,8 +388,13 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
             type(price_window_days) is not int or price_window_days not in (7, 30)
         ):
             raise RuntimeError(f"[cash] Invalid ROBASE price sample window: {name or slug}")
-        sold_7d = int(row.get("sold_7d") or 0)
-        sold_30d = int(row.get("sold_30d") or 0)
+        sold_7d = row.get("sold_7d", 0)
+        sold_30d = row.get("sold_30d", 0)
+        if (
+            type(sold_7d) is not int or sold_7d < 0
+            or type(sold_30d) is not int or sold_30d < 0
+        ):
+            raise RuntimeError(f"[cash] Invalid ROBASE sales sample counts: {name or slug}")
         price_sample_count = (
             sold_7d if price_window_days == 7
             else sold_30d if price_window_days == 30
