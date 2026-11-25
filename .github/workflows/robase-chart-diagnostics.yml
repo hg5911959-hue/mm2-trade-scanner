@@ -213,7 +213,8 @@ jobs:
               "chromas": {"sold": 3, "price": 1.88},
               "bhopp": {"sold": 2, "price": 1.87},
           }
-          tooltip_matches = []
+          tooltip_matches = {"buyer_price": [], "after_fee": []}
+          tooltip_candidates = []
           scan_errors = []
           scanned = 0
           for item_slug in all_slugs:
@@ -228,7 +229,8 @@ jobs:
                   scanned += 1
                   day_markets = {}
                   total_sold = 0
-                  total_amount = 0.0
+                  buyer_amount = 0.0
+                  net_amount = 0.0
                   total_priced = 0
                   for code, expected in tooltip_target.items():
                       points = item_data["markets"].get(code, [])
@@ -236,28 +238,39 @@ jobs:
                       sold = (point or {}).get("sold", 0) or 0
                       price = (point or {}).get("price")
                       fee = fees.get(code, 0)
-                      net_price = price * (1 - fee) if isinstance(price, (int, float)) else None
-                      day_markets[code] = {"sold": sold, "price_after_fee": round(net_price, 2) if net_price is not None else None}
+                      buyer_price = price if isinstance(price, (int, float)) else None
+                      net_price = buyer_price * (1 - fee) if buyer_price is not None else None
+                      day_markets[code] = {
+                          "sold": sold,
+                          "buyer_price": round(buyer_price, 2) if buyer_price is not None else None,
+                          "price_after_fee": round(net_price, 2) if net_price is not None else None,
+                      }
                       total_sold += sold
-                      if net_price is not None and sold:
-                          total_amount += net_price * sold
+                      if buyer_price is not None and sold:
+                          buyer_amount += buyer_price * sold
+                          net_amount += net_price * sold
                           total_priced += sold
-                  total_price = total_amount / total_priced if total_priced else None
-                  if (
-                      all(day_markets[code]["sold"] == expected["sold"] and day_markets[code]["price_after_fee"] == expected["price"] for code, expected in tooltip_target.items())
-                      and total_sold == 21
-                      and total_price is not None
-                      and round(total_price, 2) == 1.55
-                  ):
-                      tooltip_matches.append({
-                          "slug": item_slug,
-                          "name": item_data.get("item", {}).get("name"),
-                          "id": item_data.get("item", {}).get("id"),
-                          "date": "2026-11-23",
-                          "markets": day_markets,
-                          "all_marketplaces_sold": total_sold,
-                          "all_marketplaces_price_after_fee": round(total_price, 2),
-                      })
+                  buyer_total = buyer_amount / total_priced if total_priced else None
+                  net_total = net_amount / total_priced if total_priced else None
+                  counts_match = all(day_markets[code]["sold"] == expected["sold"] for code, expected in tooltip_target.items()) and total_sold == 21
+                  result = {
+                      "slug": item_slug,
+                      "name": item_data.get("item", {}).get("name"),
+                      "id": item_data.get("item", {}).get("id"),
+                      "date": "2026-11-23",
+                      "markets": day_markets,
+                      "all_marketplaces_sold": total_sold,
+                      "buyer_total": round(buyer_total, 2) if buyer_total is not None else None,
+                      "after_fee_total": round(net_total, 2) if net_total is not None else None,
+                  }
+                  if counts_match:
+                      tooltip_candidates.append(result)
+                  buyer_match = counts_match and all(day_markets[code]["buyer_price"] == expected["price"] for code, expected in tooltip_target.items()) and buyer_total is not None and round(buyer_total, 2) == 1.55
+                  net_match = counts_match and all(day_markets[code]["price_after_fee"] == expected["price"] for code, expected in tooltip_target.items()) and net_total is not None and round(net_total, 2) == 1.55
+                  if buyer_match:
+                      tooltip_matches["buyer_price"].append(result)
+                  if net_match:
+                      tooltip_matches["after_fee"].append(result)
               except HTTPError as exc:
                   if exc.code in (403, 429):
                       scan_errors.append({"slug": item_slug, "error": "HTTP " + str(exc.code) + "; scan stopped to respect site controls"})
@@ -272,8 +285,11 @@ jobs:
               "expected": tooltip_target,
               "items_scanned": scanned,
               "errors": scan_errors,
+              "count_match_candidates": tooltip_candidates,
+              "count_candidate_count": len(tooltip_candidates),
               "matches": tooltip_matches,
-              "match_count": len(tooltip_matches),
+              "buyer_match_count": len(tooltip_matches["buyer_price"]),
+              "after_fee_match_count": len(tooltip_matches["after_fee"]),
           }
           report["item_api_url"] = api_url
           report["marketplace_fees"] = fees
