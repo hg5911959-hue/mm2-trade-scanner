@@ -88,11 +88,28 @@ jobs:
                   print(f"ASSET_FETCH_FAILED {url}: {type(exc).__name__}: {exc}")
 
           patterns = re.compile(r"(?:fetch\s*\(|XMLHttpRequest|axios|/api/|graphql|price.?history|sales.?history|chart.?data|marketplace)", re.I)
+          item_page_sections = []
+          item_api_candidates = []
+          for asset, source in scripts:
+              start = source.find("function itemPage()")
+              if start < 0:
+                  continue
+              end = source.find("// ---------- marketplaces", start)
+              if end < 0:
+                  end = min(len(source), start + 30000)
+              section = source[start:end]
+              item_page_sections.append({"asset": asset, "code": section[:20000]})
+              for match in re.finditer(r"""(?:getJson|fetch)\\s*\\(\\s*(['"])(.*?)\\1""", section, re.I):
+                  item_api_candidates.append({"asset": asset, "call": match.group(0)[:1000]})
+              for match in re.finditer(r"""['"]([^'"]*/api\\.php[^'"]*)['"]""", section, re.I):
+                  item_api_candidates.append({"asset": asset, "endpoint": match.group(1)[:1000]})
           report = {
               "page": base,
               "page_bytes": len(html.encode()),
               "script_assets": [url for url, _ in scripts],
               "inline_script_count": len(parser.inline_scripts),
+              "item_page_sections": item_page_sections,
+              "item_api_candidates": item_api_candidates,
               "findings": [],
           }
           for url, source in scripts:
