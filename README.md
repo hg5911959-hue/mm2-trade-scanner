@@ -309,3 +309,25 @@ Supreme numeric values are never converted into cash prices; the USD catalogue r
 Every unittest case uses its own temporary working directory. Tests that need catalogue data use synthetic fixtures under `tests/fixtures`; no test reads or writes the repository's real `data/` directory. CI runs `python -m unittest discover -s tests` twice and checks `git status --porcelain data` after each pass. `tests/test_no_data_pollution.py` hashes every file in the real data directory before and after a mocked scan.
 
 Scanner and tool path defaults are module constants or explicit function arguments so tests can patch them. Workflow permissions default to read-only; write access is scoped to state persistence, schedule enablement, repository keepalive, or Pages deployment. Third-party Actions are pinned to full 40-character commit SHAs, and workflow steps must never echo secrets.
+
+
+## Persistent ROBASE daily chart history
+
+This branch also stores a persistent daily history derived from ROBASE's public item chart API.
+
+Dataset: `data/weapons_daily_all_marketplaces_after_fees.csv`
+
+- 214 weapons, matched by the repository's exact ROBASE ↔ BloxSwaps identity crosswalk.
+- One row per weapon per calendar day.
+- Columns: `robase_slug,item_id,item_name,date,all_marketplaces_sold,all_marketplaces_price_after_fee`.
+- Price basis: ROBASE **All marketplaces price after fee**, reproduced as a sales-weighted daily average of each marketplace's price after its own ROBASE fee.
+- Buyer Price is never used; individual marketplace prices are not exported as final valuation fields.
+- If there are no priced sales on a day, the price is blank, never imputed as zero.
+
+The workflow `.github/workflows/robase-daily-history.yml` on `main` runs daily at 02:20 UTC (03:20 Algeria time). It re-reads the current 365-day chart range, validates complete coverage for all 214 mapped weapons, and appends only previously unseen item/date keys. Existing observations are not silently overwritten. Each date must have exactly 214 unique weapon rows.
+
+This branch is separate from production scanner valuation, trade alerts, Telegram, and the existing rolling 7-day/30-day cash-price history.
+
+**Intended scanner date rule:** for a scan on calendar date D, use the chart point for D-1. A missing or unpriced D-1 observation is unavailable; do not replace it with Buyer Price, a rolling average, or an older date silently.
+
+Initial snapshot: 2025-11-26 through 2026-11-25; 78,110 rows; 214 weapons; 365 days.
