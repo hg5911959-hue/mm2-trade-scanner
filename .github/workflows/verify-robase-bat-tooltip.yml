@@ -1,0 +1,33 @@
+name: Verify ROBASE Bat Nov 24 tooltip
+
+on:
+  push:
+    branches:
+      - research/robase-chart-endpoint
+    paths:
+      - "scripts/verify_robase_bat_tooltip.py"
+      - ".github/workflows/verify-robase-bat-tooltip.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-bat-tooltip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify Bat daily tooltip against ROBASE API and page fees
+        run: python scripts/verify_robase_bat_tooltip.py
+      - name: Upload Bat verification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bat-nov24-tooltip-verification
+          path: bat-verification.json
+          if-no-files-found: warn
+          retention-days: 14
