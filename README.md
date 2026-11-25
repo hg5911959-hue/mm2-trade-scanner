@@ -331,3 +331,5 @@ This branch is separate from production scanner valuation, trade alerts, Telegra
 **Intended scanner date rule:** for a scan on calendar date D, use the chart point for D-1. A missing or unpriced D-1 observation is unavailable; do not replace it with Buyer Price, a rolling average, or an older date silently.
 
 Current completed-day snapshot (2026-11-25 UTC): 2025-11-26 through 2026-11-24; 77,896 rows; 214 weapons; 364 completed days. The current UTC day is intentionally excluded; the 2026-11-25 point becomes eligible after that day closes.
+
+For cash-alert eligibility, require at least 3 sales for that weapon on the completed day. On 2026-11-24, 197 weapons had a priced observation; 21 of those had fewer than 3 sales, and 17 had no sales/price. Thus 176/214 met the minimum daily sample rule. Prices below that threshold remain available for analysis but are not eligible for live cash alerts.
