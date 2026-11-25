@@ -36,6 +36,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
 
     def test_scanner_is_reusable_and_scheduler_owns_the_cron(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        core = (ROOT / ".github/workflows/scan-core.yml").read_text(encoding="utf-8")
         scheduler = (ROOT / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
         self.assertIn("  workflow_call:", workflow)
         self.assertIn("  workflow_dispatch:", workflow)
@@ -43,30 +44,30 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertNotIn("repository_dispatch:", workflow)
         self.assertIn("group: mm2-trade-scanner", workflow)
         self.assertIn("cancel-in-progress: false", workflow)
-        self.assertIn('          BLOXSWAPS_URL: "https://bloxswaps.com/trade-mm2?trade-type=P2P"\n', workflow)
-        self.assertIn('          BLOXSWAPS_API_ONLY: "true"\n', workflow)
-        self.assertIn('          MAX_PENDING_RECHECK_PER_SCAN: "50"\n', workflow)
-        self.assertIn('          MAX_BACKLOG_RECHECK_PAGES: "1000"\n', workflow)
-        self.assertIn('          CASH_MIN_PROFIT_USD: "2.00"\n', workflow)
-        self.assertIn('      CASH_FILTER: "true" # only fully priced, fresh ROBASE-verified offers are eligible\n', workflow)
+        self.assertIn('          BLOXSWAPS_URL: "https://bloxswaps.com/trade-mm2?trade-type=P2P"\n', core)
+        self.assertIn('          BLOXSWAPS_API_ONLY: "true"\n', core)
+        self.assertIn('          MAX_PENDING_RECHECK_PER_SCAN: "50"\n', core)
+        self.assertIn('          MAX_BACKLOG_RECHECK_PAGES: "1000"\n', core)
+        self.assertIn('          CASH_MIN_PROFIT_USD: "2.00"\n', core)
+        self.assertIn('      CASH_FILTER: "true" # only fully priced, fresh ROBASE-verified offers are eligible\n', core)
         weekly = (ROOT / ".github/workflows/weekly-report.yml").read_text(encoding="utf-8")
         self.assertIn('      CASH_FILTER: "false" # weekly report is separate from the cash-first production scanner\n', weekly)
-        self.assertIn("env.CASH_FILTER == '1' || env.CASH_FILTER == 'true'", workflow)
+        self.assertIn("env.CASH_FILTER == '1' || env.CASH_FILTER == 'true'", core)
         self.assertNotIn("env.CASH_FILTER", weekly)
-        self.assertNotIn("RBLXVALUE_META_POLL_ENABLED", workflow)
-        self.assertIn('          MM2_SCAN_DURATION_SECONDS: "540"\n', workflow)
-        self.assertIn('          MM2_SCAN_INTERVAL_SECONDS: "30"\n', workflow)
-        self.assertIn('          MAX_BACKLOG_RECHECK_PAGES: "1000"\n', workflow)
-        self.assertIn('          BACKLOG_RECHECK_EVERY_CYCLES: "4"\n', workflow)
-        self.assertNotIn('\n      MAX_PENDING_RECHECK_PER_SCAN:', workflow)
+        self.assertNotIn("RBLXVALUE_META_POLL_ENABLED", core)
+        self.assertIn('          MM2_SCAN_DURATION_SECONDS: "540"\n', core)
+        self.assertIn('          MM2_SCAN_INTERVAL_SECONDS: "30"\n', core)
+        self.assertIn('          MAX_BACKLOG_RECHECK_PAGES: "1000"\n', core)
+        self.assertIn('          BACKLOG_RECHECK_EVERY_CYCLES: "4"\n', core)
+        self.assertNotIn('\n      MAX_PENDING_RECHECK_PER_SCAN:', core)
         self.assertIn("python tools/validate_state.py --directory state-artifact/data", workflow)
-        restore = workflow.split("      - name: Restore durable state branch", 1)[1].split("      - name:", 1)[0]
+        restore = core.split("      - name: Restore durable state branch", 1)[1].split("      - name:", 1)[0]
         self.assertIn("set -euo pipefail", restore)
         self.assertIn("tar --exclude='data/cash_prices.csv' -x", restore)
         self.assertNotIn("git checkout -- data/cash_prices.csv", restore)
         weekly = (ROOT / ".github/workflows/weekly-report.yml").read_text(encoding="utf-8")
         self.assertIn("tar --exclude='data/cash_prices.csv' -x", weekly)
-        artifact = workflow.split("      - name: Prepare state artifact", 1)[1].split("      - name:", 1)[0]
+        artifact = core.split("      - name: Prepare state artifact", 1)[1].split("      - name:", 1)[0]
         self.assertIn("rm -f state-bundle/data/cash_prices.csv", artifact)
         self.assertIn('cron: "3-59/10 * * * *"', scheduler)
         self.assertIn('      - "scanner.py"\n', scheduler)
@@ -114,7 +115,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
 
 
     def test_existing_state_branch_is_validated_before_scanning(self):
-        workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/scan-core.yml").read_text(encoding="utf-8")
         restore = workflow.split("      - name: Restore durable state branch", 1)[1].split("      - name:", 1)[0]
         self.assertIn("python tools/validate_state.py --directory data", restore)
         self.assertIn("python tools/validate_state.py --directory data", restore)
@@ -243,7 +244,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
 
 
     def test_tools_that_import_the_tools_package_are_invoked_as_modules(self):
-        scanner = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        scanner = (ROOT / ".github/workflows/scan-core.yml").read_text(encoding="utf-8")
         weekly = (ROOT / ".github/workflows/weekly-report.yml").read_text(encoding="utf-8")
         self.assertIn("run: python -m tools.preflight --warn", scanner)
         self.assertNotIn("run: python tools/preflight.py", scanner)
@@ -257,7 +258,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertNotIn("CASH_MAX_AGE_DAYS", workflow)
 
     def test_bloxswaps_scanner_step_has_no_duplicate_environment_keys(self):
-        workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/scan-core.yml").read_text(encoding="utf-8")
         preflight_step = workflow.split("      - name: Run scanner preflight checks", 1)[1].split("      - name:", 1)[0]
         step = workflow.split("      - name: Run BloxSwaps scanner", 1)[1].split("      - name:", 1)[0]
         self.assertIn("id: preflight", preflight_step)
