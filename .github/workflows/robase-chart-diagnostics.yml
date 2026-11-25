@@ -1,6 +1,9 @@
 name: ROBASE chart source diagnostics
 
 on:
+  push:
+    branches:
+      - research/robase-chart-endpoint
   workflow_dispatch:
     inputs:
       item_slug:
@@ -19,7 +22,7 @@ jobs:
     steps:
       - name: Inspect public page and same-origin JavaScript assets
         env:
-          ITEM_SLUG: ${{ inputs.item_slug }}
+          ITEM_SLUG: ${{ inputs.item_slug || 'heat' }}
         run: |
           python - <<'PY'
           import json, os, re
@@ -67,7 +70,7 @@ jobs:
               except Exception as exc:
                   print(f"ASSET_FETCH_FAILED {url}: {type(exc).__name__}: {exc}")
 
-          patterns = re.compile(r"(?:fetch\\s*\\(|XMLHttpRequest|axios|/api/|graphql|price.?history|sales.?history|chart.?data|marketplace)", re.I)
+          patterns = re.compile(r"(?:fetch\s*\(|XMLHttpRequest|axios|/api/|graphql|price.?history|sales.?history|chart.?data|marketplace)", re.I)
           report = {
               "page": base,
               "page_bytes": len(html.encode()),
@@ -77,13 +80,12 @@ jobs:
           for url, source in scripts:
               for match in patterns.finditer(source):
                   start, end = max(0, match.start()-180), min(len(source), match.end()+320)
-                  excerpt = re.sub(r"\\s+", " ", source[start:end])
+                  excerpt = re.sub(r"\s+", " ", source[start:end])
                   report["findings"].append({"asset": url, "excerpt": excerpt[:600]})
                   if len(report["findings"]) >= 100:
                       break
               if len(report["findings"]) >= 100:
                   break
-          # Include only script references and bounded source excerpts; no cookies or browser storage.
           os.makedirs("robase-chart-diagnostics", exist_ok=True)
           with open("robase-chart-diagnostics/report.json", "w", encoding="utf-8") as f:
               json.dump(report, f, ensure_ascii=False, indent=2)
