@@ -41,6 +41,7 @@ jobs:
                   super().__init__()
                   self.urls = []
                   self.inline_scripts = []
+                  self.in_inline_script = False
               def handle_starttag(self, tag, attrs):
                   attrs = dict(attrs)
                   if tag.lower() == "script":
@@ -48,8 +49,12 @@ jobs:
                           self.urls.append(urljoin(base, attrs["src"]))
                       else:
                           self.inline_scripts.append("")
+                          self.in_inline_script = True
+              def handle_endtag(self, tag):
+                  if tag.lower() == "script":
+                      self.in_inline_script = False
               def handle_data(self, data):
-                  if self.inline_scripts:
+                  if self.in_inline_script and self.inline_scripts:
                       self.inline_scripts[-1] += data
                   if tag.lower() == "link" and attrs.get("rel", "").lower() in ("modulepreload", "preload") and attrs.get("href"):
                       if attrs.get("as", "script") == "script":
