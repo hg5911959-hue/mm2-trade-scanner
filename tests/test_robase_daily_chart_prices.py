@@ -56,6 +56,14 @@ class DailyChartPriceLookupTests(IsolatedDataTestCase):
         with self.assertRaisesRegex(ValueError, "incomplete daily weapon coverage"):
             load_daily_prices(path, "2026-11-24", {"bat", "heat"})
 
+    def test_one_or_two_daily_sales_are_not_alert_eligible(self):
+        path = self._write([
+            {"robase_slug": "bat", "item_id": "628", "item_name": "Bat", "date": "2026-11-24", "all_marketplaces_sold": "1", "all_marketplaces_price_after_fee": "3.72"},
+        ])
+        row = load_daily_prices(path, "2026-11-24", {"bat"})["bat"]
+        self.assertEqual(row["status"], "low_sample_daily_close")
+        self.assertFalse(row["eligible_for_cash_alerts"])
+
     def test_duplicate_weapon_day_fails_closed(self):
         row = {"robase_slug": "bat", "item_id": "628", "item_name": "Bat", "date": "2026-11-24", "all_marketplaces_sold": "142", "all_marketplaces_price_after_fee": "3.7252331"}
         path = self._write([row, row])
