@@ -17,6 +17,8 @@ from zoneinfo import ZoneInfo
 SOURCE = "RBLXValue official API v2"
 EXPECTED_WEAPONS = 214
 ALLOWED_TYPES = {"knife", "gun"}
+ALLOWED_CATEGORIES = {"godly", "ancient", "vintage", "legendary", "rare", "uncommon", "common", "unique", "chroma"}
+ALLOWED_STATUSES = {"matched", "matched_missing_blended_value", "matched_missing_supreme_value", "missing", "ambiguous", "ambiguous_identity_collision", "unsupported_category_or_type"}
 
 
 def _name_key(value: object) -> str:
@@ -88,13 +90,18 @@ def load_values_from_snapshot(
     seen_blox: set[str] = set()
     seen_rblx: set[str] = set()
     grouped: dict[str, dict] = {}
-    matched = supreme_numeric = stability_count = unmapped = 0
+    matched = supreme_numeric = stability_count = demand_count = unmapped = 0
     for row in rows:
         if not isinstance(row, dict):
             raise ValueError("snapshot contains a malformed weapon row")
         robase_slug = str(row.get("robase_slug") or "").strip().casefold()
         blox_slug = str(row.get("bloxswaps_slug") or "").strip().casefold()
         item_type = str(row.get("item_type") or "").strip().casefold()
+        if row.get("snapshot_date") != snapshot_date:
+            raise ValueError(f"row snapshot date mismatch for {robase_slug or 'unknown weapon'}")
+        status = str(row.get("status") or "").strip()
+        if status not in ALLOWED_STATUSES:
+            raise ValueError(f"unsupported row status in RBLXValue snapshot: {status}")
         if not robase_slug or robase_slug in seen_robase:
             raise ValueError("snapshot contains a missing or duplicate ROBASE slug")
         seen_robase.add(robase_slug)
@@ -108,13 +115,22 @@ def load_values_from_snapshot(
         category = str(row.get("category") or "").strip().casefold()
         api_type = str(row.get("api_type") or "").strip().casefold()
         if not rblx_slug or not rblx_name:
+            if status in {"matched", "matched_missing_blended_value", "matched_missing_supreme_value"}:
+                raise ValueError(f"matched row is missing its RBLXValue identity: {robase_slug}")
             unmapped += 1
             continue
+        if status in {"missing", "ambiguous", "ambiguous_identity_collision", "unsupported_category_or_type"}:
+            raise ValueError(f"unmatched row unexpectedly contains an RBLXValue identity: {robase_slug}")
         if rblx_slug in seen_rblx:
             raise ValueError("snapshot assigns one RBLXValue identity to multiple weapons")
         seen_rblx.add(rblx_slug)
-        if api_type != item_type or not category:
+        if api_type != item_type or category not in ALLOWED_CATEGORIES:
             raise ValueError(f"RBLXValue type/category mismatch for {robase_slug}")
+        expected_category = "chroma" if row.get("is_chroma") is True else str(row.get("item_rarity") or "").strip().casefold()
+        if expected_category == "classic":
+            expected_category = "vintage"
+        if category != expected_category:
+            raise ValueError(f"RBLXValue rarity/category mismatch for {robase_slug}")
         matched += 1
 
         # Critical source rule: Supreme Values only. Never fall back to blended
@@ -128,6 +144,8 @@ def load_values_from_snapshot(
             supreme_numeric += 1
         if stability is not None:
             stability_count += 1
+        if isinstance(row.get("demand"), int) and not isinstance(row.get("demand"), bool) and 0 <= row["demand"] <= 10:
+            demand_count += 1
 
         variant = {
             "id": rblx_slug,
@@ -176,6 +194,7 @@ def load_values_from_snapshot(
         "unmapped": unmapped,
         "supreme_numeric": supreme_numeric,
         "stability_available": stability_count,
+        "demand_available": demand_count,
         "value_basis": "value_source_b (Supreme Values) only",
         "api_requests": 0,
     }
