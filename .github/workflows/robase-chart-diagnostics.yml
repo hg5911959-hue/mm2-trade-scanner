@@ -212,6 +212,8 @@ jobs:
           tooltip_matches = []
           tooltip_candidates = []
           scan_errors = []
+          archive_rows = []
+          archive_items = []
           scanned = 0
           for item_slug in all_slugs:
               try:
@@ -220,9 +222,70 @@ jobs:
                       item_url = "https://robase.gg/api.php?item=" + quote(item_slug, safe="") + "&days=365"
                       item_data = json.loads(get(item_url, 5_000_000))
                       time.sleep(0.35)
-                  if not isinstance(item_data, dict) or not isinstance(item_data.get("markets"), dict):
+                  if not isinstance(item_data, dict) or not isinstance(item_data.get("markets"), dict) or not isinstance(item_data.get("item"), dict):
                       raise ValueError("Unexpected item API response shape")
                   scanned += 1
+                  # Reproduce ROBASE's own daily All marketplaces line. Preserve empty days
+                  # as sold=0 and price="" (never as a zero-dollar observation).
+                  archive_start = date.fromisoformat(item_data["from"])
+                  archive_end = date.fromisoformat(item_data["to"])
+                  archive_days = (archive_end - archive_start).days + 1
+                  if archive_days < 1 or archive_days > 366:
+                      raise ValueError("Invalid daily chart date range")
+                  by_market = {}
+                  for market_code, market_points in item_data["markets"].items():
+                      if not isinstance(market_points, list):
+                          raise ValueError("Invalid market series for " + market_code)
+                      by_market[market_code] = {}
+                      for market_point in market_points:
+                          if not isinstance(market_point, dict) or not market_point.get("day"):
+                              raise ValueError("Invalid daily point for " + market_code)
+                          point_day = market_point["day"]
+                          if point_day in by_market[market_code]:
+                              raise ValueError("Duplicate market/day point: " + market_code + "/" + point_day)
+                          by_market[market_code][point_day] = market_point
+                  item_archive_rows = []
+                  current_day = archive_start
+                  while current_day <= archive_end:
+                      day_key = current_day.isoformat()
+                      all_sold = 0
+                      weighted_amount = 0.0
+                      priced_sold = 0
+                      for market_code, points_by_day in by_market.items():
+                          point = points_by_day.get(day_key)
+                          if point is None:
+                              continue
+                          sold = point.get("sold", 0) or 0
+                          if not isinstance(sold, int) or sold < 0:
+                              raise ValueError("Invalid sold count for " + market_code + "/" + day_key)
+                          all_sold += sold
+                          price = point.get("price")
+                          fee = fees.get(market_code, 0)
+                          if not isinstance(fee, (int, float)) or not 0 <= fee < 1:
+                              raise ValueError("Invalid marketplace fee for " + market_code)
+                          if price is not None and sold:
+                              if not isinstance(price, (int, float)) or price < 0:
+                                  raise ValueError("Invalid marketplace price for " + market_code + "/" + day_key)
+                              weighted_amount += price * (1 - fee) * sold
+                              priced_sold += sold
+                      item_archive_rows.append({
+                          "robase_slug": item_slug,
+                          "item_id": item_data["item"].get("id"),
+                          "item_name": item_data["item"].get("name"),
+                          "date": day_key,
+                          "all_marketplaces_sold": all_sold,
+                          "all_marketplaces_price_after_fee": round(weighted_amount / priced_sold, 8) if priced_sold else "",
+                      })
+                      current_day += timedelta(days=1)
+                  archive_rows.extend(item_archive_rows)
+                  archive_items.append({
+                      "robase_slug": item_slug,
+                      "item_id": item_data["item"].get("id"),
+                      "item_name": item_data["item"].get("name"),
+                      "days": len(item_archive_rows),
+                      "days_with_sales": sum(1 for row in item_archive_rows if row["all_marketplaces_sold"] > 0),
+                      "days_with_price": sum(1 for row in item_archive_rows if row["all_marketplaces_price_after_fee"] != ""),
+                  })
                   total_sold = 0
                   net_amount = 0.0
                   total_priced = 0
@@ -257,6 +320,16 @@ jobs:
               except Exception as exc:
                   scan_errors.append({"slug": item_slug, "error": type(exc).__name__ + ": " + str(exc)[:180]})
           report["homepage_item_links"] = len(all_slugs)
+          report["daily_archive"] = {
+              "items_archived": len(archive_items),
+              "rows": len(archive_rows),
+              "expected_rows": sum(item["days"] for item in archive_items),
+              "days_with_sales": sum(item["days_with_sales"] for item in archive_items),
+              "days_with_price": sum(item["days_with_price"] for item in archive_items),
+              "schema": ["robase_slug", "item_id", "item_name", "date", "all_marketplaces_sold", "all_marketplaces_price_after_fee"],
+              "price_definition": "ROBASE All marketplaces: sales-weighted daily average after each marketplace fee; blank when no priced sales; missing dates represented by sold=0 and blank price.",
+              "note": "Includes all ROBASE catalog items; weapon-only filtering is a separate downstream step."
+          }
           report["sample_10_items"] = sample_results
           report["tooltip_target_scan"] = {
               "date": "2026-11-23",
@@ -305,6 +378,13 @@ jobs:
                   writer.writerow({**sample, "market_codes": ",".join(sample["market_codes"])})
           with open("robase-chart-diagnostics/tooltip_matches.json", "w", encoding="utf-8") as f:
               json.dump(report["tooltip_target_scan"], f, ensure_ascii=False, indent=2)
+          with open("robase-chart-diagnostics/all_items_daily_archive.csv", "w", encoding="utf-8", newline="") as f:
+              archive_fields = ["robase_slug", "item_id", "item_name", "date", "all_marketplaces_sold", "all_marketplaces_price_after_fee"]
+              writer = csv.DictWriter(f, fieldnames=archive_fields)
+              writer.writeheader()
+              writer.writerows(archive_rows)
+          with open("robase-chart-diagnostics/archive_manifest.json", "w", encoding="utf-8") as f:
+              json.dump({"items": archive_items, "summary": report["daily_archive"]}, f, ensure_ascii=False, indent=2)
           print(json.dumps(report, ensure_ascii=False, indent=2))
           PY
       - name: Upload diagnostic report
