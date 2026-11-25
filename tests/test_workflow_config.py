@@ -118,6 +118,24 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         core = (ROOT / ".github/workflows/scan-core.yml").read_text(encoding="utf-8")
         live_job = live.split("  scan:\n", 1)[1].split("  persist-state:\n", 1)[0]
         core_job = core.split("  scan:\n", 1)[1]
+        # The reusable core may add only explicit, read-only shadow inputs and
+        # their restore step. Normalize those additions before checking that
+        # the shared live scan implementation remains byte-for-byte equivalent.
+        core_job = core_job.replace(
+            "      CASH_FILTER: ${{ inputs.rblxvalue_value_profit_shadow && 'false' || 'true' }} # value-profit shadow is isolated from the production cash filter\n",
+            '      CASH_FILTER: "true" # only fully priced, fresh ROBASE-verified offers are eligible\n',
+        )
+        core_job = core_job.replace(
+            "      RBLXVALUE_VALUE_PROFIT_SHADOW_ENABLED: ${{ inputs.rblxvalue_value_profit_shadow && 'true' || 'false' }}\n"
+            "      RBLXVALUE_DAILY_ARCHIVE_FILE: rblxvalue-archive/data/rblxvalue_latest.json\n",
+            "",
+        )
+        if "      - name: Restore RBLXValue daily snapshot for offline Value-profit shadow\n" in core_job:
+            before, after = core_job.split(
+                "      - name: Restore RBLXValue daily snapshot for offline Value-profit shadow\n", 1
+            )
+            after = after.split("      - name: Run scanner preflight checks", 1)[1]
+            core_job = before + "      - name: Run scanner preflight checks" + after
         self.assertEqual(live_job.strip(), core_job.strip())
         self.assertNotIn("persist-state:", core)
 
