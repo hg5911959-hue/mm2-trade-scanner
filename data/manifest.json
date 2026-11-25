@@ -9,6 +9,9 @@
   "dates_covered": 364,
   "first_date": "2025-11-26",
   "last_date": "2026-11-24",
+  "latest_completed_day_priced_weapons": 197,
+  "latest_completed_day_unpriced_weapons": 17,
+  "latest_completed_day_sales_total": 9219,
   "rows_appended_this_run": 0,
   "latest_api_range": {
     "first_date": "2025-11-26",
