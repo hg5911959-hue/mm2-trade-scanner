@@ -1,6 +1,4 @@
-import json
 import unittest
-from datetime import datetime, timezone
 
 from tools.supreme_values_daily import (
     SOURCE_CATEGORIES,
