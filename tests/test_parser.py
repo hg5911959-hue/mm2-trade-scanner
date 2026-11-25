@@ -3809,8 +3809,10 @@ class AliasSuggestionToolTests(IsolatedDataTestCase):
 class WorkflowSecurityTests(IsolatedDataTestCase):
     def test_scan_and_state_jobs_have_separate_permissions_and_no_legacy_cache(self):
         workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        core = (Path(__file__).resolve().parents[1] / ".github/workflows/scan-core.yml").read_text(encoding="utf-8")
         scheduler = (Path(__file__).resolve().parents[1] / ".github/workflows/scan-scheduler.yml").read_text(encoding="utf-8")
-        scan_job, state_job = workflow.split("  persist-state:", 1)
+        scan_job = core.split("jobs:", 1)[1]
+        state_job = workflow.split("  persist-state:", 1)[1]
         self.assertIn('cron: "3-59/10 * * * *"', scheduler)
         self.assertIn("uses: ./.github/workflows/scan.yml", scheduler)
         self.assertIn("cancel-in-progress: false", workflow)
