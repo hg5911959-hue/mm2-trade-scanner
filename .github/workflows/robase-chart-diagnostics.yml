@@ -18,7 +18,7 @@ permissions:
 jobs:
   inspect-public-chart:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - name: Inspect public page and same-origin JavaScript assets
         env:
@@ -26,6 +26,7 @@ jobs:
         run: |
           python - <<'PY'
           import csv, html as html_lib, json, os, re, time
+          from urllib.error import HTTPError
           from html.parser import HTMLParser
           from datetime import date, timedelta
           from urllib.parse import quote, urljoin, urlsplit
@@ -186,6 +187,7 @@ jobs:
               position = round(index * (len(candidates) - 1) / 8)
               sample_slugs.append(candidates[position])
           sample_results = []
+          api_cache = {slug: api_data}
           for sample_slug in sample_slugs:
               if sample_slug == slug:
                   sample_data = api_data
@@ -195,6 +197,7 @@ jobs:
                   time.sleep(0.25)
               if not isinstance(sample_data, dict) or not isinstance(sample_data.get("item"), dict) or not isinstance(sample_data.get("markets"), dict):
                   raise ValueError("Unexpected ROBASE item API schema for " + sample_slug)
+              api_cache[sample_slug] = sample_data
               sample_results.append({
                   "slug": sample_slug,
                   "name": sample_data["item"].get("name"),
@@ -205,8 +208,73 @@ jobs:
                   "date_to": sample_data.get("to"),
                   "sales_points": sum(sum((point.get("sold", 0) or 0) for point in rows if isinstance(point, dict)) for rows in sample_data["markets"].values() if isinstance(rows, list)),
               })
+          tooltip_target = {
+              "starpets": {"sold": 16, "price": 1.45},
+              "chromas": {"sold": 3, "price": 1.88},
+              "bhopp": {"sold": 2, "price": 1.87},
+          }
+          tooltip_matches = []
+          scan_errors = []
+          scanned = 0
+          for item_slug in all_slugs:
+              try:
+                  item_data = api_cache.get(item_slug)
+                  if item_data is None:
+                      item_url = "https://robase.gg/api.php?item=" + quote(item_slug, safe="") + "&days=365"
+                      item_data = json.loads(get(item_url, 5_000_000))
+                      time.sleep(0.35)
+                  if not isinstance(item_data, dict) or not isinstance(item_data.get("markets"), dict):
+                      raise ValueError("Unexpected item API response shape")
+                  scanned += 1
+                  day_markets = {}
+                  total_sold = 0
+                  total_amount = 0.0
+                  total_priced = 0
+                  for code, expected in tooltip_target.items():
+                      points = item_data["markets"].get(code, [])
+                      point = next((p for p in points if p.get("day") == "2026-11-23"), None)
+                      sold = (point or {}).get("sold", 0) or 0
+                      price = (point or {}).get("price")
+                      fee = fees.get(code, 0)
+                      net_price = price * (1 - fee) if isinstance(price, (int, float)) else None
+                      day_markets[code] = {"sold": sold, "price_after_fee": round(net_price, 2) if net_price is not None else None}
+                      total_sold += sold
+                      if net_price is not None and sold:
+                          total_amount += net_price * sold
+                          total_priced += sold
+                  total_price = total_amount / total_priced if total_priced else None
+                  if (
+                      all(day_markets[code]["sold"] == expected["sold"] and day_markets[code]["price_after_fee"] == expected["price"] for code, expected in tooltip_target.items())
+                      and total_sold == 21
+                      and total_price is not None
+                      and round(total_price, 2) == 1.55
+                  ):
+                      tooltip_matches.append({
+                          "slug": item_slug,
+                          "name": item_data.get("item", {}).get("name"),
+                          "id": item_data.get("item", {}).get("id"),
+                          "date": "2026-11-23",
+                          "markets": day_markets,
+                          "all_marketplaces_sold": total_sold,
+                          "all_marketplaces_price_after_fee": round(total_price, 2),
+                      })
+              except HTTPError as exc:
+                  if exc.code in (403, 429):
+                      scan_errors.append({"slug": item_slug, "error": "HTTP " + str(exc.code) + "; scan stopped to respect site controls"})
+                      break
+                  scan_errors.append({"slug": item_slug, "error": "HTTP " + str(exc.code)})
+              except Exception as exc:
+                  scan_errors.append({"slug": item_slug, "error": type(exc).__name__ + ": " + str(exc)[:180]})
           report["homepage_item_links"] = len(all_slugs)
           report["sample_10_items"] = sample_results
+          report["tooltip_target_scan"] = {
+              "date": "2026-11-23",
+              "expected": tooltip_target,
+              "items_scanned": scanned,
+              "errors": scan_errors,
+              "matches": tooltip_matches,
+              "match_count": len(tooltip_matches),
+          }
           report["item_api_url"] = api_url
           report["marketplace_fees"] = fees
           report["daily_series"] = {
@@ -242,6 +310,8 @@ jobs:
               writer.writeheader()
               for sample in sample_results:
                   writer.writerow({**sample, "market_codes": ",".join(sample["market_codes"])})
+          with open("robase-chart-diagnostics/tooltip_matches.json", "w", encoding="utf-8") as f:
+              json.dump(report["tooltip_target_scan"], f, ensure_ascii=False, indent=2)
           print(json.dumps(report, ensure_ascii=False, indent=2))
           PY
       - name: Upload diagnostic report
