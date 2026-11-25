@@ -1,6 +1,10 @@
 name: ROBASE Daily Chart Shadow Validation
 
 on:
+  # Run automatically only after the daily archive has completed successfully.
+  workflow_run:
+    workflows: ["ROBASE daily All marketplaces history"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -8,6 +12,7 @@ permissions:
 
 jobs:
   shadow:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     name: Evaluate yesterday's ROBASE chart prices without alerts
     permissions:
       contents: read
