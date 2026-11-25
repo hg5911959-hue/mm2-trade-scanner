@@ -234,6 +234,38 @@ def fetch_page(category: str, *, timeout: int = 30, retries: int = 2) -> tuple[d
     raise RuntimeError(f"Could not retrieve Supreme category {category}: {type(last_error).__name__}: {last_error}")
 
 
+def _source_name_forms(label: object, identity: dict) -> set[str]:
+    """Normalize only source qualifiers proven by the ROBASE type/year/category."""
+    name = normalize_name(label)
+    forms = {name}
+    item_type = str(identity.get("bloxswaps_type") or "").strip().casefold()
+    rarity = str(identity.get("bloxswaps_rarity") or "").strip().casefold()
+    is_chroma = identity.get("bloxswaps_chroma") is True
+    try:
+        year = int(identity.get("bloxswaps_year")) if identity.get("bloxswaps_year") is not None else None
+    except (TypeError, ValueError):
+        year = None
+
+    # Supreme labels some weapons with explicit (Gun)/(Knife) suffixes.
+    # Strip only the suffix matching the exact BloxSwaps weapon type.
+    if item_type in {"gun", "knife"} and name.endswith(" " + item_type):
+        forms.add(name[:-(len(item_type) + 1)].strip())
+    if item_type in {"gun", "knife"}:
+        match = re.search(r"\s+" + re.escape(item_type) + r"\s+(\d{4})$", name)
+        if match and year == int(match.group(1)):
+            forms.add(name[:match.start()].strip())
+        match = re.search(r"\s+" + re.escape(item_type) + r"\s+hallows\s*(\d{4})$", name)
+        if match and year == int(match.group(1)):
+            forms.add(name[:match.start()].strip())
+    # Vintage category cards may append the rarity in parentheses.
+    if rarity == "vintage" and name.endswith(" vintage"):
+        forms.add(name[:-len(" vintage")].strip())
+    # The Chroma page abbreviates some display labels as "C. Item".
+    if is_chroma and name.startswith("c "):
+        forms.add("chroma " + name[2:].strip())
+    return {form for form in forms if form}
+
+
 def _candidate_matches(identity: dict, category_items: dict) -> list[tuple[str, dict, dict]]:
     target = normalize_name(identity.get("robase_name"))
     if not target:
@@ -244,7 +276,10 @@ def _candidate_matches(identity: dict, category_items: dict) -> list[tuple[str, 
             continue
         fields = parse_value_fields(raw)
         names = [source_name, *fields["aliases"]]
-        if target in {normalize_name(name) for name in names}:
+        source_forms = set()
+        for name in names:
+            source_forms.update(_source_name_forms(name, identity))
+        if target in source_forms:
             matches.append((str(source_name), raw, fields))
     return matches
 
