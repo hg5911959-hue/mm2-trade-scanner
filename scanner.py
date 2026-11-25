@@ -5340,10 +5340,15 @@ def scan_once(include_backlog_rechecks=True):
         previous_cash_hash = cash_catalog_snapshot_hash()
         cash_prices_changed = previous_cash_hash != cash_catalog["sha256"]
         print("[mode] mode=cash")
-        print("[cash] Loaded %s/%s exact ROBASE prices; verified=%s; expired=%s; unverified=%s" % (
-            cash_catalog["row_count"], cash_catalog.get("expected_count", cash_catalog["row_count"]),
-            verified_cash_rows, len(expired_cash_rows), unverified_cash_rows
-        ))
+        if daily_shadow_mode:
+            print("[cash] Loaded %s/%s baseline ROBASE catalogue rows for identity only; rolling prices are replaced before shadow evaluation." % (
+                cash_catalog["row_count"], cash_catalog.get("expected_count", cash_catalog["row_count"])
+            ))
+        else:
+            print("[cash] Loaded %s/%s exact ROBASE prices; verified=%s; expired=%s; unverified=%s" % (
+                cash_catalog["row_count"], cash_catalog.get("expected_count", cash_catalog["row_count"]),
+                verified_cash_rows, len(expired_cash_rows), unverified_cash_rows
+            ))
         if unverified_cash_rows > 0:
             send_maintenance_alert(
                 "cash-price-catalog-unverified",
@@ -5493,11 +5498,28 @@ def scan_once(include_backlog_rechecks=True):
         )
         shadow_evaluated = shadow_qualified = shadow_rejected = 0
         shadow_samples = []
+        shadow_rejection_reasons = {}
+        shadow_qualified_ids = set()
         for shadow_listing in listings:
             result, missing = evaluate_cash_listing_robase_only(dict(shadow_listing), daily_shadow_catalog)
             shadow_evaluated += 1
             if result is None:
                 shadow_rejected += 1
+                for reason in (missing or ["unspecified rejection"]):
+                    reason_text = str(reason)
+                    if "(no exact ROBASE/BloxSwaps identity mapping)" in reason_text:
+                        category = "unmapped identity"
+                    elif "(ROBASE price not freshly verified)" in reason_text:
+                        category = "no eligible daily price"
+                    elif "wildcards or incomplete trade sides" in reason_text:
+                        category = "wildcard/incomplete offer"
+                    elif "quantity" in reason_text:
+                        category = "uncertain quantity"
+                    elif "mismatch" in reason_text or "type mismatch" in reason_text:
+                        category = "identity metadata mismatch"
+                    else:
+                        category = "other validation failure"
+                    shadow_rejection_reasons[category] = shadow_rejection_reasons.get(category, 0) + 1
                 if missing and len(shadow_samples) < 8:
                     shadow_samples.append(
                         f"{shadow_listing.get('id', 'unknown')}: " + "; ".join(str(x) for x in missing[:3])
@@ -5509,6 +5531,7 @@ def scan_once(include_backlog_rechecks=True):
             )
             if result["cash_profit_worst"] >= shadow_threshold:
                 shadow_qualified += 1
+                shadow_qualified_ids.add(str(shadow_listing.get("id") or "unknown"))
                 print(
                     f"[daily-shadow] QUALIFIED listing={shadow_listing.get('id')} "
                     f"profit={result['cash_profit_worst']:.2f}..{result['cash_profit_best']:.2f} USD "
@@ -5518,6 +5541,10 @@ def scan_once(include_backlog_rechecks=True):
             f"[daily-shadow] COMPLETE date={target_day}; listings={shadow_evaluated}; "
             f"qualified_at_{CASH_MIN_PROFIT_USD:.2f}_USD_floor={shadow_qualified}; "
             f"rejected_or_ineligible={shadow_rejected}; telegram_sends=0; live_catalog_mutations=0"
+        )
+        print(
+            f"[daily-shadow] SUMMARY unique_qualified_ids={len(shadow_qualified_ids)} "
+            f"rejection_reason_counts={json.dumps(shadow_rejection_reasons, ensure_ascii=False, sort_keys=True)}"
         )
         for sample in shadow_samples:
             print(f"[daily-shadow] REJECTED {sample}")
