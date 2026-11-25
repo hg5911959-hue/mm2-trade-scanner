@@ -20,12 +20,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Inspect public page and same-origin JavaScript assets
         env:
           ITEM_SLUG: ${{ inputs.item_slug || 'heat' }}
         run: |
           python - <<'PY'
-          import csv, html as html_lib, json, os, re, time
+          import csv, html as html_lib, json, os, re, sys, time
+          sys.path.insert(0, os.path.join(os.getcwd(), "tools"))
+          from robase_identity import build_robase_bloxswaps_map
           from urllib.error import HTTPError
           from html.parser import HTMLParser
           from datetime import date, timedelta
@@ -319,7 +323,55 @@ jobs:
                   scan_errors.append({"slug": item_slug, "error": "HTTP " + str(exc.code)})
               except Exception as exc:
                   scan_errors.append({"slug": item_slug, "error": type(exc).__name__ + ": " + str(exc)[:180]})
+          # Reuse the repository's strict identity crosswalk to isolate weapons.
+          # This avoids fuzzy name matching and excludes pets/misc items.
+          robase_catalog = json.loads(get(
+              "https://raw.githubusercontent.com/hg5911959-hue/mm2-trade-scanner/state/data/robase_prices.json",
+              8_000_000,
+          ))
+          bloxswaps_catalog = json.loads(get(
+              "https://raw.githubusercontent.com/hg5911959-hue/mm2-trade-scanner/state/data/bloxswaps_items.json",
+              8_000_000,
+          ))
+          if robase_catalog.get("catalog_complete") is not True or not isinstance(robase_catalog.get("items"), list):
+              raise ValueError("State-branch ROBASE catalog is not complete")
+          item_map = bloxswaps_catalog.get("items")
+          if not isinstance(item_map, dict):
+              raise ValueError("State-branch BloxSwaps item map is missing")
+          cash_catalog = {
+              "items_by_slug": {
+                  row["robase_slug"]: row
+                  for row in robase_catalog["items"]
+                  if isinstance(row, dict) and row.get("robase_slug")
+              }
+          }
+          identity = build_robase_bloxswaps_map(cash_catalog, item_map)
+          weapon_mapping = identity["bloxswaps_exact_map"]
+          weapon_robase_slugs = {entry["robase_slug"] for entry in weapon_mapping.values()}
+          weapon_archive_rows = [row for row in archive_rows if row["robase_slug"] in weapon_robase_slugs]
+          expected_weapon_rows = sum(
+              item["days"] for item in archive_items if item["robase_slug"] in weapon_robase_slugs
+          )
+          if len(weapon_archive_rows) != expected_weapon_rows:
+              raise ValueError("Weapon-only archive row count does not match mapped catalog")
+          weapon_mapping_complete = not identity["missing"] and not identity["ambiguous"]
           report["homepage_item_links"] = len(all_slugs)
+          report["weapon_mapping"] = {
+              "robase_total": identity["robase_total"],
+              "exact_weapon_matches": identity["exact"],
+              "non_weapons_excluded": len(identity["non_weapons"]),
+              "missing": identity["missing"],
+              "ambiguous": identity["ambiguous"],
+              "mapping_complete": weapon_mapping_complete,
+              "mapping_source": "tools/robase_identity.py with state-branch ROBASE and BloxSwaps catalogs",
+          }
+          report["weapon_daily_archive"] = {
+              "items_archived": len(weapon_robase_slugs),
+              "rows": len(weapon_archive_rows),
+              "expected_rows": expected_weapon_rows,
+              "complete": weapon_mapping_complete and len(weapon_robase_slugs) == identity["exact"],
+              "price_definition": "ROBASE All marketplaces sales-weighted daily average after each marketplace fee.",
+          }
           report["daily_archive"] = {
               "items_archived": len(archive_items),
               "rows": len(archive_rows),
@@ -384,7 +436,18 @@ jobs:
               writer.writeheader()
               writer.writerows(archive_rows)
           with open("robase-chart-diagnostics/archive_manifest.json", "w", encoding="utf-8") as f:
-              json.dump({"items": archive_items, "summary": report["daily_archive"]}, f, ensure_ascii=False, indent=2)
+              json.dump({
+                  "items": archive_items,
+                  "summary": report["daily_archive"],
+                  "weapon_mapping": report["weapon_mapping"],
+                  "weapon_archive": report["weapon_daily_archive"],
+                  "exact_weapon_map": weapon_mapping,
+              }, f, ensure_ascii=False, indent=2)
+          with open("robase-chart-diagnostics/weapons_daily_archive.csv", "w", encoding="utf-8", newline="") as f:
+              weapon_fields = ["robase_slug", "item_id", "item_name", "date", "all_marketplaces_sold", "all_marketplaces_price_after_fee"]
+              writer = csv.DictWriter(f, fieldnames=weapon_fields)
+              writer.writeheader()
+              writer.writerows(weapon_archive_rows)
           print(json.dumps(report, ensure_ascii=False, indent=2))
           PY
       - name: Upload diagnostic report
