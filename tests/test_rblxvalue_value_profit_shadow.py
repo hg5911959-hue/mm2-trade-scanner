@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from test_support import IsolatedDataTestCase
 from pathlib import Path
 
 from tools.rblxvalue_value_profit_shadow import load_values_from_snapshot
@@ -49,7 +50,7 @@ def snapshot(rows):
     }
 
 
-class RblxValueValueProfitShadowTests(unittest.TestCase):
+class RblxValueValueProfitShadowTests(IsolatedDataTestCase):
     def write_snapshot(self, data):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
