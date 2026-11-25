@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 API_BASE = "https://api.rblxvalue.com/v2"
 PAGE_SIZE = 100
 MIN_REQUEST_INTERVAL_SECONDS = 2.1
-CSV_FIELDS = ("snapshot_date","fetched_at_utc","dataset_last_updated","item_last_updated","robase_slug","robase_name","bloxswaps_slug","item_type","item_rarity","is_chroma","identity_method","identity_source_url","rblxvalue_slug","rblxvalue_name","category","api_type","value","value_source_a","value_source_b","stability","demand","rarity","range","status")
+CSV_FIELDS = ("snapshot_date","fetched_at_utc","dataset_last_updated","item_last_updated","robase_slug","robase_name","bloxswaps_slug","item_type","item_rarity","is_chroma","rblxvalue_slug","rblxvalue_name","category","api_type","value","value_source_a","value_source_b","stability","demand","rarity","range","status")
 CATEGORY_MAP = {"godly":"godly","ancient":"ancient","vintage":"vintage","classic":"vintage","legendary":"legendary","rare":"rare","uncommon":"uncommon","common":"common","unique":"unique","chroma":"chroma"}
 
 # These are explicit identity aliases, not fuzzy guesses. Each entry was
