@@ -322,15 +322,15 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
                         allowed_jobs = set()
                     self.assertIn(job_name, allowed_jobs)
 
-    def test_dashboard_skips_deploy_when_pages_is_not_enabled(self):
+    def test_dashboard_attempts_pages_deployment_after_build(self):
         workflow = (ROOT / ".github/workflows/dashboard-pages.yml").read_text(encoding="utf-8")
-        self.assertIn("pages_enabled: ${{ steps.pages-preflight.outputs.enabled }}", workflow)
-        self.assertIn("id: pages-preflight", workflow)
         self.assertIn("pages: write", workflow)
-        self.assertIn("request POST", workflow)
-        self.assertIn('"build_type":"workflow"', workflow)
-        self.assertIn("if: needs.build.outputs.pages_enabled == 'true'", workflow)
-        self.assertIn("Repository administrator permission may be required", workflow)
+        self.assertIn("id-token: write", workflow)
+        self.assertIn("needs: build", workflow)
+        self.assertIn("uses: actions/deploy-pages@", workflow)
+        self.assertNotIn("pages-preflight", workflow)
+        self.assertNotIn("pages_enabled", workflow)
+        self.assertNotIn("if: needs.build.outputs.pages_enabled", workflow)
 
 
     def test_tools_that_import_the_tools_package_are_invoked_as_modules(self):
