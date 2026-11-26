@@ -187,9 +187,11 @@ class MarketHistoryTests(IsolatedDataTestCase):
         self.assertFalse(payload["robaseSummary"]["available"])
         self.assertEqual(payload["robaseItems"], [])
 
-    def test_missing_database_exports_empty_dashboard(self):
+    def test_missing_database_marks_listing_history_unavailable(self):
         payload = build_dashboard_data(Path(self.tmp.name) / "missing.sqlite3")
-        self.assertEqual(payload["summary"]["trackedListings"], 0)
+        self.assertFalse(payload["summary"]["historyAvailable"])
+        self.assertIsNone(payload["summary"]["trackedListings"])
+        self.assertIsNone(payload["summary"]["opportunities7d"])
         self.assertEqual(payload["opportunities"], [])
 
 

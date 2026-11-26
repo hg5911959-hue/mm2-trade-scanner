@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <meta name="description" content="MM2 Market Intelligence — chromas.gg 7-day completed-sale prices, ROBASE catalogue coverage, and public BloxSwaps listing context.">
+  <meta name="description" content="MM2 Market Intelligence — chromas.gg 7-day completed-sale prices, ROBASE catalogue coverage, and public BloxSwaps supply context.">
   <title>MM2 Market Intelligence</title>
   <style>
     :root{color-scheme:dark;--bg:#0a0d12;--panel:#111720;--panel2:#151e29;--line:#253242;--text:#edf3fa;--muted:#94a3b8;--accent:#75d6bd;--warn:#f2c879;--bad:#f18c8c}
@@ -85,7 +85,12 @@
   const safeUrl = (value) => { try { const u=new URL(value); return ["https:","http:"].includes(u.protocol) ? u.href : ""; } catch { return ""; } };
   const pill = (kind,label) => '<span class="pill '+kind+'">'+esc(label)+'</span>';
 
-  function renderOpportunities(rows) {
+  function renderOpportunities(rows, historyAvailable) {
+    if (!historyAvailable) {
+      $("opp-count").textContent = "Not persisted";
+      $("opportunity-table").innerHTML='<div class="empty">Listing and opportunity history is not persisted in this deployment.</div>';
+      return;
+    }
     $("opp-count").textContent = rows.length + " shown";
     if (!rows.length) { $("opportunity-table").innerHTML='<div class="empty">No qualified opportunities recorded yet.</div>'; return; }
     $("opportunity-table").innerHTML='<table><thead><tr><th>Trade</th><th>Give</th><th>Receive</th><th>Profit</th><th>Margin</th><th>Source</th></tr></thead><tbody>'+
@@ -98,7 +103,12 @@
       }).join('')+'</tbody></table>';
   }
 
-  function renderListings(rows) {
+  function renderListings(rows, historyAvailable) {
+    if (!historyAvailable) {
+      $("listing-count").textContent = "Not persisted";
+      $("recent-listings").innerHTML='<div class="empty">Public listing history is not persisted in this deployment.</div>';
+      return;
+    }
     $("listing-count").textContent=rows.length+" shown";
     if(!rows.length){$("recent-listings").innerHTML='<div class="empty">No public listings recorded yet.</div>';return;}
     $("recent-listings").innerHTML=rows.map(row=>{
@@ -153,14 +163,14 @@
     .then(response=>{if(!response.ok)throw new Error("Dashboard data is not published yet");return response.json();})
     .then(data=>{
       const s=data.summary||{};
-      $("listings").textContent=number(s.trackedListings);
-      $("opportunities").textContent=number(s.opportunities7d);
+      $("listings").textContent=s.historyAvailable ? number(s.trackedListings) : "Not retained";
+      $("opportunities").textContent=s.historyAvailable ? number(s.opportunities7d) : "Not retained";
       $("items").textContent=number(s.trackedItems);
       $("crosschecked").textContent=number((data.robaseSummary||{}).totalSold7d);
       $("status").textContent="Market data loaded";
       $("updated").textContent="Snapshot: "+date(s.latestSnapshot)+" · Exported: "+date(data.generatedAt);
-      renderOpportunities(data.opportunities||[]);
-      renderListings(data.recentListings||[]);
+      renderOpportunities(data.opportunities||[], s.historyAvailable === true);
+      renderListings(data.recentListings||[], s.historyAvailable === true);
       robaseRows = data.robaseItems || [];
       window.__robaseSummary = data.robaseSummary || {};
       setupRobaseFilters(robaseRows);

@@ -145,7 +145,7 @@ def build_dashboard_data(db_path: str | Path, robase_path: str | Path | None = N
     empty = {
         "generatedAt": generated,
         "summary": {
-            "trackedListings": 0, "opportunities7d": 0,
+            "historyAvailable": False, "trackedListings": None, "opportunities7d": None,
             "trackedItems": robase_summary["pricedItemCount"],
             "latestSnapshot": robase_summary["lastCheckedAt"],
         },
@@ -171,6 +171,7 @@ def build_dashboard_data(db_path: str | Path, robase_path: str | Path | None = N
 
         since = (datetime.now(UTC) - timedelta(days=7)).isoformat()
         summary = {
+            "historyAvailable": True,
             "trackedListings": db.execute(
                 "SELECT COUNT(*) FROM listings WHERE lower(source) != 'discord'"
             ).fetchone()[0],
