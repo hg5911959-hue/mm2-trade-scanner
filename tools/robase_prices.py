@@ -42,6 +42,7 @@ MARKETPLACE_NAMES = {
     "starpets": "starpets",
     "starpets.gg": "starpets",
     "chromas.gg": "chromas.gg",
+    "chroma.gg": "chromas.gg",
 }
 PERCENT_RE = re.compile(r"^([0-9]+(?:\.[0-9]+)?)%$")
 PRICE_RE = re.compile(r"^\$\s*([0-9]+(?:\.[0-9]+)?)$")
