@@ -151,12 +151,16 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
             "DRY_RUN: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow || inputs.rblxvalue_value_profit_shadow) && 'true' || 'false' }}",
             "DRY_RUN: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow) && 'true' || 'false' }}",
         )
-        core_job = core_job.replace(
-            "DRY_RUN: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow || inputs.rblxvalue_value_profit_shadow) && 'true' || 'false' }}",
-            "DRY_RUN: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow) && 'true' || 'false' }}",
-        )
         self.assertEqual(live_job.strip(), core_job.strip())
         self.assertNotIn("persist-state:", core)
+
+    def test_supreme_shadow_trigger_does_not_forward_telegram_or_other_secrets(self):
+        workflow = (ROOT / ".github/workflows/supreme-values-daily-profit-shadow.yml").read_text(encoding="utf-8")
+        self.assertIn("permissions:\\n  contents: read\\n  actions: read", workflow)
+        self.assertIn("rblx_value_profit_shadow: true", workflow)
+        self.assertNotIn("secrets:", workflow)
+        self.assertNotIn("TELEGRAM_", workflow)
+        self.assertNotIn("HEALTHCHECKS_PING_URL", workflow)
 
     def test_supreme_shadow_uses_conservative_value_and_market_quality_thresholds(self):
         core = (ROOT / ".github/workflows/scan-core.yml").read_text(encoding="utf-8")
