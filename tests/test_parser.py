@@ -2061,6 +2061,39 @@ class CacheTTLTests(IsolatedDataTestCase):
             self.assertEqual(len(loaded), 100)
             api.assert_not_called()
 
+    def test_cached_blended_value_is_replaced_by_raw_supreme_source_value(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "supreme.json"
+            values = {
+                f"item {i}": {
+                    "name": f"Item {i}", "value": 999, "value_min": 800, "value_max": 1200,
+                    "variants": [{
+                        "id": str(i), "slug": f"item-{i}", "name": f"Item {i}",
+                        "category": "godly", "type": "knife", "value": 999,
+                        "value_min": 800, "value_max": 1200, "raw_source_value": i + 1,
+                    }],
+                }
+                for i in range(100)
+            }
+            path.write_text(json.dumps({"schema_version": 4, "fetched_at": 990, "values": values}), encoding="utf-8")
+            with (
+                patch("scanner.VALUES_FILE", path),
+                patch("scanner.VALUES_TTL_SECONDS", 300),
+                patch("scanner.time.time", return_value=1000),
+                patch("scanner.RBLXVALUE_API_KEY", ""),
+            ):
+                loaded = scanner.load_supreme_values()
+            variant = loaded["item 0"]["variants"][0]
+            self.assertEqual(variant["value"], 1)
+            self.assertEqual(variant["value_min"], 1)
+            self.assertEqual(variant["value_max"], 1)
+            self.assertEqual(loaded["item 0"]["value"], 1)
+            self.assertEqual(loaded["item 0"]["value_min"], 1)
+            self.assertEqual(loaded["item 0"]["value_max"], 1)
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(saved["schema_version"], 5)
+            self.assertEqual(saved["value_source_policy"], "value_source_b_supreme_only_scalar_v1")
+
     def test_legacy_highest_only_supreme_cache_is_not_trusted(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "supreme.json"
