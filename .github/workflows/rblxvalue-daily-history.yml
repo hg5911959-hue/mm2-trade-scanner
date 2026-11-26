@@ -110,8 +110,9 @@ jobs:
           if history_path.exists():
               with history_path.open(encoding="utf-8", newline="") as handle:
                   reader = csv.DictReader(handle)
-                  if reader.fieldnames != fields: raise SystemExit("History CSV schema mismatch")
-                  existing = list(reader)
+                  if not set(fields).issubset(set(reader.fieldnames or [])): raise SystemExit("History CSV schema is missing required fields")
+                  # Project prior rows onto the new blended-only schema, dropping legacy third-party source columns.
+                  existing = [{field: row.get(field, "") for field in fields} for row in reader]
           day = latest["snapshot_date"]
           combined = [row for row in existing if row.get("snapshot_date") != day] + incoming
           combined.sort(key=lambda row: (row["snapshot_date"], row["robase_slug"]))
@@ -120,7 +121,7 @@ jobs:
               writer = csv.DictWriter(handle, fieldnames=fields); writer.writeheader(); writer.writerows(combined)
           temp.replace(history_path)
           latest_path.write_text(json.dumps(latest, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
-          manifest = {"schema_version":1,"source":latest["source"],"source_url":latest["source_url"],"dataset_last_updated":latest["dataset_last_updated"],"last_snapshot_date":day,"expected_weapons":latest["expected_weapons"],"history_rows":len(combined),"snapshot_counts":latest["counts"],"usage":"Research archive only; not connected to production valuation or Telegram filters"}
+          manifest = {"schema_version":1,"source":latest["source"],"source_url":latest["source_url"],"dataset_last_updated":latest["dataset_last_updated"],"last_snapshot_date":day,"expected_weapons":latest["expected_weapons"],"history_rows":len(combined),"snapshot_counts":latest["counts"],"usage":"RBLXValue blended estimate only; Data from rblxvalue.com; source-specific third-party values are not retained; shadow research only"}
           manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
           print(json.dumps(manifest, ensure_ascii=False, sort_keys=True))
           PY
