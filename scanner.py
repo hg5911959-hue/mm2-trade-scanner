@@ -2479,6 +2479,8 @@ def _enrich_catalog_metadata_gaps(values, cache_document, source_meta=None, pers
                 raise RuntimeError("[rblxvalue-detail] API key became blocked during detail enrichment.") from exc
         _save_rblxvalue_detail_state(state)
     if changed and isinstance(cache_document, dict):
+        cache_document["schema_version"] = 5
+        cache_document["value_source_policy"] = "value_source_b_supreme_only_scalar_v1"
         cache_document["values"] = values
         if persist_cache:
             atomic_write_text(
@@ -2621,22 +2623,6 @@ def _supreme_numeric_value(item):
     return value, "numeric"
 
 
-def _parse_numeric_value_range(raw_range, base_value):
-    if base_value is None:
-        return None, None
-    if raw_range is None or not str(raw_range).strip():
-        return base_value, base_value
-    text = str(raw_range).replace(",", "")
-    match = re.search(r"(\d+(?:\.\d+)?)\s*(?:-|–|to)\s*(\d+(?:\.\d+)?)", text, re.IGNORECASE)
-    if not match:
-        return base_value, base_value
-    try:
-        low, high = float(match.group(1)), float(match.group(2))
-    except (TypeError, ValueError):
-        return base_value, base_value
-    if not all(math.isfinite(v) and v > 0 for v in (low, high)) or low > high:
-        return base_value, base_value
-    return low, high
 
 
 def api_get_json(path, params=None):
