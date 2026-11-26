@@ -34,7 +34,7 @@ class CashListingFreshnessTests(IsolatedDataTestCase):
         base = {
             "manual_review": False,
             "cash_estimate_only": False,
-            "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "cash_price_basis": "chromas.gg Price (7d)",
             "cash_profit_worst": 5.0,
             "margin": 10.0,
             "give_total_max": 50.0,
