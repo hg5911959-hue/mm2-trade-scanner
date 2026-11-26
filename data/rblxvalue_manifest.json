@@ -11,8 +11,18 @@
   "source_attribution": "Supreme Values (supremevalues.com)",
   "dataset_last_updated": "2026-11-26 12:02:34",
   "last_snapshot_date": "2026-11-26",
+  "last_fetched_at_utc": "2026-11-26T18:55:16.877625+00:00",
+  "scheduled_runs_per_day": 2,
+  "scheduled_utc_times": [
+    "04:30",
+    "16:30"
+  ],
+  "scheduled_algeria_times": [
+    "05:30",
+    "17:30"
+  ],
   "expected_weapons": 214,
-  "history_rows": 428,
+  "history_rows": 642,
   "snapshot_counts": {
     "weapons": 214,
     "exactly_mapped": 214,
