@@ -3354,6 +3354,8 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
         quality_labels = []
         if entry.get("demand") is not None:
             quality_labels.append(f"Demand: {entry['demand']}/10")
+        if entry.get("rarity") is not None:
+            quality_labels.append(f"Rarity: {entry['rarity']}/10")
         breakdown.append(
             f"• {display_name} {quantity_label} — {value_label} each = {total_label}"
             f" | Stability (RBLXValue): {entry['stability']}"
@@ -3446,7 +3448,9 @@ def _format_telegram_item_line(line):
     details = []
     for detail in core_parts[1:]:
         label = detail.strip().replace("Stability (RBLXValue):", "Stability:")
-        label = label.replace("Demand:", "Demand").replace("Rarity:", "Rarity")
+        if label.startswith("Rarity:"):
+            continue
+        label = label.replace("Demand:", "Demand")
         if label:
             details.append(label)
     if details:
