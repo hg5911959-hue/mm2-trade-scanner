@@ -95,7 +95,7 @@ class RobaseDailyHistoryTests(IsolatedDataTestCase):
             record_daily_snapshot(duplicate, self.path, now=self.now)
         invalid_price = make_snapshot()
         invalid_price["items"][2]["cash_price_usd"] = float("nan")
-        with self.assertRaisesRegex(ValueError, "Price (7d) is invalid"):
+        with self.assertRaisesRegex(ValueError, "chromas.gg Price"):
             record_daily_snapshot(invalid_price, self.path, now=self.now)
         too_small = make_snapshot(count=10)
         with self.assertRaisesRegex(ValueError, "complete item catalogue"):
