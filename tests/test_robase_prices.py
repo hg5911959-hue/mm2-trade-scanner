@@ -177,7 +177,8 @@ class RobasePriceParserTests(IsolatedDataTestCase):
         self.assertEqual(item["robase_category"], "Rare")
         self.assertEqual(item["og_image_slug"], "cane-k-2018")
         self.assertEqual(item["bloxswaps_slug"], "cane-k-2018")
-        self.assertEqual(item["price_window_days"], 30)
+        self.assertIsNone(item["price_window_days"])
+        self.assertEqual(item["all_marketplaces_price_window_days"], 30)
         self.assertEqual(item["sold_7d"], 0)
         self.assertEqual(item["sold_30d"], 15)
 
