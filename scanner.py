@@ -4850,7 +4850,7 @@ def evaluate_cash_listing_robase_only(listing, cash_catalog):
             "profit_worst": worst, "profit_best": best, "margin": margin, "manual_review": False,
             "uncertain_items": [], "cash_sell_haircut_pct": 0.0, "cash_sell_haircut_mode": "none",
             "cash_profit_worst": worst, "cash_profit_best": best,
-            "cash_price_basis": "verified ROBASE displayed seller-proceeds price", "cash_estimate_only": False,
+            "cash_price_basis": "chromas.gg Price (7d)", "cash_estimate_only": False,
             "receive_demand_score": None, "receive_stability_score": None}, []
 
 
@@ -5038,7 +5038,7 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
         "cash_sell_haircut_mode": "none",
         "cash_profit_worst": profit_worst,
         "cash_profit_best": profit_best,
-        "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+        "cash_price_basis": "chromas.gg Price (7d)",
         "cash_estimate_only": False,
         "receive_demand_score": None,
         "receive_stability_score": None,
@@ -5055,7 +5055,7 @@ def qualifies_cash(result):
     if (
         result.get("manual_review") is not False
         or result.get("cash_estimate_only") is not False
-        or result.get("cash_price_basis") != "verified ROBASE displayed seller-proceeds price"
+        or result.get("cash_price_basis") != "chromas.gg Price (7d)"
     ):
         return False
     if "cash_profit_worst" not in result or "margin" not in result or "give_total_max" not in result:
