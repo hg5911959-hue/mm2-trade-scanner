@@ -21,7 +21,7 @@ def _robase_dashboard_payload(catalogue_path: str | Path) -> tuple[dict[str, Any
     """Export only Chroma completed-sales Price (7d) and Sold (7d)."""
     empty = {
         "available": False, "itemCount": 0, "pricedItemCount": 0,
-        "totalSold7d": 0, "missingPriceCount": 0,
+        "totalSold7d": 0, "missingPriceCount": 0, "missingChromaDataCount": 0,
         "missingSupplyCount": 0, "lastCheckedAt": None,
         "latestPriceUpdateAt": None, "priceBasis": "chromas_gg_7d_price",
     }
@@ -112,10 +112,15 @@ def _robase_dashboard_payload(catalogue_path: str | Path) -> tuple[dict[str, Any
             "name": str(row["name"]),
             "category": str(row.get("robase_category") or ""),
             "priceUsd": price_value,
-            "sold7d": sales,
+            "sold7d": sales if chroma is not None else None,
+            "salesAvailable": chroma is not None,
             "copies": optional_count(row.get("bloxswaps_copies")),
             "holders": optional_count(row.get("bloxswaps_holders")),
-            "priceBasis": "chromas.gg Price (7d)" if price_value is not None else "No Chroma sales · 7d",
+            "priceBasis": (
+                "chromas.gg Price (7d)" if price_value is not None
+                else "No Chroma sales · 7d" if chroma is not None
+                else "Chroma 7d data unavailable"
+            ),
             "lastCheckedAt": checked or None,
             "priceUpdatedAt": updated or None,
             "url": str(row.get("source") or ""),
@@ -123,8 +128,9 @@ def _robase_dashboard_payload(catalogue_path: str | Path) -> tuple[dict[str, Any
     priced = sum(item["priceUsd"] is not None for item in clean)
     summary = {
         "available": True, "itemCount": len(clean), "pricedItemCount": priced,
-        "totalSold7d": sum(item["sold7d"] for item in clean),
+        "totalSold7d": sum(item["sold7d"] or 0 for item in clean),
         "missingPriceCount": len(clean) - priced,
+        "missingChromaDataCount": sum(not item["salesAvailable"] for item in clean),
         "missingSupplyCount": sum(item["copies"] is None or item["holders"] is None for item in clean),
         "lastCheckedAt": max(checked_times) if checked_times else None,
         "latestPriceUpdateAt": max(updated_times) if updated_times else None,
