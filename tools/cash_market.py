@@ -218,7 +218,7 @@ def calculate_cash_side(
         if entry.get("tier") == "robase" and entry.get("status") != "verified":
             sample_count = entry.get("price_sample_count")
             if sample_count is None or sample_count == 0:
-                missing.append(f"{name} (cash price unavailable: no eligible sales on chromas.gg or StarPets)")
+                missing.append(f"{name} (cash price unavailable: no eligible chromas.gg sales in the last 7 days)")
                 continue
         if entry.get("tier") == "robase":
             sample_count = entry.get("price_sample_count")
@@ -353,8 +353,8 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RuntimeError("[cash] ROBASE price snapshot is missing or invalid.") from exc
 
-    if snapshot.get("schema_version") != 5 or snapshot.get("price_basis") != "selected_marketplace_seller_proceeds_after_fees":
-        raise RuntimeError("[cash] ROBASE snapshot is not the selected-marketplace price schema.")
+    if snapshot.get("schema_version") != 6 or snapshot.get("price_basis") != "chromas_gg_7d_price":
+        raise RuntimeError("[cash] ROBASE snapshot is not the chromas.gg 7-day price schema.")
     expected = snapshot.get("catalog_expected_count")
     rows = snapshot.get("items")
     if (
@@ -401,61 +401,59 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
         marketplace_prices = row.get("marketplace_prices")
         if not isinstance(marketplace_prices, dict):
             raise TypeError(f"[cash] ROBASE marketplace breakdown is missing: {name or slug}")
-        for market_code, market_row in marketplace_prices.items():
-            if market_code not in {"chromas.gg", "starpets"} or not isinstance(market_row, dict):
-                raise RuntimeError(f"[cash] Invalid ROBASE marketplace identity: {name or slug}")
-            try:
-                market_price = float(market_row.get("price_usd"))
-                market_sales = market_row.get("sold_7d")
-                market_fee = float(market_row.get("fee_percent"))
-            except (TypeError, ValueError, OverflowError):
-                raise RuntimeError(f"[cash] Invalid marketplace price data: {name or slug}")
-            if (
-                not math.isfinite(market_price) or market_price <= 0
-                or type(market_sales) is not int or market_sales < 0
-                or not math.isfinite(market_fee) or not 0 <= market_fee < 100
-            ):
-                raise RuntimeError(f"[cash] Invalid marketplace price data: {name or slug}")
+        if set(marketplace_prices) - {"chromas.gg"}:
+            raise RuntimeError(f"[cash] Non-Chroma marketplace data is forbidden: {name or slug}")
+        chromas_row = marketplace_prices.get("chromas.gg")
+        if chromas_row is not None:
+            if not isinstance(chromas_row, dict) or chromas_row.get("marketplace") != "chromas.gg":
+                raise RuntimeError(f"[cash] Invalid chromas.gg marketplace identity: {name or slug}")
+            market_sales = chromas_row.get("sold_7d")
+            if type(market_sales) is not int or market_sales < 0:
+                raise RuntimeError(f"[cash] Invalid chromas.gg Sold (7d) data: {name or slug}")
+            raw_market_price = chromas_row.get("price_usd")
+            raw_market_display = str(chromas_row.get("price_display") or "").strip()
+            if market_sales == 0:
+                if raw_market_price is not None or raw_market_display:
+                    raise RuntimeError(f"[cash] A zero-sale chromas.gg row cannot carry a usable 7d price: {name or slug}")
+            else:
+                try:
+                    market_price = float(raw_market_price)
+                    display_market_price = float(raw_market_display.removeprefix("$").replace(",", ""))
+                except (TypeError, ValueError, OverflowError):
+                    raise RuntimeError(f"[cash] Invalid chromas.gg 7d price data: {name or slug}")
+                if (
+                    not math.isfinite(market_price) or market_price <= 0
+                    or not math.isfinite(display_market_price) or abs(display_market_price - market_price) > 0.0000001
+                    or not raw_market_display.startswith("$")
+                ):
+                    raise RuntimeError(f"[cash] Invalid chromas.gg 7d price data: {name or slug}")
         selected_marketplace = row.get("selected_marketplace")
         selected_sales = row.get("selected_marketplace_sold_7d", 0)
         if selected_marketplace is None:
             if row.get("cash_price_usd") is not None or display:
-                raise RuntimeError(f"[cash] Missing selected marketplace has a fallback price: {name or slug}")
-            if any(market.get("sold_7d", 0) > 0 for market in marketplace_prices.values()):
-                raise RuntimeError(f"[cash] A market with sales was not selected: {name or slug}")
+                raise RuntimeError(f"[cash] Missing chromas.gg price has a fallback value: {name or slug}")
+            if chromas_row is not None and chromas_row.get("sold_7d", 0) > 0:
+                raise RuntimeError(f"[cash] chromas.gg sales exist but its price was not selected: {name or slug}")
             price = None
             display_price = None
         else:
-            if selected_marketplace not in {"chromas.gg", "starpets"} or selected_marketplace not in marketplace_prices:
-                raise RuntimeError(f"[cash] Selected ROBASE marketplace is invalid: {name or slug}")
-            selected_row = marketplace_prices[selected_marketplace]
+            if selected_marketplace != "chromas.gg" or chromas_row is None:
+                raise RuntimeError(f"[cash] Only chromas.gg may supply a live cash price: {name or slug}")
+            selected_row = chromas_row
             try:
                 price = float(row.get("cash_price_usd"))
                 display_price = float(display.removeprefix("$").replace(",", ""))
             except (TypeError, ValueError, OverflowError):
-                raise RuntimeError(f"[cash] Invalid selected marketplace price: {name or slug}")
+                raise RuntimeError(f"[cash] Invalid chromas.gg selected price: {name or slug}")
             if (
-                not math.isfinite(price) or price <= 0
+                selected_sales <= 0
+                or not math.isfinite(price) or price <= 0
                 or not math.isfinite(display_price) or abs(display_price - price) > 0.0000001
                 or not display.startswith("$")
                 or abs(price - float(selected_row["price_usd"])) > 0.0000001
                 or selected_sales != selected_row["sold_7d"]
             ):
-                raise RuntimeError(f"[cash] Selected ROBASE price does not match its marketplace row: {name or slug}")
-            eligible = [
-                (code, market) for code, market in marketplace_prices.items()
-                if market["sold_7d"] >= 3
-            ]
-            candidates = eligible or [
-                (code, market) for code, market in marketplace_prices.items()
-                if market["sold_7d"] > 0
-            ]
-            expected_selection = (
-                min(candidates, key=lambda pair: (float(pair[1]["price_usd"]), -pair[1]["sold_7d"], pair[0]))[0]
-                if candidates else None
-            )
-            if selected_marketplace != expected_selection:
-                raise RuntimeError(f"[cash] ROBASE did not select the cheapest sufficiently sampled market: {name or slug}")
+                raise RuntimeError(f"[cash] Selected price does not match chromas.gg Price (7d): {name or slug}")
         if (
             not name or len(name) > 100 or not key
             or not row.get("robase_category")
@@ -502,9 +500,8 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
             "price_sample_count": price_sample_count,
             "selected_marketplace": selected_marketplace,
             "marketplace_prices": marketplace_prices,
-            "selected_marketplace_fee_percent": row.get("selected_marketplace_fee_percent"),
             "source": source,
-            "notes": "ROBASE seller proceeds after fees on " + str(selected_marketplace or "no eligible marketplace"),
+            "notes": "ROBASE chromas.gg Price (7d)" if selected_marketplace else "No chromas.gg sales in the last 7 days",
         }
         items_by_slug[slug] = entry
         name_groups.setdefault(key, []).append(entry)
@@ -522,7 +519,6 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
             row["status"],
             row.get("selected_marketplace"),
             row.get("price_sample_count"),
-            row.get("selected_marketplace_fee_percent"),
         )
         for slug, row in sorted(items_by_slug.items())
     ]

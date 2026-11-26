@@ -313,17 +313,14 @@ class CashMarketTests(IsolatedDataTestCase):
                 "all_marketplaces_price_display": "$2.60",
                 "marketplace_prices": {
                     "chromas.gg": {
-                        "marketplace": "chromas.gg", "price_usd": 2.5,
-                        "price_display": "$2.50", "sold_7d": sold_7d, "fee_percent": 5.0,
-                    },
-                    "starpets": {
-                        "marketplace": "StarPets", "price_usd": 2.7,
-                        "price_display": "$2.70", "sold_7d": sold_7d, "fee_percent": 32.0,
+                        "marketplace": "chromas.gg",
+                        "price_usd": 2.5 if sold_7d > 0 else None,
+                        "price_display": "$2.50" if sold_7d > 0 else "",
+                        "sold_7d": sold_7d,
                     },
                 },
                 "selected_marketplace": selected,
                 "selected_marketplace_sold_7d": sold_7d,
-                "selected_marketplace_fee_percent": 5.0 if selected else None,
                 "sold_7d": sold_7d,
                 "sold_30d": 1 if i == 0 else 20,
                 "price_window_days": 7 if selected else None,
@@ -336,10 +333,10 @@ class CashMarketTests(IsolatedDataTestCase):
                 "bloxswaps_holders": 500,
             })
         return {
-            "schema_version": 5,
+            "schema_version": 6,
             "source": "https://robase.gg/",
             "fetched_at_utc": checked,
-            "price_basis": "selected_marketplace_seller_proceeds_after_fees",
+            "price_basis": "chromas_gg_7d_price",
             "catalog_expected_count": 222,
             "catalog_complete": True,
             "items": rows,
@@ -393,6 +390,24 @@ class CashMarketTests(IsolatedDataTestCase):
         )
         self.assertEqual(normal[0], 2.5)
         self.assertEqual(normal[3], [])
+
+    def test_robase_catalog_rejects_non_chromas_market_data_instead_of_falling_back(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "robase.json"
+            now = datetime(2026, 11, 21, tzinfo=UTC)
+            snapshot = self._robase_snapshot(now)
+            snapshot["items"][0]["marketplace_prices"]["chromas.gg"]["sold_7d"] = 0
+            snapshot["items"][0]["selected_marketplace"] = None
+            snapshot["items"][0]["selected_marketplace_sold_7d"] = 0
+            snapshot["items"][0]["cash_price_usd"] = None
+            snapshot["items"][0]["price_display"] = ""
+            snapshot["items"][0]["marketplace_prices"]["starpets"] = {
+                "marketplace": "StarPets", "price_usd": 1.0,
+                "price_display": "$1.00", "sold_7d": 99,
+            }
+            path.write_text(json.dumps(snapshot), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "Non-Chroma marketplace data is forbidden"):
+                load_robase_price_catalog(path, now=now)
 
     def test_robase_catalog_rejects_any_stale_item_page(self):
         tmp = tempfile.TemporaryDirectory()
@@ -474,8 +489,8 @@ class CashMarketTests(IsolatedDataTestCase):
         path = Path(tmp.name) / "robase.json"
         now = datetime(2026, 11, 21, tzinfo=UTC)
         snapshot = self._robase_snapshot(now)
-        snapshot["items"][0].update({"name": "Latte", "robase_slug": "latte-gun", "source": "https://robase.gg/item/latte-gun", "cash_price_usd": 3.03, "price_display": "$3.03", "selected_marketplace": "chromas.gg", "selected_marketplace_sold_7d": 5, "selected_marketplace_fee_percent": 5.0, "price_window_days": 7, "sold_7d": 5, "sold_30d": 5, "marketplace_prices": {"chromas.gg": {"marketplace": "chromas.gg", "price_usd": 3.03, "price_display": "$3.03", "sold_7d": 5, "fee_percent": 5.0}, "starpets": {"marketplace": "StarPets", "price_usd": 3.10, "price_display": "$3.10", "sold_7d": 5, "fee_percent": 32.0}}})
-        snapshot["items"][1].update({"name": "Latte", "robase_slug": "latte-knife", "source": "https://robase.gg/item/latte-knife", "cash_price_usd": 3.30, "price_display": "$3.30", "selected_marketplace": "chromas.gg", "selected_marketplace_sold_7d": 5, "selected_marketplace_fee_percent": 5.0, "price_window_days": 7, "sold_7d": 5, "sold_30d": 5, "marketplace_prices": {"chromas.gg": {"marketplace": "chromas.gg", "price_usd": 3.30, "price_display": "$3.30", "sold_7d": 5, "fee_percent": 5.0}, "starpets": {"marketplace": "StarPets", "price_usd": 3.40, "price_display": "$3.40", "sold_7d": 5, "fee_percent": 32.0}}})
+        snapshot["items"][0].update({"name": "Latte", "robase_slug": "latte-gun", "source": "https://robase.gg/item/latte-gun", "cash_price_usd": 3.03, "price_display": "$3.03", "selected_marketplace": "chromas.gg", "selected_marketplace_sold_7d": 5, "price_window_days": 7, "sold_7d": 5, "sold_30d": 5, "marketplace_prices": {"chromas.gg": {"marketplace": "chromas.gg", "price_usd": 3.03, "price_display": "$3.03", "sold_7d": 5}}})
+        snapshot["items"][1].update({"name": "Latte", "robase_slug": "latte-knife", "source": "https://robase.gg/item/latte-knife", "cash_price_usd": 3.30, "price_display": "$3.30", "selected_marketplace": "chromas.gg", "selected_marketplace_sold_7d": 5, "price_window_days": 7, "sold_7d": 5, "sold_30d": 5, "marketplace_prices": {"chromas.gg": {"marketplace": "chromas.gg", "price_usd": 3.30, "price_display": "$3.30", "sold_7d": 5}}})
         path.write_text(json.dumps(snapshot), encoding="utf-8")
         catalog = load_robase_price_catalog(path, now=now)
         result = calculate_cash_side(

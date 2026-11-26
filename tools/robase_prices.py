@@ -39,8 +39,6 @@ CATEGORIES = {
     "Uncommon", "Common", "Unique", "Classic",
 }
 MARKETPLACE_NAMES = {
-    "starpets": "starpets",
-    "starpets.gg": "starpets",
     "chromas.gg": "chromas.gg",
     "chroma.gg": "chromas.gg",
 }
@@ -261,43 +259,47 @@ def _parse_item_detail(url: str, document: str, fetched_at_utc: str, etag="", la
     price = float(price_match.group("price").replace(",", "")) if price_match else None
     if not name or not category or (price is not None and price <= 0):
         raise ValueError(f"invalid ROBASE item detail: {url}")
-    marketplace_prices = {}
+    # Cash valuation is intentionally sourced from one market only:
+    # the chromas.gg row's Price (7d). Never fall back to StarPets or blended prices.
+    chromas_market = None
     for cells in table_parser.rows:
         if len(cells) < 4 or not str(cells[0]).strip().isdigit():
             continue
         marketplace_key = MARKETPLACE_NAMES.get(str(cells[1]).strip().casefold())
-        if not marketplace_key:
+        if marketplace_key != "chromas.gg":
             continue
         market_price_match = PRICE_RE.fullmatch(str(cells[2]).strip())
         sold_text = str(cells[3]).strip().replace(",", "")
-        if not market_price_match or not sold_text.isdigit():
-            continue
-        market_price = float(market_price_match.group(1))
+        if not sold_text.isdigit():
+            raise ValueError(f"invalid ROBASE chromas.gg Sold (7d) value for {name}")
         market_sold_7d = int(sold_text)
-        fee_match = PERCENT_RE.fullmatch(str(cells[7]).strip()) if len(cells) > 7 else None
-        if market_price <= 0 or market_sold_7d < 0 or fee_match is None:
-            raise ValueError(f"invalid ROBASE marketplace price row for {name}: {marketplace_key}")
-        if marketplace_key in marketplace_prices:
-            raise ValueError(f"duplicate ROBASE marketplace row for {name}: {marketplace_key}")
-        marketplace_prices[marketplace_key] = {
-            "marketplace": "StarPets" if marketplace_key == "starpets" else "chromas.gg",
+        if chromas_market is not None:
+            raise ValueError(f"duplicate ROBASE chromas.gg marketplace row for {name}")
+        if market_sold_7d == 0:
+            # ROBASE displays an em dash for Price (7d) when there were no
+            # completed Chroma sales in the window. Preserve the zero sample,
+            # but never turn an old 30d value or another marketplace into a price.
+            chromas_market = {
+                "marketplace": "chromas.gg",
+                "price_usd": None,
+                "price_display": "",
+                "sold_7d": 0,
+            }
+            continue
+        if not market_price_match:
+            raise ValueError(f"ROBASE chromas.gg Price (7d) is missing despite sales for {name}")
+        market_price = float(market_price_match.group(1))
+        if market_price <= 0:
+            raise ValueError(f"invalid ROBASE chromas.gg 7d market price for {name}")
+        chromas_market = {
+            "marketplace": "chromas.gg",
             "price_usd": market_price,
             "price_display": "$" + market_price_match.group(1),
             "sold_7d": market_sold_7d,
-            "fee_percent": float(fee_match.group(1)),
         }
-    priced_markets = [
-        (key, row) for key, row in marketplace_prices.items()
-        if row["sold_7d"] > 0
-    ]
-    reliable_markets = [
-        (key, row) for key, row in priced_markets if row["sold_7d"] >= 3
-    ]
-    selection_pool = reliable_markets or priced_markets
-    selected_marketplace, selected_market = (
-        min(selection_pool, key=lambda pair: (pair[1]["price_usd"], -pair[1]["sold_7d"], pair[0]))
-        if selection_pool else (None, None)
-    )
+    marketplace_prices = {"chromas.gg": chromas_market} if chromas_market else {}
+    selected_marketplace = "chromas.gg" if chromas_market and chromas_market["sold_7d"] > 0 else None
+    selected_market = chromas_market if selected_marketplace else None
     sold_7d_stat = DETAIL_SOLD_7D_STAT_RE.search(text)
     sold_30d_stat = DETAIL_SOLD_30D_STAT_RE.search(text)
     sold_7d_match = DETAIL_SOLD_7D_RE.search(text)
@@ -328,8 +330,7 @@ def _parse_item_detail(url: str, document: str, fetched_at_utc: str, etag="", la
         "og_image_url": og_image_url,
         "og_image_slug": image_slug,
         "bloxswaps_slug": image_slug or ROBASE_BLOXSWAPS_SLUG_OVERRIDES.get(slug.casefold(), ""),
-        # The live cash price is exclusively the cheaper usable market among
-        # chromas.gg and StarPets. The combined ROBASE price is metadata only.
+        # The live cash price is exclusively chromas.gg Price (7d).
         "cash_price_usd": selected_market["price_usd"] if selected_market else None,
         "price_display": selected_market["price_display"] if selected_market else "",
         "all_marketplaces_price_usd": price,
@@ -337,7 +338,6 @@ def _parse_item_detail(url: str, document: str, fetched_at_utc: str, etag="", la
         "marketplace_prices": marketplace_prices,
         "selected_marketplace": selected_marketplace,
         "selected_marketplace_sold_7d": selected_market["sold_7d"] if selected_market else 0,
-        "selected_marketplace_fee_percent": selected_market["fee_percent"] if selected_market else None,
         "price_window_days": 7 if selected_market else None,
         "all_marketplaces_price_window_days": price_window_days,
         "sold_7d": sold_7d,
@@ -347,7 +347,7 @@ def _parse_item_detail(url: str, document: str, fetched_at_utc: str, etag="", la
         "bloxswaps_holders": int(supply_match.group(2).replace(",", "")) if supply_match else None,
         "status": "verified",
         "source": url,
-        "price_basis": "selected_marketplace_seller_proceeds_after_fees",
+        "price_basis": "chromas_gg_7d_price",
         "last_checked_at_utc": fetched_at_utc,
         "price_updated_at_utc": fetched_at_utc,
         "etag": etag or "",
@@ -421,8 +421,8 @@ def _load_previous_snapshot(path: Path):
         return {}
     if (
         not isinstance(data, dict)
-        or data.get("schema_version") != 5
-        or data.get("price_basis") != "selected_marketplace_seller_proceeds_after_fees"
+        or data.get("schema_version") != 6
+        or data.get("price_basis") != "chromas_gg_7d_price"
         or data.get("catalog_complete") is not True
         or not isinstance(data.get("items"), list)
     ):
@@ -510,10 +510,10 @@ def fetch_snapshot(output: Path = DEFAULT_OUTPUT, timeout: int = REQUEST_TIMEOUT
         )
     )
     snapshot = {
-        "schema_version": 5,
+        "schema_version": 6,
         "source": URL,
         "fetched_at_utc": now,
-        "price_basis": "selected_marketplace_seller_proceeds_after_fees",
+        "price_basis": "chromas_gg_7d_price",
         "catalog_expected_count": expected_count,
         "catalog_complete": complete,
         "item_pages_updated": updated,

@@ -66,6 +66,53 @@ class RobasePriceParserTests(IsolatedDataTestCase):
             {"https://robase.gg/item/harvester", "https://robase.gg/item/chroma-emberscythe"},
         )
 
+    def test_item_detail_uses_chromas_gg_price_7d_only_even_when_starpets_is_cheaper(self):
+        html = """
+        <main>
+          <table>
+            <thead><tr><th>#</th><th>Marketplace</th><th>Price (7d)</th><th>Sold (7d)</th>
+            <th>Volume (7d)</th><th>Volume (30d)</th><th>Share</th><th>Fee</th><th>Earned (30d)</th><th>Last sale</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td><i></i>StarPets</td><td>$1.90</td><td>761</td><td>$4,053.65</td><td>$18,404.80</td><td>91.0%</td><td>32%</td><td>$5,889.54</td><td>yesterday</td></tr>
+              <tr><td>2</td><td><i></i>chromas.gg</td><td>$2.80</td><td>86</td><td>$253.42</td><td>$1,449.32</td><td>7.2%</td><td>5%</td><td>$72.47</td><td>yesterday</td></tr>
+            </tbody>
+          </table>
+          <h2>About Sweet</h2>
+          <p>Sweet is a Godly item in Roblox Murder Mystery 2 (MM2).</p>
+        </main>
+        """
+        item = _parse_item_detail(
+            "https://robase.gg/item/sweet", html, "2026-11-26T12:00:00Z"
+        )
+        self.assertEqual(item["cash_price_usd"], 2.80)
+        self.assertEqual(item["price_display"], "$2.80")
+        self.assertEqual(item["selected_marketplace"], "chromas.gg")
+        self.assertEqual(item["selected_marketplace_sold_7d"], 86)
+        self.assertEqual(set(item["marketplace_prices"]), {"chromas.gg"})
+        self.assertEqual(item["price_basis"], "chromas_gg_7d_price")
+
+    def test_item_detail_does_not_fall_back_to_starpets_when_chromas_has_no_7d_sales(self):
+        html = """
+        <main>
+          <table>
+            <tr><td>1</td><td>StarPets</td><td>$1.90</td><td>761</td><td>$4,053.65</td><td>$18,404.80</td><td>91.0%</td><td>32%</td><td>$5,889.54</td><td>yesterday</td></tr>
+            <tr><td>2</td><td>chromas.gg</td><td>$2.80</td><td>0</td><td>$0</td><td>$0</td><td>0%</td><td>5%</td><td>$0</td><td>—</td></tr>
+          </table>
+          <h2>About Sweet</h2>
+          <p>Sweet is a Godly item in Roblox Murder Mystery 2 (MM2). It has not sold in the last 7 days; over the last 30 days it sold for $451.25 on average after the marketplace fee.</p>
+        </main>
+        """
+        item = _parse_item_detail(
+            "https://robase.gg/item/sweet", html, "2026-11-26T12:00:00Z"
+        )
+        self.assertIsNone(item["cash_price_usd"])
+        self.assertEqual(item["all_marketplaces_price_usd"], 451.25)
+        self.assertEqual(item["price_display"], "")
+        self.assertIsNone(item["selected_marketplace"])
+        self.assertEqual(item["marketplace_prices"]["chromas.gg"]["sold_7d"], 0)
+        self.assertIsNone(item["marketplace_prices"]["chromas.gg"]["price_usd"])
+        self.assertEqual(item["marketplace_prices"]["chromas.gg"]["price_display"], "")
+
     def test_item_detail_accepts_rendered_about_heading_and_description(self):
         html = """
         <main>
