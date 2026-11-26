@@ -127,8 +127,10 @@ jobs:
         env:
           BLOXSWAPS_URL: "https://bloxswaps.com/trade-mm2?trade-type=P2P"
           BLOXSWAPS_API_ONLY: "true"
-          MIN_VALUE_DIFFERENCE: "0"
-          MIN_PROFIT_PERCENT: "5"
+          MIN_VALUE_DIFFERENCE: ${{ inputs.rblxvalue_value_profit_shadow && '2' || '0' }}
+          MIN_PROFIT_PERCENT: ${{ inputs.rblxvalue_value_profit_shadow && '8' || '5' }}
+          MIN_RECEIVE_DEMAND_SCORE: ${{ inputs.rblxvalue_value_profit_shadow && '5.0' || '4.0' }}
+          MIN_RECEIVE_STABILITY_SCORE: ${{ inputs.rblxvalue_value_profit_shadow && '5.5' || '3.0' }}
           FAILURE_ALERT_THRESHOLD: "3"
           MAX_ALERTS_PER_RUN: "0"
           MAX_ALERTS_PER_SCAN: "0" # 0 = send every qualified offer individually; throttle via ALERT_DELAY_SECONDS
