@@ -209,7 +209,7 @@ class CashTelegramAttributionTests(IsolatedDataTestCase):
         payload = self._deliver_and_read_payload(message)
         self.assertEqual(payload["parse_mode"], "HTML")
         self.assertIn("CASH PROFIT", payload["text"])
-        self.assertIn("Prices: robase.gg", payload["text"])
+        self.assertIn("Prices: chromas.gg Price (7d) via ROBASE", payload["text"])
         self.assertNotIn("Data from rblxvalue.com", payload["text"])
 
     def test_cash_digest_credits_robase_prices_only(self):
@@ -226,7 +226,7 @@ class CashTelegramAttributionTests(IsolatedDataTestCase):
         }])
         payload = self._deliver_and_read_payload(message)
         self.assertIn("<b>OPPORTUNITIES</b>", payload["text"])
-        self.assertIn("Prices: robase.gg", payload["text"])
+        self.assertIn("Prices: chromas.gg Price (7d) via ROBASE", payload["text"])
         self.assertNotIn("Data from rblxvalue.com", payload["text"])
 
 
