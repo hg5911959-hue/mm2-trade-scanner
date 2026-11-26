@@ -1,8 +1,7 @@
 """Archive one trustworthy ROBASE rolling-sales snapshot per UTC day.
 
-This history is observational: each point is ROBASE's current 7-day weighted
-completed-sales average (or its documented 30-day fallback), not the average
-of sales that occurred only on the captured calendar day.
+This history is observational: each point is the current chromas.gg Price (7d)
+value only. No 30-day price or other-market fallback is archived.
 """
 from __future__ import annotations
 
@@ -18,8 +17,8 @@ from typing import Any
 DEFAULT_SNAPSHOT = Path("data/robase_prices.json")
 DEFAULT_HISTORY = Path("data/robase_price_history.json")
 SOURCE = "https://robase.gg/"
-PRICE_BASIS = "seller_proceeds_after_marketplace_fees"
-HISTORY_SCHEMA_VERSION = 1
+PRICE_BASIS = "chromas_gg_7d_price"
+HISTORY_SCHEMA_VERSION = 2
 DEFAULT_RETENTION_DAYS = 400
 
 
@@ -44,12 +43,12 @@ def _nonnegative_int(value: Any, field: str) -> int:
 def _build_daily_entry(snapshot: dict[str, Any], now: datetime) -> dict[str, Any]:
     if not isinstance(snapshot, dict):
         raise ValueError("ROBASE snapshot root must be an object")
-    if snapshot.get("schema_version") != 4:
+    if snapshot.get("schema_version") != 6:
         raise ValueError("unsupported ROBASE snapshot schema")
     if snapshot.get("catalog_complete") is not True:
         raise ValueError("ROBASE snapshot catalogue is incomplete")
     if snapshot.get("price_basis") != PRICE_BASIS:
-        raise ValueError("ROBASE snapshot price basis is not seller proceeds after fees")
+        raise ValueError("ROBASE snapshot price basis is not chromas.gg Price (7d)")
     expected = snapshot.get("catalog_expected_count")
     items = snapshot.get("items")
     if type(expected) is not int or expected < 200 or not isinstance(items, list) or len(items) != expected:
@@ -70,32 +69,33 @@ def _build_daily_entry(snapshot: dict[str, Any], now: datetime) -> dict[str, Any
         name = item.get("name")
         price = item.get("cash_price_usd")
         window = item.get("price_window_days")
+        selected_marketplace = item.get("selected_marketplace")
+        chromas_sales = _nonnegative_int(item.get("selected_marketplace_sold_7d", 0), "selected_marketplace_sold_7d")
         if not isinstance(slug, str) or not slug or slug in seen_slugs:
             raise ValueError("ROBASE item slug is missing or duplicated")
         seen_slugs.add(slug)
         if not isinstance(name, str) or not name.strip() or len(name) > 100:
             raise ValueError("ROBASE item name is invalid")
-        if isinstance(price, bool) or not isinstance(price, (int, float)) or not math.isfinite(price) or price <= 0:
-            raise ValueError(f"ROBASE price is invalid for {slug}")
-        if type(window) is not int or window not in (7, 30):
-            raise ValueError(f"ROBASE price window is invalid for {slug}")
-        sold_7d = _nonnegative_int(item.get("sold_7d"), "sold_7d")
-        sold_30d = _nonnegative_int(item.get("sold_30d"), "sold_30d")
         if item.get("status") != "verified":
-            raise ValueError(f"ROBASE item is not verified: {slug}")
-        if window == 30:
-            sample_quality = "30d_fallback"
-        elif sold_7d < 3:
-            sample_quality = "low_sample_7d"
+            raise ValueError(f"ROBASE item page is not verified: {slug}")
+        if selected_marketplace is None:
+            if chromas_sales != 0 or price is not None or window is not None:
+                raise ValueError(f"ROBASE missing Chroma 7d price has inconsistent sales data: {slug}")
+            price_value = None
+            sample_quality = "no_chromas_7d_sales"
         else:
-            sample_quality = "7d_sample"
+            if selected_marketplace != "chromas.gg" or chromas_sales <= 0 or type(window) is not int or window != 7:
+                raise ValueError(f"ROBASE price is not exclusively chromas.gg 7d: {slug}")
+            if isinstance(price, bool) or not isinstance(price, (int, float)) or not math.isfinite(price) or price <= 0:
+                raise ValueError(f"ROBASE chromas.gg Price (7d) is invalid for {slug}")
+            price_value = round(float(price), 6)
+            sample_quality = "low_sample_7d" if chromas_sales < 3 else "7d_sample"
         archived_items.append({
             "robase_slug": slug,
             "name": name.strip(),
-            "price_usd": round(float(price), 6),
-            "price_window_days": window,
-            "sold_7d": sold_7d,
-            "sold_30d": sold_30d,
+            "price_usd": price_value,
+            "price_window_days": 7 if price_value is not None else None,
+            "sold_7d": chromas_sales,
             "sample_quality": sample_quality,
         })
 
@@ -118,15 +118,28 @@ def _load_history(path: Path) -> dict[str, Any]:
             "schema_version": HISTORY_SCHEMA_VERSION,
             "source": SOURCE,
             "price_basis": PRICE_BASIS,
-            "series_definition": (
-                "One daily observation of ROBASE's rolling completed-sales average; "
-                "normally 7 days, with ROBASE's 30-day fallback when its 7-day window has no sales."
-            ),
+            "series_definition": "One daily observation of chromas.gg Price (7d) only; no other marketplace or 30-day fallback.",
             "days": [],
         }
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("existing ROBASE history file is unreadable") from exc
 
+    if (
+        isinstance(document, dict)
+        and document.get("schema_version") == 1
+        and document.get("source") == SOURCE
+        and document.get("price_basis") == "seller_proceeds_after_marketplace_fees"
+        and isinstance(document.get("days"), list)
+    ):
+        # Never mix legacy blended/30d-fallback prices into the Chroma-only series.
+        return {
+            "schema_version": HISTORY_SCHEMA_VERSION,
+            "source": SOURCE,
+            "price_basis": PRICE_BASIS,
+            "series_definition": "One daily observation of chromas.gg Price (7d) only; no other marketplace or 30-day fallback.",
+            "legacy_days_discarded": len(document["days"]),
+            "days": [],
+        }
     if (
         not isinstance(document, dict)
         or document.get("schema_version") != HISTORY_SCHEMA_VERSION
