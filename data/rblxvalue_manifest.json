@@ -11,7 +11,7 @@
   "source_attribution": "Supreme Values (supremevalues.com)",
   "dataset_last_updated": "2026-11-26 12:02:34",
   "last_snapshot_date": "2026-11-26",
-  "last_fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
+  "last_fetched_at_utc": "2026-11-26T20:25:56.602892+00:00",
   "scheduled_runs_per_day": 2,
   "scheduled_utc_times": [
     "11:30",
@@ -22,7 +22,7 @@
     "00:30 (next day)"
   ],
   "expected_weapons": 214,
-  "history_rows": 1070,
+  "history_rows": 1284,
   "snapshot_counts": {
     "weapons": 214,
     "exactly_mapped": 214,
