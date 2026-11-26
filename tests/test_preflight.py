@@ -18,10 +18,10 @@ class PreflightTests(IsolatedDataTestCase):
         self.now = datetime(2026, 11, 14, tzinfo=UTC)
         checked = self.now.isoformat().replace("+00:00", "Z")
         snapshot = {
-            "schema_version": 5,
+            "schema_version": 6,
             "source": "https://robase.gg/",
             "fetched_at_utc": checked,
-            "price_basis": "selected_marketplace_seller_proceeds_after_fees",
+            "price_basis": "chromas_gg_7d_price",
             "catalog_expected_count": 222,
             "catalog_complete": True,
             "items": [
@@ -30,13 +30,10 @@ class PreflightTests(IsolatedDataTestCase):
                     "cash_price_usd": 1.0, "price_display": "$1.00",
                     "marketplace_prices": {
                         "chromas.gg": {"marketplace": "chromas.gg", "price_usd": 1.0,
-                                       "price_display": "$1.00", "sold_7d": 10, "fee_percent": 5.0},
-                        "starpets": {"marketplace": "StarPets", "price_usd": 1.1,
-                                     "price_display": "$1.10", "sold_7d": 10, "fee_percent": 32.0},
+                                       "price_display": "$1.00", "sold_7d": 10},
                     },
                     "selected_marketplace": "chromas.gg",
                     "selected_marketplace_sold_7d": 10,
-                    "selected_marketplace_fee_percent": 5.0,
                     "price_window_days": 7,
                     "sold_7d": 10, "sold_30d": 20, "status": "verified",
                     "source": f"https://robase.gg/item/item-{index}",
