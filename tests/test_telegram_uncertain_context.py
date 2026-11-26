@@ -53,6 +53,48 @@ class TelegramUncertainContextTests(IsolatedDataTestCase):
         self.assertEqual(context["listing_url"], "")
         self.assertEqual(context["owner_url"], "")
 
+    def test_discord_references_are_never_persisted_to_public_context(self):
+        listing = {
+            "source": "discord",
+            "source_ad_id": "private-message-123",
+            "url": "https://discord.com/channels/123/456/789",
+            "owner_url": "https://discord.com/users/123",
+        }
+
+        scanner.record_uncertain_context(listing, "stable-hash", "individual")
+
+        self.assertEqual(scanner.load_uncertain_context(), {})
+        self.assertNotIn("discord.com", self.path.read_text(encoding="utf-8"))
+
+    def test_legacy_discord_context_is_removed_when_loaded(self):
+        self.path.write_text(json.dumps({
+            "version": 1,
+            "details": {
+                "private-hash": {
+                    "source_ad_id": "private-message-123",
+                    "listing_url": "https://discord.com/channels/123/456/789",
+                    "owner_url": "",
+                    "source": "discord",
+                    "delivery_path": "individual",
+                    "attempted_at_utc": "2026-11-24T12:00:00+00:00",
+                },
+                "public-hash": {
+                    "source_ad_id": "post-123",
+                    "listing_url": "https://bloxswaps.com/trade-mm2?ad=post-123",
+                    "owner_url": "",
+                    "source": "bloxswaps",
+                    "delivery_path": "individual",
+                    "attempted_at_utc": "2026-11-24T12:00:00+00:00",
+                },
+            },
+        }), encoding="utf-8")
+
+        context = scanner.load_uncertain_context()
+
+        self.assertNotIn("private-hash", context)
+        self.assertIn("public-hash", context)
+        self.assertNotIn("discord.com", self.path.read_text(encoding="utf-8"))
+
     def test_corrupt_context_fails_closed(self):
         self.path.write_text(json.dumps({"version": 9, "details": {}}), encoding="utf-8")
         with self.assertRaisesRegex(RuntimeError, "invalid structure"):
