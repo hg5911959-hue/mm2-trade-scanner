@@ -516,7 +516,14 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
     items = {key: group[0] for key, group in name_groups.items() if len(group) == 1}
     duplicate_name_keys = sorted(key for key, group in name_groups.items() if len(group) > 1)
     price_rows = [
-        (slug, row["price_display"], row["status"], row.get("selected_marketplace"))
+        (
+            slug,
+            row["price_display"],
+            row["status"],
+            row.get("selected_marketplace"),
+            row.get("price_sample_count"),
+            row.get("selected_marketplace_fee_percent"),
+        )
         for slug, row in sorted(items_by_slug.items())
     ]
     price_digest = hashlib.sha256(
