@@ -60,6 +60,8 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 MIN_DIFF = float(os.environ.get("MIN_VALUE_DIFFERENCE", "0"))
 MIN_PROFIT_PERCENT = float(os.environ.get("MIN_PROFIT_PERCENT", "5"))
+MIN_RECEIVE_DEMAND_SCORE = float(os.environ.get("MIN_RECEIVE_DEMAND_SCORE", "4.0"))
+MIN_RECEIVE_STABILITY_SCORE = float(os.environ.get("MIN_RECEIVE_STABILITY_SCORE", "3.0"))
 FAILURE_THRESHOLD = int(os.environ.get("FAILURE_ALERT_THRESHOLD", "3"))
 MAX_ALERTS_PER_RUN = max(0, int(os.environ.get("MAX_ALERTS_PER_RUN", "0")))
 _SESSION_ALERTS_SENT = 0
@@ -3352,8 +3354,6 @@ def calculate_side_bounds(items, values, aliases=None, side="give"):
         quality_labels = []
         if entry.get("demand") is not None:
             quality_labels.append(f"Demand: {entry['demand']}/10")
-        if entry.get("rarity") is not None:
-            quality_labels.append(f"Rarity: {entry['rarity']}/10")
         breakdown.append(
             f"• {display_name} {quantity_label} — {value_label} each = {total_label}"
             f" | Stability (RBLXValue): {entry['stability']}"
@@ -4366,10 +4366,10 @@ def _receive_market_quality(items, values, aliases=None):
         return None, None, []
     demand_score = weighted_demand / total_weight
     stability_score = weighted_stability / total_weight
-    if demand_score < 4.0:
-        issues.append(f"received-side value-weighted Demand is low ({demand_score:.2f}/10; minimum 4.00)")
-    if stability_score < 3.0:
-        issues.append(f"received-side value-weighted Stability is weak ({stability_score:.2f}/9; minimum 3.00)")
+    if demand_score < MIN_RECEIVE_DEMAND_SCORE:
+        issues.append(f"received-side value-weighted Demand is low ({demand_score:.2f}/10; minimum {MIN_RECEIVE_DEMAND_SCORE:.2f})")
+    if stability_score < MIN_RECEIVE_STABILITY_SCORE:
+        issues.append(f"received-side value-weighted Stability is weak ({stability_score:.2f}/9; minimum {MIN_RECEIVE_STABILITY_SCORE:.2f})")
     return demand_score, stability_score, issues
 
 
