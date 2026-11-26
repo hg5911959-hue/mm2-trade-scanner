@@ -301,9 +301,25 @@ def build_snapshot(identity_map: dict, source_items: dict, metadata: dict, *, sn
     }
 
 
-def write_outputs(snapshot: dict, json_path: Path, csv_path: Path) -> None:
+def validate_snapshot(snapshot: dict, *, min_matched: int = EXPECTED_WEAPONS) -> None:
+    """Reject incomplete or internally inconsistent source snapshots before writing."""
+    if not 0 <= min_matched <= EXPECTED_WEAPONS:
+        raise ValueError(f"min_matched must be between 0 and {EXPECTED_WEAPONS}")
     if len(snapshot.get("items", [])) != EXPECTED_WEAPONS:
         raise ValueError("Refusing to write an incomplete Supreme snapshot")
+    if snapshot.get("category_count") != len(CATEGORIES):
+        raise ValueError("Refusing snapshot without all configured Supreme categories")
+    if snapshot.get("source_timestamp_consistent") is not True or not snapshot.get("source_last_updated"):
+        raise ValueError("Refusing snapshot without one consistent source update timestamp across all categories")
+    counts = snapshot.get("counts") or {}
+    if counts.get("matched", 0) < min_matched or counts.get("missing", 0) or counts.get("ambiguous", 0):
+        raise ValueError("Supreme direct identity validation failed: " + json.dumps(counts, sort_keys=True))
+    if counts.get("with_numeric_value") != EXPECTED_WEAPONS:
+        raise ValueError("Refusing snapshot with missing or non-numeric Supreme values")
+
+
+def write_outputs(snapshot: dict, json_path: Path, csv_path: Path) -> None:
+    validate_snapshot(snapshot)
     json_path.parent.mkdir(parents=True, exist_ok=True)
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     json_tmp, csv_tmp = json_path.with_suffix(json_path.suffix + ".tmp"), csv_path.with_suffix(csv_path.suffix + ".tmp")
@@ -331,11 +347,10 @@ def main() -> None:
         snapshot_date=now.date().isoformat(),
         fetched_at_utc=datetime.now(ZoneInfo("UTC")).isoformat(),
     )
-    if snapshot["counts"]["matched"] < args.min_matched or snapshot["counts"]["ambiguous"]:
-        raise SystemExit(
-            "Supreme direct identity validation failed: "
-            + json.dumps(snapshot["counts"], sort_keys=True)
-        )
+    try:
+        validate_snapshot(snapshot, min_matched=args.min_matched)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     write_outputs(snapshot, args.json_output, args.csv_output)
     print(json.dumps({
         "source": snapshot["source"],
