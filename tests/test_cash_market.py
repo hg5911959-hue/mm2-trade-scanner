@@ -301,15 +301,32 @@ class CashMarketTests(IsolatedDataTestCase):
         checked = now.isoformat().replace("+00:00", "Z")
         rows = []
         for i in range(222):
+            sold_7d = 1 if i == 1 else (0 if i == 0 else 10)
+            selected = "chromas.gg" if sold_7d else None
             rows.append({
                 "name": f"Item {i}",
                 "robase_slug": f"item-{i}",
                 "robase_category": "Godly",
-                "cash_price_usd": 2.5,
-                "price_display": "$2.50",
-                "sold_7d": 1 if i == 1 else (0 if i == 0 else 10),
+                "cash_price_usd": 2.5 if selected else None,
+                "price_display": "$2.50" if selected else "",
+                "all_marketplaces_price_usd": 2.6,
+                "all_marketplaces_price_display": "$2.60",
+                "marketplace_prices": {
+                    "chromas.gg": {
+                        "marketplace": "chromas.gg", "price_usd": 2.5,
+                        "price_display": "$2.50", "sold_7d": sold_7d, "fee_percent": 5.0,
+                    },
+                    "starpets": {
+                        "marketplace": "StarPets", "price_usd": 2.7,
+                        "price_display": "$2.70", "sold_7d": sold_7d, "fee_percent": 32.0,
+                    },
+                },
+                "selected_marketplace": selected,
+                "selected_marketplace_sold_7d": sold_7d,
+                "selected_marketplace_fee_percent": 5.0 if selected else None,
+                "sold_7d": sold_7d,
                 "sold_30d": 1 if i == 0 else 20,
-                "price_window_days": 30 if i == 0 else 7,
+                "price_window_days": 7 if selected else None,
                 "status": "verified",
                 "source": f"https://robase.gg/item/item-{i}",
                 "last_checked_at_utc": checked,
@@ -319,10 +336,10 @@ class CashMarketTests(IsolatedDataTestCase):
                 "bloxswaps_holders": 500,
             })
         return {
-            "schema_version": 4,
+            "schema_version": 5,
             "source": "https://robase.gg/",
             "fetched_at_utc": checked,
-            "price_basis": "seller_proceeds_after_marketplace_fees",
+            "price_basis": "selected_marketplace_seller_proceeds_after_fees",
             "catalog_expected_count": 222,
             "catalog_complete": True,
             "items": rows,
@@ -337,13 +354,14 @@ class CashMarketTests(IsolatedDataTestCase):
         path.write_text(json.dumps(snapshot), encoding="utf-8")
         catalog = load_robase_price_catalog(path, now=now + timedelta(minutes=10))
         self.assertEqual(catalog["row_count"], 222)
-        self.assertEqual(catalog["verified_count"], 222)
+        self.assertEqual(catalog["verified_count"], 221)
         row = catalog["items"][normalize_cash_name("Item 1")]
         self.assertEqual(row["status"], "verified")
         self.assertEqual(row["price_display"], "$2.50")
         self.assertEqual(row["bloxswaps_value"], 100)
         self.assertEqual(row["price_window_days"], 7)
         self.assertEqual(row["price_sample_count"], 1)
+        self.assertEqual(row["selected_marketplace"], "chromas.gg")
 
     def test_low_sample_robase_prices_are_blocked_from_live_cash_qualification(self):
         tmp = tempfile.TemporaryDirectory()
@@ -353,7 +371,7 @@ class CashMarketTests(IsolatedDataTestCase):
         path.write_text(json.dumps(self._robase_snapshot(now)), encoding="utf-8")
         catalog = load_robase_price_catalog(path, now=now + timedelta(minutes=10))
 
-        for slug, expected in (("item-0", "1/30d"), ("item-1", "1/7d")):
+        for slug, expected in (("item-1", "1/7d"),):
             with self.subTest(slug=slug):
                 low, high, lines, missing = calculate_cash_side(
                     [{"canonical_name": slug, "robase_slug": slug, "quantity_min": 1, "quantity_max": 1}],
@@ -362,6 +380,12 @@ class CashMarketTests(IsolatedDataTestCase):
                 self.assertEqual((low, high, lines), (0.0, 0.0, []))
                 self.assertIn(f"low sample: {expected}", missing[0])
                 self.assertIn("minimum 3 completed sales", missing[0])
+        missing_market = calculate_cash_side(
+            [{"canonical_name": "item-0", "robase_slug": "item-0", "quantity_min": 1, "quantity_max": 1}],
+            catalog, "give", 0, now=now + timedelta(minutes=10),
+        )
+        self.assertEqual(missing_market[0:2], (0.0, 0.0))
+        self.assertIn("cash price unverified", missing_market[3][0])
 
         normal = calculate_cash_side(
             [{"canonical_name": "Item 2", "robase_slug": "item-2", "quantity_min": 1, "quantity_max": 1}],
