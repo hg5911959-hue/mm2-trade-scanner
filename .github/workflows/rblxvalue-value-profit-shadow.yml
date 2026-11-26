@@ -9,6 +9,10 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/rblxvalue-value-profit-shadow.yml"
+      - ".github/workflows/scan-core.yml"
+      - "scanner.py"
+      - "tools/rblxvalue_value_profit_shadow.py"
+  workflow_dispatch:
 
 permissions:
   actions: read
@@ -16,7 +20,7 @@ permissions:
 
 jobs:
   shadow:
-    if: github.event_name == 'push' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     name: Analyze Supreme value-profit without alerts or API access
     permissions:
       actions: read
