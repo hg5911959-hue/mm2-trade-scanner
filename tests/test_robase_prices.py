@@ -99,13 +99,14 @@ class RobasePriceParserTests(IsolatedDataTestCase):
             <tr><td>2</td><td>chromas.gg</td><td>$2.80</td><td>0</td><td>$0</td><td>$0</td><td>0%</td><td>5%</td><td>$0</td><td>—</td></tr>
           </table>
           <h2>About Sweet</h2>
-          <p>Sweet is a Godly item in Roblox Murder Mystery 2 (MM2).</p>
+          <p>Sweet is a Godly item in Roblox Murder Mystery 2 (MM2). It has not sold in the last 7 days; over the last 30 days it sold for $451.25 on average after the marketplace fee.</p>
         </main>
         """
         item = _parse_item_detail(
             "https://robase.gg/item/sweet", html, "2026-11-26T12:00:00Z"
         )
         self.assertIsNone(item["cash_price_usd"])
+        self.assertEqual(item["all_marketplaces_price_usd"], 451.25)
         self.assertEqual(item["price_display"], "")
         self.assertIsNone(item["selected_marketplace"])
         self.assertEqual(item["marketplace_prices"]["chromas.gg"]["sold_7d"], 0)
