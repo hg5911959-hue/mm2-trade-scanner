@@ -488,5 +488,21 @@ class CashMarketTests(IsolatedDataTestCase):
         self.assertEqual(result[3], [])
 
 
+    def test_robase_price_digest_changes_when_selected_market_sample_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "robase.json"
+            now = datetime(2026, 11, 21, tzinfo=UTC)
+            snapshot = self._robase_snapshot(now)
+            path.write_text(json.dumps(snapshot), encoding="utf-8")
+            before = load_robase_price_catalog(path, now=now)
+            row = snapshot["items"][2]
+            row["selected_marketplace_sold_7d"] = 11
+            row["marketplace_prices"]["chromas.gg"]["sold_7d"] = 11
+            row["sold_7d"] = 11
+            path.write_text(json.dumps(snapshot), encoding="utf-8")
+            after = load_robase_price_catalog(path, now=now)
+            self.assertNotEqual(before["sha256"], after["sha256"])
+
+
 if __name__ == "__main__":
     unittest.main()
