@@ -12,6 +12,7 @@ from tools.supreme_values_daily import (
     build_snapshot,
     extract_sv_popup,
     fetch_all_categories,
+    validate_snapshot,
 )
 
 
@@ -95,6 +96,24 @@ class SupremeDailySnapshotTests(IsolatedDataTestCase):
         self.assertEqual(day_one["items"][0]["stability_score"], STABILITY_SCORES["Stable"])
         self.assertEqual(day_two["items"][0]["stability"], "Rising")
         self.assertEqual(day_two["items"][0]["stability_score"], STABILITY_SCORES["Rising"])
+
+    def test_snapshot_validation_rejects_missing_timestamp_and_numeric_values(self):
+        identities, items = self.fixture_data("Stable")
+        metadata = {"category_count": len(CATEGORIES), "category_counts": {}, "source_last_updated": "Nov 25, 2026", "source_timestamp_consistent": True, "source_items": len(items)}
+        snapshot = build_snapshot(
+            identities, items, metadata,
+            snapshot_date="2026-11-26",
+            fetched_at_utc="2026-11-26T16:00:00+00:00",
+        )
+        validate_snapshot(snapshot)
+        snapshot["source_timestamp_consistent"] = False
+        with self.assertRaisesRegex(ValueError, "consistent source update timestamp"):
+            validate_snapshot(snapshot)
+        snapshot["source_timestamp_consistent"] = True
+        snapshot["items"][0]["value"] = None
+        snapshot["counts"]["with_numeric_value"] -= 1
+        with self.assertRaisesRegex(ValueError, "missing or non-numeric"):
+            validate_snapshot(snapshot)
 
     def test_category_timestamps_must_be_present_on_every_page(self):
         class FakeResponse(io.BytesIO):
