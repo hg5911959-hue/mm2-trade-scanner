@@ -113,13 +113,18 @@ jobs:
               raise SystemExit("Refusing incomplete direct Supreme snapshot")
           if counts.get("matched") != 214 or counts.get("missing") or counts.get("ambiguous"):
               raise SystemExit(f"Refusing unmatched or ambiguous Supreme identities: {counts}")
+          if counts.get("with_numeric_value") != 214:
+              raise SystemExit(f"Refusing incomplete numeric Supreme values: {counts}")
           auth = latest.get("third_party_authorization") or {}
           if auth.get("source") != "Supreme Values" or auth.get("authorization_date") != "2026-11-26":
               raise SystemExit("Missing recorded Supreme authorization metadata")
           if auth.get("attribution") != "Supreme Values (supremevalues.com)":
               raise SystemExit("Missing required Supreme attribution")
-          if {row.get("snapshot_date") for row in incoming} != {latest.get("snapshot_date")}:
+          fetched_at = latest.get("fetched_at_utc")
+          if not fetched_at or {row.get("snapshot_date") for row in incoming} != {latest.get("snapshot_date")}:
               raise SystemExit("JSON and CSV snapshot dates differ")
+          if {row.get("fetched_at_utc") for row in incoming} != {fetched_at}:
+              raise SystemExit("JSON and CSV fetch timestamps differ")
           data_dir = Path("data")
           latest_path = data_dir / "supreme_values_latest.json"
           history_path = data_dir / "supreme_values_daily_history.csv"
@@ -133,8 +138,13 @@ jobs:
                       raise SystemExit("Direct Supreme history CSV schema mismatch")
                   existing = list(reader)
           day = latest["snapshot_date"]
-          combined = [row for row in existing if row.get("snapshot_date") != day] + incoming
-          combined.sort(key=lambda row: (row["snapshot_date"], row["robase_slug"]))
+          fetched_at = latest["fetched_at_utc"]
+          # Preserve both scheduled captures on the same local date; only exact reruns are replaced.
+          combined = [
+              row for row in existing
+              if not (row.get("snapshot_date") == day and row.get("fetched_at_utc") == fetched_at)
+          ] + incoming
+          combined.sort(key=lambda row: (row["snapshot_date"], row["fetched_at_utc"], row["robase_slug"]))
           temp = history_path.with_suffix(".csv.tmp")
           with temp.open("w", encoding="utf-8", newline="") as handle:
               writer = csv.DictWriter(handle, fieldnames=fields)
