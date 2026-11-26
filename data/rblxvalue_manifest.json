@@ -2,6 +2,13 @@
   "schema_version": 1,
   "source": "RBLXValue official API v2",
   "source_url": "https://api.rblxvalue.com/v2",
+  "third_party_authorization": {
+    "source": "Supreme Values",
+    "authorization_date": "2026-11-26",
+    "authorized_scope": "Extract, process, and display published price-list, Demand, Rarity, and Stability data for the MM2 project, subject to accurate attribution and no ownership claim",
+    "attribution": "Supreme Values (supremevalues.com)"
+  },
+  "source_attribution": "Supreme Values (supremevalues.com)",
   "dataset_last_updated": "2026-11-26 12:02:34",
   "last_snapshot_date": "2026-11-26",
   "expected_weapons": 214,
@@ -20,5 +27,5 @@
     "with_supreme_value": 214,
     "with_stability": 212
   },
-  "usage": "Research archive only; not connected to production valuation or Telegram filters"
+  "usage": "Authorized Supreme Values data for MM2 research and value-profit analysis; no ownership claim; source attribution required"
 }
