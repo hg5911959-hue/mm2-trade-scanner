@@ -59,8 +59,11 @@ def load_values_from_snapshot(
     if snapshot.get("source") != SOURCE:
         raise ValueError("RBLXValue snapshot source is not the official API archive")
     fields = snapshot.get("source_fields") or {}
-    if fields.get("value_source_b") != "Supreme Values":
-        raise ValueError("snapshot does not identify value_source_b as Supreme Values")
+    if fields.get("value_source_b") != "Supreme Values (exclusive trade-price source)":
+        raise ValueError("snapshot does not identify value_source_b as the exclusive Supreme Values price source")
+    for field in ("stability", "demand", "rarity"):
+        if fields.get(field) != "RBLXValue":
+            raise ValueError(f"snapshot does not identify {field} as an RBLXValue-only quality field")
     authorization = snapshot.get("third_party_authorization")
     if (
         not isinstance(authorization, dict)
