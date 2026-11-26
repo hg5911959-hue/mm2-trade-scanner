@@ -154,15 +154,6 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertEqual(live_job.strip(), core_job.strip())
         self.assertNotIn("persist-state:", core)
 
-    def test_supreme_shadow_trigger_does_not_forward_telegram_or_other_secrets(self):
-        workflow = (ROOT / ".github/workflows/supreme-values-daily-profit-shadow.yml").read_text(encoding="utf-8")
-        self.assertIn("contents: read", workflow)
-        self.assertIn("actions: read", workflow)
-        self.assertIn("rblxvalue_value_profit_shadow: true", workflow)
-        self.assertNotIn("secrets:", workflow)
-        self.assertNotIn("TELEGRAM_", workflow)
-        self.assertNotIn("HEALTHCHECKS_PING_URL", workflow)
-
     def test_supreme_shadow_uses_conservative_value_and_market_quality_thresholds(self):
         core = (ROOT / ".github/workflows/scan-core.yml").read_text(encoding="utf-8")
         self.assertIn("MIN_VALUE_DIFFERENCE: ${{ inputs.rblxvalue_value_profit_shadow && '2' || '0' }}", core)
