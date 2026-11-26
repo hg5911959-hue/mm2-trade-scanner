@@ -230,7 +230,7 @@ def parse_robase_html(document: str, fetched_at_utc: str | None = None) -> dict:
         "schema_version": 1,
         "source": URL,
         "fetched_at_utc": stamp,
-        "price_basis": "chromas_gg_7d_price",
+        "price_basis": "seller_proceeds_after_marketplace_fees",
         "items": sorted(items.values(), key=lambda item: item["name"].casefold()),
     }
 
