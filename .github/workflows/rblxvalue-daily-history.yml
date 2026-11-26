@@ -105,6 +105,14 @@ jobs:
           incoming = list(csv.DictReader((root/"rblxvalue_snapshot.csv").open(encoding="utf-8", newline="")))
           if len(incoming) != 214 or latest.get("expected_weapons") != 214:
               raise SystemExit("Refusing incomplete RBLXValue snapshot")
+          source_fields = latest.get("source_fields") or {}
+          if source_fields.get("value_source_b") != "Supreme Values (exclusive trade-price source)":
+              raise SystemExit("Refusing snapshot without Supreme-only trade-price attribution")
+          for field in ("stability", "demand", "rarity"):
+              if source_fields.get(field) != "RBLXValue":
+                  raise SystemExit(f"Refusing snapshot without RBLXValue-only {field} attribution")
+          if source_fields.get("range") != "RBLXValue metadata; not used for trade-price bounds":
+              raise SystemExit("Refusing snapshot that does not explicitly exclude provider ranges from Supreme pricing")
           authorization = latest.get("third_party_authorization") or {}
           if authorization.get("source") != "Supreme Values" or authorization.get("authorization_date") != "2026-11-26":
               raise SystemExit("Refusing snapshot without the recorded Supreme Values authorization metadata")
