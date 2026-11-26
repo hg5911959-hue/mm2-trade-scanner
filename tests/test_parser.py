@@ -2035,7 +2035,7 @@ class CacheTTLTests(IsolatedDataTestCase):
             self.assertEqual(values["spirit"]["variants"][0]["stability"], "Stable")
             self.assertEqual(values["stability test 0"]["variants"][0]["stability"], None)
             saved = json.loads(cache_path.read_text(encoding="utf-8"))
-            self.assertEqual(saved["schema_version"], 4)
+            self.assertEqual(saved["schema_version"], 5)
             audit = json.loads(audit_path.read_text(encoding="utf-8"))
             self.assertEqual(next(row for row in audit["items"] if row["slug"] == "harvester")["stability"], "Doing Well")
 
@@ -2045,7 +2045,7 @@ class CacheTTLTests(IsolatedDataTestCase):
             values = {
                 f"item {i}": {
                     "name": f"Item {i}", "value": i + 1,
-                    "variants": [{"id": str(i), "slug": f"item-{i}", "name": f"Item {i}", "category": "godly", "type": "knife", "value": i + 1, "value_min": i + 1, "value_max": i + 1}],
+                    "variants": [{"id": str(i), "slug": f"item-{i}", "name": f"Item {i}", "category": "godly", "type": "knife", "value": i + 1, "value_min": i + 1, "value_max": i + 1, "raw_source_value": i + 1}],
                 }
                 for i in range(100)
             }
@@ -2170,7 +2170,7 @@ class RblxValueKeyHealthCheckTests(IsolatedDataTestCase):
                 "variants": [{
                     "id": str(i), "slug": f"item-{i}", "name": f"Item {i}",
                     "category": "godly", "type": "knife", "value": i + 1,
-                    "value_min": i + 1, "value_max": i + 1,
+                    "value_min": i + 1, "value_max": i + 1, "raw_source_value": i + 1,
                 }],
             }
             for i in range(100)
