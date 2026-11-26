@@ -136,8 +136,25 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
             )
             after = after.split("      - name: Run scanner preflight checks", 1)[1]
             core_job = before + "      - name: Run scanner preflight checks" + after
+        core_job = core_job.replace(
+            "PREFLIGHT_SEND_NOTICES: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow || inputs.rblxvalue_value_profit_shadow) && 'false' || 'true' }}",
+            "PREFLIGHT_SEND_NOTICES: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow) && 'false' || 'true' }}",
+        )
+        core_job = core_job.replace(
+            "DRY_RUN: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow || inputs.rblxvalue_value_profit_shadow) && 'true' || 'false' }}",
+            "DRY_RUN: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow) && 'true' || 'false' }}",
+        )
         self.assertEqual(live_job.strip(), core_job.strip())
         self.assertNotIn("persist-state:", core)
+
+    def test_supreme_shadow_uses_conservative_value_and_market_quality_thresholds(self):
+        core = (ROOT / ".github/workflows/scan-core.yml").read_text(encoding="utf-8")
+        self.assertIn("MIN_VALUE_DIFFERENCE: ${{ inputs.rblxvalue_value_profit_shadow && '2' || '0' }}", core)
+        self.assertIn("MIN_PROFIT_PERCENT: ${{ inputs.rblxvalue_value_profit_shadow && '8' || '5' }}", core)
+        self.assertIn("MIN_RECEIVE_DEMAND_SCORE: ${{ inputs.rblxvalue_profit_shadow && '5.0' || '4.0' }}".replace("rblxvalue_profit_shadow","rblxvalue_value_profit_shadow"), core)
+        self.assertIn("MIN_RECEIVE_STABILITY_SCORE: ${{ inputs.rblxvalue_value_profit_shadow && '5.5' || '3.0' }}", core)
+        live = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        self.assertIn('CASH_MIN_PROFIT_USD: "2.00"', live)
 
     def test_existing_state_branch_is_validated_before_scanning(self):
         workflow = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
