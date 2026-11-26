@@ -68,6 +68,15 @@ def load_values_from_snapshot(
     fields = snapshot.get("source_fields") or {}
     if fields.get("value_source_b") != "Supreme Values":
         raise ValueError("snapshot does not identify value_source_b as Supreme Values")
+    authorization = snapshot.get("third_party_authorization")
+    if (
+        not isinstance(authorization, dict)
+        or authorization.get("source") != "Supreme Values"
+        or authorization.get("authorization_date") != "2026-11-26"
+        or authorization.get("attribution") != "Supreme Values (supremevalues.com)"
+        or not str(authorization.get("authorized_scope") or "").strip()
+    ):
+        raise ValueError("snapshot is missing the recorded Supreme Values authorization and attribution metadata")
     if snapshot.get("expected_weapons") != expected_count:
         raise ValueError(f"snapshot must cover exactly {expected_count} ROBASE weapons")
     rows = snapshot.get("items")

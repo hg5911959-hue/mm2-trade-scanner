@@ -54,7 +54,7 @@ class TelegramFormattingTests(IsolatedDataTestCase):
         self.assertIn("💎 MM2 TRADE <b>ALERT</b>", message)
         self.assertIn("<code>×1</code>", message)
         self.assertIn("Ancient · Gun", message)
-        self.assertIn("Stability: Stable", message)
+        self.assertIn("Stability (RBLXValue): Stable", message)
         self.assertIn('<a href="https://bloxswaps.com/trade-mm2?ad=abc&amp;name=trader">Open trade</a>', message)
         self.assertIn("PROFIT (game value): +110", message)
 

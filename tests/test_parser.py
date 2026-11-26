@@ -1601,6 +1601,14 @@ class CloudflareDetectionTests(IsolatedDataTestCase):
 
 
 class ReceiveMarketQualityTests(IsolatedDataTestCase):
+    def test_telegram_item_details_omit_rarity_but_keep_value_stability_and_demand(self):
+        line = "• Knife B [godly / knife] x1 — 20 each = 20 | Stability (RBLXValue): Stable | Demand: 5/10 | Rarity: 4/10"
+        rendered = scanner._format_telegram_item_line(line)
+        self.assertIn("20 each", rendered)
+        self.assertIn("Stability (RBLXValue):", rendered)
+        self.assertIn("Demand 5/10", rendered)
+        self.assertNotIn("Rarity", rendered)
+
     @staticmethod
     def _listing():
         return {

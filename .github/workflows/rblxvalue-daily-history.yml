@@ -102,6 +102,11 @@ jobs:
           incoming = list(csv.DictReader((root/"rblxvalue_snapshot.csv").open(encoding="utf-8", newline="")))
           if len(incoming) != 214 or latest.get("expected_weapons") != 214:
               raise SystemExit("Refusing incomplete RBLXValue snapshot")
+          authorization = latest.get("third_party_authorization") or {}
+          if authorization.get("source") != "Supreme Values" or authorization.get("authorization_date") != "2026-11-26":
+              raise SystemExit("Refusing snapshot without the recorded Supreme Values authorization metadata")
+          if authorization.get("attribution") != "Supreme Values (supremevalues.com)":
+              raise SystemExit("Refusing snapshot without the required Supreme Values attribution")
           if {row.get("snapshot_date") for row in incoming} != {latest.get("snapshot_date")}:
               raise SystemExit("CSV and JSON snapshot dates differ")
           data_dir = Path("data")
@@ -120,7 +125,7 @@ jobs:
               writer = csv.DictWriter(handle, fieldnames=fields); writer.writeheader(); writer.writerows(combined)
           temp.replace(history_path)
           latest_path.write_text(json.dumps(latest, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
-          manifest = {"schema_version":1,"source":latest["source"],"source_url":latest["source_url"],"dataset_last_updated":latest["dataset_last_updated"],"last_snapshot_date":day,"expected_weapons":latest["expected_weapons"],"history_rows":len(combined),"snapshot_counts":latest["counts"],"usage":"Research archive only; not connected to production valuation or Telegram filters"}
+          manifest = {"schema_version":1,"source":latest["source"],"source_url":latest["source_url"],"third_party_authorization":authorization,"source_attribution":"Supreme Values (supremevalues.com)","dataset_last_updated":latest["dataset_last_updated"],"last_snapshot_date":day,"expected_weapons":latest["expected_weapons"],"history_rows":len(combined),"snapshot_counts":latest["counts"],"usage":"Authorized Supreme Values data for MM2 research and value-profit analysis; no ownership claim; source attribution required"}
           manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
           print(json.dumps(manifest, ensure_ascii=False, sort_keys=True))
           PY

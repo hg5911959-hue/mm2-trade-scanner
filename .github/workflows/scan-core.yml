@@ -30,7 +30,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: mm2-trade-scanner
+  group: ${{ inputs.rblxvalue_value_profit_shadow && 'mm2-supreme-value-shadow' || 'mm2-trade-scanner' }}
   cancel-in-progress: false
 
 jobs:
@@ -119,7 +119,7 @@ jobs:
           TELEGRAM_PREFLIGHT_CHECK: "true"
           CASH_MAX_AGE_DAYS: "1"
           CASH_MIN_VERIFIED_ROWS: "8"
-          PREFLIGHT_SEND_NOTICES: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow) && 'false' || 'true' }}
+          PREFLIGHT_SEND_NOTICES: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow || inputs.rblxvalue_value_profit_shadow) && 'false' || 'true' }}
         run: python -m tools.preflight --warn
 
       - name: Run BloxSwaps scanner
@@ -127,8 +127,10 @@ jobs:
         env:
           BLOXSWAPS_URL: "https://bloxswaps.com/trade-mm2?trade-type=P2P"
           BLOXSWAPS_API_ONLY: "true"
-          MIN_VALUE_DIFFERENCE: "0"
-          MIN_PROFIT_PERCENT: "5"
+          MIN_VALUE_DIFFERENCE: ${{ inputs.rblxvalue_value_profit_shadow && '2' || '0' }}
+          MIN_PROFIT_PERCENT: ${{ inputs.rblxvalue_value_profit_shadow && '8' || '5' }}
+          MIN_RECEIVE_DEMAND_SCORE: ${{ inputs.rblxvalue_value_profit_shadow && '5.0' || '4.0' }}
+          MIN_RECEIVE_STABILITY_SCORE: ${{ inputs.rblxvalue_value_profit_shadow && '5.5' || '3.0' }}
           FAILURE_ALERT_THRESHOLD: "3"
           MAX_ALERTS_PER_RUN: "0"
           MAX_ALERTS_PER_SCAN: "0" # 0 = send every qualified offer individually; throttle via ALERT_DELAY_SECONDS
@@ -139,7 +141,7 @@ jobs:
           MAX_PENDING_RECHECK_PER_SCAN: "50"
           MAX_BACKLOG_RECHECK_PAGES: "1000"
           BACKLOG_RECHECK_EVERY_CYCLES: "4"
-          DRY_RUN: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow) && 'true' || 'false' }}
+          DRY_RUN: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow || inputs.rblxvalue_value_profit_shadow) && 'true' || 'false' }}
           MAX_ALERTS_PER_SESSION: "0"
           MM2_SCAN_DURATION_SECONDS: "540"
           MM2_SCAN_INTERVAL_SECONDS: "30"
