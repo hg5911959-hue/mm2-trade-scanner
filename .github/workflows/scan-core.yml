@@ -30,7 +30,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: mm2-trade-scanner
+  group: ${{ inputs.rblxvalue_value_profit_shadow && 'mm2-supreme-value-shadow' || 'mm2-trade-scanner' }}
   cancel-in-progress: false
 
 jobs:
