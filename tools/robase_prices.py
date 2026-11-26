@@ -230,7 +230,7 @@ def parse_robase_html(document: str, fetched_at_utc: str | None = None) -> dict:
         "schema_version": 1,
         "source": URL,
         "fetched_at_utc": stamp,
-        "price_basis": "seller_proceeds_after_marketplace_fees",
+        "price_basis": "chromas_gg_7d_price",
         "items": sorted(items.values(), key=lambda item: item["name"].casefold()),
     }
 
@@ -408,7 +408,7 @@ def _load_previous_snapshot(path: Path):
         return {}
     if (
         not isinstance(data, dict)
-        or data.get("schema_version") != 5
+        or data.get("schema_version") != 6
         or data.get("price_basis") != "chromas_gg_7d_price"
         or data.get("catalog_complete") is not True
         or not isinstance(data.get("items"), list)
