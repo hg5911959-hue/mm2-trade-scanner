@@ -2167,10 +2167,14 @@ class RblxValueKeyHealthCheckTests(IsolatedDataTestCase):
             f"item {i}": {
                 "name": f"Item {i}",
                 "value": i + 1,
+                "value_min": i + 1,
+                "value_max": i + 1,
+                "value_status": "numeric",
                 "variants": [{
                     "id": str(i), "slug": f"item-{i}", "name": f"Item {i}",
                     "category": "godly", "type": "knife", "value": i + 1,
-                    "value_min": i + 1, "value_max": i + 1, "raw_source_value": i + 1,
+                    "value_min": i + 1, "value_max": i + 1,
+                    "value_status": "numeric", "raw_source_value": i + 1,
                 }],
             }
             for i in range(100)
