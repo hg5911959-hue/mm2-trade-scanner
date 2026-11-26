@@ -77,7 +77,7 @@ class SupremeCacheMigrationTests(IsolatedDataTestCase):
                     loaded = scanner.load_supreme_values()
 
             saved = json.loads(cache.read_text(encoding="utf-8"))
-            self.assertEqual(saved["schema_version"], 4)
+            self.assertEqual(saved["schema_version"], 5)
             self.assertEqual(loaded["item 7"]["variants"][0]["stability"], "Stable")
             self.assertEqual(len(api), 5)
 
