@@ -231,7 +231,7 @@ def parse_robase_html(document: str, fetched_at_utc: str | None = None) -> dict:
         "schema_version": 1,
         "source": URL,
         "fetched_at_utc": stamp,
-        "price_basis": "selected_marketplace_seller_proceeds_after_fees",
+        "price_basis": "seller_proceeds_after_marketplace_fees",
         "items": sorted(items.values(), key=lambda item: item["name"].casefold()),
     }
 
@@ -345,7 +345,7 @@ def _parse_item_detail(url: str, document: str, fetched_at_utc: str, etag="", la
         "bloxswaps_holders": int(supply_match.group(2).replace(",", "")) if supply_match else None,
         "status": "verified",
         "source": url,
-        "price_basis": "seller_proceeds_after_marketplace_fees",
+        "price_basis": "selected_marketplace_seller_proceeds_after_fees",
         "last_checked_at_utc": fetched_at_utc,
         "price_updated_at_utc": fetched_at_utc,
         "etag": etag or "",
