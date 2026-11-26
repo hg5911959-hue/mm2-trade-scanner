@@ -3972,7 +3972,7 @@ def save_uncertain_context(context):
 def record_uncertain_context(listing, trade_id, delivery_path):
     """Store only public BloxSwaps references before a non-idempotent Telegram send."""
     context = load_uncertain_context()
-    source = str(listing.get("source") or "bloxswaps").casefold()
+    source = str(listing.get("source") or "").casefold()
     if source != "bloxswaps":
         context.pop(str(trade_id), None)
         save_uncertain_context(context)
