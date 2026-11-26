@@ -56,6 +56,7 @@ jobs:
           python-version: "3.12"
 
       - name: Restore durable state branch
+        if: env.RBLXVALUE_VALUE_PROFIT_SHADOW_ENABLED != 'true'
         run: |
           set -euo pipefail
           mkdir -p data
@@ -72,6 +73,16 @@ jobs:
             echo "State branch not found; cold-start safety window will evaluate recent posts."
             python tools/validate_state.py --directory data
           fi
+
+
+      - name: Initialize isolated state for RBLXValue shadow
+        if: env.RBLXVALUE_VALUE_PROFIT_SHADOW_ENABLED == 'true'
+        run: |
+          set -euo pipefail
+          rm -rf data
+          mkdir -p data
+          python tools/validate_state.py --directory data
+          echo "Initialized empty, isolated shadow state; production dedupe/watch state is not loaded or modified."
 
 
       - name: Refresh public ROBASE completed-sales prices
