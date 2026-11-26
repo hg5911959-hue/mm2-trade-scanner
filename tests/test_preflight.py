@@ -152,8 +152,40 @@ class PreflightTests(IsolatedDataTestCase):
     def test_healthy_fixture_passes(self):
         self.assertEqual(self._checks(), [])
 
+    def test_preflight_counts_only_prices_with_three_or_more_chroma_sales(self):
+        path = self.root / "robase_prices.json"
+        snapshot = json.loads(path.read_text(encoding="utf-8"))
+        for row in snapshot["items"][:215]:
+            row["selected_marketplace_sold_7d"] = 2
+            row["marketplace_prices"]["chromas.gg"]["sold_7d"] = 2
+        path.write_text(json.dumps(snapshot), encoding="utf-8")
+        checks = self._checks()
+        self.assertTrue(any(
+            "fresh cash-eligible ROBASE prices (at least 3 Sold (7d)): 7 / 8" in x
+            for x in checks
+        ))
+
+    def test_preflight_handles_a_fresh_catalogue_with_no_chroma_sales(self):
+        path = self.root / "robase_prices.json"
+        snapshot = json.loads(path.read_text(encoding="utf-8"))
+        for row in snapshot["items"]:
+            row["cash_price_usd"] = None
+            row["price_display"] = ""
+            row["selected_marketplace"] = None
+            row["selected_marketplace_sold_7d"] = 0
+            row["marketplace_prices"]["chromas.gg"]["price_usd"] = None
+            row["marketplace_prices"]["chromas.gg"]["price_display"] = ""
+            row["marketplace_prices"]["chromas.gg"]["sold_7d"] = 0
+        path.write_text(json.dumps(snapshot), encoding="utf-8")
+        checks = self._checks()
+        self.assertTrue(any(
+            "fresh cash-eligible ROBASE prices (at least 3 Sold (7d)): 0 / 8" in x
+            for x in checks
+        ))
+        self.assertFalse(any("snapshot unavailable or invalid" in x for x in checks))
+
     def test_each_required_preflight_failure_is_reported(self):
-        self.assertTrue(any("fresh verified ROBASE cash prices" in x for x in self._checks(env={**self.env, "CASH_MIN_VERIFIED_ROWS": "223"})))
+        self.assertTrue(any("fresh cash-eligible ROBASE prices (at least 3 Sold (7d))" in x for x in self._checks(env={**self.env, "CASH_MIN_VERIFIED_ROWS": "223"})))
         (self.root / "api_key_blocked.json").write_text(json.dumps({"permanent": True}), encoding="utf-8")
         self.assertTrue(any("API key is blocked" in x for x in self._checks()))
         (self.root / "api_key_blocked.json").write_text(json.dumps({"permanent": False}), encoding="utf-8")
