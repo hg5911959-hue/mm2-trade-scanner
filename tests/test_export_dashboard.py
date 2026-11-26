@@ -1,8 +1,8 @@
 import json
 import tempfile
-import unittest
 from pathlib import Path
 
+from test_support import IsolatedDataTestCase
 from tools.export_dashboard import _robase_dashboard_payload
 
 
@@ -64,7 +64,7 @@ def catalogue():
     }
 
 
-class RobaseDashboardPayloadTests(unittest.TestCase):
+class RobaseDashboardPayloadTests(IsolatedDataTestCase):
     def test_uses_only_chroma_market_price_and_sales_7d(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "prices.json"
