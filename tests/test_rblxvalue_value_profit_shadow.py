@@ -5,6 +5,7 @@ from test_support import IsolatedDataTestCase
 from pathlib import Path
 
 from tools.rblxvalue_value_profit_shadow import load_values_from_snapshot
+import scanner
 
 
 def sample_row(index, **overrides):
@@ -84,6 +85,36 @@ class RblxValueValueProfitShadowTests(IsolatedDataTestCase):
         values, summary = load_values_from_snapshot(self.write_snapshot(snapshot(rows)), today="2026-11-25")
         self.assertIsNone(values["weapon 0"]["variants"][0]["value"])
         self.assertEqual(summary["supreme_numeric"], 213)
+
+    def test_supreme_price_ignores_provider_range_and_uses_scalar_value_only(self):
+        rows = [sample_row(i) for i in range(214)]
+        rows[0]["range"] = "100-200"
+        values, _ = load_values_from_snapshot(self.write_snapshot(snapshot(rows)), today="2026-11-25")
+        variant = values["weapon 0"]["variants"][0]
+        self.assertEqual(variant["value"], 123)
+        self.assertEqual(variant["value_min"], 123)
+        self.assertEqual(variant["value_max"], 123)
+        self.assertEqual(variant["value_source"], "Supreme Values")
+        self.assertEqual(variant["stability_source"], "RBLXValue")
+        self.assertEqual(variant["demand_source"], "RBLXValue")
+        self.assertEqual(variant["rarity_source"], "RBLXValue")
+
+    def test_generic_blended_value_is_never_accepted_as_supreme_price(self):
+        value, status = scanner._supreme_numeric_value({
+            "value": 999,
+            "rblxvalue_value": 999,
+            "secondary_value": 888,
+        })
+        self.assertIsNone(value)
+        self.assertEqual(status, "not_numeric")
+
+    def test_explicit_supreme_source_value_wins_over_generic_value(self):
+        value, status = scanner._supreme_numeric_value({
+            "value": 999,
+            "raw_source_value": 123,
+        })
+        self.assertEqual(value, 123)
+        self.assertEqual(status, "numeric")
 
     def test_missing_stability_is_preserved_as_missing(self):
         rows = [sample_row(i) for i in range(214)]
