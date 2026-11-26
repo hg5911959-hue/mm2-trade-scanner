@@ -79,7 +79,9 @@ class RobasePriceParserTests(IsolatedDataTestCase):
         )
         self.assertEqual(item["name"], "Harvester")
         self.assertEqual(item["robase_category"], "Ancient")
-        self.assertEqual(item["price_display"], "$4.99")
+        self.assertEqual(item["price_display"], "")
+        self.assertEqual(item["all_marketplaces_price_display"], "$4.99")
+        self.assertIsNone(item["cash_price_usd"])
 
     def test_item_detail_parses_multiword_chroma_heading_without_splitting_name(self):
         html = """
@@ -222,8 +224,9 @@ class RobasePriceParserTests(IsolatedDataTestCase):
         )
         self.assertEqual(item["name"], "Harvester")
         self.assertEqual(item["robase_category"], "Ancient")
-        self.assertEqual(item["price_display"], "$4.99")
-        self.assertEqual(item["cash_price_usd"], 4.99)
+        self.assertEqual(item["price_display"], "")
+        self.assertIsNone(item["cash_price_usd"])
+        self.assertEqual(item["all_marketplaces_price_usd"], 4.99)
         self.assertEqual(item["sold_7d"], 1403)
         self.assertEqual(item["sold_30d"], 7722)
         self.assertEqual(item["bloxswaps_value"], 250)
