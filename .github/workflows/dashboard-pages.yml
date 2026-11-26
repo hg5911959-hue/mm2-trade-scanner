@@ -2,15 +2,12 @@ name: Publish MM2 Market Dashboard
 
 on:
   push:
-    branches: [main]
+    branches: [main, state]
     paths:
       - ".github/workflows/dashboard-pages.yml"
       - "docs/**"
       - "tools/export_dashboard.py"
-  workflow_run:
-    workflows: ["MM2 Trade Scanner", "MM2 Scanner Scheduler"]
-    types: [completed]
-    branches: [main]
+      - "data/**"
   workflow_dispatch:
 
 permissions:
@@ -78,4 +75,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346b1 # v5.0.1
