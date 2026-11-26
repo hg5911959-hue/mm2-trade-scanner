@@ -43,6 +43,12 @@ def snapshot(rows):
             "value_source_a": "MM2Values",
             "value_source_b": "Supreme Values",
         },
+        "third_party_authorization": {
+            "source": "Supreme Values",
+            "authorization_date": "2026-11-26",
+            "authorized_scope": "Extract, process, and display authorized MM2 data with attribution",
+            "attribution": "Supreme Values (supremevalues.com)",
+        },
         "snapshot_date": "2026-11-25",
         "dataset_last_updated": "2026-11-25 12:02:35",
         "expected_weapons": 214,
@@ -92,6 +98,18 @@ class RblxValueValueProfitShadowTests(IsolatedDataTestCase):
         values, _ = load_values_from_snapshot(self.write_snapshot(snapshot(rows)), today="2026-11-25")
         self.assertEqual(len(values["weapon 0"]["variants"]), 2)
         self.assertIsNone(values["weapon 0"]["value"])
+
+    def test_missing_authorization_metadata_fails_closed(self):
+        data = snapshot([sample_row(i) for i in range(214)])
+        data.pop("third_party_authorization")
+        with self.assertRaisesRegex(ValueError, "authorization and attribution metadata"):
+            load_values_from_snapshot(self.write_snapshot(data), today="2026-11-25")
+
+    def test_wrong_attribution_fails_closed(self):
+        data = snapshot([sample_row(i) for i in range(214)])
+        data["third_party_authorization"]["attribution"] = "Unknown source"
+        with self.assertRaisesRegex(ValueError, "authorization and attribution metadata"):
+            load_values_from_snapshot(self.write_snapshot(data), today="2026-11-25")
 
     def test_wrong_snapshot_date_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "not today's"):
