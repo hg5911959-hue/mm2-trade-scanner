@@ -96,6 +96,25 @@ class SupremeDailySnapshotTests(IsolatedDataTestCase):
         self.assertEqual(day_two["items"][0]["stability"], "Rising")
         self.assertEqual(day_two["items"][0]["stability_score"], STABILITY_SCORES["Rising"])
 
+    def test_category_timestamps_must_be_present_on_every_page(self):
+        class FakeResponse(io.BytesIO):
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *args): self.close()
+
+        def fake_open(request, timeout=30):
+            category = request.full_url.rsplit("/", 1)[-1]
+            timestamp = "" if category == "pets" else (
+                "<div>Values Last Updated - November 25th, 2026 at 7:36 PM // Join our Discord Server</div>"
+            )
+            body = timestamp + '<script>var _svPopup = {"Example":{"rawValue":1}};</script>'
+            return FakeResponse(body.encode("utf-8"))
+
+        _, metadata = fetch_all_categories(sleep=lambda _: None, opener=fake_open, delay=0)
+        self.assertFalse(metadata["source_timestamp_consistent"])
+        self.assertIsNone(metadata["source_last_updated"])
+        self.assertEqual(metadata["source_timestamp_count"], len(CATEGORIES) - 1)
+
     def test_category_fetch_fails_closed_when_source_object_is_missing(self):
         class FakeResponse(io.BytesIO):
             status = 200
