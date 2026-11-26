@@ -5,6 +5,7 @@ from pathlib import Path
 
 from test_support import IsolatedDataTestCase
 from tools.export_dashboard import _robase_dashboard_payload, build_dashboard_data
+from market_history import MarketHistory
 
 
 def catalogue():
@@ -131,6 +132,20 @@ class RobaseDashboardPayloadTests(IsolatedDataTestCase):
         self.assertFalse(summary["available"])
         self.assertEqual(rows, [])
 
+
+    def test_empty_but_valid_sqlite_history_is_reported_as_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prices = root / "prices.json"
+            prices.write_text(json.dumps(catalogue()), encoding="utf-8")
+            database = root / "history.sqlite3"
+            MarketHistory(database)
+            payload = build_dashboard_data(database, prices)
+
+        summary = payload["summary"]
+        self.assertTrue(summary["historyAvailable"])
+        self.assertEqual(summary["trackedListings"], 0)
+        self.assertEqual(summary["opportunities7d"], 0)
 
     def test_missing_sqlite_history_is_not_reported_as_zero(self):
         with tempfile.TemporaryDirectory() as tmp:
