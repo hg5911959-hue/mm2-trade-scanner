@@ -131,7 +131,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
             "",
         )
         core_job = core_job.replace(
-            "        if: env.RBLXVALUE_VALUE_PROFIT_SHADOW_ENABLED != 'true'\\n",
+            "        if: env.RBLXVALUE_VALUE_PROFIT_SHADOW_ENABLED != 'true'\n",
             "",
         )
         for extra_step, next_step in (
