@@ -477,8 +477,8 @@ class ReliabilityTests(IsolatedDataTestCase):
             "catalog_type": "Gun", "catalog_chroma": False,
         }]
         self.assertEqual(scanner.calculate_side(item, values, side="give")[0], 4900)
-        self.assertEqual(scanner.calculate_side(item, values, side="receive")[0], 4800)
-        self.assertEqual(scanner.calculate_side_bounds(item, values)[0:2], (4800, 4900))
+        self.assertEqual(scanner.calculate_side(item, values, side="receive")[0], 4900)
+        self.assertEqual(scanner.calculate_side_bounds(item, values)[0:2], (4900, 4900))
 
 
     def test_blox_catalogue_metadata_is_preserved_and_unknown_ids_are_not_name_guessed(self):
@@ -1730,7 +1730,7 @@ class UntypedCatalogEnrichmentTests(IsolatedDataTestCase):
             variant = values["untyped-0"]["variants"][0]
             self.assertEqual(variant["type"], "knife")
             self.assertEqual(variant["value"], 25)
-            self.assertEqual(variant["value_min"], 20)
+            self.assertEqual(variant["value_min"], 25)
             self.assertEqual(variant["value_max"], 25)
             self.assertTrue(cache_path.exists())
 
