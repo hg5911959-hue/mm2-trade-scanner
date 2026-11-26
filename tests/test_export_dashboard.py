@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 
 from test_support import IsolatedDataTestCase
-from tools.export_dashboard import _robase_dashboard_payload
+from tools.export_dashboard import _robase_dashboard_payload, build_dashboard_data
 
 
 def catalogue():
@@ -131,6 +131,19 @@ class RobaseDashboardPayloadTests(IsolatedDataTestCase):
         self.assertFalse(summary["available"])
         self.assertEqual(rows, [])
 
+
+    def test_missing_sqlite_history_is_not_reported_as_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prices = root / "prices.json"
+            prices.write_text(json.dumps(catalogue()), encoding="utf-8")
+            payload = build_dashboard_data(root / "missing.sqlite3", prices)
+
+        summary = payload["summary"]
+        self.assertFalse(summary["historyAvailable"])
+        self.assertIsNone(summary["trackedListings"])
+        self.assertIsNone(summary["opportunities7d"])
+        self.assertEqual(payload["robaseSummary"]["pricedItemCount"], 1)
 
 if __name__ == "__main__":
     unittest.main()
