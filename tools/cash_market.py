@@ -343,8 +343,8 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RuntimeError("[cash] ROBASE price snapshot is missing or invalid.") from exc
 
-    if snapshot.get("schema_version") != 4 or snapshot.get("price_basis") != "seller_proceeds_after_marketplace_fees":
-        raise RuntimeError("[cash] ROBASE snapshot is not the verified item-identity schema.")
+    if snapshot.get("schema_version") != 5 or snapshot.get("price_basis") != "selected_marketplace_seller_proceeds_after_fees":
+        raise RuntimeError("[cash] ROBASE snapshot is not the selected-marketplace price schema.")
     expected = snapshot.get("catalog_expected_count")
     rows = snapshot.get("items")
     if (
@@ -361,6 +361,7 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
     current = current_dt.timestamp()
     items_by_slug = {}
     name_groups = {}
+    page_stale_rows = []
     for row in rows:
         if not isinstance(row, dict):
             raise TypeError("[cash] Invalid ROBASE item row.")
@@ -374,8 +375,6 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
         if source != f"https://robase.gg/item/{slug}":
             raise RuntimeError(f"[cash] ROBASE item URL/slug mismatch: {name or slug}")
         try:
-            price = float(row.get("cash_price_usd"))
-            display_price = float(display.removeprefix("$").replace(",", ""))
             checked_dt = datetime.fromisoformat(
                 str(row.get("last_checked_at_utc") or "")
             )
@@ -386,19 +385,77 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
             raise RuntimeError("[cash] Invalid ROBASE price or verification timestamp.")
         age = current - checked_at
         fresh = 0 <= age <= max_age_seconds
+        page_verified = row.get("status") == "verified" and fresh
+        if not page_verified:
+            page_stale_rows.append(name or slug)
+        marketplace_prices = row.get("marketplace_prices")
+        if not isinstance(marketplace_prices, dict):
+            raise RuntimeError(f"[cash] ROBASE marketplace breakdown is missing: {name or slug}")
+        for market_code, market_row in marketplace_prices.items():
+            if market_code not in {"chromas.gg", "starpets"} or not isinstance(market_row, dict):
+                raise RuntimeError(f"[cash] Invalid ROBASE marketplace identity: {name or slug}")
+            try:
+                market_price = float(market_row.get("price_usd"))
+                market_sales = market_row.get("sold_7d")
+                market_fee = float(market_row.get("fee_percent"))
+            except (TypeError, ValueError, OverflowError):
+                raise RuntimeError(f"[cash] Invalid marketplace price data: {name or slug}")
+            if (
+                not math.isfinite(market_price) or market_price <= 0
+                or type(market_sales) is not int or market_sales < 0
+                or not math.isfinite(market_fee) or not 0 <= market_fee < 100
+            ):
+                raise RuntimeError(f"[cash] Invalid marketplace price data: {name or slug}")
+        selected_marketplace = row.get("selected_marketplace")
+        selected_sales = row.get("selected_marketplace_sold_7d", 0)
+        if selected_marketplace is None:
+            if row.get("cash_price_usd") is not None or display:
+                raise RuntimeError(f"[cash] Missing selected marketplace has a fallback price: {name or slug}")
+            if any(market.get("sold_7d", 0) > 0 for market in marketplace_prices.values()):
+                raise RuntimeError(f"[cash] A market with sales was not selected: {name or slug}")
+            price = None
+            display_price = None
+        else:
+            if selected_marketplace not in {"chromas.gg", "starpets"} or selected_marketplace not in marketplace_prices:
+                raise RuntimeError(f"[cash] Selected ROBASE marketplace is invalid: {name or slug}")
+            selected_row = marketplace_prices[selected_marketplace]
+            try:
+                price = float(row.get("cash_price_usd"))
+                display_price = float(display.removeprefix("$").replace(",", ""))
+            except (TypeError, ValueError, OverflowError):
+                raise RuntimeError(f"[cash] Invalid selected marketplace price: {name or slug}")
+            if (
+                not math.isfinite(price) or price <= 0
+                or not math.isfinite(display_price) or abs(display_price - price) > 0.0000001
+                or not display.startswith("$")
+                or abs(price - float(selected_row["price_usd"])) > 0.0000001
+                or selected_sales != selected_row["sold_7d"]
+            ):
+                raise RuntimeError(f"[cash] Selected ROBASE price does not match its marketplace row: {name or slug}")
+            eligible = [
+                (code, market) for code, market in marketplace_prices.items()
+                if market["sold_7d"] >= 3
+            ]
+            candidates = eligible or [
+                (code, market) for code, market in marketplace_prices.items()
+                if market["sold_7d"] > 0
+            ]
+            expected_selection = (
+                min(candidates, key=lambda pair: (float(pair[1]["price_usd"]), -pair[1]["sold_7d"], pair[0]))[0]
+                if candidates else None
+            )
+            if selected_marketplace != expected_selection:
+                raise RuntimeError(f"[cash] ROBASE did not select the cheapest sufficiently sampled market: {name or slug}")
         if (
             not name or len(name) > 100 or not key
-            or not math.isfinite(price) or price <= 0
-            or not math.isfinite(display_price) or abs(display_price - price) > 0.0000001
-            or not display.startswith("$")
             or not row.get("robase_category")
         ):
-            raise RuntimeError(f"[cash] Invalid ROBASE item identity or displayed price: {name or slug}")
+            raise RuntimeError(f"[cash] Invalid ROBASE item identity: {name or slug}")
         if slug in items_by_slug:
             raise RuntimeError(f"[cash] Duplicate ROBASE source slug: {slug}")
         price_window_days = row.get("price_window_days")
         if price_window_days is not None and (
-            type(price_window_days) is not int or price_window_days not in (7, 30)
+            type(price_window_days) is not int or price_window_days != 7
         ):
             raise RuntimeError(f"[cash] Invalid ROBASE price sample window: {name or slug}")
         sold_7d = row.get("sold_7d", 0)
@@ -408,12 +465,8 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
             or type(sold_30d) is not int or sold_30d < 0
         ):
             raise RuntimeError(f"[cash] Invalid ROBASE sales sample counts: {name or slug}")
-        price_sample_count = (
-            sold_7d if price_window_days == 7
-            else sold_30d if price_window_days == 30
-            else None
-        )
-        verified = row.get("status") == "verified" and fresh
+        price_sample_count = selected_sales if selected_marketplace else 0
+        verified = page_verified and selected_marketplace is not None
         entry = {
             "name": name,
             "cash_price_usd": price,
@@ -435,10 +488,13 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
             "bloxswaps_holders": row.get("bloxswaps_holders"),
             "sold_7d": sold_7d,
             "sold_30d": sold_30d,
-            "price_window_days": price_window_days,
+            "price_window_days": 7,
             "price_sample_count": price_sample_count,
+            "selected_marketplace": selected_marketplace,
+            "marketplace_prices": marketplace_prices,
+            "selected_marketplace_fee_percent": row.get("selected_marketplace_fee_percent"),
             "source": source,
-            "notes": "Exact ROBASE displayed seller-proceeds price",
+            "notes": "ROBASE seller proceeds after fees on " + str(selected_marketplace or "no eligible marketplace"),
         }
         items_by_slug[slug] = entry
         name_groups.setdefault(key, []).append(entry)
@@ -450,21 +506,17 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
     items = {key: group[0] for key, group in name_groups.items() if len(group) == 1}
     duplicate_name_keys = sorted(key for key, group in name_groups.items() if len(group) > 1)
     price_rows = [
-        (slug, row["price_display"], row["status"])
+        (slug, row["price_display"], row["status"], row.get("selected_marketplace"))
         for slug, row in sorted(items_by_slug.items())
     ]
     price_digest = hashlib.sha256(
         json.dumps(price_rows, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
-    stale_rows = [
-        row["name"] for row in items_by_slug.values()
-        if row["status"] != "verified"
-    ]
-    if stale_rows:
+    if page_stale_rows:
         raise RuntimeError(
-            f"[cash] ROBASE item pages are not all freshly verified: {len(stale_rows)} stale/unverified rows."
+            f"[cash] ROBASE item pages are not all freshly verified: {len(page_stale_rows)} stale/unverified rows."
         )
-    verified_rows = list(items_by_slug.values())
+    verified_rows = [row for row in items_by_slug.values() if row["status"] == "verified"]
     return {
         "items": items,
         "items_by_slug": items_by_slug,
