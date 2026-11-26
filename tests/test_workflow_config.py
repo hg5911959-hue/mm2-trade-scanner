@@ -356,5 +356,12 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertEqual(step.count("CASH_MAX_AGE_DAYS:"), 1)
 
 
+    def test_dashboard_rebuilds_after_durable_state_branch_updates(self):
+        workflow = (ROOT / ".github/workflows/dashboard-pages.yml").read_text(encoding="utf-8")
+        self.assertIn("branches: [main, state]", workflow)
+        self.assertIn('      - "data/**"', workflow)
+        self.assertIn("git archive origin/state data | tar -x", workflow)
+        self.assertNotIn("  workflow_run:", workflow)
+
 if __name__ == "__main__":
     unittest.main()
