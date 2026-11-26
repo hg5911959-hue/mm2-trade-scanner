@@ -160,11 +160,14 @@ def fetch_all_categories(*, sleep=time.sleep, opener=urlopen, delay: float = 0.7
             sleep(delay)
     if len(category_counts) != len(CATEGORIES):
         raise ValueError("Not all configured Supreme categories were fetched")
+    timestamps_complete = len(timestamps) == len(CATEGORIES)
+    timestamps_consistent = timestamps_complete and len(set(timestamps)) == 1
     metadata = {
         "category_count": len(category_counts),
         "category_counts": category_counts,
-        "source_last_updated": timestamps[0] if timestamps and len(set(timestamps)) == 1 else None,
-        "source_timestamp_consistent": bool(timestamps) and len(set(timestamps)) == 1,
+        "source_last_updated": timestamps[0] if timestamps_consistent else None,
+        "source_timestamp_consistent": timestamps_consistent,
+        "source_timestamp_count": len(timestamps),
         "source_items": len(all_items),
     }
     return all_items, metadata
