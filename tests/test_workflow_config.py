@@ -130,9 +130,9 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
             "      RBLXVALUE_DAILY_ARCHIVE_FILE: rblxvalue-archive/data/rblxvalue_latest.json\n",
             "",
         )
-        if "      - name: Restore RBLXValue daily snapshot for offline Value-profit shadow\n" in core_job:
+        if "      - name: Restore RBLXValue daily snapshot for offline RBLXValue blended value-profit shadow\n" in core_job:
             before, after = core_job.split(
-                "      - name: Restore RBLXValue daily snapshot for offline Value-profit shadow\n", 1
+                "      - name: Restore RBLXValue daily snapshot for offline RBLXValue blended value-profit shadow\n", 1
             )
             after = after.split("      - name: Run scanner preflight checks", 1)[1]
             core_job = before + "      - name: Run scanner preflight checks" + after
