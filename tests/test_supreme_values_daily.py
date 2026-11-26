@@ -4,6 +4,8 @@ import io
 import json
 import unittest
 
+from test_support import IsolatedDataTestCase
+
 from tools.supreme_values_daily import (
     CATEGORIES,
     EXPECTED_WEAPONS,
@@ -14,7 +16,7 @@ from tools.supreme_values_daily import (
 )
 
 
-class SupremePopupParserTests(unittest.TestCase):
+class SupremePopupParserTests(IsolatedDataTestCase):
     def test_extracts_embedded_object_and_preserves_braces_in_strings(self):
         html = '<script>var _svPopup = {"Bat":{"rawValue":160,"stability":"Stable","origin":"contains }; marker"}};</script>'
         parsed = extract_sv_popup(html)
@@ -27,7 +29,7 @@ class SupremePopupParserTests(unittest.TestCase):
                 extract_sv_popup(html)
 
 
-class SupremeDailySnapshotTests(unittest.TestCase):
+class SupremeDailySnapshotTests(IsolatedDataTestCase):
     @staticmethod
     def fixture_data(stability="Stable"):
         identities = {}
