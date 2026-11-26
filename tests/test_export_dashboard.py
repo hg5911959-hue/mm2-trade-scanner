@@ -96,6 +96,19 @@ class RobaseDashboardPayloadTests(IsolatedDataTestCase):
         self.assertFalse(summary["available"])
         self.assertEqual(rows, [])
 
+    def test_distinguishes_missing_chroma_data_from_zero_sales(self):
+        payload = catalogue()
+        payload["items"][1]["marketplace_prices"] = {}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "prices.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            summary, rows = _robase_dashboard_payload(path)
+        self.assertTrue(summary["available"])
+        self.assertEqual(summary["missingChromaDataCount"], 1)
+        self.assertIsNone(rows[1]["sold7d"])
+        self.assertFalse(rows[1]["salesAvailable"])
+        self.assertEqual(rows[1]["priceBasis"], "Chroma 7d data unavailable")
+
     def test_rejects_legacy_price_schema(self):
         payload = catalogue()
         payload["schema_version"] = 5
