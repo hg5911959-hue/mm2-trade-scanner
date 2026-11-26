@@ -116,6 +116,8 @@ jobs:
               raise SystemExit(f"Refusing unmatched or ambiguous Supreme identities: {counts}")
           if counts.get("with_numeric_value") != 214:
               raise SystemExit(f"Refusing incomplete numeric Supreme values: {counts}")
+          if latest.get("source_timestamp_consistent") is not True or not latest.get("source_last_updated"):
+              raise SystemExit("Refusing a snapshot without one consistent source update timestamp across all categories")
           auth = latest.get("third_party_authorization") or {}
           if auth.get("source") != "Supreme Values" or auth.get("authorization_date") != "2026-11-26":
               raise SystemExit("Missing recorded Supreme authorization metadata")
