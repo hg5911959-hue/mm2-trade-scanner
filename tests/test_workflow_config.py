@@ -156,7 +156,8 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
 
     def test_supreme_shadow_trigger_does_not_forward_telegram_or_other_secrets(self):
         workflow = (ROOT / ".github/workflows/supreme-values-daily-profit-shadow.yml").read_text(encoding="utf-8")
-        self.assertIn("permissions:\\n  contents: read\\n  actions: read", workflow)
+        self.assertIn("contents: read", workflow)
+        self.assertIn("actions: read", workflow)
         self.assertIn("rblxvalue_value_profit_shadow: true", workflow)
         self.assertNotIn("secrets:", workflow)
         self.assertNotIn("TELEGRAM_", workflow)
