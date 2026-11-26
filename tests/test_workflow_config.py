@@ -177,8 +177,8 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         workflow = (ROOT / ".github/workflows/rblxvalue-daily-history.yml").read_text(encoding="utf-8")
         self.assertIn('source_fields = latest.get("source_fields") or {}', workflow)
         self.assertIn('source_fields.get("value_source_b") != "Supreme Values (exclusive trade-price source)"', workflow)
-        for field in ("stability", "demand", "rarity"):
-            self.assertIn(f'source_fields.get("{field}") != "RBLXValue"', workflow)
+        self.assertIn('for field in ("stability", "demand", "rarity"):', workflow)
+        self.assertIn('if source_fields.get(field) != "RBLXValue":', workflow)
         self.assertIn('source_fields.get("range") != "RBLXValue metadata; not used for trade-price bounds"', workflow)
 
     def test_supreme_shadow_never_loads_or_mutates_production_dedupe_state(self):
