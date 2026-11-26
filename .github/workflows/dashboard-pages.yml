@@ -20,8 +20,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    outputs:
-      pages_enabled: ${{ steps.pages-preflight.outputs.enabled }}
     permissions:
       contents: read
       pages: write
@@ -43,46 +41,6 @@ jobs:
           Path("/tmp/mm2-dashboard-inline.js").write_text(scripts[0], encoding="utf-8")
           PY
           node --check /tmp/mm2-dashboard-inline.js
-
-      - name: Check whether GitHub Pages is enabled
-        id: pages-preflight
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          status="$(curl --silent --show-error --output /tmp/pages-response.json --write-out '%{http_code}' \
-            --header "Authorization: Bearer $GH_TOKEN" \
-            --header "Accept: application/vnd.github+json" \
-            --header "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/pages")"
-          if [ "$status" = "404" ]; then
-            echo "[pages] Site not found; attempting to initialize GitHub Pages with the workflow build type."
-            create_status="$(curl --silent --show-error --output /tmp/pages-create-response.json --write-out '%{http_code}' \
-              --request POST \
-              --header "Authorization: Bearer $GH_TOKEN" \
-              --header "Accept: application/vnd.github+json" \
-              --header "X-GitHub-Api-Version: 2022-11-28" \
-              --header "Content-Type: application/json" \
-              --data '{"build_type":"workflow"}' \
-              "https://api.github.com/repos/$GITHUB_REPOSITORY/pages")"
-            echo "[pages] Site initialization returned HTTP $create_status."
-            status="$(curl --silent --show-error --output /tmp/pages-response.json --write-out '%{http_code}' \
-              --header "Authorization: Bearer $GH_TOKEN" \
-              --header "Accept: application/vnd.github+json" \
-              --header "X-GitHub-Api-Version: 2022-11-28" \
-              "https://api.github.com/repos/$GITHUB_REPOSITORY/pages")"
-          fi
-          if [ "$status" = "200" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-            echo "[pages] GitHub Pages is enabled; deployment may proceed."
-          elif [ "$status" = "404" ] || [ "$status" = "403" ]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::GitHub Pages could not be initialized with the workflow token (HTTP $status). Dashboard data was built and the artifact uploaded, but deployment was skipped. Repository administrator permission may be required."
-          else
-            echo "[pages] Preflight failed with HTTP $status."
-            head -c 500 /tmp/pages-response.json || true
-            exit 1
-          fi
 
       - name: Restore market history from state branch
         run: |
@@ -109,7 +67,6 @@ jobs:
 
   deploy:
     needs: build
-    if: needs.build.outputs.pages_enabled == 'true'
     runs-on: ubuntu-latest
     permissions:
       pages: write
