@@ -40,9 +40,13 @@ def snapshot(rows):
         "schema_version": 1,
         "source": "RBLXValue official API v2",
         "source_fields": {
-            "value": "RBLXValue blended estimate",
-            "value_source_a": "MM2Values",
-            "value_source_b": "Supreme Values",
+            "value": "RBLXValue blended estimate (not used for trade pricing)",
+            "value_source_a": "MM2Values (not used for trade pricing)",
+            "value_source_b": "Supreme Values (exclusive trade-price source)",
+            "stability": "RBLXValue",
+            "demand": "RBLXValue",
+            "rarity": "RBLXValue",
+            "range": "RBLXValue metadata; not used for trade-price bounds",
         },
         "third_party_authorization": {
             "source": "Supreme Values",
