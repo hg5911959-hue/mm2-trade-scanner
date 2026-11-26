@@ -338,6 +338,7 @@ def _parse_item_detail(url: str, document: str, fetched_at_utc: str, etag="", la
         "selected_marketplace_sold_7d": selected_market["sold_7d"] if selected_market else 0,
         "selected_marketplace_fee_percent": selected_market["fee_percent"] if selected_market else None,
         "price_window_days": 7 if selected_market else None,
+        "all_marketplaces_price_window_days": price_window_days,
         "sold_7d": sold_7d,
         "sold_30d": sold_30d,
         "bloxswaps_value": int(value_match.group(1).replace(",", "")) if value_match else None,
