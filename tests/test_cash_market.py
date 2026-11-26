@@ -484,6 +484,7 @@ class CashMarketTests(IsolatedDataTestCase):
         )
         self.assertEqual(result[0], 3.30)
         self.assertEqual(result[1], 3.30)
+        self.assertIn("[chromas.gg]", result[2][0])
         self.assertEqual(result[3], [])
 
 
