@@ -253,12 +253,12 @@ def _parse_item_detail(url: str, document: str, fetched_at_utc: str, etag="", la
         about = DETAIL_ABOUT_PLAIN_RE.search(text)
         name = " ".join(about.group("name").split()) if about else ""
     price_match = DETAIL_PRICE_RE.search(text)
-    if not about or not price_match:
-        raise ValueError(f"ROBASE item detail did not expose a canonical name and price: {url}")
+    if not about:
+        raise ValueError(f"ROBASE item detail did not expose a canonical item identity: {url}")
     category = " ".join(about.group("category").split())
-    price_display = "$" + price_match.group("price")
-    price = float(price_match.group("price").replace(",", ""))
-    if not name or not category or price <= 0:
+    price_display = "$" + price_match.group("price") if price_match else ""
+    price = float(price_match.group("price").replace(",", "")) if price_match else None
+    if not name or not category or (price is not None and price <= 0):
         raise ValueError(f"invalid ROBASE item detail: {url}")
     marketplace_prices = {}
     for cells in table_parser.rows:
@@ -312,7 +312,7 @@ def _parse_item_detail(url: str, document: str, fetched_at_utc: str, etag="", la
         int(next(value for value in sold_30d_match.groups() if value).replace(",", ""))
         if sold_30d_match else 0
     )
-    price_window_days = int(price_match.group("days"))
+    price_window_days = int(price_match.group("days")) if price_match else None
     if price_window_days == 7 and sold_7d == 0 and sold_30d > 0:
         # ROBASE's explicit period counts outrank contradictory descriptive copy.
         # A 7-day average cannot be supported when the page reports zero 7-day sales.
