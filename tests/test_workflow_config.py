@@ -137,8 +137,19 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
             after = after.split("      - name: Run scanner preflight checks", 1)[1]
             core_job = before + "      - name: Run scanner preflight checks" + after
         core_job = core_job.replace(
+            "          MIN_VALUE_DIFFERENCE: ${{ inputs.rblxvalue_value_profit_shadow && '2' || '0' }}
+          MIN_PROFIT_PERCENT: ${{ inputs.rblxvalue_value_profit_shadow && '8' || '5' }}
+          MIN_RECEIVE_DEMAND_SCORE: ${{ inputs.rblxvalue_value_profit_shadow && '5.0' || '4.0' }}
+          MIN_RECEIVE_STABILITY_SCORE: ${{ inputs.rblxvalue_value_profit_shadow && '5.5' || '3.0' }}",
+            '          MIN_VALUE_DIFFERENCE: "0"\n          MIN_PROFIT_PERCENT: "5"',
+        )
+        core_job = core_job.replace(
             "PREFLIGHT_SEND_NOTICES: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow || inputs.rblxvalue_value_profit_shadow) && 'false' || 'true' }}",
             "PREFLIGHT_SEND_NOTICES: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow) && 'false' || 'true' }}",
+        )
+        core_job = core_job.replace(
+            "DRY_RUN: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow || inputs.rblxvalue_value_profit_shadow) && 'true' || 'false' }}",
+            "DRY_RUN: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow) && 'true' || 'false' }}",
         )
         core_job = core_job.replace(
             "DRY_RUN: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow || inputs.rblxvalue_value_profit_shadow) && 'true' || 'false' }}",
