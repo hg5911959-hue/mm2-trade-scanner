@@ -119,7 +119,7 @@ jobs:
           TELEGRAM_PREFLIGHT_CHECK: "true"
           CASH_MAX_AGE_DAYS: "1"
           CASH_MIN_VERIFIED_ROWS: "8"
-          PREFLIGHT_SEND_NOTICES: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow) && 'false' || 'true' }}
+          PREFLIGHT_SEND_NOTICES: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow || inputs.rblxvalue_value_profit_shadow) && 'false' || 'true' }}
         run: python -m tools.preflight --warn
 
       - name: Run BloxSwaps scanner
