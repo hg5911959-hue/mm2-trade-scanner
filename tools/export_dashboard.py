@@ -66,7 +66,18 @@ def _robase_dashboard_payload(catalogue_path: str | Path) -> tuple[dict[str, Any
         sales = row.get("selected_marketplace_sold_7d", 0)
         price, display = row.get("cash_price_usd"), str(row.get("price_display") or "")
         if selected is None:
-            if price is not None or display or sales != 0:
+            if price is not None or display or type(sales) is not int or sales != 0:
+                return empty, []
+            # A zero-sales Chroma row is valid only when it explicitly reports
+            # no 7d price and zero completed sales. An absent row is also valid.
+            if chroma is not None and (
+                not isinstance(chroma, dict)
+                or chroma.get("marketplace") != "chromas.gg"
+                or chroma.get("price_usd") is not None
+                or str(chroma.get("price_display") or "") != ""
+                or type(chroma.get("sold_7d")) is not int
+                or chroma.get("sold_7d") != 0
+            ):
                 return empty, []
             price_value = None
         else:
