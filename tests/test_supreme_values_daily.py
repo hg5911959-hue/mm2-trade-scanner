@@ -34,7 +34,7 @@ class SupremeDailySnapshotTests(unittest.TestCase):
     def fixture_data(stability="Stable"):
         identities = {}
         source_items = {}
-        categories = ("godlies", "ancients", "vintages", "chromas", "legendaries", "rares", "uncommons", "commons", "uniques", "pets", "misc", "sets")
+        categories = ("godlies", "ancients", "vintages", "chromas", "legendaries", "rares", "uncommons", "commons", "uniques")
         for index in range(EXPECTED_WEAPONS):
             category = categories[index % len(categories)]
             name = f"Test Weapon {index:03d}"
