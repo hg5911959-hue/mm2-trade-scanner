@@ -159,7 +159,7 @@ def build_snapshot(identity_map, source_items, meta, *, snapshot_date, fetched_a
         if len(candidates) == 1:
             item = candidates[0]; slug = str(item.get("slug") or "").casefold()
             row.update({"item_last_updated":item.get("last_updated"),"rblxvalue_slug":slug,"rblxvalue_name":item.get("name"),"category":item.get("category"),"api_type":item.get("type"),"value":parse_number(item.get("value")),"stability":str(item.get("stability") or "").strip() or None,"demand":parse_number(item.get("demand")),"rarity":parse_number(item.get("rarity")),"status":"matched"})
-            if row["value"] is None: row["status"] = "matched_missing_blended_value"
+            if row["value"] is None or row["value"] <= 0: row["status"] = "matched_missing_blended_value"
             claims.setdefault(slug, []).append(len(rows))
         elif len(candidates) > 1: row["status"] = "ambiguous"
         rows.append(row)
