@@ -1605,7 +1605,7 @@ class ReceiveMarketQualityTests(IsolatedDataTestCase):
         line = "• Knife B [godly / knife] x1 — 20 each = 20 | Stability (RBLXValue): Stable | Demand: 5/10 | Rarity: 4/10"
         rendered = scanner._format_telegram_item_line(line)
         self.assertIn("20 each", rendered)
-        self.assertIn("Stability:", rendered)
+        self.assertIn("Stability (RBLXValue):", rendered)
         self.assertIn("Demand 5/10", rendered)
         self.assertNotIn("Rarity", rendered)
 
