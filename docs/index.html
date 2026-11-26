@@ -40,13 +40,13 @@
     <section class="grid" aria-label="Market summary">
       <div class="metric"><div class="label">Tracked public listings</div><div class="value" id="listings">—</div><div class="hint">Recently observed</div></div>
       <div class="metric"><div class="label">Qualified USD opportunities</div><div class="value" id="opportunities">—</div><div class="hint">Last 7 days</div></div>
-      <div class="metric"><div class="label">ROBASE verified items</div><div class="value" id="items">—</div><div class="hint">Complete price catalogue</div></div>
+      <div class="metric"><div class="label">ROBASE verified items</div><div class="value" id="items">—</div><div class="hint">Items with a Chroma 7d price</div></div>
       <div class="metric"><div class="label">ROBASE sales · 7d</div><div class="value" id="crosschecked">—</div><div class="hint">Completed sales volume</div></div>
     </section>
 
     <section class="panel" style="margin-bottom:14px" aria-label="ROBASE prices and item quantities">
       <div class="panel-head">
-        <div><h2>ROBASE prices & market activity</h2><div class="small">Seller proceeds after marketplace fees · completed sales · BloxSwaps supply where published</div></div>
+        <div><h2>ROBASE prices & market activity</h2><div class="small">Chroma.gg Price (7d) · completed sales (7d) · BloxSwaps supply where published</div></div>
         <span class="count" id="robase-count">Loading catalogue…</span>
       </div>
       <div class="toolbar">
@@ -54,7 +54,6 @@
         <select id="robase-category" aria-label="Filter by rarity"><option value="">All rarities</option></select>
         <select id="robase-sort" aria-label="Sort ROBASE items">
           <option value="sold7d">Most sold · 7d</option>
-          <option value="sold30d">Most sold · 30d</option>
           <option value="price">Highest price</option>
           <option value="name">Name A–Z</option>
         </select>
@@ -73,7 +72,7 @@
     </section>
 
     <footer class="foot">
-      <span>Data from rblxvalue.com (stability checks) · ROBASE.gg · BloxSwaps</span>
+      <span>Cash prices: chromas.gg Price (7d) on ROBASE.gg · BloxSwaps listing context</span>
       <span>Public dashboard excludes private Discord message content and private-server listings.</span>
       <span id="updated">Data timestamp unavailable</span>
     </footer>
@@ -121,23 +120,23 @@
       (!category || row.category === category)
     );
     rows.sort((a,b) => sort === "name" ? a.name.localeCompare(b.name) :
-      sort === "price" ? b.priceUsd-a.priceUsd :
-      sort === "sold30d" ? b.sold30d-a.sold30d : b.sold7d-a.sold7d);
+      sort === "price" ? (b.priceUsd ?? -1)-(a.priceUsd ?? -1) :
+      b.sold7d-a.sold7d);
     $("robase-count").textContent = summary.available
-      ? rows.length + " / " + summary.verifiedCount + " verified · " + number(summary.totalSold7d) + " sold 7d · " + number(summary.missingSupplyCount) + " without supply data · checked " + date(summary.lastCheckedAt)
+      ? rows.length + " / " + summary.itemCount + " items · " + number(summary.pricedItemCount) + " with Chroma 7d price · " + number(summary.totalSold7d) + " sold 7d · checked " + date(summary.lastCheckedAt)
       : "Verified catalogue unavailable";
     if (!summary.available || !rows.length) {
       $("robase-table").innerHTML = '<div class="empty">' + (summary.available ? "No items match this search." : "A complete verified ROBASE snapshot is not available.") + '</div>';
       return;
     }
-    $("robase-table").innerHTML = '<table style="min-width:900px"><thead><tr><th>Item</th><th>Cash price</th><th>Sold · 7d</th><th>Sold · 30d</th><th>Copies</th><th>Holders</th><th>Price basis</th></tr></thead><tbody>' +
+    $("robase-table").innerHTML = '<table style="min-width:900px"><thead><tr><th>Item</th><th>Cash price</th><th>Sold · 7d</th><th>Copies</th><th>Holders</th><th>Price source</th></tr></thead><tbody>' +
       rows.map(row => {
         const url = safeUrl(row.url);
         const name = url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + esc(row.name) + '</a>' : esc(row.name);
-        return '<tr><td><div class="item">' + name + '</div><div class="small">' + esc(row.category) + ' · price updated ' + esc(date(row.priceUpdatedAt)) + '</div></td>' +
-          '<td class="num profit">' + usd(row.priceUsd) + '</td><td class="num">' + number(row.sold7d) + '</td><td class="num">' + number(row.sold30d) + '</td>' +
+        return '<tr><td><div class="item">' + name + '</div><div class="small">' + esc(row.category) + ' · ' + (row.priceUsd == null ? 'checked ' : 'price updated ') + esc(date(row.priceUsd == null ? row.lastCheckedAt : row.priceUpdatedAt)) + '</div></td>' +
+          '<td class="num profit">' + (row.priceUsd == null ? pill('warn','No 7d price') : usd(row.priceUsd)) + '</td><td class="num">' + number(row.sold7d) + '</td>' +
           '<td class="num">' + number(row.copies) + '</td><td class="num">' + number(row.holders) + '</td>' +
-          '<td>' + pill(row.priceWindowDays===7?'good':'warn',row.priceWindowDays===7?'7d average':'30d fallback') + '</td></tr>';
+          '<td>' + pill(row.priceUsd == null ? 'warn' : 'good',row.priceBasis) + '</td></tr>';
       }).join('') + '</tbody></table>';
   }
 
