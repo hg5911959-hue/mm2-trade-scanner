@@ -530,6 +530,10 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
             f"[cash] ROBASE item pages are not all freshly verified: {len(page_stale_rows)} stale/unverified rows."
         )
     verified_rows = [row for row in items_by_slug.values() if row["status"] == "verified"]
+    cash_eligible_rows = [
+        row for row in verified_rows
+        if type(row.get("price_sample_count")) is int and row["price_sample_count"] >= 3
+    ]
     return {
         "items": items,
         "items_by_slug": items_by_slug,
@@ -538,8 +542,11 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
         "snapshot_sha256": hashlib.sha256(raw).hexdigest(),
         "row_count": len(items_by_slug),
         "verified_count": len(verified_rows),
+        "cash_eligible_count": len(cash_eligible_rows),
         "expected_count": expected,
         "catalog_complete": True,
         "expiring_within_3_days": 0,
-        "oldest_verified_at": min(row["verified_at_utc"] for row in verified_rows),
+        "oldest_verified_at": min(
+            (row["verified_at_utc"] for row in verified_rows), default=None
+        ),
     }
