@@ -97,7 +97,8 @@ class RobasePriceParserTests(IsolatedDataTestCase):
         )
         self.assertEqual(item["name"], "Chroma Alienbeam")
         self.assertEqual(item["robase_category"], "Chroma")
-        self.assertEqual(item["price_display"], "$332.50")
+        self.assertEqual(item["price_display"], "")
+        self.assertEqual(item["all_marketplaces_price_display"], "$332.50")
         self.assertEqual(item["sold_7d"], 1)
         self.assertEqual(item["sold_30d"], 5)
 
@@ -115,7 +116,8 @@ class RobasePriceParserTests(IsolatedDataTestCase):
         item = _parse_item_detail(
             "https://robase.gg/item/chroma-constellation", html, "2026-11-23T22:00:00Z"
         )
-        self.assertEqual(item["price_window_days"], 7)
+        self.assertIsNone(item["price_window_days"])
+        self.assertEqual(item["all_marketplaces_price_window_days"], 7)
         self.assertEqual(item["sold_7d"], 1)
         self.assertEqual(item["sold_30d"], 4)
 
@@ -134,7 +136,8 @@ class RobasePriceParserTests(IsolatedDataTestCase):
         )
         self.assertEqual(item["sold_7d"], 0)
         self.assertEqual(item["sold_30d"], 1)
-        self.assertEqual(item["price_window_days"], 30)
+        self.assertIsNone(item["price_window_days"])
+        self.assertEqual(item["all_marketplaces_price_window_days"], 30)
 
     def test_item_detail_falls_back_to_about_sales_counts_when_stats_are_absent(self):
         html = """
