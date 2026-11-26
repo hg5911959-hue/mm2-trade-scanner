@@ -133,7 +133,7 @@
       rows.map(row => {
         const url = safeUrl(row.url);
         const name = url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + esc(row.name) + '</a>' : esc(row.name);
-        return '<tr><td><div class="item">' + name + '</div><div class="small">' + esc(row.category) + ' · price updated ' + esc(date(row.priceUpdatedAt)) + '</div></td>' +
+        return '<tr><td><div class="item">' + name + '</div><div class="small">' + esc(row.category) + ' · ' + (row.priceUsd == null ? 'checked ' : 'price updated ') + esc(date(row.priceUsd == null ? row.lastCheckedAt : row.priceUpdatedAt)) + '</div></td>' +
           '<td class="num profit">' + (row.priceUsd == null ? pill('warn','No 7d price') : usd(row.priceUsd)) + '</td><td class="num">' + number(row.sold7d) + '</td>' +
           '<td class="num">' + number(row.copies) + '</td><td class="num">' + number(row.holders) + '</td>' +
           '<td>' + pill(row.priceUsd == null ? 'warn' : 'good',row.priceBasis) + '</td></tr>';
