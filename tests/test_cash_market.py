@@ -385,7 +385,7 @@ class CashMarketTests(IsolatedDataTestCase):
             catalog, "give", 0, now=now + timedelta(minutes=10),
         )
         self.assertEqual(missing_market[0:2], (0.0, 0.0))
-        self.assertIn("cash price unverified", missing_market[3][0])
+        self.assertIn("cash price unavailable", missing_market[3][0])
 
         normal = calculate_cash_side(
             [{"canonical_name": "Item 2", "robase_slug": "item-2", "quantity_min": 1, "quantity_max": 1}],
@@ -474,8 +474,8 @@ class CashMarketTests(IsolatedDataTestCase):
         path = Path(tmp.name) / "robase.json"
         now = datetime(2026, 11, 21, tzinfo=UTC)
         snapshot = self._robase_snapshot(now)
-        snapshot["items"][0].update({"name": "Latte", "robase_slug": "latte-gun", "source": "https://robase.gg/item/latte-gun", "cash_price_usd": 3.03, "price_display": "$3.03", "sold_7d": 5, "sold_30d": 5})
-        snapshot["items"][1].update({"name": "Latte", "robase_slug": "latte-knife", "source": "https://robase.gg/item/latte-knife", "cash_price_usd": 3.30, "price_display": "$3.30", "sold_7d": 5, "sold_30d": 5})
+        snapshot["items"][0].update({"name": "Latte", "robase_slug": "latte-gun", "source": "https://robase.gg/item/latte-gun", "cash_price_usd": 3.03, "price_display": "$3.03", "selected_marketplace": "chromas.gg", "selected_marketplace_sold_7d": 5, "selected_marketplace_fee_percent": 5.0, "price_window_days": 7, "sold_7d": 5, "sold_30d": 5, "marketplace_prices": {"chromas.gg": {"marketplace": "chromas.gg", "price_usd": 3.03, "price_display": "$3.03", "sold_7d": 5, "fee_percent": 5.0}, "starpets": {"marketplace": "StarPets", "price_usd": 3.10, "price_display": "$3.10", "sold_7d": 5, "fee_percent": 32.0}}})
+        snapshot["items"][1].update({"name": "Latte", "robase_slug": "latte-knife", "source": "https://robase.gg/item/latte-knife", "cash_price_usd": 3.30, "price_display": "$3.30", "selected_marketplace": "chromas.gg", "selected_marketplace_sold_7d": 5, "selected_marketplace_fee_percent": 5.0, "price_window_days": 7, "sold_7d": 5, "sold_30d": 5, "marketplace_prices": {"chromas.gg": {"marketplace": "chromas.gg", "price_usd": 3.30, "price_display": "$3.30", "sold_7d": 5, "fee_percent": 5.0}, "starpets": {"marketplace": "StarPets", "price_usd": 3.40, "price_display": "$3.40", "sold_7d": 5, "fee_percent": 32.0}}})
         path.write_text(json.dumps(snapshot), encoding="utf-8")
         catalog = load_robase_price_catalog(path, now=now)
         result = calculate_cash_side(
