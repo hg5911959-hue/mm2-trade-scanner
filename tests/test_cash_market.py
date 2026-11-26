@@ -313,8 +313,10 @@ class CashMarketTests(IsolatedDataTestCase):
                 "all_marketplaces_price_display": "$2.60",
                 "marketplace_prices": {
                     "chromas.gg": {
-                        "marketplace": "chromas.gg", "price_usd": 2.5,
-                        "price_display": "$2.50", "sold_7d": sold_7d,
+                        "marketplace": "chromas.gg",
+                        "price_usd": 2.5 if sold_7d > 0 else None,
+                        "price_display": "$2.50" if sold_7d > 0 else "",
+                        "sold_7d": sold_7d,
                     },
                 },
                 "selected_marketplace": selected,
