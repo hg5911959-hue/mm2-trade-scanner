@@ -5,11 +5,8 @@ on:
     # Twice daily so same-day Stability changes can be observed.
     - cron: "45 4,16 * * *"
   workflow_dispatch:
-  pull_request:
-    paths:
-      - ".github/workflows/supreme-values-direct-daily-history.yml"
-      - "tools/supreme_values_daily.py"
-      - "tests/test_supreme_values_daily.py"
+  # Pull-request validation is handled by tests.yml with offline fixtures.
+  # Do not make PR checks depend on Supreme's live anti-bot/access policy.
   push:
     branches: [main]
     paths:
