@@ -511,7 +511,6 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
             row["status"],
             row.get("selected_marketplace"),
             row.get("price_sample_count"),
-            row.get("selected_marketplace_fee_percent"),
         )
         for slug, row in sorted(items_by_slug.items())
     ]
