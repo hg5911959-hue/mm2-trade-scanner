@@ -49,7 +49,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         result = {
             "cash_estimate_only": True, "manual_review": False,
             "cash_profit_worst": 10000.0, "margin": 500.0, "give_total_max": 10.0,
-            "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "cash_price_basis": "chromas.gg Price (7d)",
             "listing": {"posted_at": datetime.now(UTC).isoformat()},
         }
         self.assertFalse(scanner.qualifies_cash(result))
@@ -58,7 +58,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         result = {
             "cash_estimate_only": False, "manual_review": True,
             "cash_profit_worst": 10000.0, "margin": 500.0, "give_total_max": 10.0,
-            "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "cash_price_basis": "chromas.gg Price (7d)",
             "listing": {"posted_at": datetime.now(UTC).isoformat()},
         }
         self.assertFalse(scanner.qualifies_cash(result))
@@ -68,7 +68,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
             with self.subTest(profit=profit):
                 result = {
                     "cash_estimate_only": False, "manual_review": False,
-                    "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+                    "cash_price_basis": "chromas.gg Price (7d)",
                     "listing": {"posted_at": datetime.now(UTC).isoformat()},
                     "cash_profit_worst": profit, "margin": 1000.0, "give_total_max": 10.0,
                 }
@@ -79,7 +79,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
             with self.subTest(margin=margin):
                 result = {
                     "cash_estimate_only": False, "manual_review": False,
-                    "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+                    "cash_price_basis": "chromas.gg Price (7d)",
                     "listing": {"posted_at": datetime.now(UTC).isoformat()},
                     "cash_profit_worst": 1000.0, "margin": margin, "give_total_max": 10.0,
                 }
@@ -88,7 +88,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
     def test_negative_cash_profit_is_never_alert_eligible(self):
         result = {
             "cash_estimate_only": False, "manual_review": False,
-            "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "cash_price_basis": "chromas.gg Price (7d)",
             "listing": {"posted_at": datetime.now(UTC).isoformat()},
             "cash_profit_worst": -1000.0, "margin": 1000.0, "give_total_max": 10.0,
         }
@@ -97,7 +97,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
     def test_verified_robase_cash_profit_can_pass_alert_gate(self):
         result = {
             "cash_estimate_only": False, "manual_review": False,
-            "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "cash_price_basis": "chromas.gg Price (7d)",
             "listing": {"posted_at": datetime.now(UTC).isoformat()},
             "cash_profit_worst": 2.0, "margin": 0.01, "give_total_max": 10000.0,
         }
@@ -106,7 +106,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
     def test_cash_minimum_margin_threshold_is_enforced(self):
         base = {
             "cash_estimate_only": False, "manual_review": False,
-            "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "cash_price_basis": "chromas.gg Price (7d)",
             "listing": {"posted_at": datetime.now(UTC).isoformat()},
             "cash_profit_worst": 2.0, "margin": 0.01, "give_total_max": 10000.0,
         }
@@ -169,7 +169,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         self.assertIsNotNone(result)
         self.assertEqual(
             result["cash_price_basis"],
-            "verified ROBASE displayed seller-proceeds price",
+            "chromas.gg Price (7d)",
         )
         self.assertEqual(result["cash_sell_haircut_pct"], 0.0)
 
@@ -235,7 +235,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
             with self.subTest(field=field, value=value):
                 result = {
                     "cash_estimate_only": False, "manual_review": False,
-                    "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+                    "cash_price_basis": "chromas.gg Price (7d)",
                     "listing": {"posted_at": datetime.now(UTC).isoformat()},
                     "cash_profit_worst": 100.0, "margin": 20.0, "give_total_max": 10.0,
                 }
@@ -245,7 +245,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
     def test_profit_threshold_is_exactly_two_dollars_for_every_trade_size(self):
         base = {
             "manual_review": False, "cash_estimate_only": False,
-            "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "cash_price_basis": "chromas.gg Price (7d)",
             "listing": {"posted_at": datetime.now(UTC).isoformat()},
             "margin": 0.01, "give_total_max": 4.99,
         }
@@ -263,7 +263,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
     def test_missing_or_untrusted_cash_provenance_fails_closed(self):
         base = {
             "manual_review": False, "cash_estimate_only": False,
-            "cash_price_basis": "verified ROBASE displayed seller-proceeds price",
+            "cash_price_basis": "chromas.gg Price (7d)",
             "listing": {"posted_at": datetime.now(UTC).isoformat()},
             "cash_profit_worst": 100.0, "margin": 20.0, "give_total_max": 10.0,
         }
@@ -391,7 +391,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         )
         self.assertEqual(missing, [])
         self.assertEqual(result["cash_profit_worst"], 7.0)
-        self.assertEqual(result["cash_price_basis"], "verified ROBASE displayed seller-proceeds price")
+        self.assertEqual(result["cash_price_basis"], "chromas.gg Price (7d)")
         self.assertFalse(any("Supreme" in line or "Stability" in line
                              for line in result["give_lines"] + result["receive_lines"]))
 
