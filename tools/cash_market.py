@@ -400,7 +400,7 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
             page_stale_rows.append(name or slug)
         marketplace_prices = row.get("marketplace_prices")
         if not isinstance(marketplace_prices, dict):
-            raise RuntimeError(f"[cash] ROBASE marketplace breakdown is missing: {name or slug}")
+            raise TypeError(f"[cash] ROBASE marketplace breakdown is missing: {name or slug}")
         for market_code, market_row in marketplace_prices.items():
             if market_code not in {"chromas.gg", "starpets"} or not isinstance(market_row, dict):
                 raise RuntimeError(f"[cash] Invalid ROBASE marketplace identity: {name or slug}")
