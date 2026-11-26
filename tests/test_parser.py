@@ -4462,7 +4462,7 @@ class RobaseIdentityCrosswalkTests(IsolatedDataTestCase):
             }]},
             "chroma elderwood blade": {"name": "Chroma Elderwood Blade", "variants": [{
                 "slug": "chroma-ew-blade", "name": "Chroma Elderwood Blade", "category": "chroma",
-                "type": "knife", "value": 37, "stability": "Stable", "demand": 1,
+                "type": "knife", "value": 37, "raw_source_value": 37, "stability": "Stable", "demand": 1,
             }]},
         }
         rows = {
