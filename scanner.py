@@ -2694,11 +2694,11 @@ def api_get_json_conditional(path, params=None, etag=None):
 
 
 def _read_values_cache_document():
-    """Read v4 snapshots and safely migrate v3 snapshots using their raw item pages."""
+    """Read and normalize cached prices to the raw Supreme source_b scalar."""
     try:
         cached = json.loads(VALUES_FILE.read_text(encoding="utf-8"))
         version = cached.get("schema_version")
-        if version not in (3, 4):
+        if version not in (3, 4, 5):
             return None
         values = cached.get("values", {})
         if not (
@@ -2706,47 +2706,87 @@ def _read_values_cache_document():
             and all(isinstance(record, dict) and isinstance(record.get("variants"), list) and record["variants"] for record in values.values())
         ):
             return None
-        if version == 3:
-            by_identity = {}
-            for page in (cached.get("pages") or {}).values():
-                for item in (page.get("items") or []) if isinstance(page, dict) else []:
-                    if not isinstance(item, dict):
-                        continue
-                    identity = (
-                        str(item.get("id") or ""), str(item.get("slug") or ""),
-                        str(item.get("category") or "").casefold(),
-                        str(item.get("type") or "").casefold(),
-                    )
-                    by_identity[identity] = item
-            migrated = {}
-            for name, record in values.items():
-                updated = dict(record)
-                variants = []
-                for variant in record["variants"]:
-                    row = dict(variant)
-                    identity = (
-                        str(row.get("id") or ""), str(row.get("slug") or ""),
-                        str(row.get("category") or "").casefold(),
-                        str(row.get("type") or "").casefold(),
-                    )
-                    raw = by_identity.get(identity)
-                    row["stability"] = _normalize_stability(raw.get("stability")) if raw else None
-                    if raw and not row.get("last_updated"):
+
+        # Raw API pages are the strongest provenance. Older normalized caches
+        # also retain raw_source_value, which was populated from value_source_b.
+        by_identity = {}
+        for page in (cached.get("pages") or {}).values():
+            for item in (page.get("items") or []) if isinstance(page, dict) else []:
+                if not isinstance(item, dict):
+                    continue
+                identity = (
+                    str(item.get("id") or ""), str(item.get("slug") or ""),
+                    str(item.get("category") or "").casefold(),
+                    str(item.get("type") or "").casefold(),
+                )
+                by_identity[identity] = item
+
+        migrated = {}
+        changed = version != 5 or cached.get("value_source_policy") != "value_source_b_supreme_only_scalar_v1"
+        for name, record in values.items():
+            updated = dict(record)
+            variants = []
+            for variant in record["variants"]:
+                row = dict(variant)
+                identity = (
+                    str(row.get("id") or ""), str(row.get("slug") or ""),
+                    str(row.get("category") or "").casefold(),
+                    str(row.get("type") or "").casefold(),
+                )
+                raw = by_identity.get(identity)
+                if raw is not None:
+                    raw_source_value = raw.get("value_source_b")
+                    row["raw_source_value"] = raw_source_value
+                    row["stability"] = _normalize_stability(raw.get("stability"))
+                    row["demand"] = _optional_bounded_int(raw.get("demand"), 0, 10)
+                    row["rarity"] = _optional_bounded_int(raw.get("rarity"), 0, 10)
+                    if raw.get("last_updated"):
                         row["last_updated"] = raw.get("last_updated")
-                    variants.append(row)
-                updated["variants"] = variants
-                if len(variants) == 1:
-                    updated["stability"] = variants[0].get("stability")
-                migrated[name] = updated
-            cached = dict(cached)
-            cached["schema_version"] = 4
-            cached["values"] = migrated
+                else:
+                    raw_source_value = row.get("raw_source_value")
+
+                supreme_value, value_status = _supreme_numeric_value({
+                    "raw_source_value": raw_source_value,
+                    "category": row.get("category"),
+                })
+                for field, expected in (
+                    ("value", supreme_value),
+                    ("value_min", supreme_value),
+                    ("value_max", supreme_value),
+                    ("value_status", value_status),
+                ):
+                    if row.get(field) != expected:
+                        row[field] = expected
+                        changed = True
+                if row.get("raw_source_value") != raw_source_value:
+                    row["raw_source_value"] = raw_source_value
+                    changed = True
+                variants.append(row)
+
+            updated["variants"] = variants
+            if len(variants) == 1:
+                selected = variants[0]
+                for field in ("value", "value_min", "value_max", "value_status", "stability"):
+                    if updated.get(field) != selected.get(field):
+                        updated[field] = selected.get(field)
+                        changed = True
+            else:
+                for field in ("value", "value_min", "value_max", "secondary_value"):
+                    if updated.get(field) is not None:
+                        updated[field] = None
+                        changed = True
+            migrated[name] = updated
+
+        cached = dict(cached)
+        cached["schema_version"] = 5
+        cached["value_source_policy"] = "value_source_b_supreme_only_scalar_v1"
+        cached["values"] = migrated
+        if changed:
             atomic_write_text(VALUES_FILE, json.dumps(cached, ensure_ascii=False, indent=2) + "\n")
-            print("[supreme-cache] Compatible schema-v3 cache migrated and persisted as schema v4; no API request required")
+            print("[supreme-cache] Normalized cached prices to Supreme value_source_b only (schema v5)")
         return cached
     except (ValueError, OSError, json.JSONDecodeError, AttributeError, TypeError):
         return None
-
 
 def _read_values_cache():
     cached = _read_values_cache_document()
@@ -2956,7 +2996,7 @@ def load_supreme_values():
             "[supreme] API key circuit breaker active; refusing stale-cache calculations "
             "[rblxvalue-key-blocked] no request sent"
         )
-    # Schema v4 preserves item identity and Supreme stability; older caches lack stability.
+    # Schema v5 enforces source_b-only scalar prices and preserves item identity/quality metadata.
     cached_document = _read_values_cache_document()
     cached_values, cached_age = _read_values_cache()
     source_meta = None
@@ -3174,7 +3214,9 @@ def load_supreme_values():
                 f"[supreme] Could not verify source version after pagination ({type(exc).__name__}); refusing snapshot"
             ) from exc
     cache_document = {
-        "schema_version": 4, "fetched_at": time.time(),
+        "schema_version": 5,
+        "value_source_policy": "value_source_b_supreme_only_scalar_v1",
+        "fetched_at": time.time(),
         "source_last_updated": source_meta.get("last_updated") if source_meta else None,
         "source_items_total": source_meta.get("items_total") if source_meta else None,
         "source": "Supreme Values via RBLXValue API value_source_b",
