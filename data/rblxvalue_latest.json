@@ -3,10 +3,13 @@
   "source": "RBLXValue official API v2",
   "source_url": "https://api.rblxvalue.com/v2",
   "source_fields": {
-    "value": "RBLXValue blended estimate",
-    "value_source_a": "MM2Values",
-    "value_source_b": "Supreme Values",
-    "stability": "RBLXValue stability field; not independently attributed to Supreme Values"
+    "value": "RBLXValue blended estimate (not used for trade pricing)",
+    "value_source_a": "MM2Values (not used for trade pricing)",
+    "value_source_b": "Supreme Values (exclusive trade-price source)",
+    "stability": "RBLXValue",
+    "demand": "RBLXValue",
+    "rarity": "RBLXValue",
+    "range": "RBLXValue metadata; not used for trade-price bounds"
   },
   "third_party_authorization": {
     "source": "Supreme Values",
@@ -15,7 +18,7 @@
     "attribution": "Supreme Values (supremevalues.com)"
   },
   "snapshot_date": "2026-11-26",
-  "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+  "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
   "dataset_last_updated": "2026-11-26 12:02:34",
   "source_total_items": 1091,
   "expected_weapons": 214,
@@ -42,7 +45,7 @@
   "items": [
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "alienbeam",
@@ -68,7 +71,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "america",
@@ -94,7 +97,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "amerilaser",
@@ -120,7 +123,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "australis",
@@ -146,7 +149,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "bat",
@@ -172,7 +175,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "battleaxe",
@@ -198,7 +201,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "battleaxe-ii",
@@ -224,7 +227,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "batwing",
@@ -250,7 +253,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "bauble",
@@ -276,7 +279,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "ornament",
@@ -302,7 +305,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "beachy",
@@ -328,7 +331,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "bioblade",
@@ -354,7 +357,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "blaster",
@@ -380,7 +383,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "blizzard",
@@ -406,7 +409,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "blood",
@@ -432,7 +435,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "bloom",
@@ -458,7 +461,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "blossom",
@@ -484,7 +487,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "blue-seer",
@@ -510,7 +513,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "boneblade",
@@ -536,7 +539,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "borealis",
@@ -562,7 +565,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "candleflame",
@@ -588,7 +591,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "candy",
@@ -614,7 +617,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "cane-562",
@@ -640,7 +643,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "celestial",
@@ -666,7 +669,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chill",
@@ -692,7 +695,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-alienbeam",
@@ -718,7 +721,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-bauble",
@@ -744,7 +747,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-beachy",
@@ -770,7 +773,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-blizzard",
@@ -796,7 +799,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-boneblade",
@@ -822,7 +825,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-candleflame",
@@ -848,7 +851,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-constellation",
@@ -874,7 +877,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-cookiecane",
@@ -900,7 +903,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-darkbringer",
@@ -926,7 +929,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-deathshard",
@@ -952,7 +955,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-elderwood-blade",
@@ -978,7 +981,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-emberbow",
@@ -1004,7 +1007,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-emberscythe",
@@ -1030,7 +1033,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-embersickle",
@@ -1056,7 +1059,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-evergreen",
@@ -1082,7 +1085,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-evergun",
@@ -1108,7 +1111,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-fang",
@@ -1134,7 +1137,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-gemstone",
@@ -1160,7 +1163,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-gingerblade",
@@ -1186,7 +1189,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-heart-wand",
@@ -1212,7 +1215,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-heat",
@@ -1238,7 +1241,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-icecream",
@@ -1264,7 +1267,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-immortal",
@@ -1290,7 +1293,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-laser",
@@ -1316,7 +1319,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-lightbringer",
@@ -1342,7 +1345,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-luger",
@@ -1368,7 +1371,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-mortal",
@@ -1394,7 +1397,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-ornament",
@@ -1420,7 +1423,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-raygun",
@@ -1446,7 +1449,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-sands",
@@ -1472,7 +1475,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-saw",
@@ -1498,7 +1501,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-seer",
@@ -1524,7 +1527,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-shark",
@@ -1550,7 +1553,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-slasher",
@@ -1576,7 +1579,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-snow-dagger",
@@ -1602,7 +1605,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-snowcannon",
@@ -1628,7 +1631,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-snowstorm",
@@ -1654,7 +1657,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-sunrise",
@@ -1680,7 +1683,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-sunset",
@@ -1706,7 +1709,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-sweet",
@@ -1732,7 +1735,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-swirly-gun",
@@ -1758,7 +1761,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-tides",
@@ -1784,7 +1787,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-travelers-gun",
@@ -1810,7 +1813,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-treat",
@@ -1836,7 +1839,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-vampires-gun",
@@ -1862,7 +1865,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "chroma-watergun",
@@ -1888,7 +1891,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "clockwork",
@@ -1914,7 +1917,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "constellation",
@@ -1940,7 +1943,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "cookieblade",
@@ -1966,7 +1969,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "cookiecane",
@@ -1992,7 +1995,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "corrupt",
@@ -2018,7 +2021,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "cotton-candy",
@@ -2044,7 +2047,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "cowboy",
@@ -2070,7 +2073,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "cowboy-1150",
@@ -2096,7 +2099,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "darkbringer",
@@ -2122,7 +2125,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "darkshot",
@@ -2148,7 +2151,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "darksword",
@@ -2174,7 +2177,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "deathshard",
@@ -2200,7 +2203,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "laser",
@@ -2226,7 +2229,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "eggblade",
@@ -2252,7 +2255,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "elderwood-blade",
@@ -2278,7 +2281,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "elderwood-revolver",
@@ -2304,7 +2307,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "elderwood-scythe",
@@ -2330,7 +2333,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "emberbow",
@@ -2356,7 +2359,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "emberscythe",
@@ -2382,7 +2385,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "embersickle",
@@ -2408,7 +2411,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "eternal",
@@ -2434,7 +2437,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "eternal-ii",
@@ -2460,7 +2463,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "eternal-iii",
@@ -2486,7 +2489,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "eternal-iv",
@@ -2512,7 +2515,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "eternalcane",
@@ -2538,7 +2541,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "evergreen",
@@ -2564,7 +2567,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "evergun",
@@ -2590,7 +2593,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "fang",
@@ -2616,7 +2619,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "flames",
@@ -2642,7 +2645,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "flora",
@@ -2668,7 +2671,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "flowerwood",
@@ -2694,7 +2697,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "flowerwood-gun",
@@ -2720,7 +2723,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "frostbite",
@@ -2746,7 +2749,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "frostsaber",
@@ -2772,7 +2775,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "gemstone",
@@ -2798,7 +2801,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "ghost-1149",
@@ -2824,7 +2827,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "ghostblade",
@@ -2850,7 +2853,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "ghost",
@@ -2876,7 +2879,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "ginger-luger",
@@ -2902,7 +2905,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "gingerblade",
@@ -2928,7 +2931,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "gingermint",
@@ -2954,7 +2957,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "gingerscope",
@@ -2980,7 +2983,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "glitch1",
@@ -3006,7 +3009,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "glitch2",
@@ -3032,7 +3035,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "golden",
@@ -3058,7 +3061,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "golden-1146",
@@ -3084,7 +3087,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "green-luger",
@@ -3110,7 +3113,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "hallowgun",
@@ -3136,7 +3139,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "hallows-blade",
@@ -3162,7 +3165,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "hallows-edge",
@@ -3188,7 +3191,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "hallowscythe",
@@ -3214,7 +3217,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "handsaw",
@@ -3240,7 +3243,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "harvester",
@@ -3266,7 +3269,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "heart-wand",
@@ -3292,7 +3295,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "heartblade",
@@ -3318,7 +3321,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "heat",
@@ -3344,7 +3347,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "ice-dragon",
@@ -3370,7 +3373,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "ice-shard",
@@ -3396,7 +3399,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "icebeam",
@@ -3422,7 +3425,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "iceblaster",
@@ -3448,7 +3451,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "icebreaker",
@@ -3474,7 +3477,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "icecream",
@@ -3500,7 +3503,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "iceflake",
@@ -3526,7 +3529,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "icepiercer",
@@ -3552,7 +3555,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "icewing",
@@ -3578,7 +3581,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "immortal",
@@ -3604,7 +3607,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "jd",
@@ -3630,7 +3633,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "jinglegun",
@@ -3656,7 +3659,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "laser-86",
@@ -3682,7 +3685,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "laser-1148",
@@ -3708,7 +3711,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "latte",
@@ -3734,7 +3737,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "latte-915",
@@ -3760,7 +3763,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "lightbringer",
@@ -3786,7 +3789,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "logchopper",
@@ -3812,7 +3815,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "luger",
@@ -3838,7 +3841,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "lugercane",
@@ -3864,7 +3867,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "makeshift",
@@ -3890,7 +3893,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "minty",
@@ -3916,7 +3919,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "mortal",
@@ -3942,7 +3945,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "nebula",
@@ -3968,7 +3971,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "nightblade",
@@ -3994,7 +3997,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "ocean",
@@ -4020,7 +4023,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "old-glory",
@@ -4046,7 +4049,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "orange-seer",
@@ -4072,7 +4075,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "pearl",
@@ -4098,7 +4101,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "pearlshine",
@@ -4124,7 +4127,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "peppermint",
@@ -4150,7 +4153,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "phantom",
@@ -4176,7 +4179,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "phaser",
@@ -4202,7 +4205,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "phaser-1151",
@@ -4228,7 +4231,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "pixel",
@@ -4254,7 +4257,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "plasmabeam",
@@ -4280,7 +4283,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "plasmablade",
@@ -4306,7 +4309,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "prince",
@@ -4332,7 +4335,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "prince-1152",
@@ -4358,7 +4361,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "prismatic",
@@ -4384,7 +4387,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "pumpking",
@@ -4410,7 +4413,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "purple-seer",
@@ -4436,7 +4439,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "rainbow-gun",
@@ -4462,7 +4465,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "rainbow",
@@ -4488,7 +4491,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "raygun",
@@ -4514,7 +4517,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "red-luger",
@@ -4540,7 +4543,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "red-seer",
@@ -4566,7 +4569,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "sakura",
@@ -4592,7 +4595,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "sands",
@@ -4618,7 +4621,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "saw",
@@ -4644,7 +4647,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "seer",
@@ -4670,7 +4673,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "shadow",
@@ -4696,7 +4699,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "shadow-1147",
@@ -4722,7 +4725,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "shark",
@@ -4748,7 +4751,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "slasher",
@@ -4774,7 +4777,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "snow-dagger",
@@ -4800,7 +4803,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "snowcannon",
@@ -4826,7 +4829,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "snowflake",
@@ -4852,7 +4855,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "snowstorm",
@@ -4878,7 +4881,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "soul",
@@ -4904,7 +4907,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "spectre",
@@ -4930,7 +4933,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "spider",
@@ -4956,7 +4959,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "spirit",
@@ -4982,7 +4985,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "splitter",
@@ -5008,7 +5011,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "sugar",
@@ -5034,7 +5037,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "sunrise",
@@ -5060,7 +5063,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "sunset",
@@ -5086,7 +5089,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "sweet",
@@ -5112,7 +5115,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "swirly-axe",
@@ -5138,7 +5141,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "swirly-blade",
@@ -5164,7 +5167,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "swirly-gun",
@@ -5190,7 +5193,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "tides",
@@ -5216,7 +5219,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "travelers-axe",
@@ -5242,7 +5245,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "travelers-gun",
@@ -5268,7 +5271,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "treat",
@@ -5294,7 +5297,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "turkey",
@@ -5320,7 +5323,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "vampires-axe",
@@ -5346,7 +5349,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "vampires-edge",
@@ -5372,7 +5375,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "vampires-gun",
@@ -5398,7 +5401,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "virtual",
@@ -5424,7 +5427,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "watergun",
@@ -5450,7 +5453,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "waves",
@@ -5476,7 +5479,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "winters-edge",
@@ -5502,7 +5505,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "xenoknife",
@@ -5528,7 +5531,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "xenoshot",
@@ -5554,7 +5557,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": null,
       "robase_slug": "xmas",
@@ -5580,7 +5583,7 @@
     },
     {
       "snapshot_date": "2026-11-26",
-      "fetched_at_utc": "2026-11-26T20:08:11.104357+00:00",
+      "fetched_at_utc": "2026-11-26T20:12:10.577814+00:00",
       "dataset_last_updated": "2026-11-26 12:02:34",
       "item_last_updated": "2026-11-26 12:02:34",
       "robase_slug": "yellow-seer",
