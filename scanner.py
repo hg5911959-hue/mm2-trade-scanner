@@ -3926,11 +3926,19 @@ def load_uncertain_context():
     if not isinstance(data, dict) or data.get("version") != 1 or not isinstance(data.get("details"), dict):
         raise RuntimeError("[state] Telegram uncertain-delivery context has an invalid structure.")
     result = {}
-    allowed_hosts = {"bloxswaps.com", "www.bloxswaps.com", "discord.com", "www.discord.com"}
+    removed_non_public_context = False
+    allowed_hosts = {"bloxswaps.com", "www.bloxswaps.com"}
     for trade_id, entry in data["details"].items():
         if not isinstance(trade_id, str) or not trade_id or not isinstance(entry, dict):
             raise RuntimeError("[state] Telegram uncertain-delivery context entry is invalid.")
-        for field in ("source_ad_id", "listing_url", "owner_url", "source", "delivery_path", "attempted_at_utc"):
+        source = entry.get("source", "")
+        if not isinstance(source, str):
+            raise RuntimeError("[state] Telegram uncertain-delivery context source is invalid.")
+        # The state branch is public. Never retain private Discord references there.
+        if source.casefold() != "bloxswaps":
+            removed_non_public_context = True
+            continue
+        for field in ("source_ad_id", "listing_url", "owner_url", "delivery_path", "attempted_at_utc"):
             value = entry.get(field, "")
             if not isinstance(value, str):
                 raise RuntimeError("[state] Telegram uncertain-delivery context field is invalid.")
@@ -3943,6 +3951,8 @@ def load_uncertain_context():
         if entry.get("delivery_path") not in {"individual", "digest", "recovered"}:
             raise RuntimeError("[state] Telegram uncertain-delivery context delivery path is invalid.")
         result[trade_id] = dict(entry)
+    if removed_non_public_context:
+        save_uncertain_context(result)
     return result
 
 
@@ -3960,9 +3970,14 @@ def save_uncertain_context(context):
 
 
 def record_uncertain_context(listing, trade_id, delivery_path):
-    """Store only public listing identifiers/links before a non-idempotent Telegram send."""
+    """Store only public BloxSwaps references before a non-idempotent Telegram send."""
     context = load_uncertain_context()
-    allowed_hosts = {"bloxswaps.com", "www.bloxswaps.com", "discord.com", "www.discord.com"}
+    source = str(listing.get("source") or "").casefold()
+    if source != "bloxswaps":
+        context.pop(str(trade_id), None)
+        save_uncertain_context(context)
+        return
+    allowed_hosts = {"bloxswaps.com", "www.bloxswaps.com"}
 
     def safe_link(value):
         raw = str(value or "").strip()
@@ -3975,7 +3990,7 @@ def record_uncertain_context(listing, trade_id, delivery_path):
         "source_ad_id": str(listing.get("source_ad_id") or ""),
         "listing_url": safe_link(listing.get("url")),
         "owner_url": safe_link(listing.get("owner_url")),
-        "source": str(listing.get("source") or "bloxswaps")[:32],
+        "source": source[:32],
         "delivery_path": str(delivery_path),
         "attempted_at_utc": str(
             listing.get("alert_attempted_at_utc")
