@@ -2,8 +2,10 @@ name: RBLXValue Daily Weapon History
 
 on:
   schedule:
-    # Twice daily: 04:30 and 16:30 UTC = 05:30 and 17:30 Algeria time.
-    - cron: "30 4,16 * * *"
+    # RBLXValue refreshes about every 12h around 00:00/12:00 Amsterdam.
+    # Collect 30m later in winter (CET): 11:30/23:30 UTC = 12:30/00:30 Algeria.
+    # UTC scheduling is fixed; during CEST the capture is about 90m after refresh.
+    - cron: "30 11,23 * * *"
   workflow_dispatch:
   # Run once when this workflow is repaired/updated on main; future routine code changes do not retrigger collection.
   push:
@@ -134,7 +136,7 @@ jobs:
               writer = csv.DictWriter(handle, fieldnames=fields); writer.writeheader(); writer.writerows(combined)
           temp.replace(history_path)
           latest_path.write_text(json.dumps(latest, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
-          manifest = {"schema_version":1,"source":latest["source"],"source_url":latest["source_url"],"third_party_authorization":authorization,"source_attribution":"Supreme Values (supremevalues.com)","dataset_last_updated":latest["dataset_last_updated"],"last_snapshot_date":day,"last_fetched_at_utc":fetched_at,"scheduled_runs_per_day":2,"scheduled_utc_times":["04:30","16:30"],"scheduled_algeria_times":["05:30","17:30"],"expected_weapons":latest["expected_weapons"],"history_rows":len(combined),"snapshot_counts":latest["counts"],"usage":"Authorized Supreme Values data for MM2 research and value-profit analysis; no ownership claim; source attribution required"}
+          manifest = {"schema_version":1,"source":latest["source"],"source_url":latest["source_url"],"third_party_authorization":authorization,"source_attribution":"Supreme Values (supremevalues.com)","dataset_last_updated":latest["dataset_last_updated"],"last_snapshot_date":day,"last_fetched_at_utc":fetched_at,"scheduled_runs_per_day":2,"scheduled_utc_times":["11:30","23:30"],"scheduled_algeria_times":["12:30","00:30 (next day)"],"expected_weapons":latest["expected_weapons"],"history_rows":len(combined),"snapshot_counts":latest["counts"],"usage":"Authorized Supreme Values data for MM2 research and value-profit analysis; no ownership claim; source attribution required"}
           manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
           print(json.dumps(manifest, ensure_ascii=False, sort_keys=True))
           PY
