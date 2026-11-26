@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "45 4 * * *"
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/supreme-values-direct-daily-history.yml"
+      - "tools/supreme_values_daily.py"
 
 concurrency:
   group: supreme-values-direct-daily-history
