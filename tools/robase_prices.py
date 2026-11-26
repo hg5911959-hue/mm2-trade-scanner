@@ -1,6 +1,7 @@
 """Collect every public ROBASE MM2 item price with conditional, bounded sync.
 
-The displayed ROBASE price is the seller-proceeds price after marketplace fees.
+The live cash price is exclusively chromas.gg Price (7d), as reported in
+ROBASE's marketplace breakdown.
 No extra resale haircut is applied by the scanner.
 """
 from __future__ import annotations
