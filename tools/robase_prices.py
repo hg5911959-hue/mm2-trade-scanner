@@ -270,14 +270,27 @@ def _parse_item_detail(url: str, document: str, fetched_at_utc: str, etag="", la
             continue
         market_price_match = PRICE_RE.fullmatch(str(cells[2]).strip())
         sold_text = str(cells[3]).strip().replace(",", "")
-        if not market_price_match or not sold_text.isdigit():
-            raise ValueError(f"invalid ROBASE chromas.gg 7d market row for {name}")
-        market_price = float(market_price_match.group(1))
+        if not sold_text.isdigit():
+            raise ValueError(f"invalid ROBASE chromas.gg Sold (7d) value for {name}")
         market_sold_7d = int(sold_text)
-        if market_price <= 0 or market_sold_7d < 0:
-            raise ValueError(f"invalid ROBASE chromas.gg 7d market data for {name}")
         if chromas_market is not None:
             raise ValueError(f"duplicate ROBASE chromas.gg marketplace row for {name}")
+        if market_sold_7d == 0:
+            # ROBASE displays an em dash for Price (7d) when there were no
+            # completed Chroma sales in the window. Preserve the zero sample,
+            # but never turn an old 30d value or another marketplace into a price.
+            chromas_market = {
+                "marketplace": "chromas.gg",
+                "price_usd": None,
+                "price_display": "",
+                "sold_7d": 0,
+            }
+            continue
+        if not market_price_match:
+            raise ValueError(f"ROBASE chromas.gg Price (7d) is missing despite sales for {name}")
+        market_price = float(market_price_match.group(1))
+        if market_price <= 0:
+            raise ValueError(f"invalid ROBASE chromas.gg 7d market price for {name}")
         chromas_market = {
             "marketplace": "chromas.gg",
             "price_usd": market_price,
