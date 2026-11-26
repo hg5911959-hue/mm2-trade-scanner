@@ -18,11 +18,12 @@ def _decode_json(value: str | None, fallback: Any) -> Any:
 
 
 def _robase_dashboard_payload(catalogue_path: str | Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Export only Chroma completed-sales Price (7d) and Sold (7d)."""
     empty = {
-        "available": False, "itemCount": 0, "expectedCount": 0,
-        "verifiedCount": 0, "totalSold7d": 0, "totalSold30d": 0,
+        "available": False, "itemCount": 0, "pricedItemCount": 0,
+        "totalSold7d": 0, "missingPriceCount": 0,
         "missingSupplyCount": 0, "lastCheckedAt": None,
-        "latestPriceUpdateAt": None,
+        "latestPriceUpdateAt": None, "priceBasis": "chromas_gg_7d_price",
     }
     path = Path(catalogue_path)
     if not path.exists():
@@ -32,10 +33,16 @@ def _robase_dashboard_payload(catalogue_path: str | Path) -> tuple[dict[str, Any
         if not isinstance(snapshot, dict):
             return empty, []
         rows = snapshot.get("items")
-        expected = int(snapshot.get("catalog_expected_count") or 0)
+        expected = snapshot.get("catalog_expected_count")
     except (OSError, ValueError, TypeError):
         return empty, []
-    if snapshot.get("catalog_complete") is not True or not isinstance(rows, list) or expected <= 0 or len(rows) != expected:
+    if (
+        snapshot.get("schema_version") != 6
+        or snapshot.get("price_basis") != "chromas_gg_7d_price"
+        or snapshot.get("catalog_complete") is not True
+        or type(expected) is not int or expected <= 0
+        or not isinstance(rows, list) or len(rows) != expected
+    ):
         return empty, []
 
     def optional_count(value):
@@ -47,53 +54,72 @@ def _robase_dashboard_payload(catalogue_path: str | Path) -> tuple[dict[str, Any
             return None
         return parsed if parsed >= 0 else None
 
-    clean = []
-    checked_times = []
-    updated_times = []
+    clean, checked_times, updated_times = [], [], []
     for row in rows:
         if not isinstance(row, dict) or row.get("status") != "verified" or not row.get("name"):
             return empty, []
-        try:
-            price = float(row.get("cash_price_usd"))
-            sold_7d = int(row.get("sold_7d"))
-            sold_30d = int(row.get("sold_30d"))
-            window_days = int(row.get("price_window_days"))
-        except (TypeError, ValueError, OverflowError):
+        markets = row.get("marketplace_prices")
+        if not isinstance(markets, dict) or set(markets) - {"chromas.gg"}:
             return empty, []
-        if not math.isfinite(price) or price < 0 or sold_7d < 0 or sold_30d < 0 or window_days not in {7, 30}:
+        chroma = markets.get("chromas.gg")
+        selected = row.get("selected_marketplace")
+        sales = row.get("selected_marketplace_sold_7d", 0)
+        price, display = row.get("cash_price_usd"), str(row.get("price_display") or "")
+        if selected is None:
+            if price is not None or display or sales != 0:
+                return empty, []
+            price_value = None
+        else:
+            if selected != "chromas.gg" or not isinstance(chroma, dict):
+                return empty, []
+            if chroma.get("marketplace") != "chromas.gg":
+                return empty, []
+            try:
+                price_value = float(price)
+                market_price = float(chroma.get("price_usd"))
+                display_price = float(display.removeprefix("$").replace(",", ""))
+            except (TypeError, ValueError, OverflowError):
+                return empty, []
+            if (
+                type(sales) is not int or sales <= 0
+                or chroma.get("sold_7d") != sales
+                or not math.isfinite(price_value) or price_value <= 0
+                or not math.isfinite(market_price) or abs(price_value - market_price) > 1e-7
+                or not math.isfinite(display_price) or abs(price_value - display_price) > 1e-7
+                or not display.startswith("$")
+            ):
+                return empty, []
+        if type(sales) is not int or sales < 0 or (price_value is None and sales != 0):
             return empty, []
         checked = str(row.get("last_checked_at_utc") or "")
         updated = str(row.get("price_updated_at_utc") or "")
         if checked:
             checked_times.append(checked)
-        if updated:
+        if updated and price_value is not None:
             updated_times.append(updated)
         clean.append({
             "name": str(row["name"]),
             "category": str(row.get("robase_category") or ""),
-            "priceUsd": price,
-            "sold7d": sold_7d,
-            "sold30d": sold_30d,
+            "priceUsd": price_value,
+            "sold7d": sales,
             "copies": optional_count(row.get("bloxswaps_copies")),
             "holders": optional_count(row.get("bloxswaps_holders")),
-            "priceWindowDays": window_days,
+            "priceBasis": "chromas.gg Price (7d)" if price_value is not None else "No Chroma sales · 7d",
             "lastCheckedAt": checked or None,
             "priceUpdatedAt": updated or None,
             "url": str(row.get("source") or ""),
         })
+    priced = sum(item["priceUsd"] is not None for item in clean)
     summary = {
-        "available": True,
-        "itemCount": len(clean),
-        "expectedCount": expected,
-        "verifiedCount": len(clean),
-        "totalSold7d": sum(row["sold7d"] for row in clean),
-        "totalSold30d": sum(row["sold30d"] for row in clean),
-        "missingSupplyCount": sum(row["copies"] is None or row["holders"] is None for row in clean),
+        "available": True, "itemCount": len(clean), "pricedItemCount": priced,
+        "totalSold7d": sum(item["sold7d"] for item in clean),
+        "missingPriceCount": len(clean) - priced,
+        "missingSupplyCount": sum(item["copies"] is None or item["holders"] is None for item in clean),
         "lastCheckedAt": max(checked_times) if checked_times else None,
         "latestPriceUpdateAt": max(updated_times) if updated_times else None,
+        "priceBasis": "chromas_gg_7d_price",
     }
     return summary, clean
-
 
 def build_dashboard_data(db_path: str | Path, robase_path: str | Path | None = None) -> dict[str, Any]:
     path = Path(db_path)
@@ -103,7 +129,7 @@ def build_dashboard_data(db_path: str | Path, robase_path: str | Path | None = N
         "generatedAt": generated,
         "summary": {
             "trackedListings": 0, "opportunities7d": 0,
-            "trackedItems": robase_summary["verifiedCount"],
+            "trackedItems": robase_summary["pricedItemCount"],
             "latestSnapshot": robase_summary["lastCheckedAt"],
         },
         "opportunities": [],
@@ -132,7 +158,7 @@ def build_dashboard_data(db_path: str | Path, robase_path: str | Path | None = N
                 "SELECT COUNT(*) FROM listings WHERE lower(source) != 'discord'"
             ).fetchone()[0],
             "opportunities7d": 0,
-            "trackedItems": robase_summary["verifiedCount"],
+            "trackedItems": robase_summary["pricedItemCount"],
             "latestSnapshot": robase_summary["lastCheckedAt"],
         }
 
