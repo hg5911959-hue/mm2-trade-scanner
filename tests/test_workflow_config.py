@@ -164,6 +164,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("MIN_PROFIT_PERCENT: ${{ inputs.rblxvalue_value_profit_shadow && '8' || '5' }}", core)
         self.assertIn("MIN_RECEIVE_DEMAND_SCORE: ${{ inputs.rblxvalue_value_profit_shadow && '5.0' || '4.0' }}", core)
         self.assertIn("MIN_RECEIVE_STABILITY_SCORE: ${{ inputs.rblxvalue_value_profit_shadow && '5.5' || '3.0' }}", core)
+        self.assertIn("inputs.rblxvalue_value_profit_shadow && 'mm2-supreme-value-shadow'", core)
         live = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         self.assertIn('CASH_MIN_PROFIT_USD: "2.00"', live)
 
