@@ -84,6 +84,18 @@ class RobaseDashboardPayloadTests(IsolatedDataTestCase):
         self.assertNotIn("totalSold30d", summary)
         self.assertEqual(rows[0]["priceBasis"], "chromas.gg Price (7d)")
 
+
+    def test_rejects_zero_sales_chroma_row_with_a_price(self):
+        payload = catalogue()
+        payload["items"][1]["marketplace_prices"]["chromas.gg"]["price_usd"] = 1.25
+        payload["items"][1]["marketplace_prices"]["chromas.gg"]["price_display"] = "$1.25"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "prices.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            summary, rows = _robase_dashboard_payload(path)
+        self.assertFalse(summary["available"])
+        self.assertEqual(rows, [])
+
     def test_rejects_legacy_price_schema(self):
         payload = catalogue()
         payload["schema_version"] = 5
