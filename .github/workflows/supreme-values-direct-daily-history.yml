@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "45 4 * * *"
   workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/supreme-values-direct-daily-history.yml"
+      - "tools/supreme_values_daily.py"
+      - "tests/test_supreme_values_daily.py"
   push:
     branches: [main]
     paths:
@@ -71,6 +76,7 @@ jobs:
 
   archive:
     name: Archive direct Supreme snapshot (no secrets)
+    if: github.event_name != 'pull_request'
     needs: collect
     permissions:
       contents: write
