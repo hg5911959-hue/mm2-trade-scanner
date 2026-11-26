@@ -2,7 +2,8 @@ name: RBLXValue Daily Weapon History
 
 on:
   schedule:
-    - cron: "30 4 * * *"
+    # Twice daily: 04:30 and 16:30 UTC = 05:30 and 17:30 Algeria time.
+    - cron: "30 4,16 * * *"
   workflow_dispatch:
   # Run once when this workflow is repaired/updated on main; future routine code changes do not retrigger collection.
   push:
@@ -118,14 +119,22 @@ jobs:
                   if reader.fieldnames != fields: raise SystemExit("History CSV schema mismatch")
                   existing = list(reader)
           day = latest["snapshot_date"]
-          combined = [row for row in existing if row.get("snapshot_date") != day] + incoming
-          combined.sort(key=lambda row: (row["snapshot_date"], row["robase_slug"]))
+          fetched_at = latest.get("fetched_at_utc")
+          if not fetched_at or {row.get("fetched_at_utc") for row in incoming} != {fetched_at}:
+              raise SystemExit("CSV and JSON fetch timestamps differ")
+          # Keep both scheduled snapshots on the same Algeria-local date.
+          # Replace only an exact rerun, never the other daily capture.
+          combined = [
+              row for row in existing
+              if not (row.get("snapshot_date") == day and row.get("fetched_at_utc") == fetched_at)
+          ] + incoming
+          combined.sort(key=lambda row: (row["snapshot_date"], row["fetched_at_utc"], row["robase_slug"]))
           temp = history_path.with_suffix(".csv.tmp")
           with temp.open("w", encoding="utf-8", newline="") as handle:
               writer = csv.DictWriter(handle, fieldnames=fields); writer.writeheader(); writer.writerows(combined)
           temp.replace(history_path)
           latest_path.write_text(json.dumps(latest, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
-          manifest = {"schema_version":1,"source":latest["source"],"source_url":latest["source_url"],"third_party_authorization":authorization,"source_attribution":"Supreme Values (supremevalues.com)","dataset_last_updated":latest["dataset_last_updated"],"last_snapshot_date":day,"expected_weapons":latest["expected_weapons"],"history_rows":len(combined),"snapshot_counts":latest["counts"],"usage":"Authorized Supreme Values data for MM2 research and value-profit analysis; no ownership claim; source attribution required"}
+          manifest = {"schema_version":1,"source":latest["source"],"source_url":latest["source_url"],"third_party_authorization":authorization,"source_attribution":"Supreme Values (supremevalues.com)","dataset_last_updated":latest["dataset_last_updated"],"last_snapshot_date":day,"last_fetched_at_utc":fetched_at,"scheduled_runs_per_day":2,"scheduled_utc_times":["04:30","16:30"],"scheduled_algeria_times":["05:30","17:30"],"expected_weapons":latest["expected_weapons"],"history_rows":len(combined),"snapshot_counts":latest["counts"],"usage":"Authorized Supreme Values data for MM2 research and value-profit analysis; no ownership claim; source attribution required"}
           manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
           print(json.dumps(manifest, ensure_ascii=False, sort_keys=True))
           PY
