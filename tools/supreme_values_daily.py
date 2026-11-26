@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 
 SOURCE = "Supreme Values direct website"
 SOURCE_BASE = "https://supremevalues.com/mm2"
-EXPECTED_WEAPONS = 214  # Current exact ROBASE crosswalk; expand only after reconciling the 8-row gap.
+EXPECTED_WEAPONS = 214  # ROBASE's 222-item catalogue is 214 weapons + 8 Pets; this collector is weapon-only.
 CATEGORIES = (
     "sets", "uniques", "ancients", "vintages", "chromas", "godlies",
     "legendaries", "rares", "uncommons", "commons", "pets", "misc",
