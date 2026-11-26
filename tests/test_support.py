@@ -11,10 +11,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-# scanner.py reads MM2_TESTING while it is imported, so this must happen
-# before any test module imports scanner or another module that imports it.
-os.environ.setdefault("MM2_TESTING", "true")
-os.environ.setdefault("CASH_MAX_AGE_DAYS", "14")
+# scanner.py reads MM2_TESTING while it is imported, so force this test-only
+# value before any test module imports scanner or a module that imports it.
+os.environ["MM2_TESTING"] = "true"
+os.environ["CASH_MAX_AGE_DAYS"] = "14"
 
 
 class IsolatedDataTestCase(unittest.TestCase):
