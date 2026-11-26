@@ -407,18 +407,26 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
         if chromas_row is not None:
             if not isinstance(chromas_row, dict) or chromas_row.get("marketplace") != "chromas.gg":
                 raise RuntimeError(f"[cash] Invalid chromas.gg marketplace identity: {name or slug}")
-            try:
-                market_price = float(chromas_row.get("price_usd"))
-                market_sales = chromas_row.get("sold_7d")
-                display_market_price = float(str(chromas_row.get("price_display") or "").removeprefix("$").replace(",", ""))
-            except (TypeError, ValueError, OverflowError):
-                raise RuntimeError(f"[cash] Invalid chromas.gg 7d price data: {name or slug}")
-            if (
-                not math.isfinite(market_price) or market_price <= 0
-                or not math.isfinite(display_market_price) or abs(display_market_price - market_price) > 0.0000001
-                or type(market_sales) is not int or market_sales < 0
-            ):
-                raise RuntimeError(f"[cash] Invalid chromas.gg 7d price data: {name or slug}")
+            market_sales = chromas_row.get("sold_7d")
+            if type(market_sales) is not int or market_sales < 0:
+                raise RuntimeError(f"[cash] Invalid chromas.gg Sold (7d) data: {name or slug}")
+            raw_market_price = chromas_row.get("price_usd")
+            raw_market_display = str(chromas_row.get("price_display") or "").strip()
+            if market_sales == 0:
+                if raw_market_price is not None or raw_market_display:
+                    raise RuntimeError(f"[cash] A zero-sale chromas.gg row cannot carry a usable 7d price: {name or slug}")
+            else:
+                try:
+                    market_price = float(raw_market_price)
+                    display_market_price = float(raw_market_display.removeprefix("$").replace(",", ""))
+                except (TypeError, ValueError, OverflowError):
+                    raise RuntimeError(f"[cash] Invalid chromas.gg 7d price data: {name or slug}")
+                if (
+                    not math.isfinite(market_price) or market_price <= 0
+                    or not math.isfinite(display_market_price) or abs(display_market_price - market_price) > 0.0000001
+                    or not raw_market_display.startswith("$")
+                ):
+                    raise RuntimeError(f"[cash] Invalid chromas.gg 7d price data: {name or slug}")
         selected_marketplace = row.get("selected_marketplace")
         selected_sales = row.get("selected_marketplace_sold_7d", 0)
         if selected_marketplace is None:
