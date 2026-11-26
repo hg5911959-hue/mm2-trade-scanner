@@ -421,6 +421,7 @@ def _load_previous_snapshot(path: Path):
     if (
         not isinstance(data, dict)
         or data.get("schema_version") != 5
+        or data.get("price_basis") != "selected_marketplace_seller_proceeds_after_fees"
         or data.get("catalog_complete") is not True
         or not isinstance(data.get("items"), list)
     ):
