@@ -3444,10 +3444,10 @@ def _format_telegram_item_line(line):
     heading = f"• <b>{_telegram_escape(name)}</b> <code>×{quantity}</code>"
     if identity:
         heading += f" <i>{_telegram_escape(identity)}</i>"
-    value_line = f"  {_telegram_escape(unit_value)} each → <b>{_telegram_escape(total_value)}</b>"
+    value_line = f"  Value: {_telegram_escape(unit_value)} each → <b>{_telegram_escape(total_value)}</b>"
     details = []
     for detail in core_parts[1:]:
-        label = detail.strip().replace("Stability (RBLXValue):", "Stability:")
+        label = detail.strip()
         if label.startswith("Rarity:"):
             continue
         label = label.replace("Demand:", "Demand")
