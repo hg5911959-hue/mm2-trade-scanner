@@ -37,16 +37,9 @@ def _positive_number(value: object) -> float | None:
     return number if math.isfinite(number) and number > 0 else None
 
 
-def _range_bounds(raw_range: object, value: float | None) -> tuple[float | None, float | None]:
-    if value is None:
-        return None, None
-    match = re.search(r"(\d+(?:\.\d+)?)\s*(?:-|–|to)\s*(\d+(?:\.\d+)?)", str(raw_range or "").replace(",", ""), re.I)
-    if not match:
-        return value, value
-    low, high = float(match.group(1)), float(match.group(2))
-    if not (math.isfinite(low) and math.isfinite(high) and 0 < low <= high):
-        raise ValueError("invalid Supreme value range in RBLXValue snapshot")
-    return low, high
+def _range_bounds(_raw_range: object, value: float | None) -> tuple[float | None, float | None]:
+    """Use only the scalar Supreme source value; ignore unverified provider ranges."""
+    return (value, value) if value is not None else (None, None)
 
 
 def load_values_from_snapshot(
@@ -167,6 +160,10 @@ def load_values_from_snapshot(
             "robase_slug": robase_slug,
             "name": rblx_name,
             "value": supreme,
+            "value_source": "Supreme Values",
+            "stability_source": "RBLXValue",
+            "demand_source": "RBLXValue",
+            "rarity_source": "RBLXValue",
             "value_min": low,
             "value_max": high,
             "raw_source_value": supreme,
@@ -207,7 +204,8 @@ def load_values_from_snapshot(
         "supreme_numeric": supreme_numeric,
         "stability_available": stability_count,
         "demand_available": demand_count,
-        "value_basis": "value_source_b (Supreme Values) only",
+        "value_basis": "value_source_b (Supreme Values) only; no blended or MM2Values fallback",
+        "quality_fields_source": "RBLXValue only (Stability, Demand, Rarity)",
         "api_requests": 0,
     }
     return grouped, summary
