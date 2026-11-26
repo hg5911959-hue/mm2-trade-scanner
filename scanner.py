@@ -2449,8 +2449,10 @@ def _enrich_catalog_metadata_gaps(values, cache_document, source_meta=None, pers
                 numeric_value, value_status = _supreme_numeric_value(detail)
                 if numeric_value is not None:
                     variant["value"] = numeric_value
-                    low, high = _parse_numeric_value_range(detail.get("range"), numeric_value)
-                    variant["value_min"], variant["value_max"] = low, high
+                    # RBLXValue's range metadata is not a Supreme price source.
+                    # Keep the trade-price bounds pinned to the Supreme scalar value.
+                    variant["value_min"] = numeric_value
+                    variant["value_max"] = numeric_value
                     variant["value_status"] = value_status
             published_rblxvalue = _positive_numeric_value(detail.get("value"))
             if published_rblxvalue is not None:
@@ -3059,7 +3061,9 @@ def load_supreme_values():
                     continue
                 name = str(item["name"])
                 value, value_status = _supreme_numeric_value(item)
-                value_min, value_max = _parse_numeric_value_range(item.get("range"), value)
+                # Only value_source_b is used as the Supreme price. Do not
+                # widen it with a provider range whose source is not verified.
+                value_min = value_max = value
                 secondary = item.get("value_source_a")
                 try:
                     secondary = float(secondary) if secondary is not None else None
