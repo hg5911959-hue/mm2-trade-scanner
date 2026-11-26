@@ -166,7 +166,7 @@ jobs:
               "third_party_authorization": auth,
               "source_attribution": "Supreme Values (supremevalues.com)",
               "stability_history": "Daily source Stability label and published score are stored per weapon; changes are preserved across dates.",
-              "coverage_note": "Current exact crosswalk contains 214 weapons. The previously mentioned 222-item ROBASE total is not yet reconciled; do not infer coverage of the additional 8 items.",
+              "coverage_note": "ROBASE's current 222-item catalogue comprises 214 weapons and 8 Pets (the <3 Common Pet plus seven Chroma Fire Pets). This collector intentionally covers all 214 weapons and excludes Pets.",
           }
           manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
           print(json.dumps(manifest, ensure_ascii=False, sort_keys=True))
