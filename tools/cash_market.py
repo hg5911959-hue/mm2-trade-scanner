@@ -293,8 +293,13 @@ def calculate_cash_side(
             and sample_window in (7, 30)
         ):
             sample_label = f" [LOW SAMPLE {sample_count}/{sample_window}d]"
+        marketplace_label = (
+            f" [{entry.get('selected_marketplace')}]"
+            if entry.get("tier") == "robase" and entry.get("selected_marketplace")
+            else ""
+        )
         lines.append(
-            f"• {display_name} {quantity_label} — {unit_label} each = {total_label}"
+            f"• {display_name} {quantity_label}{marketplace_label} — {unit_label} each = {total_label}"
             f"{haircut_label}{sample_label}{estimate_label}"
         )
     return low_total, high_total, lines, missing
