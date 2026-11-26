@@ -119,10 +119,10 @@ Never commit or share these secrets. The scanner does not print API keys or Tele
 
 ### RBLXValue free-plan compliance and key safety
 
-- The scanner displays the exact `Data from rblxvalue.com` credit in every Telegram message and on the public dashboard. It is shown unconditionally, so the project remains compliant if the API response requires free-plan attribution.
+- RBLXValue research snapshots are isolated from the live cash scanner; production cash Telegram alerts do not use or display RBLXValue data. If an approved future feature displays RBLXValue data, include the exact `Data from rblxvalue.com` attribution where required by the API plan.
 - RBLXValue documents one free API key per account. Do not create alternate accounts or spread requests across keys to bypass limits. If a key is compromised or needs replacement, rotate the existing key through the official developer dashboard and update the `RBLXVALUE_API_KEY` repository secret.
 - HTTP 429 is a rate-limit response, not a key suspension; the scanner respects retry guidance and its own persistent rolling request budget. HTTP 401 indicates a missing/wrong/rotated key; HTTP 403 may indicate a key that is not activated, expired, or suspended.
-- The scanner never stores the key itself in repository state. The private state branch stores only a truncated SHA-256 fingerprint and timestamps for health checks and circuit-breaker recovery.
+- The scanner never stores the API key itself in repository state. The durable `state` branch belongs to this public repository; it is not private storage. Assume every file committed to that branch is publicly readable, and never use it for secrets or private messages.
 
 - `data/supreme_values_audit.json` records the complete internal API snapshot with completeness counts, missing metadata and same-name identity collisions. It is retained for scanner diagnostics only; do not export or republish the Supreme-derived value list. Missing or unrecognized received-side Stability blocks value-mode offers, but does not block a cash-first offer whose identity, quantities and ROBASE prices are verified. Demand and non-tradability Stability labels are informational in cash-first mode; explicit `Untradeable` is always blocked.
 - The RBLXValue API explicitly documents `value_source_b` as the Supreme Values numeric value, but documents `stability` as a general API field rather than a source-specific field. Telegram therefore labels it `Stability (RBLXValue)`; this is not a claim of direct Supreme website verification. Its `/v2/history/{slug}?source=supremevalues` endpoint can be used for source-specific historical value movement where API budget permits.
@@ -193,15 +193,7 @@ The one-time 2026-11-21 weapon identity review inputs are retained under [docs/a
 
 ## SQLite market history and public dashboard
 
-The scanner keeps a local SQLite history at `data/market_history.sqlite3`. The existing `state` branch workflow restores and persists this database alongside the Supreme cache, request budget, and other durable state.
-
-The database stores:
-- Deduplicated Supreme/secondary-source value snapshots (only when the value set changes).
-- Public BloxSwap listing observations, first-seen/last-seen timestamps, and item quantities.
-- Qualified opportunity records, including totals, profit, margin, and listing links.
-- A source-agreement label for display only: `cross_checked` when both sources are within 15%, `conflict` when they differ more, and `estimated` when only one numeric source is available. Cash-first trade calculations use verified manual USD prices only; Supreme numeric values and the secondary source are never blended into cash profit.
-
-Retention is 90 days for listing observations and 180 days for value snapshots/opportunities. SQLite writes are additive and idempotent; history storage failures are logged without changing the existing trade-evaluation or Fail-Closed rules.
+The codebase includes optional SQLite history at `data/market_history.sqlite3`, but the current scan workflow removes this database and `history.csv` from the state artifact before persistence. Therefore, SQLite history is not durable across scheduled runs in the current deployment. Do not rely on historical listing/opportunity views as a persistent record until a private durable store or an explicitly approved public-safe data design is implemented.
 
 **Privacy:** private Discord messages, listings, and opportunities are deliberately excluded from this database and from the public dashboard. The state branch belongs to the public repository, so private-server content must never be written there.
 
@@ -266,8 +258,8 @@ The checker validates the schema and row cap and reports the file size. It warns
 ## Daily metrics and weekly health report
 
 - `data/metrics.json` stores UTC daily counters: scans, scan failures, sent/deferred alerts, RBLXValue requests, breaker duration and empty parses. It is written atomically and retains the latest 14 days. It is optional during state validation for compatibility with existing state branches.
-- **MM2 Weekly Health Report** runs every Sunday at 08:00 UTC or manually from Actions. It reads the `state` branch and sends scan success percentage, alert/deferred totals, today's API request usage against the daily limit, key state, Discord manual-import freshness and a seven-day alert trend.
-- The weekly workflow uses only the existing `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` secrets and grants `contents: read`. No paid service or new secret is required.
+- **MM2 Weekly Health Report is currently disabled** (`if: false` in its workflow). Do not expect a Sunday Telegram report until the Supreme-derived data authorization issue is resolved and the workflow is safely re-enabled.
+
 
 ## Scheduled scanning and pending rechecks
 
