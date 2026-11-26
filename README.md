@@ -42,7 +42,7 @@ From the scanner user's perspective:
 - Any listing containing **Ajout / Ajouts** or a structured **Offre / Offres / Offer / Offers** requested wildcard is excluded before valuation. The filter reads the individual card and structured `requestedWildcards` metadata; it does not discard a concrete weapon merely because the free-text description contains the word “offers”.
 - The ROBASE snapshot contains **222 catalogue entries**. The production identity crosswalk matches weapons against BloxSwaps item metadata only; non-weapons, non-tradable items, and missing or ambiguous identities are excluded.
 - The production cash-only path does not load Supreme Values or RBLXValue. Item identity, type, rarity, Chroma status, year hints, and tradability are checked against BloxSwaps metadata; uncertain identities remain excluded.
-- The production cash-only path calculates profit from fresh, verified ROBASE seller-proceeds USD prices. It does not use a second item-value list, Stability, Demand, or Supreme-derived fields. `data/cash_prices.csv` remains a legacy/manual file and is not used by live cash evaluation.
+- The production cash-only path calculates profit from fresh, verified ROBASE seller-proceeds USD prices. It does not use a second item-value list or RBLXValue fields. `data/cash_prices.csv` remains a legacy/manual file and is not used by live cash evaluation.
 - **Current cash-only mode:** an item is eligible only when BloxSwaps explicitly marks it tradable and its identity maps unambiguously to a fresh, verified ROBASE price. The old Stability-based value mode is disabled.
 - **Estimate-only dry run:** when `DRY_RUN=true`, the scanner may use unverified legacy references for exploratory calculations, applying a ±30% uncertainty band and the resale haircut. Every dry-run cash result is labelled as estimate-only and is hard-blocked from the live alert eligibility gate. This uncertainty band is an engineering assumption, not a statistically measured confidence interval or proof of current market prices. Normal production runs continue to reject unverified rows.
 - The scanner never uses BloxSwaps' own Win/Loss label, never uses the visible listing price as an item value, and never invents a missing item value or quantity.
@@ -50,7 +50,7 @@ From the scanner user's perspective:
 
 ### Legacy manual CSV catalogue (not used by production)
 
-The following rules apply only to the legacy `data/cash_prices.csv` and its offline verification tool. This CSV is not read by the production scanner, does not update ROBASE prices, and does not affect live alert eligibility. Production uses the complete, fresh ROBASE snapshot described above. Supreme numeric values remain separate from all cash prices.
+The following rules apply only to the legacy `data/cash_prices.csv` and its offline verification tool. This CSV is not read by the production scanner, does not update ROBASE prices, and does not affect live alert eligibility. Production uses the complete, fresh ROBASE snapshot described above. RBLXValue blended estimates remain separate from all cash prices. The isolated Value-profit shadow uses only RBLXValue's documented blended `value` field; source-specific third-party value fields are not retained. The free API plan requires the visible attribution `Data from rblxvalue.com` in the bot/app footer.
 
 To review the legacy CSV for an offline experiment:
 

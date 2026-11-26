@@ -1,4 +1,4 @@
-name: RBLXValue Supreme Value-profit Shadow Analysis
+name: RBLXValue Blended Value-profit Shadow Analysis
 
 on:
   workflow_run:
@@ -17,7 +17,7 @@ permissions:
 jobs:
   shadow:
     if: github.event_name == 'push' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
-    name: Analyze Supreme value-profit without alerts or API access
+    name: Analyze RBLXValue blended value-profit without alerts or API access
     permissions:
       actions: read
       contents: read

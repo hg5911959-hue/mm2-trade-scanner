@@ -5312,7 +5312,7 @@ def scan_once(include_backlog_rechecks=True):
     daily_shadow_mode = os.environ.get("ROBASE_DAILY_CHART_SHADOW_ENABLED", "").strip().casefold() == "true"
     value_profit_shadow_mode = os.environ.get("RBLXVALUE_VALUE_PROFIT_SHADOW_ENABLED", "").strip().casefold() == "true"
     if daily_shadow_mode and value_profit_shadow_mode:
-        raise RuntimeError("ROBASE cash-chart shadow and Supreme value-profit shadow must run separately.")
+        raise RuntimeError("ROBASE cash-chart shadow and RBLXValue blended value-profit shadow must run separately.")
     if daily_shadow_mode or value_profit_shadow_mode:
         # Shadow modes are strictly non-delivering, even if a caller misconfigures DRY_RUN.
         os.environ["DRY_RUN"] = "true"
@@ -5322,7 +5322,7 @@ def scan_once(include_backlog_rechecks=True):
     update_metrics(increments={"scans": 1})
 
     if value_profit_shadow_mode:
-        print("[stage] Offline Supreme value-profit shadow from the daily RBLXValue archive; no API key or API requests")
+        print("[stage] Offline RBLXValue blended value-profit shadow from the daily RBLXValue archive; no API key or API requests")
     else:
         print("[stage] Third-party valuation sources disabled; cash eligibility uses ROBASE + BloxSwaps only")
     testing_mode = os.environ.get("MM2_TESTING", "").strip().casefold() == "true"
@@ -5339,7 +5339,7 @@ def scan_once(include_backlog_rechecks=True):
             + json.dumps(archive_summary, ensure_ascii=False, sort_keys=True)
         )
         print(
-            f"[value-profit-shadow] thresholds: minimum Supreme value profit={MIN_DIFF:g}; "
+            f"[value-profit-shadow] thresholds: minimum RBLXValue blended-value profit={MIN_DIFF:g}; "
             f"minimum margin={MIN_PROFIT_PERCENT:g}%"
         )
     elif CASH_FILTER and not testing_mode:
@@ -5348,7 +5348,7 @@ def scan_once(include_backlog_rechecks=True):
     elif testing_mode:
         values = load_supreme_values()
     else:
-        raise RuntimeError("Value mode is disabled until third-party data rights are verified.")
+        raise RuntimeError("Live value mode remains disabled; RBLXValue blended valuation is currently shadow-only.")
     cash_catalog = None
     cash_prices_changed = False
     if CASH_FILTER:

@@ -14,7 +14,7 @@ on:
         type: boolean
         default: false
       rblxvalue_value_profit_shadow:
-        description: "Run offline Supreme value-profit analysis from the archived RBLXValue snapshot; never send Telegram alerts or call the API"
+        description: "Run offline RBLXValue blended value-profit analysis from the archived snapshot; never send Telegram alerts or call the API"
         required: false
         type: boolean
         default: false
@@ -101,7 +101,7 @@ jobs:
           test -s robase-daily-history/data/weapon_identity_map.json
           echo "Restored previous-day ROBASE daily chart archive for shadow evaluation only."
 
-      - name: Restore RBLXValue daily snapshot for offline Value-profit shadow
+      - name: Restore RBLXValue daily snapshot for offline RBLXValue blended value-profit shadow
         if: env.RBLXVALUE_VALUE_PROFIT_SHADOW_ENABLED == 'true'
         run: |
           set -euo pipefail
@@ -109,7 +109,7 @@ jobs:
           mkdir -p rblxvalue-archive/data
           git show origin/robase-daily-history:data/rblxvalue_latest.json > rblxvalue-archive/data/rblxvalue_latest.json
           test -s rblxvalue-archive/data/rblxvalue_latest.json
-          echo "Restored the completed daily RBLXValue snapshot; scanner will use value_source_b only and make no API requests."
+          echo "Restored the completed daily RBLXValue snapshot; scanner will use RBLXValue blended estimate only and make no API requests."
 
       - name: Run scanner preflight checks (warnings do not block the scan)
         id: preflight
@@ -119,7 +119,7 @@ jobs:
           TELEGRAM_PREFLIGHT_CHECK: "true"
           CASH_MAX_AGE_DAYS: "1"
           CASH_MIN_VERIFIED_ROWS: "8"
-          PREFLIGHT_SEND_NOTICES: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow) && 'false' || 'true' }}
+          PREFLIGHT_SEND_NOTICES: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow || inputs.rblxvalue_value_profit_shadow) && 'false' || 'true' }}
         run: python -m tools.preflight --warn
 
       - name: Run BloxSwaps scanner
@@ -139,7 +139,7 @@ jobs:
           MAX_PENDING_RECHECK_PER_SCAN: "50"
           MAX_BACKLOG_RECHECK_PAGES: "1000"
           BACKLOG_RECHECK_EVERY_CYCLES: "4"
-          DRY_RUN: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow) && 'true' || 'false' }}
+          DRY_RUN: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow || inputs.rblxvalue_value_profit_shadow) && 'true' || 'false' }}
           MAX_ALERTS_PER_SESSION: "0"
           MM2_SCAN_DURATION_SECONDS: "540"
           MM2_SCAN_INTERVAL_SECONDS: "30"

@@ -38,11 +38,7 @@ def snapshot(rows):
     return {
         "schema_version": 1,
         "source": "RBLXValue official API v2",
-        "source_fields": {
-            "value": "RBLXValue blended estimate",
-            "value_source_a": "MM2Values",
-            "value_source_b": "Supreme Values",
-        },
+        "source_fields": {"value": "RBLXValue blended estimate"},
         "snapshot_date": "2026-11-25",
         "dataset_last_updated": "2026-11-25 12:02:35",
         "expected_weapons": 214,
@@ -58,26 +54,27 @@ class RblxValueValueProfitShadowTests(IsolatedDataTestCase):
         path.write_text(json.dumps(data), encoding="utf-8")
         return path
 
-    def test_uses_supreme_source_b_only_and_exact_bloxswaps_slug(self):
+    def test_uses_rblxvalue_blended_estimate_only_and_exact_bloxswaps_slug(self):
         data = snapshot([sample_row(i) for i in range(214)])
         data["items"][0]["identity_method"] = "explicit_verified_alias"
         values, summary = load_values_from_snapshot(self.write_snapshot(data), today="2026-11-25")
         variant = values["weapon 0"]["variants"][0]
-        self.assertEqual(variant["value"], 123)
-        self.assertEqual(variant["raw_source_value"], 123)
-        self.assertEqual(variant["secondary_value"], 888)
+        self.assertEqual(variant["value"], 999)
+        self.assertIsNone(variant["raw_source_value"])
+        self.assertIsNone(variant["secondary_value"])
         self.assertEqual(variant["rblxvalue_value"], 999)
         self.assertEqual(variant["slug"], "weapon-0")
-        self.assertEqual(summary["supreme_numeric"], 214)
+        self.assertEqual(summary["blended_numeric"], 214)
+        self.assertEqual(summary["value_basis"], "RBLXValue blended estimate only")
         self.assertEqual(summary["api_requests"], 0)
         self.assertEqual(summary["explicit_verified_aliases"], 1)
 
-    def test_missing_supreme_value_never_falls_back_to_other_sources(self):
+    def test_missing_blended_value_is_not_replaced_by_source_specific_values(self):
         rows = [sample_row(i) for i in range(214)]
-        rows[0].update({"value_source_b": None, "value": 500, "value_source_a": 400})
+        rows[0].update({"value": None, "value_source_b": 400, "value_source_a": 350})
         values, summary = load_values_from_snapshot(self.write_snapshot(snapshot(rows)), today="2026-11-25")
         self.assertIsNone(values["weapon 0"]["variants"][0]["value"])
-        self.assertEqual(summary["supreme_numeric"], 213)
+        self.assertEqual(summary["blended_numeric"], 213)
 
     def test_missing_stability_is_preserved_as_missing(self):
         rows = [sample_row(i) for i in range(214)]
