@@ -69,7 +69,6 @@ class RobasePriceParserTests(IsolatedDataTestCase):
     def test_item_detail_uses_chromas_gg_price_7d_only_even_when_starpets_is_cheaper(self):
         html = """
         <main>
-          <h2>About Sweet</h2>
           <table>
             <thead><tr><th>#</th><th>Marketplace</th><th>Price (7d)</th><th>Sold (7d)</th>
             <th>Volume (7d)</th><th>Volume (30d)</th><th>Share</th><th>Fee</th><th>Earned (30d)</th><th>Last sale</th></tr></thead>
@@ -78,6 +77,7 @@ class RobasePriceParserTests(IsolatedDataTestCase):
               <tr><td>2</td><td><i></i>chromas.gg</td><td>$2.80</td><td>86</td><td>$253.42</td><td>$1,449.32</td><td>7.2%</td><td>5%</td><td>$72.47</td><td>yesterday</td></tr>
             </tbody>
           </table>
+          <h2>About Sweet</h2>
           <p>Sweet is a Godly item in Roblox Murder Mystery 2 (MM2).</p>
         </main>
         """
@@ -94,11 +94,11 @@ class RobasePriceParserTests(IsolatedDataTestCase):
     def test_item_detail_does_not_fall_back_to_starpets_when_chromas_has_no_7d_sales(self):
         html = """
         <main>
-          <h2>About Sweet</h2>
           <table>
             <tr><td>1</td><td>StarPets</td><td>$1.90</td><td>761</td><td>$4,053.65</td><td>$18,404.80</td><td>91.0%</td><td>32%</td><td>$5,889.54</td><td>yesterday</td></tr>
             <tr><td>2</td><td>chromas.gg</td><td>$2.80</td><td>0</td><td>$0</td><td>$0</td><td>0%</td><td>5%</td><td>$0</td><td>—</td></tr>
           </table>
+          <h2>About Sweet</h2>
           <p>Sweet is a Godly item in Roblox Murder Mystery 2 (MM2).</p>
         </main>
         """
