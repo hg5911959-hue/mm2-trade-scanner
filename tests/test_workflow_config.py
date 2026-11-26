@@ -166,6 +166,8 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("types: [completed]", workflow)
         self.assertIn("dry_run: true", workflow)
         self.assertIn("rblxvalue_value_profit_shadow: true", workflow)
+        core = (ROOT / ".github/workflows/scan-core.yml").read_text(encoding="utf-8")
+        self.assertIn("cancel-in-progress: ${{ inputs.rblxvalue_value_profit_shadow }}", core)
         self.assertIn("  workflow_dispatch:", workflow)
         self.assertIn('      - "scanner.py"', workflow)
         self.assertIn('      - "tools/rblxvalue_value_profit_shadow.py"', workflow)
