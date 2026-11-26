@@ -119,7 +119,7 @@ Never commit or share these secrets. The scanner does not print API keys or Tele
 
 ### RBLXValue free-plan compliance and key safety
 
-- The scanner displays the exact `Data from rblxvalue.com` credit in every Telegram message and on the public dashboard. It is shown unconditionally, so the project remains compliant if the API response requires free-plan attribution.
+- RBLXValue research snapshots are isolated from the live cash scanner; production cash Telegram alerts do not use or display RBLXValue data. If an approved future feature displays RBLXValue data, include the exact `Data from rblxvalue.com` attribution where required by the API plan.
 - RBLXValue documents one free API key per account. Do not create alternate accounts or spread requests across keys to bypass limits. If a key is compromised or needs replacement, rotate the existing key through the official developer dashboard and update the `RBLXVALUE_API_KEY` repository secret.
 - HTTP 429 is a rate-limit response, not a key suspension; the scanner respects retry guidance and its own persistent rolling request budget. HTTP 401 indicates a missing/wrong/rotated key; HTTP 403 may indicate a key that is not activated, expired, or suspended.
 - The scanner never stores the API key itself in repository state. The durable `state` branch belongs to this public repository; it is not private storage. Assume every file committed to that branch is publicly readable, and never use it for secrets or private messages.
@@ -259,7 +259,7 @@ The checker validates the schema and row cap and reports the file size. It warns
 
 - `data/metrics.json` stores UTC daily counters: scans, scan failures, sent/deferred alerts, RBLXValue requests, breaker duration and empty parses. It is written atomically and retains the latest 14 days. It is optional during state validation for compatibility with existing state branches.
 - **MM2 Weekly Health Report is currently disabled** (`if: false` in its workflow). Do not expect a Sunday Telegram report until the Supreme-derived data authorization issue is resolved and the workflow is safely re-enabled.
-- The weekly workflow uses only the existing `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` secrets and grants `contents: read`. No paid service or new secret is required.
+
 
 ## Scheduled scanning and pending rechecks
 
