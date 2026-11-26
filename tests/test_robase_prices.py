@@ -109,6 +109,8 @@ class RobasePriceParserTests(IsolatedDataTestCase):
         self.assertEqual(item["price_display"], "")
         self.assertIsNone(item["selected_marketplace"])
         self.assertEqual(item["marketplace_prices"]["chromas.gg"]["sold_7d"], 0)
+        self.assertIsNone(item["marketplace_prices"]["chromas.gg"]["price_usd"])
+        self.assertEqual(item["marketplace_prices"]["chromas.gg"]["price_display"], "")
 
     def test_item_detail_accepts_rendered_about_heading_and_description(self):
         html = """
