@@ -258,7 +258,7 @@ The checker validates the schema and row cap and reports the file size. It warns
 ## Daily metrics and weekly health report
 
 - `data/metrics.json` stores UTC daily counters: scans, scan failures, sent/deferred alerts, RBLXValue requests, breaker duration and empty parses. It is written atomically and retains the latest 14 days. It is optional during state validation for compatibility with existing state branches.
-- **MM2 Weekly Health Report is currently disabled** (`if: false` in its workflow). Do not expect a Sunday Telegram report until the Supreme-derived data authorization issue is resolved and the workflow is safely re-enabled.
+- **MM2 Weekly Health Report is currently disabled** (`if: false` in its workflow). Do not expect a Sunday Telegram report until its separate workflow is reviewed and safely re-enabled. This does not affect the production cash scanner or the isolated RBLXValue Supreme value-profit shadow.
 
 
 ## Scheduled scanning and pending rechecks
