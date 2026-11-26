@@ -72,15 +72,15 @@ jobs:
           from tools.cash_market import load_robase_price_catalog
           catalog = load_robase_price_catalog(Path(os.environ["RUNNER_TEMP"]) / "robase_prices.json")
           print(
-              "[robase-live] rows=%d verified=%d unverified=%d"
+              "[robase-live] rows=%d verified=%d cash_eligible=%d"
               % (
                   catalog["row_count"],
                   catalog["verified_count"],
-                  catalog["row_count"] - catalog["verified_count"],
+                  catalog["cash_eligible_count"],
               )
           )
-          if catalog["verified_count"] < 8:
-              raise SystemExit("ROBASE has fewer than 8 sufficiently traded items; live cash mode must remain disabled.")
+          if catalog["cash_eligible_count"] < 8:
+              raise SystemExit("ROBASE has fewer than 8 fresh items with at least 3 Chroma Sold (7d); live cash mode must remain disabled.")
           PY
       - name: Install Ruff
         run: python -m pip install --disable-pip-version-check ruff==0.17.5
