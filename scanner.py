@@ -2605,8 +2605,8 @@ def _supreme_numeric_value(item):
     raw_value = item.get("value_source_b")
     if raw_value is None:
         raw_value = item.get("raw_source_value")
-    if raw_value is None:
-        raw_value = item.get("value")
+    # Never trust the generic "value" field here: RBLXValue uses it for its
+    # blended estimate, not a source-pure Supreme Values price.
     try:
         value = float(raw_value)
     except (TypeError, ValueError, OverflowError):
