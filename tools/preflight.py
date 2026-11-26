@@ -103,9 +103,9 @@ def collect_preflight_checks(data_dir="data", *, env=None, now=None,
             catalog = load_robase_price_catalog(
                 snapshot_path, int(environment.get("CASH_MAX_AGE_DAYS", "1")), now=current,
             )
-            fresh = catalog["verified_count"]
+            fresh = catalog["cash_eligible_count"]
             if fresh < minimum:
-                checks.append("fresh verified ROBASE cash prices: " + str(fresh) + " / " + str(minimum))
+                checks.append("fresh cash-eligible ROBASE prices (at least 3 Sold (7d)): " + str(fresh) + " / " + str(minimum))
         except (OSError, ValueError, RuntimeError, TypeError):
             fresh = 0
             checks.append("ROBASE cash-price snapshot unavailable or invalid")
