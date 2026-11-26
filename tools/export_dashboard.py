@@ -171,7 +171,7 @@ def build_dashboard_data(db_path: str | Path, robase_path: str | Path | None = N
 
         since = (datetime.now(UTC) - timedelta(days=7)).isoformat()
         summary = {
-             "historyAvailable": True,
+            "historyAvailable": True,
             "trackedListings": db.execute(
                 "SELECT COUNT(*) FROM listings WHERE lower(source) != 'discord'"
             ).fetchone()[0],
