@@ -3192,6 +3192,7 @@ def load_supreme_values():
 
 
 def _variant_numeric_bounds(variant):
+    """Return the Supreme scalar only; provider ranges are not Supreme prices."""
     if not isinstance(variant, dict):
         return None, None
     try:
@@ -3200,13 +3201,7 @@ def _variant_numeric_bounds(variant):
         return None, None
     if not math.isfinite(base) or base <= 0:
         return None, None
-    try:
-        low, high = float(variant.get("value_min", base)), float(variant.get("value_max", base))
-    except (TypeError, ValueError):
-        low, high = base, base
-    if not all(math.isfinite(v) and v > 0 for v in (low, high)) or low > high:
-        low, high = base, base
-    return low, high
+    return base, base
 
 
 def _select_conservative_variant(record, side):
