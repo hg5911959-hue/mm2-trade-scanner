@@ -130,12 +130,18 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
             "      RBLXVALUE_DAILY_ARCHIVE_FILE: rblxvalue-archive/data/rblxvalue_latest.json\n",
             "",
         )
-        if "      - name: Restore RBLXValue daily snapshot for offline Value-profit shadow\n" in core_job:
-            before, after = core_job.split(
-                "      - name: Restore RBLXValue daily snapshot for offline Value-profit shadow\n", 1
-            )
-            after = after.split("      - name: Run scanner preflight checks", 1)[1]
-            core_job = before + "      - name: Run scanner preflight checks" + after
+        core_job = core_job.replace(
+            "        if: env.RBLXVALUE_VALUE_PROFIT_SHADOW_ENABLED != 'true'\\n",
+            "",
+        )
+        for extra_step, next_step in (
+            ("      - name: Initialize isolated state for RBLXValue shadow\\n", "      - name: Refresh public ROBASE completed-sales prices"),
+            ("      - name: Restore RBLXValue daily snapshot for offline Value-profit shadow\\n", "      - name: Run scanner preflight checks"),
+        ):
+            if extra_step in core_job:
+                before, after = core_job.split(extra_step, 1)
+                after = after.split(next_step, 1)[1]
+                core_job = before + next_step + after
         core_job = core_job.replace(
             """          MIN_VALUE_DIFFERENCE: ${{ inputs.rblxvalue_value_profit_shadow && '2' || '0' }}
           MIN_PROFIT_PERCENT: ${{ inputs.rblxvalue_value_profit_shadow && '8' || '5' }}
@@ -160,9 +166,23 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         self.assertIn("types: [completed]", workflow)
         self.assertIn("dry_run: true", workflow)
         self.assertIn("rblxvalue_value_profit_shadow: true", workflow)
+        self.assertIn("  workflow_dispatch:", workflow)
+        self.assertIn('      - "scanner.py"', workflow)
+        self.assertIn('      - "tools/rblxvalue_value_profit_shadow.py"', workflow)
         self.assertNotIn("secrets:", workflow)
         self.assertNotIn("TELEGRAM_", workflow)
         self.assertNotIn("HEALTHCHECKS_PING_URL", workflow)
+
+    def test_supreme_shadow_never_loads_or_mutates_production_dedupe_state(self):
+        core = (ROOT / ".github/workflows/scan-core.yml").read_text(encoding="utf-8")
+        restore = core.split("      - name: Restore durable state branch", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("if: env.RBLXVALUE_VALUE_PROFIT_SHADOW_ENABLED != 'true'", restore)
+        isolated = core.split("      - name: Initialize isolated state for RBLXValue shadow", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("if: env.RBLXVALUE_VALUE_PROFIT_SHADOW_ENABLED == 'true'", isolated)
+        self.assertIn("rm -rf data", isolated)
+        self.assertIn("mkdir -p data", isolated)
+        self.assertIn("python tools/validate_state.py --directory data", isolated)
+        self.assertIn("production dedupe/watch state is not loaded or modified", isolated)
 
     def test_supreme_shadow_uses_conservative_value_and_market_quality_thresholds(self):
         core = (ROOT / ".github/workflows/scan-core.yml").read_text(encoding="utf-8")
