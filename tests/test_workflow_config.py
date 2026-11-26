@@ -136,7 +136,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
         )
         for extra_step, next_step in (
             ("      - name: Initialize isolated state for RBLXValue shadow\n", "      - name: Refresh public ROBASE completed-sales prices"),
-            ("      - name: Restore RBLXValue daily snapshot for offline Value-profit shadow\\n", "      - name: Run scanner preflight checks"),
+            ("      - name: Restore RBLXValue daily snapshot for offline Value-profit shadow\n", "      - name: Run scanner preflight checks"),
         ):
             if extra_step in core_job:
                 before, after = core_job.split(extra_step, 1)
