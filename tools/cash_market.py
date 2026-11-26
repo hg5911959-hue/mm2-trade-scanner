@@ -218,7 +218,7 @@ def calculate_cash_side(
         if entry.get("tier") == "robase" and entry.get("status") != "verified":
             sample_count = entry.get("price_sample_count")
             if sample_count is None or sample_count == 0:
-                missing.append(f"{name} (cash price unavailable: no eligible sales on chromas.gg or StarPets)")
+                missing.append(f"{name} (cash price unavailable: no eligible chromas.gg sales in the last 7 days)")
                 continue
         if entry.get("tier") == "robase":
             sample_count = entry.get("price_sample_count")
