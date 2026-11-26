@@ -3416,7 +3416,7 @@ def _wait_for_telegram_rate_limit():
 
 
 RBLXVALUE_ATTRIBUTION = "Data from rblxvalue.com"
-ROBASE_ATTRIBUTION = "Prices: robase.gg"
+ROBASE_ATTRIBUTION = "Prices: chromas.gg Price (7d) via ROBASE"
 
 
 class TelegramHTML(str):
