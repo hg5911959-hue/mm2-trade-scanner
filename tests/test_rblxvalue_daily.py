@@ -35,7 +35,7 @@ class RBLXValueDailyTests(IsolatedDataTestCase):
             wrong_category = dict(source, category="ancient")
             self.assertEqual(candidate_matches(identity, [wrong_category]), [], robase_slug)
 
-    def test_zero_supreme_source_is_not_counted_as_a_supreme_value(self):
+    def test_blended_value_is_kept_without_storing_third_party_source_values(self):
         identity = {
             "ghost-g-2026": {
                 "robase_slug": "ghost-1149",
@@ -64,8 +64,11 @@ class RBLXValueDailyTests(IsolatedDataTestCase):
             snapshot_date="2026-11-25", fetched_at_utc="2026-11-25T12:00:00+00:00", expected_count=1,
         )
         row = snapshot["items"][0]
-        self.assertEqual(row["status"], "matched_missing_supreme_value")
-        self.assertEqual(snapshot["counts"]["with_supreme_value"], 0)
+        self.assertEqual(row["status"], "matched")
+        self.assertEqual(row["value"], 10)
+        self.assertNotIn("value_source_a", row)
+        self.assertNotIn("value_source_b", row)
+        self.assertEqual(snapshot["counts"]["with_blended_value"], 1)
         self.assertEqual(snapshot["counts"]["with_stability"], 1)
         self.assertEqual(row["identity_method"], "explicit_verified_alias")
         self.assertIn("/item/ghost-gun", row["identity_source_url"])
@@ -86,14 +89,14 @@ class RBLXValueDailyTests(IsolatedDataTestCase):
         self.assertEqual(parse_number("1,250"),1250); self.assertIsNone(parse_number("x3")); self.assertIsNone(parse_number(-1)); self.assertIsNone(parse_number("155.5"))
     def test_api_key_is_required(self):
         with self.assertRaisesRegex(ValueError,"RBLXVALUE_API_KEY"): RBLXValueClient("")
-    def test_full_214_weapon_snapshot_keeps_both_value_sources(self):
+    def test_full_214_weapon_snapshot_keeps_blended_value_only(self):
         identities={f"weapon-{i}":self.identity(name=f"Weapon {i}",slug=f"weapon-{i}") for i in range(214)}
         items=[self.source(name=f"Weapon {i}",slug=f"weapon-{i}") for i in range(214)]
         result=build_snapshot(identities,items,{"last_updated":"2026-11-25 05:00:00","total_items":214},snapshot_date="2026-11-25",fetched_at_utc="2026-11-25T04:00:00+00:00")
-        self.assertEqual(result["counts"]["matched"],214); self.assertEqual(result["items"][0]["value"],155); self.assertEqual(result["items"][0]["value_source_b"],160); self.assertEqual(result["items"][0]["stability"],"Stable")
+        self.assertEqual(result["counts"]["matched"],214); self.assertEqual(result["items"][0]["value"],155); self.assertNotIn("value_source_a", result["items"][0]); self.assertNotIn("value_source_b", result["items"][0]); self.assertEqual(result["items"][0]["stability"],"Stable"); self.assertEqual(result["source_fields"]["value"],"RBLXValue blended estimate")
     def test_missing_values_remain_null(self):
         result=build_snapshot({"bat":self.identity()},[self.source(value=None,value_source_b=None,stability=None)],{"last_updated":"update","total_items":1},snapshot_date="2026-11-25",fetched_at_utc="2026-11-25T04:00:00+00:00",expected_count=1)
-        row=result["items"][0]; self.assertIsNone(row["value"]); self.assertIsNone(row["value_source_b"]); self.assertEqual(row["status"],"matched_missing_blended_value")
+        row=result["items"][0]; self.assertIsNone(row["value"]); self.assertNotIn("value_source_b", row); self.assertEqual(row["status"],"matched_missing_blended_value")
     def test_duplicate_source_assignment_is_rejected(self):
         identities={"bat":self.identity(),"bat-alt":self.identity(slug="bat-alt")}
         result=build_snapshot(identities,[self.source()],{"last_updated":"update","total_items":1},snapshot_date="2026-11-25",fetched_at_utc="2026-11-25T04:00:00+00:00",expected_count=2)
