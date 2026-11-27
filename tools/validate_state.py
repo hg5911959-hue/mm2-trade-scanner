@@ -204,8 +204,8 @@ def _validate_public_dashboard_history(path: Path) -> list[str]:
                 actual = {
                     row[1] for row in db.execute(f"PRAGMA table_info({table})").fetchall()
                 }
-                if not columns.issubset(actual):
-                    errors.append(f"public dashboard table has an incomplete schema: {table}")
+                if actual != columns:
+                    errors.append(f"public dashboard table has an unexpected or incomplete schema: {table}")
             if errors:
                 return errors
             listing_count = db.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
