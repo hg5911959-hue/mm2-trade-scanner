@@ -21,7 +21,7 @@ The production scanner workflow currently runs with `CASH_FILTER: "true"`. The w
 Production cash alerts require a complete, fresh ROBASE snapshot (222 catalogue entries) and verified item prices. The workflow refreshes the public ROBASE completed-sales catalogue before scanning, accepts only a still-fresh cached snapshot if refresh fails, and requires the snapshot and each item's last check to be no older than 20 minutes; `CASH_MAX_AGE_DAYS=1` is an additional upper bound, not a relaxation of that stricter gate. The preflight requires at least eight fresh Chroma 7d prices with at least three matching Sold (7d) sales each. A listing is eligible only when all items needed for the calculation can be priced safely, the conservative cash-profit threshold is met, and the BloxSwaps `posted_at`/last-refresh timestamp is present and no older than 60 minutes. Missing, stale, or materially future-dated listing timestamps fail closed. A later listing refresh changes the cash-mode watch fingerprint and triggers re-evaluation.
 chromas.gg Price (7d) values with fewer than three completed sales in the 7-day window remain visible as low-sample metadata but are excluded from live cash-profit qualification; they cannot make an alert actionable.
 
-Key production thresholds and defaults:
+Key production thresholds and defaults (full environment reference: [docs/CONFIGURATION.md](docs/CONFIGURATION.md)):
 - `CASH_MAX_AGE_DAYS=1` (configured in `.github/workflows/scan.yml`)
 - `CASH_MAX_LISTING_AGE_SECONDS=3600` (60-minute code default; may be overridden by the workflow environment)
 - `CASH_MIN_VERIFIED_ROWS=8`
