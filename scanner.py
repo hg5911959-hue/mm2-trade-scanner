@@ -5477,6 +5477,41 @@ def _reconcile_seen_and_pending_state(
     return seen_ads, pending_ids, pending_schedule, False
 
 
+def _handle_empty_feed(stats, cash_catalog) -> bool:
+    """Handle verified empty/current feeds and fail closed on incomplete empty scans."""
+    update_metrics(increments={"parse_empty": 1})
+    html_issue_count = max(
+        int(stats.get("html_malformed_count", 0)),
+        int(stats.get("html_parse_warning_count", 0)),
+    )
+    if stats.get("seen_boundary_reached") and not stats.get("malformed_count") and not html_issue_count:
+        print("[bloxswaps] Feed is current: first visible offers were already processed.")
+        record_success_if_complete(stats)
+        if CASH_FILTER:
+            save_cash_catalog_snapshot(cash_catalog["sha256"])
+        write_step_summary("Feed current: no new trade posts before the seen cursor boundary.")
+        return True
+    if stats["candidate_count"] > 0 and stats["addition_count"] == stats["candidate_count"]:
+        print(
+            f"[bloxswaps] No eligible listings: all {stats['addition_count']} "
+            "candidate cards contained Ajouts."
+        )
+        record_success_if_complete(stats)
+        if CASH_FILTER:
+            save_cash_catalog_snapshot(cash_catalog["sha256"])
+        write_step_summary("Successful scan: all current candidates excluded for Ajouts.")
+        return True
+    if stats["candidate_count"] == 0 and stats.get("pagination_source") == "html-only":
+        raise RuntimeError(
+            "[bloxswaps] No trade cards parsed; page structure may have changed or feed is empty."
+        )
+    if stats["candidate_count"] == 0 and not stats.get("pagination_complete"):
+        raise RuntimeError(
+            "[bloxswaps] No feed entries parsed and pagination could not be verified."
+        )
+    return False
+
+
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     scan_modes = resolve_scan_modes(
