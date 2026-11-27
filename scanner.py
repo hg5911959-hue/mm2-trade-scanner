@@ -49,24 +49,21 @@ def load_robase_cash_price_catalog(*args, **kwargs):
         raise
 
 
-BLOXSWAPS_URL = os.environ.get(
-    "BLOXSWAPS_URL",
-    "https://bloxswaps.com/trade-mm2?trade-type=P2P"
-).strip()
+BLOXSWAPS_URL = CONFIG.bloxswaps_url
 RBLXVALUE_API_BASE = "https://api.rblxvalue.com/v2"
 BLOXSWAPS_API_BASE = "https://api.bloxswaps.com"
-RBLXVALUE_API_KEY = os.environ.get("RBLXVALUE_API_KEY", "").strip()
-BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-MIN_DIFF = float(os.environ.get("MIN_VALUE_DIFFERENCE", "0"))
-MIN_PROFIT_PERCENT = float(os.environ.get("MIN_PROFIT_PERCENT", "5"))
-MIN_RECEIVE_DEMAND_SCORE = float(os.environ.get("MIN_RECEIVE_DEMAND_SCORE", "4.0"))
-MIN_RECEIVE_STABILITY_SCORE = float(os.environ.get("MIN_RECEIVE_STABILITY_SCORE", "3.0"))
-FAILURE_THRESHOLD = int(os.environ.get("FAILURE_ALERT_THRESHOLD", "3"))
-MAX_ALERTS_PER_RUN = max(0, int(os.environ.get("MAX_ALERTS_PER_RUN", "0")))
+RBLXVALUE_API_KEY = CONFIG.rblxvalue_api_key
+BOT_TOKEN = CONFIG.telegram_bot_token
+CHAT_ID = CONFIG.telegram_chat_id
+MIN_DIFF = CONFIG.min_value_difference
+MIN_PROFIT_PERCENT = CONFIG.min_profit_percent
+MIN_RECEIVE_DEMAND_SCORE = CONFIG.min_receive_demand_score
+MIN_RECEIVE_STABILITY_SCORE = CONFIG.min_receive_stability_score
+FAILURE_THRESHOLD = CONFIG.failure_alert_threshold
+MAX_ALERTS_PER_RUN = CONFIG.max_alerts_per_run
 _SESSION_ALERTS_SENT = 0
 _SESSION_ALERT_LIMIT = MAX_ALERTS_PER_RUN
-TELEGRAM_CHAT_TYPE = os.environ.get("TELEGRAM_CHAT_TYPE", "").strip().casefold()
+TELEGRAM_CHAT_TYPE = CONFIG.telegram_chat_type
 
 
 def telegram_alert_delay(chat_type, configured_delay=3.2):
@@ -81,7 +78,7 @@ def telegram_alert_delay(chat_type, configured_delay=3.2):
 
 
 ALERT_DELAY_SECONDS = telegram_alert_delay(
-    TELEGRAM_CHAT_TYPE, os.environ.get("ALERT_DELAY_SECONDS", "3.2")
+    TELEGRAM_CHAT_TYPE, CONFIG.alert_delay_seconds
 )
 VALUES_FILE = Path("data/supreme_values.json")
 VALUES_AUDIT_FILE = Path("data/supreme_values_audit.json")
@@ -107,9 +104,9 @@ VALID_PENDING_REASONS = frozenset({
 PRIORITY_PENDING_REASONS = frozenset({
     "quantity_uncertain", "unparsed_feed", "telegram_failure", "deferred_offer",
 })
-MAX_PENDING_RECHECK_PER_SCAN = max(1, int(os.environ.get('MAX_PENDING_RECHECK_PER_SCAN', '50')))
-MAX_BACKLOG_RECHECK_PAGES = max(1, int(os.environ.get('MAX_BACKLOG_RECHECK_PAGES', '25')))
-BACKLOG_RECHECK_EVERY_CYCLES = max(1, int(os.environ.get('BACKLOG_RECHECK_EVERY_CYCLES', '4')))
+MAX_PENDING_RECHECK_PER_SCAN = CONFIG.max_pending_recheck_per_scan
+MAX_BACKLOG_RECHECK_PAGES = CONFIG.max_backlog_recheck_pages
+BACKLOG_RECHECK_EVERY_CYCLES = CONFIG.backlog_recheck_every_cycles
 FIRST_SEEN_FILE = Path("data/first_seen_ads.json")
 LAST_SUCCESS_FILE = Path("data/last_successful_scan.json")
 WATCH_FILE = Path("data/watch_ads.json")
@@ -119,47 +116,39 @@ ALIASES_FILE = Path("aliases.json")
 UNMATCHED_FILE = Path("data/unmatched_names.json")
 MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
 BLOXSWAPS_PAGE_SIZE = 20
-MAX_FEED_PAGES = max(1, min(1000, int(os.environ.get("MAX_FEED_PAGES", "1000"))))
+MAX_FEED_PAGES = CONFIG.max_feed_pages
 VALUES_REVALIDATION_INTERVAL_SECONDS = 24 * 60 * 60
-_CASH_FILTER_REQUESTED = os.environ.get("CASH_FILTER", "false").strip().casefold() in {"1", "true", "yes", "on"}
-_DEFAULT_VALUES_TTL_SECONDS = 24 * 60 * 60 if _CASH_FILTER_REQUESTED else 12 * 60 * 60
+_CASH_FILTER_REQUESTED = CONFIG.cash_filter
+_DEFAULT_VALUES_TTL_SECONDS = CONFIG.default_values_ttl_seconds
 RBLXVALUE_META_POLL_INTERVAL_SECONDS = 2 * 60 * 60
 RBLXVALUE_META_RETRY_SECONDS = 2 * 60 * 60
 RBLXVALUE_META_FILE = Path("data/rblxvalue_meta.json")
 RBLXVALUE_DETAIL_FILE = Path("data/rblxvalue_detail_enrichment.json")
-RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY = max(
-    0, int(os.environ.get("RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY", "6"))
-)
+RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY = CONFIG.rblxvalue_max_detail_lookups_per_day
 RBLXVALUE_DETAIL_RETRY_SECONDS = 6 * 60 * 60
-RBLXVALUE_META_POLL_ENABLED = os.environ.get("RBLXVALUE_META_POLL_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
-VALUES_TTL_SECONDS = min(VALUES_REVALIDATION_INTERVAL_SECONDS, max(60, int(os.environ.get("VALUES_TTL_SECONDS", str(_DEFAULT_VALUES_TTL_SECONDS)))))
-BLOXSWAPS_ITEMS_TTL_SECONDS = max(300, int(os.environ.get("BLOXSWAPS_ITEMS_TTL_SECONDS", "3600")))
-PENDING_TTL_SECONDS = max(86400, int(os.environ.get("PENDING_TTL_SECONDS", str(7 * 86400))))
-MAX_SUCCESS_GAP_SECONDS = max(3600, int(os.environ.get("MAX_SUCCESS_GAP_SECONDS", str(24 * 3600))))
+RBLXVALUE_META_POLL_ENABLED = CONFIG.rblxvalue_meta_poll_enabled
+VALUES_TTL_SECONDS = CONFIG.values_ttl_seconds
+BLOXSWAPS_ITEMS_TTL_SECONDS = CONFIG.bloxswaps_items_ttl_seconds
+PENDING_TTL_SECONDS = CONFIG.pending_ttl_seconds
+MAX_SUCCESS_GAP_SECONDS = CONFIG.max_success_gap_seconds
 MAX_UNCERTAIN_DELIVERIES = 500
 UNCERTAIN_REVIEW_AFTER_SECONDS = 24 * 60 * 60
 BLOXSWAPS_ITEMS_FILE = Path("data/bloxswaps_items.json")
-SUSPICIOUS_PROFIT_PERCENT = float(os.environ.get("SUSPICIOUS_PROFIT_PERCENT", "100"))
+SUSPICIOUS_PROFIT_PERCENT = CONFIG.suspicious_profit_percent
+
+
 def cash_filter_enabled(value=None):
     raw = os.environ.get("CASH_FILTER", "false") if value is None else value
     return str(raw).strip().casefold() in {"1", "true", "yes", "on"}
 
 
-CASH_FILTER = cash_filter_enabled()
-CASH_MIN_PROFIT_USD = max(1.0, float(os.environ.get("CASH_MIN_PROFIT_USD", "2.00")))
-CASH_MIN_PROFIT_USD_SMALL = max(1.0, float(os.environ.get("CASH_MIN_PROFIT_USD_SMALL", "2.00")))
-CASH_MIN_VERIFIED_ROWS = max(0, int(os.environ.get("CASH_MIN_VERIFIED_ROWS", "8")))
-if any(not math.isfinite(value) or value < 0 for value in (
-    CASH_MIN_PROFIT_USD, CASH_MIN_PROFIT_USD_SMALL
-)):
-    raise ValueError("Cash minimum-profit thresholds must be finite and non-negative")
-CASH_MIN_MARGIN_PERCENT = float(os.environ.get("CASH_MIN_MARGIN_PERCENT", "0"))
-if not math.isfinite(CASH_MIN_MARGIN_PERCENT) or CASH_MIN_MARGIN_PERCENT < 0:
-    raise ValueError("CASH_MIN_MARGIN_PERCENT must be finite and non-negative")
-CASH_MAX_AGE_DAYS = max(1, int(os.environ.get("CASH_MAX_AGE_DAYS", "1")))
-CASH_MAX_LISTING_AGE_SECONDS = max(
-    60, int(os.environ.get("CASH_MAX_LISTING_AGE_SECONDS", "3600"))
-)
+CASH_FILTER = CONFIG.cash_filter
+CASH_MIN_PROFIT_USD = CONFIG.cash_min_profit_usd
+CASH_MIN_PROFIT_USD_SMALL = CONFIG.cash_min_profit_usd_small
+CASH_MIN_VERIFIED_ROWS = CONFIG.cash_min_verified_rows
+CASH_MIN_MARGIN_PERCENT = CONFIG.cash_min_margin_percent
+CASH_MAX_AGE_DAYS = CONFIG.cash_max_age_days
+CASH_MAX_LISTING_AGE_SECONDS = CONFIG.cash_max_listing_age_seconds
 CASH_PRICE_FILE = Path("data/cash_prices.csv")
 CASH_PRICE_SNAPSHOT_FILE = Path("data/cash_price_snapshot.json")
 TELEGRAM_MAX_CHARS = 4000
