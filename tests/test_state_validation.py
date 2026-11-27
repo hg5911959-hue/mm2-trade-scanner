@@ -281,6 +281,36 @@ class StateValidationTests(IsolatedDataTestCase):
         self.assertTrue(any("schema version" in error for error in errors))
         self.assertTrue(any("fetched_at" in error for error in errors))
 
+    def test_public_dashboard_history_accepts_only_the_public_cash_schema(self):
+        from tools.public_dashboard_history import PublicDashboardHistory
+
+        database = self.root / "public_dashboard_history.sqlite3"
+        history = PublicDashboardHistory(database)
+        listing = {
+            "id": "stable-id",
+            "source": "bloxswaps",
+            "source_ad_id": "post-123",
+            "url": "https://bloxswaps.com/trade-mm2?ad=post-123",
+            "give_items": [{"name": "Bat", "quantity": 1}],
+            "receive_items": [{"name": "Candy", "quantity": 2}],
+            "valuation_mode": "cash",
+        }
+        history.record_listings([listing])
+        history.record_opportunity({
+            "listing": listing,
+            "cash_profit_worst": 2.5,
+            "give_total": 10.0,
+            "receive_total": 12.5,
+            "margin": 25.0,
+        })
+        self.assertEqual(validate_state(self.root), [])
+
+        with sqlite3.connect(database) as db:
+            db.execute("CREATE TABLE market_values (item_name TEXT, supreme_value REAL)")
+        self.assertTrue(any(
+            "unexpected or missing tables" in error for error in validate_state(self.root)
+        ))
+
     def test_corrupt_sqlite_database_blocks_persistence(self):
         (self.root / "market_history.sqlite3").write_text("not a database", encoding="utf-8")
         self.assertTrue(any("corrupt" in error for error in validate_state(self.root)))
