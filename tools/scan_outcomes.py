@@ -5,6 +5,13 @@ class ScanOutcomeLedger:
     """Require exactly one terminal outcome for every parsed listing."""
 
     PENDING = "qualified_pending_delivery"
+    DELIVERY_FINAL = frozenset({
+        "alert_sent",
+        "dry_run_preview",
+        "delivery_failed_queued",
+        "delivery_quarantined",
+        "delivery_guard_skipped",
+    })
     ALLOWED = frozenset({
         PENDING,
         "already_alerted",
@@ -40,7 +47,7 @@ class ScanOutcomeLedger:
         if previous is None:
             self.outcomes[key] = outcome
             return
-        if previous == self.PENDING and outcome != self.PENDING:
+        if previous == self.PENDING and outcome in self.DELIVERY_FINAL:
             self.outcomes[key] = outcome
             return
         raise RuntimeError(
