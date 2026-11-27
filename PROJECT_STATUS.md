@@ -1,6 +1,6 @@
 # Project Status and Resume Checkpoint
 
-Last verified: 2026-11-27 21:42 UTC  
+Last verified: 2026-11-27 21:44 UTC  
 Repository: `hg5911959-hue/mm2-trade-scanner`  
 Production branch: `main`  
 Main baseline at checkpoint: PR #261 merged as `f7169b2d5bb40f489749e43f37a0d97f6f2e7b21`, PR #262 merged as `89eeec4e9abdeeca3b9d73d44c8eea8c93f16691`, PR #263 merged as `9bf3394196bc9ab3a75e6e9a22a1476419e03b0e`, and PR #264 merged as `41505ac92417e9630a003ba2a57c7a5c481b40ea`, and PR #265 merged as `957f31c866e5ac49b7fafc43d688c1b0c59ce439`, and PR #266 merged as `232dc8ce3c5eef76a362ab80c0f2bf041db9d50f`, and PR #267 merged as `6aa508f0cffb04c661040c0263b846352e04601e`; the RBLXValue reference card, archive policy, 5% cash-margin gate, and single-location Supreme/Stability display are on `main`.
@@ -60,12 +60,12 @@ Main baseline at checkpoint: PR #261 merged as `f7169b2d5bb40f489749e43f37a0d97f
 - PR #264 — removed duplicate inline Supreme and Stability copies from Telegram item lines; the RBLXValue-sourced values now appear only once in the boxed `REFERENCE INFO ONLY` card. Regression test passed with 751 tests twice plus Ruff; ROBASE Pricing Tests also passed. Merged as `41505ac9` and verified in post-merge live run `46067478167`.
 - PR #265 — test-only regression coverage for `format_opportunity_digest`, ensuring legacy inline Supreme/Stability details are suppressed and the reference card appears once. 752 tests passed twice plus Ruff on PR head and merged main. Merged as `957f31c8`.
 - PR #266 — enforced the rolling 60-request / 24-hour RBLXValue budget in the daily archive collector, counting retries before network I/O. Budget is restored and validated before collection, uploaded even on collection failure, then persisted in a separate no-secret job; snapshot publication waits for successful budget persistence. PR-head validation: 760 tests twice plus Ruff. Merged as `232dc8ce`; first real post-merge archive run `46070296288` succeeded in all 3 jobs and used 12/60 requests.
-- PR #267 — changed the isolated Supreme value-profit shadow workflow from automatic archive-triggered execution to manual-only. It remains dry-run, read-only, without Telegram secrets or RBLXValue API access. This removes unnecessary BloxSwaps feed polling from the production schedule. PR-head validation: 763 tests twice plus Ruff. Merged as `6aa508f0`.
+- PR #267 — changed the isolated Supreme value-profit shadow workflow from automatic archive-triggered execution to manual-only. It remains dry-run, read-only, without Telegram secrets or RBLXValue API access. This removes unnecessary BloxSwaps feed polling from the production schedule. PR-head validation: 763 tests twice plus Ruff. Merged as `6aa508f0`. Main push test run `46071814554` also passed 763 tests twice plus Ruff.
 
 ## Open or experimental work
 
 - PR #159 — draft hardening work; do not merge wholesale without a fresh review against current `main`.
-- PR #203 — isolated RBLXValue value-profit shadow analysis; now manual-only after PR #267. The previous automatic run `46070405347` used `dry_run` and `CASH_FILTER=false`, had read-only repository permissions, sent no Telegram alerts, made zero RBLXValue API requests, and made no production state writes; it did poll the BloxSwaps feed (45 pages / 900 posts in its first cycle), so automatic archive-triggered execution was removed to avoid competing with the production scanner. Manual dispatch remains available. Its shadow thresholds cannot affect production cash alerts; its proposed `value`-only change must not replace `value_source_b` for Supreme Value.
+- PR #203 — isolated RBLXValue value-profit shadow analysis; now manual-only after PR #267. The previous automatic run `46070405347` used `dry_run` and `CASH_FILTER=false`, had read-only repository permissions, sent no Telegram alerts, made zero RBLXValue API requests, and made no production state writes; it did poll the BloxSwaps feed (45 pages / 900 posts in its first cycle), so automatic archive-triggered execution was removed to avoid competing with the production scanner. Manual dispatch remains available. Its shadow thresholds cannot affect production cash alerts. PR #203 is not safe to merge as-is: it reintroduces automatic archive-triggered scans and replaces Supreme `value_source_b` with blended `value`, which would break the requested reference source.
 - PR #100 — experimental Market Book work; not part of the production scanner.
 
 
@@ -73,7 +73,7 @@ Main baseline at checkpoint: PR #261 merged as `f7169b2d5bb40f489749e43f37a0d97f
 
 1. Manually confirm the two quarantined Telegram messages; the system intentionally will not auto-resend them.
 2. Monitor active chained scan `46071799804` and confirm its state persistence; keep the scanner concurrency group serialized.
-3. Confirm the post-PR-267 main test run `46071814554` passes (PR head already passed 763 tests twice plus Ruff).
+3. The post-PR-267 main test run `46071814554` passed 763 tests twice plus Ruff; verify documentation checkpoint run `46071955100` completes.
 4. Monitor the next scheduled RBLXValue archive update at 23:30 UTC / 00:30 Algeria time and confirm the rolling budget advances from the current 12/60.
 5. Continue routine checks of price freshness, feed pagination, Telegram latency, state persistence, and the dashboard/watchdog chain.
 
