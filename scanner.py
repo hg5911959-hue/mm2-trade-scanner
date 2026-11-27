@@ -3996,8 +3996,9 @@ def evaluate_cash_listing_robase_only(listing, cash_catalog):
     """Evaluate cash profit from verified ROBASE prices and BloxSwaps identity only."""
     if str(listing.get("source") or "bloxswaps").strip().casefold() not in {"bloxswaps", "bloxswaps.com"}:
         return None, ["cash mode accepts BloxSwaps offers only"]
-    if listing.get("requested_wildcards") or not listing.get("give_items") or not listing.get("receive_items"):
-        return None, ["wildcards or incomplete trade sides are not eligible"]
+    wildcard_kind = requested_wildcard_kind(listing.get("requested_wildcards") or [])
+    if wildcard_kind in {"ajout", "offres"} or not listing.get("give_items") or not listing.get("receive_items"):
+        return None, ["Ajouts/Offres wildcards or incomplete trade sides are not eligible"]
     exact_map = (cash_catalog or {}).get("bloxswaps_exact_map")
     items_by_slug = (cash_catalog or {}).get("items_by_slug", {})
     if not isinstance(exact_map, dict) or not exact_map:
