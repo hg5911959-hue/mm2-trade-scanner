@@ -10,6 +10,9 @@ class UnmatchedNameRegistryTests(IsolatedDataTestCase):
             "Ajouts/Offres wildcards or incomplete trade sides are not eligible",
             "one side has no items",
             "quantity uncertain",
+            "received-side value-weighted Demand is low",
+            "Drool has no numeric Supreme value",
+            "Brew has no numeric Supreme value",
             "Emberknife",
             "Candy",
         ]
