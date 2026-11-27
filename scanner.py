@@ -1212,6 +1212,38 @@ def _new_incremental_feed_state(
     )
 
 
+def _skip_incremental_post(
+    state: IncrementalFeedState,
+    post_id: str,
+    is_pinned: bool,
+    recently_refreshed: bool,
+) -> bool:
+    """Apply seen-boundary rules and report whether a post should be skipped."""
+    if (
+        state.boundary_reached
+        and post_id not in state.pending_remaining
+        and post_id not in state.watch_ids
+        and not recently_refreshed
+    ):
+        return True
+    if (
+        post_id in state.seen
+        and post_id not in state.pending_remaining
+        and post_id not in state.watch_ids
+        and not recently_refreshed
+    ):
+        state.seen_ids_skipped.append(post_id)
+        if is_pinned:
+            state.seen_streak = 0
+            return True
+        state.seen_streak += 1
+        if state.seen_streak >= 25 and state.last_success_ts is not None:
+            state.boundary_reached = True
+        return True
+    state.seen_streak = 0
+    return False
+
+
 def _consume_incremental_post(
     state: IncrementalFeedState, raw, compare_html: bool
 ) -> None:
@@ -1238,32 +1270,8 @@ def _consume_incremental_post(
     is_pinned = bool(raw.get("isPinned") or raw.get("pinned"))
     state.watch_remaining.discard(post_id)
 
-    if (
-        state.boundary_reached
-        and post_id not in state.pending_remaining
-        and post_id not in state.watch_ids
-        and not recently_refreshed
-    ):
-        # After the new-feed boundary, only inspect bounded pending/watch IDs.
+    if _skip_incremental_post(state, post_id, is_pinned, recently_refreshed):
         return
-    if (
-        post_id in state.seen
-        and post_id not in state.pending_remaining
-        and post_id not in state.watch_ids
-        and not recently_refreshed
-    ):
-        state.seen_ids_skipped.append(post_id)
-        if is_pinned:
-            state.seen_streak = 0
-            return
-        state.seen_streak += 1
-        # Without a trusted success checkpoint, a seen streak cannot prove
-        # older pages were covered by a prior capped or incomplete run.
-        if state.seen_streak >= 25 and state.last_success_ts is not None:
-            state.boundary_reached = True
-        return
-
-    state.seen_streak = 0
     if post_id in state.pending_remaining:
         state.pending_remaining.discard(post_id)
         state.pending_found_ids.append(post_id)
