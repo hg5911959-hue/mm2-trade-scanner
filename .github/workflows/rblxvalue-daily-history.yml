@@ -139,16 +139,27 @@ jobs:
           mkdir -p /tmp/rblxvalue-budget-check data
           cp "$budget" /tmp/rblxvalue-budget-check/
           python tools/validate_state.py --directory /tmp/rblxvalue-budget-check --api-safety-only
-          cp "$budget" data/rblxvalue_request_budget.json
-          git add -f data/rblxvalue_request_budget.json
-          if git diff --cached --quiet; then
-            echo "Rolling RBLXValue request budget unchanged."
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+users.noreply.github.com"
+          for attempt in 1 2 3; do
+            git fetch origin refs/heads/robase-daily-history:refs/remotes/origin/robase-daily-history
+            git reset --hard refs/remotes/origin/robase-daily-history
+            mkdir -p data
+            cp "$budget" data/rblxvalue_request_budget.json
+            git add -f data/rblxvalue_request_budget.json
+            if git diff --cached --quiet; then
+              echo "Rolling RBLXValue request budget unchanged."
+              exit 0
+            fi
             git commit -m "chore: persist RBLXValue rolling request budget"
-            git push origin HEAD:robase-daily-history
-          fi
+            if git push origin HEAD:robase-daily-history; then
+              exit 0
+            fi
+            echo "::warning::Budget ledger push raced with another archive writer; retrying ($attempt/3)."
+            sleep 2
+          done
+          echo "::error::Could not persist rolling RBLXValue request budget after three attempts."
+          exit 1
 
   archive:
     name: Archive snapshot (no API secret)
