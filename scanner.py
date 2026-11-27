@@ -38,6 +38,11 @@ from tools.daily_chart_shadow import build_daily_chart_shadow_catalog
 from tools.rblxvalue_value_profit_shadow import load_values_from_snapshot
 from tools.scan_loop import BloxSwapsRateLimitError, run_scan_loop as _run_scan_loop
 from tools.state_store import atomic_write_text
+from tools.redaction import (
+    RedactingStream as _RedactingStream,
+    install_redacting_streams as _install_redacting_streams,
+    redact as _redact,
+)
 from tools.scan_loop_policy import (
     minimum_cycle_start_window as _minimum_cycle_start_window,
     should_run_backlog_recheck as _should_run_backlog_recheck,
@@ -164,71 +169,25 @@ IGNORED_VALUE_ITEMS = {"brew", "drool"}
 
 
 def redact(text):
-    """Remove configured credentials and known credential formats from text."""
-    safe = str(text)
-    configured = {
-        os.environ.get(name, "").strip()
-        for name in (
-            "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "RBLXVALUE_API_KEY",
-            "DISCORD_BOT_TOKEN", "DISCORD_MANUAL_MESSAGES_JSON",
-            "DISCORD_MANUAL_MESSAGES_JSON_2",
-        )
-    } | {BOT_TOKEN, CHAT_ID, RBLXVALUE_API_KEY}
-    if CASH_FILTER:
-        configured.add(os.environ.get("CASH_PRICES_CSV", "").strip())
-    # CASH_PRICES_CSV is intentionally not read while value mode is active.
-    configured.discard("")
-    # Also redact individual text fields from manual-import JSON in case a
-    # diagnostic accidentally emits a parsed field rather than the full secret.
-    for env_name in ("DISCORD_MANUAL_MESSAGES_JSON", "DISCORD_MANUAL_MESSAGES_JSON_2"):
-        try:
-            payload = json.loads(os.environ.get(env_name, "") or "{}")
-            stack = [payload]
-            while stack:
-                item = stack.pop()
-                if isinstance(item, dict):
-                    stack.extend(item.values())
-                elif isinstance(item, list):
-                    stack.extend(item)
-                elif isinstance(item, str) and len(item) >= 6:
-                    configured.add(item)
-        except (ValueError, TypeError):
-            pass
-    for secret in sorted((v for v in configured if v and len(v) >= 6), key=len, reverse=True):
-        safe = safe.replace(secret, "[REDACTED]")
-    safe = re.sub(r"https://api\.telegram\.org/bot[^/\s]+", "https://api.telegram.org/bot[REDACTED]", safe)
-    safe = re.sub(r"rbx_[A-Za-z0-9_-]+", "rbx_[REDACTED]", safe)
-    safe = re.sub(r"(?i)(?:mfa\.[A-Za-z0-9_-]{20,}|[A-Za-z0-9_-]{23,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{20,})", "[REDACTED_DISCORD_TOKEN]", safe)
-    safe = re.sub(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s]+", r"\1[REDACTED]", safe)
-    return safe
+    """Compatibility wrapper that supplies the scanner's configured secrets."""
+    return _redact(
+        text,
+        secrets=(BOT_TOKEN, CHAT_ID, RBLXVALUE_API_KEY),
+        cash_filter=CASH_FILTER,
+        environ=os.environ,
+    )
 
-class RedactingStream:
-    """Line-buffered stream that redacts secrets before writing logs."""
+
+class RedactingStream(_RedactingStream):
+    """Compatibility stream wrapper bound to the scanner's redactor."""
+
     def __init__(self, stream):
-        self._stream = stream
-        self._buffer = ""
-    def write(self, value):
-        value = str(value)
-        self._buffer += value
-        while "\n" in self._buffer:
-            line, self._buffer = self._buffer.split("\n", 1)
-            self._stream.write(redact(line) + "\n")
-        return len(value)
-    def flush(self):
-        if self._buffer:
-            self._stream.write(redact(self._buffer))
-            self._buffer = ""
-        self._stream.flush()
-    def __getattr__(self, name):
-        return getattr(self._stream, name)
+        super().__init__(stream, redact)
+
 
 def install_redacting_streams():
     """Install secret-safe stdout/stderr filters once, before scanner output."""
-    if not isinstance(sys.stdout, RedactingStream):
-        sys.stdout = RedactingStream(sys.stdout)
-    if not isinstance(sys.stderr, RedactingStream):
-        sys.stderr = RedactingStream(sys.stderr)
-
+    _install_redacting_streams(RedactingStream)
 def split_item_label(raw):
     """Return an item name and any quantity embedded in its accessible label."""
     name = (raw or "").strip()
