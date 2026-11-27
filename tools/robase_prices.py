@@ -414,6 +414,58 @@ def _fetch_item_detail(url: str, cached: dict | None):
                 continue
     raise RuntimeError(f"ROBASE item page failed after retries: {url}")
 
+def _write_json_atomic(path: Path, payload: dict):
+    """Write JSON atomically without replacing a good snapshot with partial data."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+
+
+def _mark_refresh_failed(
+    output: Path,
+    previous: dict,
+    *,
+    expected_count: int = 0,
+    returned_count: int = 0,
+    failures=(),
+    reason: str,
+):
+    """Keep the previous complete catalogue intact and explicitly mark it stale."""
+    attempted_at = _utc_now()
+    failure_rows = [" ".join(str(value).split())[:160] for value in failures[:30]]
+    report = {
+        "schema_version": 1,
+        "status": "failed",
+        "attempted_at_utc": attempted_at,
+        "expected_count": int(expected_count or 0),
+        "returned_count": int(returned_count or 0),
+        "failure_count": len(failures),
+        "reason": " ".join(str(reason).split())[:240],
+        "failure_samples": failure_rows,
+    }
+    _write_json_atomic(output.with_name(output.name + ".refresh-failed.json"), report)
+    if isinstance(previous, dict) and previous.get("catalog_complete") is True:
+        retained = dict(previous)
+        retained["last_refresh_status"] = "failed"
+        retained["last_refresh_attempt_at_utc"] = attempted_at
+        retained["last_refresh_failure_count"] = len(failures)
+        retained["last_refresh_failure_reason"] = report["reason"]
+        retained["last_refresh_failures"] = failure_rows
+        _write_json_atomic(output, retained)
+
+
 def _load_previous_snapshot(path: Path):
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -441,13 +493,22 @@ def fetch_snapshot(output: Path = DEFAULT_OUTPUT, timeout: int = REQUEST_TIMEOUT
         "User-Agent": "MM2-Trade-Scanner/1.0 (public ROBASE price sync; contact repository owner)",
         "Accept": "text/html",
     })
-    with urlopen(request, timeout=timeout) as response:
-        if response.status != 200:
-            raise RuntimeError(f"ROBASE returned HTTP {response.status}")
-        raw = response.read(5_000_001)
-    if len(raw) > 5_000_000:
-        raise RuntimeError("ROBASE response exceeded 5 MB safety limit")
-    document = raw.decode("utf-8", errors="strict")
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            if response.status != 200:
+                raise RuntimeError(f"ROBASE returned HTTP {response.status}")
+            raw = response.read(5_000_001)
+        if len(raw) > 5_000_000:
+            raise RuntimeError("ROBASE response exceeded 5 MB safety limit")
+        document = raw.decode("utf-8", errors="strict")
+    except Exception as exc:
+        _mark_refresh_failed(
+            output,
+            previous,
+            reason=f"ROBASE catalogue index refresh failed: {type(exc).__name__}: {exc}",
+            failures=[f"index:{type(exc).__name__}"],
+        )
+        raise
     link_parser = _TableParser()
     link_parser.feed(document)
     item_urls = sorted(link_parser.item_links)
@@ -457,9 +518,16 @@ def fetch_snapshot(output: Path = DEFAULT_OUTPUT, timeout: int = REQUEST_TIMEOUT
     count_match = re.search(r"All MM2 items\s+([0-9,]+)", visible_text, re.I)
     expected_count = int(count_match.group(1).replace(",", "")) if count_match else 0
     if expected_count < 200 or len(item_urls) != expected_count:
-        raise ValueError(
-            f"ROBASE item index incomplete: expected={expected_count or 'unknown'} links={len(item_urls)}"
+        reason = f"ROBASE item index incomplete: expected={expected_count or 'unknown'} links={len(item_urls)}"
+        _mark_refresh_failed(
+            output,
+            previous,
+            expected_count=expected_count,
+            returned_count=len(item_urls),
+            failures=["index:incomplete"],
+            reason=reason,
         )
+        raise ValueError(reason)
 
     results = {}
     failures = []
@@ -498,7 +566,8 @@ def fetch_snapshot(output: Path = DEFAULT_OUTPUT, timeout: int = REQUEST_TIMEOUT
     rows = sorted(results.values(), key=lambda item: (item["name"].casefold(), item["robase_slug"]))
     now = _utc_now()
     complete = (
-        len(rows) == expected_count
+        not failures
+        and len(rows) == expected_count
         and len({row.get("robase_slug") for row in rows}) == expected_count
         and all(
             row.get("name")
@@ -521,26 +590,26 @@ def fetch_snapshot(output: Path = DEFAULT_OUTPUT, timeout: int = REQUEST_TIMEOUT
         "item_page_failures": failures[:30],
         "items": rows,
     }
-    output.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=output.name + ".", suffix=".tmp", dir=output.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(snapshot, handle, ensure_ascii=False, indent=2)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, output)
-    except Exception:
-        try:
-            os.unlink(temporary)
-        except OSError:
-            pass
-        raise
     if not complete:
+        _mark_refresh_failed(
+            output,
+            previous,
+            expected_count=expected_count,
+            returned_count=len(rows),
+            failures=failures,
+            reason="ROBASE item catalogue was incomplete or not freshly verified",
+        )
         raise RuntimeError(
             f"ROBASE full catalogue is not fresh and complete: rows={len(rows)}/{expected_count}, "
-            f"failures={len(failures)}"
+            f"failures={len(failures)}; the last valid snapshot was retained as stale."
         )
+    snapshot["last_refresh_status"] = "success"
+    snapshot["last_refresh_attempt_at_utc"] = now
+    _write_json_atomic(output, snapshot)
+    try:
+        output.with_name(output.name + ".refresh-failed.json").unlink(missing_ok=True)
+    except OSError:
+        pass
     return snapshot
 
 

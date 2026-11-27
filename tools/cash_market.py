@@ -369,6 +369,7 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
     if current_dt.tzinfo is None or current_dt.utcoffset() != timedelta(0):
         raise RuntimeError("[cash] Current time must be timezone-aware UTC.")
     current = current_dt.timestamp()
+    refresh_failed = snapshot.get("last_refresh_status") == "failed"
     items_by_slug = {}
     name_groups = {}
     page_stale_rows = []
@@ -395,8 +396,10 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
             raise RuntimeError("[cash] Invalid ROBASE price or verification timestamp.")
         age = current - checked_at
         fresh = 0 <= age <= max_age_seconds
+        # A failed full-catalogue refresh preserves last known-good values,
+        # but explicitly downgrades every row so none can qualify a cash alert.
         page_verified = row.get("status") == "verified" and fresh
-        if not page_verified:
+        if not page_verified and not refresh_failed:
             page_stale_rows.append(name or slug)
         marketplace_prices = row.get("marketplace_prices")
         if not isinstance(marketplace_prices, dict):
@@ -501,7 +504,12 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
             "selected_marketplace": selected_marketplace,
             "marketplace_prices": marketplace_prices,
             "source": source,
-            "notes": "ROBASE chromas.gg Price (7d)" if selected_marketplace else "No chromas.gg sales in the last 7 days",
+            "notes": (
+                "Last valid ROBASE chromas.gg Price (7d); refresh failed, cached row still within freshness limit"
+                if refresh_failed and selected_marketplace else
+                "ROBASE chromas.gg Price (7d)" if selected_marketplace else
+                "No chromas.gg sales in the last 7 days"
+            ),
         }
         items_by_slug[slug] = entry
         name_groups.setdefault(key, []).append(entry)
@@ -545,6 +553,8 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
         "cash_eligible_count": len(cash_eligible_rows),
         "expected_count": expected,
         "catalog_complete": True,
+        "refresh_status": "failed" if refresh_failed else "success",
+        "refresh_attempt_at_utc": snapshot.get("last_refresh_attempt_at_utc"),
         "expiring_within_3_days": 0,
         "oldest_verified_at": min(
             (row["verified_at_utc"] for row in verified_rows), default=None
