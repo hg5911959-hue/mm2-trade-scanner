@@ -1536,7 +1536,7 @@ class ReliabilityTests(IsolatedDataTestCase):
                 patch("scanner.compare_secondary_values", return_value=""),
                 patch("scanner.ALERT_DELAY_SECONDS", 0),
             ):
-                with patch.dict(os.environ, {"MAX_ALERTS_PER_SCAN": "2"}):
+                with patch("scanner.MAX_ALERTS_PER_SCAN", 2):
                     scanner.main()
                 self.assertEqual(scanner.load_pending_ids(), {})
                 individual = [message for message in sent if "💎 MM2 TRADE" in message and "DIGEST" not in message]
@@ -1548,7 +1548,7 @@ class ReliabilityTests(IsolatedDataTestCase):
                 alerted = json.loads((root / "alerted.json").read_text(encoding="utf-8"))["alerted"]
                 self.assertEqual(len(alerted), 5)
                 sent_before = len(sent)
-                with patch.dict(os.environ, {"MAX_ALERTS_PER_SCAN": "5"}):
+                with patch("scanner.MAX_ALERTS_PER_SCAN", 5):
                     scanner.main()
                 self.assertEqual(len(sent), sent_before)
 
