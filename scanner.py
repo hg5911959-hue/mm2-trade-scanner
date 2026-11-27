@@ -88,6 +88,7 @@ from tools.feed_checkpoint import (
     parse_feed_timestamp as _parse_feed_timestamp_impl,
     scan_checkpoint_requires_cold_start as _scan_checkpoint_requires_cold_start_impl,
 )
+from tools.telegram_quarantine import reconcile_uncertain_quarantine
 from tools.scan_loop_policy import (
     minimum_cycle_start_window as _minimum_cycle_start_window,
     should_run_backlog_recheck as _should_run_backlog_recheck,
@@ -881,8 +882,9 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
         cutoff = now_ts - 3600
         seed_ids, recent_ids, recent_listings = [], [], []
         addition_ids, unparsed_ids = [], []
+        unidentified_feed_samples = []
         additions = offers_excluded = malformed = candidate_count = 0
-        parsed_candidate_count = malformed_candidate_count = 0
+        parsed_candidate_count = malformed_candidate_count = unidentified_feed_records = 0
         api_posts = len(raw_first_items) if api_only else 0
         old_streak = page_count = 1
         age_boundary = False
@@ -922,8 +924,15 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
 
         while True:
             for post in page_items:
-                if not isinstance(post, dict) or not post.get('id'):
+                if not isinstance(post, dict) or not str(post.get('id') or '').strip():
                     malformed += 1
+                    candidate_count += 1
+                    malformed_candidate_count += 1
+                    unidentified_feed_records += 1
+                    unidentified_feed_samples.append(
+                        "object-without-stable-id" if isinstance(post, dict)
+                        else f"invalid-record-type:{type(post).__name__}"
+                    )
                     continue
                 post_id = str(post['id'])
                 if post_id in seen_raw_ids: continue
@@ -1012,6 +1021,8 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
             'cold_start_seed_ids': seed_ids,
             'cold_start_recent_ids': recent_ids,
             'candidate_count': candidate_count,
+            'unidentified_feed_record_count': unidentified_feed_records,
+            'unidentified_feed_samples': unidentified_feed_samples[:10],
             'addition_count': additions,
             'offers_excluded_count': offers_excluded,
             'malformed_count': malformed,
@@ -1042,6 +1053,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     addition_ids = []
     unparsed_ids = []
     unparsed_samples = []
+    unidentified_feed_samples = []
     html_parse_warning_ids = []
     boundary_reached = False
     seen_streak = 0
@@ -1055,13 +1067,21 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     candidate_count = 0
     parsed_candidate_count = 0
     malformed_candidate_count = 0
+    unidentified_feed_records = 0
     item_map = initial_item_map
 
     def consume_raw_posts(raw_posts, compare_html=False):
-        nonlocal boundary_reached, seen_streak, additions, offers_excluded, malformed, api_listings_added, candidate_count, parsed_candidate_count, malformed_candidate_count, item_map, watch_remaining, single_sided_count
+        nonlocal boundary_reached, seen_streak, additions, offers_excluded, malformed, api_listings_added, candidate_count, parsed_candidate_count, malformed_candidate_count, unidentified_feed_records, item_map, watch_remaining, single_sided_count
         for raw in raw_posts:
-            if not isinstance(raw, dict) or not raw.get("id"):
+            if not isinstance(raw, dict) or not str(raw.get("id") or "").strip():
                 malformed += 1
+                candidate_count += 1
+                malformed_candidate_count += 1
+                unidentified_feed_records += 1
+                unidentified_feed_samples.append(
+                    "object-without-stable-id" if isinstance(raw, dict)
+                    else f"invalid-record-type:{type(raw).__name__}"
+                )
                 continue
             post_id = str(raw["id"])
             refreshed_ts = _parse_feed_timestamp(
@@ -1253,6 +1273,8 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
         "candidate_count": candidate_count,
         "parsed_candidate_count": parsed_candidate_count,
         "malformed_candidate_count": malformed_candidate_count,
+        "unidentified_feed_record_count": unidentified_feed_records,
+        "unidentified_feed_samples": unidentified_feed_samples[:10],
         "addition_count": additions,
         "offers_excluded_count": offers_excluded,
         "malformed_count": malformed,
@@ -3974,8 +3996,9 @@ def evaluate_cash_listing_robase_only(listing, cash_catalog):
     """Evaluate cash profit from verified ROBASE prices and BloxSwaps identity only."""
     if str(listing.get("source") or "bloxswaps").strip().casefold() not in {"bloxswaps", "bloxswaps.com"}:
         return None, ["cash mode accepts BloxSwaps offers only"]
-    if listing.get("requested_wildcards") or not listing.get("give_items") or not listing.get("receive_items"):
-        return None, ["wildcards or incomplete trade sides are not eligible"]
+    wildcard_kind = requested_wildcard_kind(listing.get("requested_wildcards") or [])
+    if wildcard_kind in {"ajout", "offres"} or not listing.get("give_items") or not listing.get("receive_items"):
+        return None, ["Ajouts/Offres wildcards or incomplete trade sides are not eligible"]
     exact_map = (cash_catalog or {}).get("bloxswaps_exact_map")
     items_by_slug = (cash_catalog or {}).get("items_by_slug", {})
     if not isinstance(exact_map, dict) or not exact_map:
@@ -5133,6 +5156,19 @@ def scan_once(include_backlog_rechecks=True):
                 f"({ratio:.1%}). Samples: {samples[:700]}",
                 cooldown_seconds=3600,
             )
+    unidentified_feed_records = int(stats.get("unidentified_feed_record_count", 0) or 0)
+    if unidentified_feed_records:
+        sample_types = ", ".join(stats.get("unidentified_feed_samples", [])[:5])
+        print(
+            f"[maintenance] API feed records missing stable IDs: {unidentified_feed_records}; "
+            f"sample_types={sample_types}; counted as malformed candidates and retried on later polls."
+        )
+        send_maintenance_alert(
+            "feed-records-without-stable-id",
+            f"BloxSwaps returned {unidentified_feed_records} feed record(s) without a stable listing ID. "
+            "They were counted as malformed candidates, not silently omitted; inspect parser/API diagnostics.",
+            cooldown_seconds=3600,
+        )
     if not stats.get("pagination_complete", False):
         print("[maintenance] Feed pagination is incomplete; more recent posts may remain beyond the scan limit.")
         send_maintenance_alert(
@@ -5154,8 +5190,20 @@ def scan_once(include_backlog_rechecks=True):
     alerted = load_alerted()
     alerted_set = set(alerted)
     uncertain_state, _ = load_uncertain_state()
-    uncertain_ids = set(uncertain_state)
     uncertain_context = load_uncertain_context()
+    uncertain_state, uncertain_context, quarantine_reconciliation = reconcile_uncertain_quarantine(
+        uncertain_state, alerted_set, uncertain_context
+    )
+    if quarantine_reconciliation["confirmed_quarantines_cleared"] or quarantine_reconciliation["orphan_contexts_removed"]:
+        save_uncertain_state(uncertain_state)
+        save_uncertain_context(uncertain_context)
+        print(
+            "[telegram-state] Reconciled durable delivery state: "
+            f"confirmed_quarantines_cleared={len(quarantine_reconciliation['confirmed_quarantines_cleared'])} "
+            f"orphan_contexts_removed={len(quarantine_reconciliation['orphan_contexts_removed'])} "
+            f"unresolved_remaining={len(uncertain_state)}"
+        )
+    uncertain_ids = set(uncertain_state)
     now = time.time()
     aged_uncertain = [
         ad_id for ad_id, timestamp in uncertain_state.items()

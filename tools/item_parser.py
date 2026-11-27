@@ -253,11 +253,23 @@ def has_addition_marker(node):
 
 
 def requested_wildcard_kind(values):
-    """Classify non-specific requested wildcard tokens without scanning free text."""
-    if not isinstance(values, (list, tuple, set)):
+    """Classify structured requested-wildcard metadata without scanning free text."""
+    if isinstance(values, str):
+        values = [values]
+    elif not isinstance(values, (list, tuple, set)):
         return ""
+
+    def token(value):
+        if isinstance(value, dict):
+            for field in ("name", "label", "value", "type", "slug"):
+                candidate = value.get(field)
+                if isinstance(candidate, str) and candidate.strip():
+                    return candidate
+            return ""
+        return str(value)
+
     normalized = {
-        unicodedata.normalize("NFKD", str(value)).encode("ascii", "ignore").decode().casefold().strip()
+        unicodedata.normalize("NFKD", token(value)).encode("ascii", "ignore").decode().casefold().strip()
         for value in values
     }
     if normalized & {"add", "ajout", "ajouts"}:
