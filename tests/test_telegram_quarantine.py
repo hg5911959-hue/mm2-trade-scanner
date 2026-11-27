@@ -38,7 +38,7 @@ class TelegramQuarantineReconciliationTests(IsolatedDataTestCase):
             }
             with patch.object(scanner, "UNCERTAIN_CONTEXT_FILE", context_path):
                 scanner.record_uncertain_context(listing, "trade-url", "individual")
-                saved = json.loads(context_path.read_text(encoding="utf-8"))
+                saved = scanner.load_uncertain_context()
 
         self.assertEqual(saved["trade-url"]["source"], "bloxswaps")
         self.assertEqual(saved["trade-url"]["source_ad_id"], "post-url")
