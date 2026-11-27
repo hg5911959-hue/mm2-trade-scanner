@@ -1,6 +1,7 @@
 import unittest
 import json
 import tempfile
+import sqlite3
 from pathlib import Path
 
 from test_support import IsolatedDataTestCase
@@ -160,6 +161,78 @@ class RobaseDashboardPayloadTests(IsolatedDataTestCase):
         self.assertIsNone(summary["trackedListings"])
         self.assertIsNone(summary["opportunities7d"])
         self.assertEqual(payload["robaseSummary"]["pricedItemCount"], 1)
+
+
+    def test_export_whitelists_item_fields_from_legacy_or_corrupt_sqlite_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prices = root / "prices.json"
+            prices.write_text(json.dumps(catalogue()), encoding="utf-8")
+            database = root / "public-history.sqlite3"
+            history = PublicDashboardHistory(database)
+            listing = {
+                "id": "legacy-sensitive-listing",
+                "source": "bloxswaps",
+                "source_ad_id": "post-sensitive",
+                "url": "https://bloxswaps.com/trade-mm2?ad=post-sensitive",
+                "source_author": "PublicTrader",
+                "give_items": [{"name": "Bat", "quantity": 1}],
+                "receive_items": [{"name": "Candy", "quantity": 2}],
+                "valuation_mode": "cash",
+            }
+            history.record_listings([listing])
+            history.record_opportunity({
+                "listing": listing,
+                "cash_profit_worst": 2.5,
+                "give_total": 10.0,
+                "receive_total": 12.5,
+                "margin": 25.0,
+                "manual_review": False,
+            })
+
+            sensitive_items = [
+                {
+                    "name": "Bat", "quantity": 1, "quantity_min": 1,
+                    "quantity_max": 1, "quantity_source": "structured",
+                    "supreme_value": 999999, "stability": "Rising",
+                    "confidence": 100, "rblxvalue_value": 123456,
+                    "raw_source_metadata": {"secret": "must-not-export"},
+                }
+            ]
+            sensitive_details = {
+                "valuation_mode": "cash",
+                "manual_review": False,
+                "give_items": sensitive_items,
+                "receive_items": sensitive_items,
+                "supreme_values": {"Bat": 999999},
+                "stability": {"Bat": "Rising"},
+                "confidence": 100,
+            }
+            with sqlite3.connect(database) as db:
+                db.execute(
+                    "UPDATE listings SET give_items_json = ?, receive_items_json = ?",
+                    (json.dumps(sensitive_items), json.dumps(sensitive_items)),
+                )
+                db.execute(
+                    "UPDATE opportunities SET details_json = ?",
+                    (json.dumps(sensitive_details),),
+                )
+                db.commit()
+
+            payload = build_dashboard_data(database, prices)
+
+        expected = [{
+            "name": "Bat", "quantity": 1, "quantity_min": 1,
+            "quantity_max": 1, "quantity_source": "structured",
+        }]
+        self.assertEqual(payload["opportunities"][0]["giveItems"], expected)
+        self.assertEqual(payload["opportunities"][0]["receiveItems"], expected)
+        self.assertEqual(payload["recentListings"][0]["giveItems"], expected)
+        self.assertEqual(payload["recentListings"][0]["receiveItems"], expected)
+        serialized = json.dumps(payload, ensure_ascii=False).casefold()
+        for forbidden in ("supreme_value", "stability", "confidence", "rblxvalue_value", "raw_source_metadata"):
+            self.assertNotIn(forbidden, serialized)
+        self.assertNotIn("must-not-export", serialized)
 
     def test_public_cash_history_exports_listings_and_opportunities(self):
         with tempfile.TemporaryDirectory() as tmp:

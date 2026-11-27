@@ -17,6 +17,29 @@ def _decode_json(value: str | None, fallback: Any) -> Any:
         return fallback
 
 
+def _public_items(items: Any) -> list[dict[str, Any]]:
+    """Whitelist public listing fields; never forward source valuation metadata."""
+    if not isinstance(items, list):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        clean: dict[str, Any] = {"name": name.strip()[:100]}
+        for field in ("quantity", "quantity_min", "quantity_max"):
+            value = item.get(field)
+            if type(value) is int and 0 <= value <= 1_000_000:
+                clean[field] = value
+        source = item.get("quantity_source")
+        if isinstance(source, str):
+            clean["quantity_source"] = source[:40]
+        result.append(clean)
+    return result
+
+
 def _robase_dashboard_payload(catalogue_path: str | Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Export only Chroma completed-sales Price (7d) and Sold (7d)."""
     empty = {
@@ -208,8 +231,8 @@ def build_dashboard_data(db_path: str | Path, robase_path: str | Path | None = N
                 "profit": row["profit"],
                 "margin": row["margin_percent"],
                 "url": row["listing_url"],
-                "giveItems": details.get("give_items", []),
-                "receiveItems": details.get("receive_items", []),
+                "giveItems": _public_items(details.get("give_items")),
+                "receiveItems": _public_items(details.get("receive_items")),
                 "manualReview": bool(details.get("manual_review")),
             })
         summary["opportunities7d"] = cash_opportunities_7d
@@ -231,8 +254,8 @@ def build_dashboard_data(db_path: str | Path, robase_path: str | Path | None = N
             "url": row["listing_url"],
             "firstSeen": row["first_seen_at_utc"],
             "lastSeen": row["last_seen_at_utc"],
-            "giveItems": _decode_json(row["give_items_json"], []),
-            "receiveItems": _decode_json(row["receive_items_json"], []),
+            "giveItems": _public_items(_decode_json(row["give_items_json"], [])),
+            "receiveItems": _public_items(_decode_json(row["receive_items_json"], [])),
         } for row in listing_rows]
 
     return {
