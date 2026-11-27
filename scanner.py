@@ -3238,8 +3238,18 @@ def send_maintenance_alert(key, message, cooldown_seconds=3600):
         send_telegram("MM2 SCANNER MAINTENANCE\n" + message)
         print(f"[maintenance] Alert sent: {key}")
         return True
+    except TelegramDeliveryUncertain as exc:
+        # Keep the pre-committed cooldown: retrying a non-idempotent send could duplicate it.
+        print(f"[maintenance] Alert delivery uncertain for {key}; cooldown retained ({type(exc).__name__})")
+        return False
     except Exception as exc:
-        print(f"[maintenance] Alert failed for {key}: {type(exc).__name__}")
+        # A definite rejection (for example Telegram HTTP 400/403) cannot have
+        # delivered the alert. Roll back only our own reservation so the next
+        # maintenance cycle can retry instead of silently losing the alert.
+        if state.get(key) == now:
+            state.pop(key, None)
+            atomic_write_text(MAINTENANCE_FILE, json.dumps(state, indent=2) + "\n")
+        print(f"[maintenance] Alert definitely failed for {key}; cooldown released ({type(exc).__name__})")
         return False
 
 
