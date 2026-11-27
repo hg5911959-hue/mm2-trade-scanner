@@ -5360,6 +5360,27 @@ def _load_discord_listings_for_scan(listings):
     return listings
 
 
+def _record_first_seen_timestamps(listings, discovered_ids):
+    """Persist first-seen timestamps and attach them to normalized listings."""
+    first_seen_ads = load_first_seen_ads()
+    first_seen_changed = False
+    observed_at = datetime.now(timezone.utc).isoformat()
+    for ad_id in discovered_ids:
+        key = str(ad_id)
+        if key and key not in first_seen_ads:
+            first_seen_ads[key] = observed_at
+            first_seen_changed = True
+    for listing in listings:
+        source_ad_id = str(listing.get("source_ad_id") or "")
+        if listing.get("source") == "discord":
+            listing["first_seen_at_utc"] = listing.get("posted_at") or observed_at
+        else:
+            listing["first_seen_at_utc"] = first_seen_ads.get(source_ad_id, observed_at)
+    if first_seen_changed:
+        save_first_seen_ads(first_seen_ads)
+    return first_seen_ads
+
+
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     scan_modes = resolve_scan_modes(
