@@ -1,7 +1,7 @@
 """Atomic UTC daily metrics ledger with 14-day retention."""
 from __future__ import annotations
 import json
-import os
+from tools.state_store import atomic_write_text
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -63,13 +63,7 @@ def update_metrics(path=None, *, increments=None, set_values=None,
         if type(existing) is not int or existing < 0:
             raise RuntimeError("metrics contains an invalid existing cash blocker group")
         row["cash_blocker_groups"][group] = existing + amount
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temp = target.with_name(target.name + ".tmp")
-    with temp.open("w", encoding="utf-8") as handle:
-        handle.write(json.dumps(data, sort_keys=True, indent=2) + "\n")
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(temp, target)
+    atomic_write_text(target, json.dumps(data, sort_keys=True, indent=2) + "\n")
     return row
 
 def _valid_day(value):

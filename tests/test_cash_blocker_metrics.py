@@ -27,6 +27,22 @@ class CashBlockerMetricsTests(IsolatedDataTestCase):
             self.assertEqual(row["cash_blocker_groups"], {"bat|spirit": 1, "spirit": 1})
             self.assertFalse(path.with_name("metrics.json.tmp").exists())
 
+    def test_predictable_temp_symlink_cannot_overwrite_another_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "metrics.json"
+            sentinel = root / "sentinel.txt"
+            predictable_temp = root / "metrics.json.tmp"
+            sentinel.write_text("must remain unchanged", encoding="utf-8")
+            predictable_temp.symlink_to(sentinel)
+
+            now = datetime(2026, 11, 14, tzinfo=timezone.utc)
+            update_metrics(path, increments={"scans": 1}, now=now)
+
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "must remain unchanged")
+            self.assertTrue(predictable_temp.is_symlink())
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["2026-11-14"]["scans"], 1)
+
     def test_invalid_blocker_names_and_counts_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "metrics.json"
