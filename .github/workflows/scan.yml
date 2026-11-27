@@ -385,4 +385,8 @@ jobs:
             fi
             echo "[state-persist-audit] absent=$file"
           done
+          if [ -f state-artifact/data/public_dashboard_history.sqlite3 ]; then
+            git cat-file -e "refs/remotes/origin/state:data/public_dashboard_history.sqlite3"
+            echo "[state-persist-audit] verified=public_dashboard_history.sqlite3"
+          fi
           echo "[state-persist-audit] PASS: legacy third-party valuation data is absent"
