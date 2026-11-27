@@ -36,7 +36,7 @@ def _safe_text(value: object, limit: int) -> str:
 
 def _safe_identifier(value: object, limit: int) -> str:
     raw = _safe_text(value, limit)
-    return raw if raw and all(char.isalnum() or char in "_-" for char in raw) else ""
+    return raw if raw and all(char.isascii() and (char.isalnum() or char in "_-") for char in raw) else ""
 
 
 def _safe_link(value: object) -> str:
