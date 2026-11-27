@@ -220,7 +220,8 @@ def _validate_public_dashboard_history(path: Path) -> list[str]:
                 "FROM listings"
             ):
                 if (
-                    not isinstance(row[0], str) or not 1 <= len(row[0]) <= 128
+                    not isinstance(row[0], str)
+                    or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", row[0])
                     or not isinstance(row[2], str)
                     or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", row[2])
                     or row[1] != "bloxswaps"
@@ -243,7 +244,8 @@ def _validate_public_dashboard_history(path: Path) -> list[str]:
                     details = None
                 if (
                     not isinstance(row[0], str) or not re.fullmatch(r"[0-9a-f]{64}", row[0])
-                    or not isinstance(row[1], str) or not 1 <= len(row[1]) <= 128
+                    or not isinstance(row[1], str)
+                    or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", row[1])
                     or row[2] != "bloxswaps" or not valid_timestamp(row[3])
                     or not valid_optional_number(row[4]) or not valid_optional_number(row[5])
                     or not _finite_positive(row[6]) or not valid_optional_number(row[7])
