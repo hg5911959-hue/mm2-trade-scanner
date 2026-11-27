@@ -62,7 +62,7 @@
     </section>
 
     <section class="panel">
-      <div class="panel-head"><h2>Best USD opportunities</h2><span class="count" id="opp-count">—</span></div>
+      <div class="panel-head"><div><h2>Best USD opportunities</h2><div class="small">Estimated gross spread from Chroma.gg Price (7d); fees/slippage not included.</div></div><span class="count" id="opp-count">—</span></div>
       <div id="opportunity-table" class="table-wrap"><div class="empty">Waiting for the first market-history snapshot.</div></div>
     </section>
 
@@ -93,7 +93,7 @@
     }
     $("opp-count").textContent = rows.length + " shown";
     if (!rows.length) { $("opportunity-table").innerHTML='<div class="empty">No qualified opportunities recorded yet.</div>'; return; }
-    $("opportunity-table").innerHTML='<table><thead><tr><th>Trade</th><th>Give</th><th>Receive</th><th>Profit</th><th>Margin</th><th>Source</th></tr></thead><tbody>'+
+    $("opportunity-table").innerHTML='<table><thead><tr><th>Trade</th><th>Give</th><th>Receive</th><th>Est. gross</th><th>Margin</th><th>Source</th></tr></thead><tbody>'+
       rows.map(row=>{
         const url=safeUrl(row.url);
         const title=url?'<a href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open listing ↗</a>':'<span class="small">Link unavailable</span>';
