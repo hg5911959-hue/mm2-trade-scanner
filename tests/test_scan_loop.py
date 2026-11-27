@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from test_support import IsolatedDataTestCase
-from tools.scan_loop import run_scan_loop
+from tools.scan_loop import BloxSwapsRateLimitError, run_scan_loop
 
 
 class FakeClock:
@@ -80,9 +80,7 @@ class ScanLoopTests(IsolatedDataTestCase):
         clock = FakeClock()
         signals = FakeSignals()
         guard = FakeGuard()
-        failure = __import__("tools.scan_loop", fromlist=["BloxSwapsRateLimitError"]).BloxSwapsRateLimitError(
-            "429"
-        )
+        failure = BloxSwapsRateLimitError("429")
         scans = []
 
         def scan_once(**kwargs):
