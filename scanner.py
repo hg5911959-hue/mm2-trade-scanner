@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """BloxSwaps MM2 scanner with verified Supreme Values calculations."""
 import csv
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import html as html_lib
 import itertools
 import hashlib
@@ -1145,188 +1145,226 @@ def _run_cold_start_feed(
     return _finalize_cold_start_feed(state)
 
 
-def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None):
-    """Fetch recent RSC/API posts and recheck unresolved IDs beyond seen posts."""
-    if seen_ad_ids is None and pending_ad_ids:
-        seen_ad_ids = set()
-    api_only = os.environ.get("BLOXSWAPS_API_ONLY", "false").strip().casefold() in {"1", "true", "yes", "on"}
-    initial_feed = _load_initial_bloxswaps_feed(api_only)
-    initial_page = initial_feed.initial_page
-    initial_item_map = initial_feed.initial_item_map
-    raw_first_items = initial_feed.raw_first_items
-    single_sided_ids = initial_feed.single_sided_ids
-    single_sided_count = initial_feed.single_sided_count
-    first_listings = initial_feed.first_listings
-    stats = initial_feed.stats
+@dataclass(slots=True)
+class IncrementalFeedState:
+    seen: set
+    pending_remaining: set
+    watch_ids: set
+    watch_remaining: set
+    by_ad_id: dict
+    html_addition_ids: set
+    last_success_ts: float | None
+    api_posts_scanned: int
+    item_map: dict | None
+    single_sided_count: int
+    single_sided_ids: list
+    pending_found_ids: list = field(default_factory=list)
+    pending_not_found_ids: list = field(default_factory=list)
+    watch_not_found_ids: set = field(default_factory=set)
+    collected: list = field(default_factory=list)
+    discovered_ids: list = field(default_factory=list)
+    addition_ids: list = field(default_factory=list)
+    unparsed_ids: list = field(default_factory=list)
+    unparsed_samples: list = field(default_factory=list)
+    unidentified_feed_samples: list = field(default_factory=list)
+    html_parse_warning_ids: list = field(default_factory=list)
+    boundary_reached: bool = False
+    seen_streak: int = 0
+    seen_ids_skipped: list = field(default_factory=list)
+    additions: int = 0
+    offers_excluded: int = 0
+    malformed: int = 0
+    api_listings_added: int = 0
+    candidate_count: int = 0
+    parsed_candidate_count: int = 0
+    malformed_candidate_count: int = 0
+    unidentified_feed_records: int = 0
+    pages_scanned: int = 1
+    backlog_pages_scanned: int = 0
+    backlog_page_limit_reached: bool = False
 
-    if seen_ad_ids is None:
-        return _run_cold_start_feed(initial_feed, api_only)
 
-    seen = set(str(value) for value in seen_ad_ids)
-    pending_remaining = set(str(value) for value in (pending_ad_ids or []))
-    watch_ids = set(str(value) for value in (watch_ad_ids or []))
-    watch_remaining = set(watch_ids)
-    pending_found_ids = []
-    pending_not_found_ids = []
-    by_ad_id = {
-        str(listing.get("source_ad_id")): listing
-        for listing in first_listings if listing.get("source_ad_id")
-    }
-    html_addition_ids = set(str(value) for value in stats.get("addition_ids", []))
-    collected = []
-    discovered_ids = []
-    addition_ids = []
-    unparsed_ids = []
-    unparsed_samples = []
-    unidentified_feed_samples = []
-    html_parse_warning_ids = []
-    boundary_reached = False
-    seen_streak = 0
-    seen_ids_skipped = []
-    last_success_ts = _last_successful_scan_timestamp()
-    additions = 0
-    offers_excluded = 0
-    malformed = 0
-    api_listings_added = 0
-    api_posts_scanned = len(raw_first_items) if api_only else 0
-    candidate_count = 0
-    parsed_candidate_count = 0
-    malformed_candidate_count = 0
-    unidentified_feed_records = 0
-    item_map = initial_item_map
+def _new_incremental_feed_state(
+    initial_feed: InitialBloxSwapsFeed,
+    api_only: bool,
+    seen_ad_ids,
+    pending_ad_ids,
+    watch_ad_ids,
+) -> IncrementalFeedState:
+    """Create isolated state for incremental feed processing."""
+    watch_ids = {str(value) for value in (watch_ad_ids or [])}
+    return IncrementalFeedState(
+        seen={str(value) for value in seen_ad_ids},
+        pending_remaining={str(value) for value in (pending_ad_ids or [])},
+        watch_ids=watch_ids,
+        watch_remaining=set(watch_ids),
+        by_ad_id={
+            str(listing.get("source_ad_id")): listing
+            for listing in initial_feed.first_listings
+            if listing.get("source_ad_id")
+        },
+        html_addition_ids=set(str(value) for value in initial_feed.stats.get("addition_ids", [])),
+        last_success_ts=_last_successful_scan_timestamp(),
+        api_posts_scanned=len(initial_feed.raw_first_items) if api_only else 0,
+        item_map=initial_feed.initial_item_map,
+        single_sided_count=initial_feed.single_sided_count,
+        single_sided_ids=initial_feed.single_sided_ids,
+    )
 
-    def consume_raw_posts(raw_posts, compare_html=False):
-        nonlocal boundary_reached, seen_streak, additions, offers_excluded, malformed, api_listings_added, candidate_count, parsed_candidate_count, malformed_candidate_count, unidentified_feed_records, item_map, watch_remaining, single_sided_count
-        for raw in raw_posts:
-            if not isinstance(raw, dict) or not str(raw.get("id") or "").strip():
-                malformed += 1
-                candidate_count += 1
-                malformed_candidate_count += 1
-                unidentified_feed_records += 1
-                unidentified_feed_samples.append(
-                    "object-without-stable-id" if isinstance(raw, dict)
-                    else f"invalid-record-type:{type(raw).__name__}"
-                )
-                continue
-            post_id = str(raw["id"])
-            refreshed_ts = _parse_feed_timestamp(
-                raw.get("lastRefreshedAt") or raw.get("createdAt") or raw.get("created_at")
-            )
-            recently_refreshed = (
-                refreshed_ts is not None and last_success_ts is not None
-                and refreshed_ts >= last_success_ts - 90
-            )
-            is_pinned = bool(raw.get("isPinned") or raw.get("pinned"))
-            if post_id in watch_remaining:
-                watch_remaining.discard(post_id)
-            if boundary_reached and post_id not in pending_remaining and post_id not in watch_ids and not recently_refreshed:
-                # Once the new-feed boundary is proven, only inspect the bounded
-                # pending/watch backlog. Do not let old unresolved IDs pull the
-                # hot path through the entire historical feed.
-                continue
-            if post_id in seen and post_id not in pending_remaining and post_id not in watch_ids and not recently_refreshed:
-                seen_ids_skipped.append(post_id)
-                if is_pinned:
-                    seen_streak = 0
-                    continue
-                seen_streak += 1
-                # Without a trusted success checkpoint, the seen streak cannot
-                # prove that older pages were already covered. Keep paging so a
-                # prior capped/incomplete run cannot permanently hide older posts.
-                if seen_streak >= 25 and last_success_ts is not None:
-                    boundary_reached = True
-                continue
-            seen_streak = 0
-            if post_id in pending_remaining:
-                pending_remaining.discard(post_id)
-                pending_found_ids.append(post_id)
-            if post_id in discovered_ids:
-                continue
-            discovered_ids.append(post_id)
-            candidate_count += 1
-            wildcard_kind = requested_wildcard_kind(raw.get("requestedWildcards") or [])
-            if post_id in html_addition_ids or wildcard_kind == "ajout":
-                additions += 1
-                addition_ids.append(post_id)
-                continue
-            if _api_post_is_single_sided(raw):
-                # Single-sided posts are intentionally non-actionable, not malformed.
-                # Classify them consistently on RSC+API and API-only scans.
-                single_sided_count += 1
-                single_sided_ids.append(post_id)
-                continue
-            if wildcard_kind == "offres":
-                offers_excluded += 1
-                continue
-            if item_map is None:
-                needs_catalogue = any(
-                    isinstance(row, dict) and row.get("itemDetailsId")
-                    and not (row.get("displayName") or row.get("name"))
-                    for row in (raw.get("tradePostItems") or [])
-                )
-                item_map = fetch_bloxswaps_items_map() if needs_catalogue else {}
-            item_map = _refresh_item_catalogue_for_post(raw, item_map)
-            listing = _api_trade_post_to_listing(raw, item_map)
-            if listing and compare_html:
-                html_listing = by_ad_id.get(post_id)
-                if html_listing:
-                    listing = _merge_html_quantity_diagnostics(listing, html_listing)
-                else:
-                    listing["html_card_parse_warning"] = True
-                    html_parse_warning_ids.append(post_id)
-            if listing:
-                collected.append(listing)
-                parsed_candidate_count += 1
-                if not compare_html:
-                    api_listings_added += 1
-            else:
-                malformed += 1
-                malformed_candidate_count += 1
-                unparsed_ids.append(post_id)
-                unparsed_samples.append(json.dumps(raw, ensure_ascii=False)[:240])
 
+def _consume_incremental_post(
+    state: IncrementalFeedState, raw, compare_html: bool
+) -> None:
+    """Classify and parse one incremental feed record."""
+    if not isinstance(raw, dict) or not str(raw.get("id") or "").strip():
+        state.malformed += 1
+        state.candidate_count += 1
+        state.malformed_candidate_count += 1
+        state.unidentified_feed_records += 1
+        state.unidentified_feed_samples.append(
+            "object-without-stable-id" if isinstance(raw, dict)
+            else f"invalid-record-type:{type(raw).__name__}"
+        )
+        return
+
+    post_id = str(raw["id"])
+    refreshed_ts = _parse_feed_timestamp(
+        raw.get("lastRefreshedAt") or raw.get("createdAt") or raw.get("created_at")
+    )
+    recently_refreshed = (
+        refreshed_ts is not None and state.last_success_ts is not None
+        and refreshed_ts >= state.last_success_ts - 90
+    )
+    is_pinned = bool(raw.get("isPinned") or raw.get("pinned"))
+    state.watch_remaining.discard(post_id)
+
+    if (
+        state.boundary_reached
+        and post_id not in state.pending_remaining
+        and post_id not in state.watch_ids
+        and not recently_refreshed
+    ):
+        # After the new-feed boundary, only inspect bounded pending/watch IDs.
+        return
+    if (
+        post_id in state.seen
+        and post_id not in state.pending_remaining
+        and post_id not in state.watch_ids
+        and not recently_refreshed
+    ):
+        state.seen_ids_skipped.append(post_id)
+        if is_pinned:
+            state.seen_streak = 0
+            return
+        state.seen_streak += 1
+        # Without a trusted success checkpoint, a seen streak cannot prove
+        # older pages were covered by a prior capped or incomplete run.
+        if state.seen_streak >= 25 and state.last_success_ts is not None:
+            state.boundary_reached = True
+        return
+
+    state.seen_streak = 0
+    if post_id in state.pending_remaining:
+        state.pending_remaining.discard(post_id)
+        state.pending_found_ids.append(post_id)
+    if post_id in state.discovered_ids:
+        return
+    state.discovered_ids.append(post_id)
+    state.candidate_count += 1
+    wildcard_kind = requested_wildcard_kind(raw.get("requestedWildcards") or [])
+    if post_id in state.html_addition_ids or wildcard_kind == "ajout":
+        state.additions += 1
+        state.addition_ids.append(post_id)
+        return
+    if _api_post_is_single_sided(raw):
+        state.single_sided_count += 1
+        state.single_sided_ids.append(post_id)
+        return
+    if wildcard_kind == "offres":
+        state.offers_excluded += 1
+        return
+
+    if state.item_map is None:
+        needs_catalogue = any(
+            isinstance(row, dict)
+            and row.get("itemDetailsId")
+            and not (row.get("displayName") or row.get("name"))
+            for row in (raw.get("tradePostItems") or [])
+        )
+        state.item_map = fetch_bloxswaps_items_map() if needs_catalogue else {}
+    state.item_map = _refresh_item_catalogue_for_post(raw, state.item_map)
+    listing = _api_trade_post_to_listing(raw, state.item_map)
+    if listing and compare_html:
+        html_listing = state.by_ad_id.get(post_id)
+        if html_listing:
+            listing = _merge_html_quantity_diagnostics(listing, html_listing)
+        else:
+            listing["html_card_parse_warning"] = True
+            state.html_parse_warning_ids.append(post_id)
+    if listing:
+        state.collected.append(listing)
+        state.parsed_candidate_count += 1
+        if not compare_html:
+            state.api_listings_added += 1
+    else:
+        state.malformed += 1
+        state.malformed_candidate_count += 1
+        state.unparsed_ids.append(post_id)
+        state.unparsed_samples.append(json.dumps(raw, ensure_ascii=False)[:240])
+
+
+def _consume_incremental_posts(
+    state: IncrementalFeedState, raw_posts, compare_html: bool = False
+) -> None:
+    for raw in raw_posts:
+        _consume_incremental_post(state, raw, compare_html)
+
+
+def _resolve_incremental_backlog(state: IncrementalFeedState, raw_first_items):
+    """Resolve pending and watched IDs directly before scanning historical cursors."""
     first_page_ids = {
         str(post.get("id")) for post in raw_first_items
         if isinstance(post, dict) and post.get("id")
     }
-    pending_to_fetch = pending_remaining - first_page_ids
+    pending_to_fetch = state.pending_remaining - first_page_ids
     direct_pending_posts, pending_not_found_ids = fetch_pending_posts_by_id(pending_to_fetch)
-    pending_remaining.difference_update(pending_not_found_ids)
-    watch_remaining.difference_update(pending_not_found_ids)
-    watch_to_fetch = watch_remaining - first_page_ids - pending_to_fetch
+    state.pending_not_found_ids = pending_not_found_ids
+    state.pending_remaining.difference_update(pending_not_found_ids)
+    state.watch_remaining.difference_update(pending_not_found_ids)
+    watch_to_fetch = state.watch_remaining - first_page_ids - pending_to_fetch
     direct_watch_posts, watch_not_found_ids = fetch_pending_posts_by_id(watch_to_fetch)
-    watch_not_found_ids = set(watch_not_found_ids) | (set(pending_not_found_ids) & watch_ids)
-    watch_remaining.difference_update(watch_not_found_ids)
+    state.watch_not_found_ids = set(watch_not_found_ids) | (
+        set(pending_not_found_ids) & state.watch_ids
+    )
+    state.watch_remaining.difference_update(state.watch_not_found_ids)
     if direct_pending_posts or pending_not_found_ids:
         print(
             f"[pending] Direct lookup resolved {len(direct_pending_posts)} active post(s) "
             f"and {len(pending_not_found_ids)} unavailable post(s)."
         )
-    if direct_watch_posts or watch_not_found_ids:
+    if direct_watch_posts or state.watch_not_found_ids:
         print(
             f"[watch] Direct lookup resolved {len(direct_watch_posts)} active watched post(s) "
-            f"and {len(watch_not_found_ids)} unavailable post(s)."
+            f"and {len(state.watch_not_found_ids)} unavailable post(s)."
         )
+    return direct_pending_posts, direct_watch_posts
 
-    consume_raw_posts(raw_first_items, compare_html=not api_only)
-    if direct_pending_posts:
-        consume_raw_posts(direct_pending_posts, compare_html=False)
-    if direct_watch_posts:
-        consume_raw_posts(direct_watch_posts, compare_html=False)
+
+def _scan_incremental_cursor_pages(
+    state: IncrementalFeedState, initial_page: dict
+):
+    """Scan cursor pages until the new-feed boundary or bounded backlog limit."""
     cursor = (initial_page.get("meta") or {}).get("cursor")
-    pages_scanned = 1
     seen_cursors = {str(cursor)} if cursor else set()
-    backlog_pages_scanned = 0
-    backlog_page_limit_reached = False
     if cursor:
-        while cursor and pages_scanned < MAX_FEED_PAGES:
-            if boundary_reached:
-                # Watched offers are resolved by bounded direct ID lookups above.
-                # Cursor lookahead is only a fallback for unresolved pending IDs.
-                if not pending_remaining:
+        while cursor and state.pages_scanned < MAX_FEED_PAGES:
+            if state.boundary_reached:
+                # Direct ID lookups resolve watched posts; cursor lookahead is
+                # only a fallback for unresolved pending IDs.
+                if not state.pending_remaining:
                     break
-                if backlog_pages_scanned >= MAX_BACKLOG_RECHECK_PAGES:
-                    backlog_page_limit_reached = True
+                if state.backlog_pages_scanned >= MAX_BACKLOG_RECHECK_PAGES:
+                    state.backlog_page_limit_reached = True
                     break
             payload = bloxswaps_api_get_json(
                 "/trade-posts", {"cursor": cursor, "pageSize": BLOXSWAPS_PAGE_SIZE}
@@ -1334,79 +1372,116 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
             if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
                 raise RuntimeError("[bloxswaps] Cursor API returned an invalid page structure.")
             page_items = payload["items"]
-            api_posts_scanned += len(page_items)
-            boundary_before_page = boundary_reached
-            pages_scanned += 1
+            state.api_posts_scanned += len(page_items)
+            boundary_before_page = state.boundary_reached
+            state.pages_scanned += 1
             if boundary_before_page:
-                backlog_pages_scanned += 1
-            consume_raw_posts(page_items, compare_html=False)
-            if boundary_reached and not pending_remaining:
+                state.backlog_pages_scanned += 1
+            _consume_incremental_posts(state, page_items, compare_html=False)
+            if state.boundary_reached and not state.pending_remaining:
                 break
             next_cursor = (payload.get("meta") or {}).get("cursor")
             if not next_cursor:
                 cursor = None
                 break
             if str(next_cursor) in seen_cursors:
-                raise RuntimeError("[bloxswaps] Cursor repeated; refusing an incomplete or infinite pagination loop.")
+                raise RuntimeError(
+                    "[bloxswaps] Cursor repeated; refusing an incomplete or infinite pagination loop."
+                )
             seen_cursors.add(str(next_cursor))
             cursor = next_cursor
+    return cursor
 
+
+def _finalize_incremental_feed(state: IncrementalFeedState, stats: dict, api_only: bool, cursor):
+    """Validate candidate accounting and assemble incremental feed diagnostics."""
     from tools.feed_accounting import validate_candidate_accounting
+
     validate_candidate_accounting(
-        candidate_count=candidate_count,
-        additions=additions,
-        single_sided=single_sided_count,
-        offers_excluded=offers_excluded,
-        malformed=malformed_candidate_count,
-        parsed=parsed_candidate_count,
+        candidate_count=state.candidate_count,
+        additions=state.additions,
+        single_sided=state.single_sided_count,
+        offers_excluded=state.offers_excluded,
+        malformed=state.malformed_candidate_count,
+        parsed=state.parsed_candidate_count,
         context="incremental feed",
     )
-    pagination_complete = not cursor or boundary_reached
-    watch_search_complete = not watch_remaining
-    unique = {}
-    for listing in collected:
-        unique[listing["id"]] = listing
+    pagination_complete = not cursor or state.boundary_reached
+    watch_search_complete = not state.watch_remaining
+    unique = {listing["id"]: listing for listing in state.collected}
     result = list(unique.values())
     html_malformed_count = int(stats.get("malformed_count", 0))
     stats.update({
-        "candidate_count": candidate_count,
-        "parsed_candidate_count": parsed_candidate_count,
-        "malformed_candidate_count": malformed_candidate_count,
-        "unidentified_feed_record_count": unidentified_feed_records,
-        "unidentified_feed_samples": unidentified_feed_samples[:10],
-        "addition_count": additions,
-        "offers_excluded_count": offers_excluded,
-        "malformed_count": malformed,
+        "candidate_count": state.candidate_count,
+        "parsed_candidate_count": state.parsed_candidate_count,
+        "malformed_candidate_count": state.malformed_candidate_count,
+        "unidentified_feed_record_count": state.unidentified_feed_records,
+        "unidentified_feed_samples": state.unidentified_feed_samples[:10],
+        "addition_count": state.additions,
+        "offers_excluded_count": state.offers_excluded,
+        "malformed_count": state.malformed,
         "html_malformed_count": html_malformed_count,
-        "html_parse_warning_count": len(html_parse_warning_ids),
-        "html_parse_warning_ids": html_parse_warning_ids,
+        "html_parse_warning_count": len(state.html_parse_warning_ids),
+        "html_parse_warning_ids": state.html_parse_warning_ids,
         "owner_link_count": sum(1 for item in result if item.get("owner_url")),
-        "pagination_pages": pages_scanned,
-        "pagination_api_posts": api_posts_scanned,
+        "pagination_pages": state.pages_scanned,
+        "pagination_api_posts": state.api_posts_scanned,
         "pagination_complete": pagination_complete,
         "pagination_source": "BloxSwaps API only" if api_only else "RSC + cursor API",
-        "seen_boundary_reached": boundary_reached,
-        "seen_streak": seen_streak,
-        "seen_ids_skipped": seen_ids_skipped,
-        "watch_remaining_ids": sorted(watch_remaining),
-        "watch_not_found_ids": sorted(watch_not_found_ids),
-        "pending_found_ids": pending_found_ids,
-        "pending_not_found_ids": pending_not_found_ids,
-        "pending_remaining_ids": sorted(pending_remaining),
-        "pending_complete": not pending_remaining,
+        "seen_boundary_reached": state.boundary_reached,
+        "seen_streak": state.seen_streak,
+        "seen_ids_skipped": state.seen_ids_skipped,
+        "watch_remaining_ids": sorted(state.watch_remaining),
+        "watch_not_found_ids": sorted(state.watch_not_found_ids),
+        "pending_found_ids": state.pending_found_ids,
+        "pending_not_found_ids": state.pending_not_found_ids,
+        "pending_remaining_ids": sorted(state.pending_remaining),
+        "pending_complete": not state.pending_remaining,
         "watch_search_complete": watch_search_complete,
-        "backlog_pages_scanned": backlog_pages_scanned,
-        "backlog_page_limit_reached": backlog_page_limit_reached,
-        "api_listings_added": api_listings_added,
-        "addition_ids": addition_ids,
-        "single_sided_count": single_sided_count,
-        "single_sided_ids": single_sided_ids,
-        "unparsed_ad_ids": unparsed_ids,
-        "malformed_samples": (stats.get("malformed_samples", []) + unparsed_samples)[:5],
+        "backlog_pages_scanned": state.backlog_pages_scanned,
+        "backlog_page_limit_reached": state.backlog_page_limit_reached,
+        "api_listings_added": state.api_listings_added,
+        "addition_ids": state.addition_ids,
+        "single_sided_count": state.single_sided_count,
+        "single_sided_ids": state.single_sided_ids,
+        "unparsed_ad_ids": state.unparsed_ids,
+        "malformed_samples": (stats.get("malformed_samples", []) + state.unparsed_samples)[:5],
     })
     if not pagination_complete:
         print(f"[maintenance] Pagination stopped at MAX_FEED_PAGES={MAX_FEED_PAGES} with a cursor remaining.")
-    return result, stats, discovered_ids
+    return result, stats, state.discovered_ids
+
+
+def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None):
+    """Fetch recent RSC/API posts and recheck unresolved IDs beyond seen posts."""
+    if seen_ad_ids is None and pending_ad_ids:
+        seen_ad_ids = set()
+    api_only = os.environ.get("BLOXSWAPS_API_ONLY", "false").strip().casefold() in {"1", "true", "yes", "on"}
+    initial_feed = _load_initial_bloxswaps_feed(api_only)
+    initial_page = initial_feed.initial_page
+    raw_first_items = initial_feed.raw_first_items
+    stats = initial_feed.stats
+
+    if seen_ad_ids is None:
+        return _run_cold_start_feed(initial_feed, api_only)
+
+    state = _new_incremental_feed_state(
+        initial_feed,
+        api_only,
+        seen_ad_ids,
+        pending_ad_ids,
+        watch_ad_ids,
+    )
+    direct_pending_posts, direct_watch_posts = _resolve_incremental_backlog(
+        state, raw_first_items
+    )
+    _consume_incremental_posts(state, raw_first_items, compare_html=not api_only)
+    if direct_pending_posts:
+        _consume_incremental_posts(state, direct_pending_posts, compare_html=False)
+    if direct_watch_posts:
+        _consume_incremental_posts(state, direct_watch_posts, compare_html=False)
+    cursor = _scan_incremental_cursor_pages(state, initial_page)
+    return _finalize_incremental_feed(state, stats, api_only, cursor)
 
 
 def normalize_name(name):
