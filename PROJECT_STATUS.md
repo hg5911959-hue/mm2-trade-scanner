@@ -1,6 +1,6 @@
 # Project Status and Resume Checkpoint
 
-Last verified: 2026-11-27 19:33 UTC  
+Last verified: 2026-11-27 19:36 UTC  
 Repository: `hg5911959-hue/mm2-trade-scanner`  
 Production branch: `main`  
 Main baseline at checkpoint: PR #261 merged as `f7169b2d5bb40f489749e43f37a0d97f6f2e7b21`; the RBLXValue reference card and archive-policy changes are now live on `main`.
@@ -35,7 +35,7 @@ Main baseline at checkpoint: PR #261 merged as `f7169b2d5bb40f489749e43f37a0d97f
 - Previous completed scan: run `46047079955`; 14 cycles, complete pagination, no scanner errors, and no new alert met the selection rules during that run.
 - Earlier live validation: run `46046592893`; 14 cycles and two alerts sent. Telegram API response times for those sends were approximately 388 ms and 452 ms. One already-alerted listing was correctly blocked by the duplicate guard.
 - Follow-up scan `46054424527` restored the cleaned state branch, completed scanner and state persistence successfully, and processed 5 complete pages / 100 API posts. One trade alert was accepted 1.45 seconds after feed refresh; no new uncertain delivery or scanner error occurred. Its alert ID was confirmed persisted in `alerted.json`.
-- Pre-merge chain run `46055635362` completed scanner and state persistence on old SHA `eef62970`; its wait/continue job remains active for the next chained scan.
+- Pre-merge chain run `46055635362` completed scanner and state persistence on old SHA `eef62970`; its wait/continue job remains active for the next chained scan. Current chain run `46057491594` is active on `b1ab280e`; its scanner step is running with the merged production code.
 - Watch recheck queue: 2,163 tracked listings; pending rechecks: 0. The watch TTL is 24 hours, capacity is 50,000, and the recheck batch is 50 listings every 4 cycles.
 - Unmatched-name registry: 598 entries after removing five historical generic evaluator/rejection strings. Main now filters legacy `no numeric Supreme value` and `value-weighted Demand is low` reasons; no such generic keys reappeared after the merge.
 - Telegram quarantine: 2 unresolved delivery IDs and 2 matching context records. One context was reconstructed from run `45996910385` logs with its BloxSwaps source post ID and exact attempt timestamp; its listing/owner URLs were not present in logs and remain blank. Do not resend either message without manual confirmation.
@@ -43,7 +43,7 @@ Main baseline at checkpoint: PR #261 merged as `f7169b2d5bb40f489749e43f37a0d97f
 - Feed and quarantine hardening: PR #258 added candidate accounting, wildcard-policy coverage, and reconciliation of confirmed/ orphaned Telegram quarantine state.
 - Public dashboard: PR #259 added a strict item-data whitelist; the dashboard publish workflow succeeded.
 - PR #260 filters generic evaluator rejection messages out of the unmatched-item registry and normalizes BloxSwaps API source aliases when preserving uncertain Telegram context.
-- The direct Supreme scraping workflow was removed; PR #205 is closed. PR #261 is merged: the unused direct-site collector and its tests are deleted from `main`. Production reference info uses RBLXValue API v2 only, and the refreshed archive metadata explicitly limits production use to optional Telegram reference display. Post-merge CI passed: 750 tests twice plus Ruff (`46055994728` and `46057274129`), ROBASE Pricing Tests (`46055994775`), dashboard publish (`46055994780`), and RBLXValue archive refresh (`46055994741`).
+- The direct Supreme scraping workflow was removed; PR #205 is closed. PR #261 is merged: the unused direct-site collector and its tests are deleted from `main`. Production reference info uses RBLXValue API v2 only, and the refreshed archive metadata explicitly limits production use to optional Telegram reference display. Post-merge CI passed: 750 tests twice plus Ruff (`46055994728`, `46057274129`, and latest status-checkpoint run `46057700312`), ROBASE Pricing Tests (`46055994775`), dashboard publish (`46055994780`), and RBLXValue archive refresh (`46055994741`).
 
 ## Merged changes
 
