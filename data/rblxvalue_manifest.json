@@ -9,9 +9,9 @@
     "attribution": "Supreme Values (supremevalues.com)"
   },
   "source_attribution": "Supreme Values (supremevalues.com)",
-  "dataset_last_updated": "2026-11-27 00:02:34",
+  "dataset_last_updated": "2026-11-27 12:02:34",
   "last_snapshot_date": "2026-11-27",
-  "last_fetched_at_utc": "2026-11-27T05:12:48.727256+00:00",
+  "last_fetched_at_utc": "2026-11-27T19:20:59.478073+00:00",
   "scheduled_runs_per_day": 2,
   "scheduled_utc_times": [
     "11:30",
@@ -22,7 +22,7 @@
     "00:30 (next day)"
   ],
   "expected_weapons": 214,
-  "history_rows": 1498,
+  "history_rows": 1712,
   "snapshot_counts": {
     "weapons": 214,
     "exactly_mapped": 214,
@@ -37,5 +37,5 @@
     "with_supreme_value": 214,
     "with_stability": 212
   },
-  "usage": "Authorized Supreme Values data for MM2 research and value-profit analysis; no ownership claim; source attribution required"
+  "usage": "Supreme via RBLXValue for research and optional Telegram reference display only; no cash valuation or alert decisions; source attribution required"
 }
