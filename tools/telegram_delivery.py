@@ -97,12 +97,18 @@ def send_telegram(
         except HTTPError as exc:
             raw = exc.read(2000)
             if exc.code == 429 and attempt < 1:
+                fallback_delay = 2 ** (attempt + 1)
                 try:
                     result = json.loads(raw.decode("utf-8"))
-                    retry_after = result.get("parameters", {}).get("retry_after", 2 ** (attempt + 1))
-                except (ValueError, UnicodeDecodeError):
-                    retry_after = 2 ** (attempt + 1)
-                delay = min(180, max(1, int(retry_after) + 2))
+                    parameters = result.get("parameters") if isinstance(result, dict) else None
+                    retry_after = (
+                        parameters.get("retry_after", fallback_delay)
+                        if isinstance(parameters, dict) else fallback_delay
+                    )
+                    retry_after = int(retry_after)
+                except (TypeError, ValueError, OverflowError, UnicodeDecodeError):
+                    retry_after = fallback_delay
+                delay = min(180, max(1, retry_after + 2))
                 print(f"[retry] Telegram explicitly rejected sendMessage with 429; waiting {delay}s")
                 time.sleep(delay)
                 continue
@@ -124,7 +130,15 @@ def send_telegram(
             raise TelegramDeliveryUncertain(
                 "[telegram] Invalid response; delivery status is uncertain, not retrying."
             ) from exc
-        if result.get("ok"):
+        if not isinstance(result, dict):
+            raise TelegramDeliveryUncertain(
+                "[telegram] Response JSON was not an object; delivery status is uncertain, not retrying."
+            )
+        if "ok" not in result or not isinstance(result.get("ok"), bool):
+            raise TelegramDeliveryUncertain(
+                "[telegram] Response omitted a valid ok flag; delivery status is uncertain, not retrying."
+            )
+        if result["ok"] is True:
             message_result = result.get("result") if isinstance(result.get("result"), dict) else {}
             message_id = message_result.get("message_id")
             if message_id is not None:
@@ -132,9 +146,18 @@ def send_telegram(
             else:
                 print("[telegram] Bot API accepted message; response omitted message_id")
             return
-        if int(result.get("error_code", 0) or 0) == 429 and attempt < 1:
-            retry_after = result.get("parameters", {}).get("retry_after", 2 ** (attempt + 1))
-            delay = min(180, max(1, int(retry_after) + 2))
+        if result.get("error_code") == 429 and attempt < 1:
+            parameters = result.get("parameters")
+            fallback_delay = 2 ** (attempt + 1)
+            retry_after = (
+                parameters.get("retry_after", fallback_delay)
+                if isinstance(parameters, dict) else fallback_delay
+            )
+            try:
+                retry_after = int(retry_after)
+            except (TypeError, ValueError, OverflowError):
+                retry_after = fallback_delay
+            delay = min(180, max(1, retry_after + 2))
             print(f"[retry] Telegram explicitly rejected sendMessage with 429; waiting {delay}s")
             time.sleep(delay)
             continue
