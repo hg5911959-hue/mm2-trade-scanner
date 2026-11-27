@@ -118,6 +118,36 @@ class SupremeTelegramInfoTests(IsolatedDataTestCase):
         self.assertNotIn("weapon-2", message)
         self.assertNotIn("RBLXValue/Supreme", message)
 
+    def test_digest_keeps_reference_values_out_of_item_lines(self):
+        listing = {
+            "source": "bloxswaps",
+            "valuation_mode": "cash",
+            "give_items": [{"name": "Weapon 0", "catalog_slug": "weapon-0", "quantity": 1}],
+            "receive_items": [{"name": "Weapon 1", "catalog_slug": "weapon-1", "quantity": 1}],
+            "url": "https://bloxswaps.com/trade/test",
+        }
+        market_info = {
+            "weapon0": {"name": "Weapon 0", "supreme_value": 160, "stability": "Stable"},
+            "weapon1": {"name": "Weapon 1", "supreme_value": 161, "stability": None},
+        }
+        opportunity = {
+            "listing": listing,
+            "give_lines": ["Weapon 0 x1 — $2.50 each = $2.50 | Supreme: 160 · Stability: Stable"],
+            "receive_lines": ["Weapon 1 x1 — $5.00 each = $5.00 | Supreme: 161 · Stability: N/A"],
+            "give_total": 2.5,
+            "receive_total": 5.0,
+            "cash_profit_worst": 2.5,
+            "difference": 2.5,
+            "margin": 100.0,
+        }
+        message = scanner.format_opportunity_digest([opportunity], market_info=market_info)
+        self.assertEqual(message.count("Supreme <code>160</code>"), 1)
+        self.assertEqual(message.count("Stability <code>Stable</code>"), 1)
+        self.assertNotIn("Supreme: 160", message)
+        self.assertNotIn("Stability: Stable", message)
+        self.assertIn("REFERENCE INFO ONLY", message)
+        self.assertIn("not used in cash filters or alert decisions", message)
+
     def test_missing_optional_market_info_does_not_change_cash_message(self):
         listing = {"source": "bloxswaps", "valuation_mode": "cash"}
         message = scanner.format_trade_message(
