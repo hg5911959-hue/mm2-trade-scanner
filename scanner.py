@@ -5569,7 +5569,10 @@ def scan_once(include_backlog_rechecks=True):
             f"Eligible listings: {len(listings)}\n"
             f"Evaluated: {evaluated} · Qualified: {len(opportunities)}\n"
             f"Alerts sent: {sent} · Digest sent: {digest_sent} · Digest pending: {digest_not_sent}\n"
-            f"RBLXValue API requests this run: {rblxvalue_guard.requests_this_run()}\n"
+            "Outcome accounting: "
+            + ", ".join(f"{name}={count}" for name, count in outcome_counts.items())
+            + "\\n"
+            + f"RBLXValue API requests this run: {rblxvalue_guard.requests_this_run()}\\n"
             + (
                 f"ROBASE weapons mapped: {max(0, mapping_audit.get('expected', 0) - len(mapping_audit.get('missing', [])) - len(mapping_audit.get('ambiguous', [])))}/"
                 f"{mapping_audit.get('expected', 0)} · non-weapons excluded: {len(mapping_audit.get('non_weapons', []))}"
