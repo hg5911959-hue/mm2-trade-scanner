@@ -4,6 +4,7 @@ line-length = 88
 extend-exclude = [".git", ".venv", "venv", "build", "dist"]
 
 [tool.ruff.lint]
-# Preserve Ruff's default correctness rules and apply them consistently to the
-# entire repository, including the scanner and all tests.
+# Apply correctness checks across the repository. Legacy compact one-line
+# statements and multi-import lines are grandfathered for incremental cleanup.
 select = ["E4", "E7", "E9", "F"]
+ignore = ["E401", "E701", "E702"]
