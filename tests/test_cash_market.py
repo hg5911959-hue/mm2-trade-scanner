@@ -524,7 +524,7 @@ class CashMarketTests(IsolatedDataTestCase):
 
 
 
-    def test_failed_robase_refresh_keeps_last_prices_but_disables_cash_eligibility(self):
+    def test_failed_robase_refresh_keeps_fresh_last_prices_cash_eligible(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "robase.json"
             now = datetime(2026, 11, 21, tzinfo=UTC)
@@ -535,7 +535,7 @@ class CashMarketTests(IsolatedDataTestCase):
 
             catalog = load_robase_price_catalog(path, now=now)
             self.assertEqual(catalog["refresh_status"], "failed")
-            self.assertEqual(catalog["verified_count"], 222)
+            self.assertEqual(catalog["verified_count"], 221)
             self.assertEqual(catalog["cash_eligible_count"], 220)
             retained = catalog["items_by_slug"]["item-2"]
             self.assertEqual(retained["cash_price_usd"], 2.5)
