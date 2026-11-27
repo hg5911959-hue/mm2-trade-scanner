@@ -3351,8 +3351,11 @@ def _format_telegram_market_info(listing, market_info):
         for item in listing.get(field, []) or []:
             if not isinstance(item, dict):
                 continue
-            slug = normalize_slug(
-                item.get("catalog_slug") or item.get("bloxswaps_slug") or item.get("slug") or ""
+            # The archive loader and this formatter use the same punctuation-free
+            # slug key; matching remains exact after normalization.
+            slug = re.sub(
+                r"[^a-z0-9]+", "",
+                str(item.get("catalog_slug") or item.get("bloxswaps_slug") or item.get("slug") or "").casefold(),
             )
             entry = market_info.get(slug)
             if not isinstance(entry, dict) or (side, slug) in seen:
