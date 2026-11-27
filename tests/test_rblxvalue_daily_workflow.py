@@ -49,6 +49,8 @@ class RBLXValueDailyWorkflowBudgetTests(IsolatedDataTestCase):
         self.assertIn("--api-safety-only", block)
         self.assertNotIn("RBLXVALUE_API_KEY", block)
         self.assertIn("git push origin HEAD:robase-daily-history", block)
+        self.assertIn("for attempt in 1 2 3", block)
+        self.assertIn("git reset --hard refs/remotes/origin/robase-daily-history", block)
 
     def test_snapshot_archive_waits_for_successful_budget_persistence(self):
         start = self.workflow.index("  archive:")
