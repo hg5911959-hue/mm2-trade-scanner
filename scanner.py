@@ -5343,6 +5343,7 @@ def _load_discord_listings_for_scan(listings):
             f"[discord-parser] source skipped safely: {type(discord_error).__name__}; "
             "BloxSwaps scan continues"
         )
+        print("[discord-parser] parsed=0 new_for_batch=0 rejected=0")
         return listings
     if discord_listings:
         existing_ids = {str(row.get("id") or "") for row in listings}
@@ -5382,11 +5383,11 @@ def _record_first_seen_timestamps(listings, discovered_ids):
 
 
 def _reconcile_seen_and_pending_state(
-    listings, stats, seen_ads, pending_ids, pending_schedule, cash_catalog
+    listings, stats, seen_ads, pending_ids, pending_schedule, cash_catalog, discovered_ids
 ):
     """Apply cold-start seeding, parser retries, and non-actionable ID retirement."""
     if stats.get("cold_start"):
-        seed_ids = set(str(value) for value in stats.get("cold_start_seed_ids", []))
+        seed_ids = set(str(value) for value in stats.get("cold_start_seed_ids", discovered_ids))
         save_seen_ads(seed_ids)
         seen_ads = seed_ids
         seed_pending_ids_as_seen(seen_ads, pending_ids, pending_schedule)
@@ -5572,7 +5573,7 @@ def scan_once(include_backlog_rechecks=True):
     first_seen_ads = _record_first_seen_timestamps(listings, discovered_ids)
     seen_ads, pending_ids, pending_schedule, cold_start_complete = (
         _reconcile_seen_and_pending_state(
-            listings, stats, seen_ads, pending_ids, pending_schedule, cash_catalog
+            listings, stats, seen_ads, pending_ids, pending_schedule, cash_catalog, discovered_ids
         )
     )
     if cold_start_complete:
