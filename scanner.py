@@ -4619,24 +4619,29 @@ class ScanHistoryData:
     public_history_store: object | None
 
 
-def _load_scan_market_data(modes: ScanModes) -> ScanMarketData:
-    """Load valuation inputs and optional reference data for one scan."""
-    if modes.value_profit_shadow_mode:
-        archive_path = os.environ.get(
-            "RBLXVALUE_DAILY_ARCHIVE_FILE",
-            "rblxvalue-archive/data/rblxvalue_latest.json",
+def _load_cash_market_catalog(daily_shadow_mode: bool) -> tuple[dict | None, bool]:
+    """Load and report ROBASE cash-price readiness without affecting selection policy."""
+    cash_catalog = None
+    cash_prices_changed = False
+    if CASH_FILTER:
+        cash_catalog = load_robase_cash_price_catalog()
+        all_cash_rows = list(cash_catalog.get("items_by_slug", {}).values())
+        verified_cash_rows = sum(
+            1 for row in all_cash_rows
+            if row["status"] == "verified" and cash_price_is_fresh(row, CASH_MAX_AGE_DAYS)
         )
-        values, archive_summary = load_values_from_snapshot(archive_path)
-        print(
-            "[value-profit-shadow] "
-            + json.dumps(archive_summary, ensure_ascii=False, sort_keys=True)
-        )
-        print(
-            f"[value-profit-shadow] thresholds: minimum Supreme value profit={MIN_DIFF:g}; "
-            f"minimum margin={MIN_PROFIT_PERCENT:g}%"
-        )
-    elif CASH_FILTER and not modes.testing_mode:
-        print("[mode] ROBASE cash-only: Supreme Values and RBLXValue are not loaded or queried")
+        expired_cash_rows = [
+            row for row in all_cash_rows
+            if row["status"] == "verified" and not cash_price_is_fresh(row, CASH_MAX_AGE_DAYS)
+        ]
+        expired_cash_rows.sort(key=lambda row: row.get("verified_at_utc") or "")
+        unverified_cash_rows = sum(1 for row in all_cash_rows if row["status"] == "unverified")
+        alert_cash_price_runway(cash_catalog, verified_cash_rows)
+        previous_cash_hash = cash_catalog_snapshot_hash()
+        cash_prices_chan    cash_catalog, cash_prices_changed = _load_cash_market_catalog(
+        modes.daily_shadow_mode
+    )
+aded or queried")
         values = {}
     elif modes.testing_mode:
         values = load_supreme_values()
