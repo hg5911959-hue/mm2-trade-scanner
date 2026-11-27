@@ -157,12 +157,12 @@ def _validate_public_dashboard_history(path: Path) -> list[str]:
             items = json.loads(raw) if isinstance(raw, str) else None
         except ValueError:
             return False
-        if not isinstance(items, list) or len(items) > 50:
+        if not isinstance(items, list) or len(items) > 20:
             return False
         for item in items:
             if not isinstance(item, dict) or set(item) != {"name", "quantity"}:
                 return False
-            if not isinstance(item.get("name"), str) or not item["name"] or len(item["name"]) > 100:
+            if not isinstance(item.get("name"), str) or not item["name"] or len(item["name"]) > 60:
                 return False
             quantity = item.get("quantity")
             if quantity is not None and (type(quantity) is not int or not 1 <= quantity <= 9999):
@@ -210,7 +210,7 @@ def _validate_public_dashboard_history(path: Path) -> list[str]:
                 return errors
             listing_count = db.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
             opportunity_count = db.execute("SELECT COUNT(*) FROM opportunities").fetchone()[0]
-            if type(listing_count) is not int or not 0 <= listing_count <= 3_000:
+            if type(listing_count) is not int or not 0 <= listing_count <= 2_500:
                 errors.append("public dashboard listing count exceeds its safety bound")
             if type(opportunity_count) is not int or not 0 <= opportunity_count <= 1_000:
                 errors.append("public dashboard opportunity count exceeds its safety bound")
@@ -225,7 +225,7 @@ def _validate_public_dashboard_history(path: Path) -> list[str]:
                     or not isinstance(row[2], str)
                     or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", row[2])
                     or row[1] != "bloxswaps"
-                    or (row[3] is not None and (not isinstance(row[3], str) or len(row[3]) > 100))
+                    or (row[3] is not None and (not isinstance(row[3], str) or len(row[3]) > 80))
                     or not safe_url(row[4], optional=True) or not safe_url(row[5])
                     or not valid_timestamp(row[6]) or not valid_timestamp(row[7])
                     or not safe_items(row[8]) or not safe_items(row[9])
