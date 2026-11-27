@@ -395,6 +395,53 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
         self.assertFalse(any("Supreme" in line or "Stability" in line
                              for line in result["give_lines"] + result["receive_lines"]))
 
+
+    def test_cash_evaluator_allows_surclassements_and_declassements_but_rejects_ajouts_and_offres(self):
+        now = datetime.now(UTC).isoformat()
+        rows = {
+            "bat": {
+                "name": "Bat", "cash_price_usd": 5.0, "price_low_usd": 5.0,
+                "price_high_usd": 5.0, "price_display": "$5.00",
+                "status": "verified", "verified_at_utc": now,
+                "source": "https://robase.gg/item/bat", "robase_slug": "bat",
+            }
+        }
+        mapping = {
+            "bat": {
+                "bloxswaps_slug": "bat", "robase_slug": "bat",
+                "robase_name": "Bat", "bloxswaps_type": "knife",
+                "bloxswaps_rarity": "godly", "bloxswaps_chroma": False,
+                "bloxswaps_tradable": True,
+            }
+        }
+        item = {
+            "name": "Bat", "catalog_slug": "bat", "catalog_type": "knife",
+            "catalog_rarity": "godly", "catalog_chroma": False,
+            "quantity": 1, "quantity_min": 1, "quantity_max": 1,
+            "quantity_source": "structured",
+        }
+        catalog = {"items_by_slug": rows, "bloxswaps_exact_map": mapping}
+        base = {
+            "id": "wildcard-filter-regression", "source": "bloxswaps",
+            "give_items": [dict(item)], "receive_items": [dict(item)],
+        }
+
+        for wildcard in ("Surclassements", "Déclassements"):
+            with self.subTest(allowed=wildcard):
+                result, missing = scanner.evaluate_cash_listing_robase_only(
+                    {**base, "requested_wildcards": [wildcard]}, catalog
+                )
+                self.assertIsNotNone(result)
+                self.assertEqual(missing, [])
+
+        for wildcard in ("Ajouts", "Ajout", "Offres", "Offers"):
+            with self.subTest(excluded=wildcard):
+                result, missing = scanner.evaluate_cash_listing_robase_only(
+                    {**base, "requested_wildcards": [wildcard]}, catalog
+                )
+                self.assertIsNone(result)
+                self.assertIn("Ajouts/Offres", missing[0])
+
     def test_production_cash_evaluator_rejects_bloxswaps_metadata_mismatch(self):
         now = datetime.now(UTC).isoformat()
         row = {
