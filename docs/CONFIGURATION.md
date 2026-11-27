@@ -25,7 +25,7 @@ runtime-only switches are still read by the component that uses them.
 | `MIN_RECEIVE_DEMAND_SCORE` | `4.0` | Value-mode demand threshold |
 | `MIN_RECEIVE_STABILITY_SCORE` | `3.0` | Value-mode stability threshold |
 | `FAILURE_ALERT_THRESHOLD` | `3` | Consecutive failures before alerting |
-| `MAX_ALERTS_PER_RUN` | `0` | Alert cap; negative values clamp to zero |
+| `MAX_ALERTS_PER_RUN` | `0` | Zero means unlimited; negative values clamp to zero |
 | `TELEGRAM_CHAT_TYPE` | empty | Use `private` for private-chat pacing |
 | `ALERT_DELAY_SECONDS` | `3.2` | Requested delay; group pacing retains its 3.2-second floor |
 | `MAX_PENDING_RECHECK_PER_SCAN` | `50` | Minimum 1 |
