@@ -4,6 +4,7 @@ from __future__ import annotations
 import html as html_lib
 import json
 import time
+from time import monotonic as monotonic_time
 import urllib.request
 from urllib.error import HTTPError, URLError
 
@@ -90,7 +91,7 @@ def send_telegram(
     # sendMessage is non-idempotent. Never retry uncertain network/5xx outcomes.
     for attempt in range(2):
         wait_for_rate_limit()
-        request_started = time.monotonic()
+        request_started = monotonic_time()
         req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
         try:
             with opener.open(req, timeout=20) as response:
@@ -142,7 +143,7 @@ def send_telegram(
         if result["ok"] is True:
             message_result = result.get("result") if isinstance(result.get("result"), dict) else {}
             message_id = message_result.get("message_id")
-            request_ms = max(0.0, (time.monotonic() - request_started) * 1000.0)
+            request_ms = max(0.0, (monotonic_time() - request_started) * 1000.0)
             if message_id is not None:
                 print(f"[telegram] Bot API accepted message; message_id={message_id}")
             else:
