@@ -1,9 +1,10 @@
 import unittest
 
+from test_support import IsolatedDataTestCase
 from tools.feed_accounting import validate_candidate_accounting
 
 
-class FeedCandidateAccountingTests(unittest.TestCase):
+class FeedCandidateAccountingTests(IsolatedDataTestCase):
     def test_accepts_complete_classification(self):
         result = validate_candidate_accounting(
             candidate_count=12,
