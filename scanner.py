@@ -800,15 +800,20 @@ def scan_checkpoint_requires_cold_start(last_success_ts, now=None):
     )
 
 
-def _refresh_item_catalogue_for_post(post, item_map):
+@dataclass(slots=True)
+class InitialBloxSwapsFeed:
+    html: str | None
+    initial_page: dict | None
+    initial_item_map: dict
+    raw_first_items: list
+    single_sided_ids: list
+    single_sided_count: int
+    first_listings: list
+    stats: dict
+
+
+def _refresh_item_catalogue_for_unknown_ids(unknown_ids, item_map):
     """Refresh missing BloxSwaps item IDs without ever guessing item names."""
-    unknown_ids = {
-        str(row.get("itemDetailsId") or "")
-        for row in (post.get("tradePostItems") or [])
-        if isinstance(row, dict)
-        and row.get("itemDetailsId")
-        and str(row.get("itemDetailsId")) not in item_map
-    }
     if not unknown_ids:
         return item_map
     try:
@@ -834,27 +839,37 @@ def _refresh_item_catalogue_for_post(post, item_map):
     return item_map
 
 
-def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None):
-    """Fetch recent RSC/API posts and recheck unresolved IDs beyond seen posts."""
-    if seen_ad_ids is None and pending_ad_ids:
-        seen_ad_ids = set()
-    api_only = os.environ.get("BLOXSWAPS_API_ONLY", "false").strip().casefold() in {"1", "true", "yes", "on"}
+def _refresh_item_catalogue_for_post(post, item_map):
+    """Refresh the catalogue when a post references item IDs absent from the cache."""
+    unknown_ids = {
+        str(row.get("itemDetailsId") or "")
+        for row in (post.get("tradePostItems") or [])
+        if isinstance(row, dict)
+        and row.get("itemDetailsId")
+        and str(row.get("itemDetailsId")) not in item_map
+    }
+    return _refresh_item_catalogue_for_unknown_ids(unknown_ids, item_map)
+
+
+def _load_initial_bloxswaps_feed(api_only: bool) -> InitialBloxSwapsFeed:
+    """Fetch and validate the first feed page plus its item catalogue."""
     if api_only:
         initial_page = bloxswaps_api_get_json("/trade-posts", {"pageSize": BLOXSWAPS_PAGE_SIZE})
         if not isinstance(initial_page, dict) or not isinstance(initial_page.get("items"), list):
-            raise RuntimeError("[bloxswaps] Initial trade-post API page is invalid; refusing an incomplete feed.")
+            raise RuntimeError(
+                "[bloxswaps] Initial trade-post API page is invalid; refusing an incomplete feed."
+            )
         html = None
     else:
         html = fetch_bloxswaps()
         initial_page = parse_structured_initial_page(html)
+
     structured_rows = [
-        row for post in (initial_page.get("items") or []) if isinstance(post, dict)
+        row
+        for post in (initial_page.get("items") or []) if isinstance(post, dict)
         for row in (post.get("tradePostItems") or []) if isinstance(row, dict)
     ] if initial_page else []
-    needs_catalogue = any(
-        row.get("itemDetailsId")
-        for row in structured_rows
-    )
+    needs_catalogue = any(row.get("itemDetailsId") for row in structured_rows)
     initial_item_map = fetch_bloxswaps_items_map() if needs_catalogue else {}
     raw_first_items = initial_page.get("items") or [] if initial_page else []
     single_sided_ids = []
@@ -867,26 +882,10 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
         and str(row.get("itemDetailsId")) not in initial_item_map
     }
     if first_page_unknown_ids:
-        try:
-            refreshed_map = fetch_bloxswaps_items_map(force_refresh=True)
-            if refreshed_map:
-                initial_item_map = refreshed_map
-            still_unknown = sorted(first_page_unknown_ids - set(initial_item_map.keys()))
-            if still_unknown:
-                send_maintenance_alert(
-                    "unknown-item-id-catalogue",
-                    "BloxSwaps returned itemDetailsId values absent from its catalogue: "
-                    + ", ".join(still_unknown[:12])
-                    + ". No item names or values were guessed; affected posts remain eligible for recheck.",
-                    cooldown_seconds=3600,
-                )
-        except Exception as exc:
-            send_maintenance_alert(
-                "unknown-item-id-catalogue-refresh-failed",
-                "Could not refresh the BloxSwaps item catalogue after an unknown itemDetailsId. "
-                f"Refresh failed safely ({type(exc).__name__}); no values were guessed.",
-                cooldown_seconds=3600,
-            )
+        initial_item_map = _refresh_item_catalogue_for_unknown_ids(
+            first_page_unknown_ids, initial_item_map
+        )
+
     if api_only:
         first_listings = []
         stats = {
@@ -913,7 +912,36 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                 "The scan is treated as failed; no partial feed is trusted.",
                 cooldown_seconds=900,
             )
-            raise RuntimeError("[bloxswaps] RSC initialPage/cursor data missing; refusing a partial HTML-only scan.")
+            raise RuntimeError(
+                "[bloxswaps] RSC initialPage/cursor data missing; refusing a partial HTML-only scan."
+            )
+
+    return InitialBloxSwapsFeed(
+        html=html,
+        initial_page=initial_page,
+        initial_item_map=initial_item_map,
+        raw_first_items=raw_first_items,
+        single_sided_ids=single_sided_ids,
+        single_sided_count=single_sided_count,
+        first_listings=first_listings,
+        stats=stats,
+    )
+
+
+def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None):
+    """Fetch recent RSC/API posts and recheck unresolved IDs beyond seen posts."""
+    if seen_ad_ids is None and pending_ad_ids:
+        seen_ad_ids = set()
+    api_only = os.environ.get("BLOXSWAPS_API_ONLY", "false").strip().casefold() in {"1", "true", "yes", "on"}
+    initial_feed = _load_initial_bloxswaps_feed(api_only)
+    html = initial_feed.html
+    initial_page = initial_feed.initial_page
+    initial_item_map = initial_feed.initial_item_map
+    raw_first_items = initial_feed.raw_first_items
+    single_sided_ids = initial_feed.single_sided_ids
+    single_sided_count = initial_feed.single_sided_count
+    first_listings = initial_feed.first_listings
+    stats = initial_feed.stats
 
     if seen_ad_ids is None:
         # Cold start: evaluate verifiably recent posts across cursor pages, then
