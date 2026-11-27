@@ -26,6 +26,7 @@ runtime-only switches are still read by the component that uses them.
 | `MIN_RECEIVE_STABILITY_SCORE` | `3.0` | Value-mode stability threshold |
 | `FAILURE_ALERT_THRESHOLD` | `3` | Consecutive failures before alerting |
 | `MAX_ALERTS_PER_RUN` | `0` | Zero means unlimited; negative values clamp to zero |
+| `MAX_ALERTS_PER_SCAN` | `0` | Per-scan alert cap; zero means unlimited. Production workflow uses zero. |
 | `TELEGRAM_CHAT_TYPE` | empty | Use `private` for private-chat pacing |
 | `ALERT_DELAY_SECONDS` | `3.2` | Requested delay; group pacing retains its 3.2-second floor |
 | `MAX_PENDING_RECHECK_PER_SCAN` | `50` | Minimum 1 |
@@ -58,6 +59,6 @@ cash-eligibility requirement.
 ## Runtime-only switches
 
 Some flags are deliberately read at the point of use rather than frozen in `ScannerConfig`,
-including `DRY_RUN`, `BLOXSWAPS_API_ONLY`, `MAX_ALERTS_PER_SESSION`,
+including `DRY_RUN`, `BLOXSWAPS_API_ONLY`, `MAX_ALERTS_PER_SCAN`, `MAX_ALERTS_PER_SESSION`,
 `MM2_SCAN_DURATION_SECONDS`, `MM2_SCAN_INTERVAL_SECONDS`,
 `RBLXVALUE_FORCE_KEY_CHECK`, and `MM2_TELEGRAM_SCAN_SUMMARY`.
