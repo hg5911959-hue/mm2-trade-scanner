@@ -83,7 +83,13 @@ def api_trade_post_to_listing(
             "id": post_id, "tradePostItems": post.get("tradePostItems"),
             "requestedWildcards": post.get("requestedWildcards"),
         }, ensure_ascii=False)[:700],
-        "requested_wildcards": list(post.get("requestedWildcards") or []),
+        "requested_wildcards": (
+            [post.get("requestedWildcards")]
+            if isinstance(post.get("requestedWildcards"), str)
+            else list(post.get("requestedWildcards") or [])
+            if isinstance(post.get("requestedWildcards") or [], (list, tuple))
+            else []
+        ),
         "posted_at": post.get("lastRefreshedAt"),
     }
     listing["id"] = stable_listing_id(owner_url, receive, give, listing_url, "")
