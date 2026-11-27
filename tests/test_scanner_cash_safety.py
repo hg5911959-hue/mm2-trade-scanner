@@ -99,7 +99,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
             "cash_estimate_only": False, "manual_review": False,
             "cash_price_basis": "chromas.gg Price (7d)",
             "listing": {"posted_at": datetime.now(UTC).isoformat()},
-            "cash_profit_worst": 2.0, "margin": 0.01, "give_total_max": 10000.0,
+            "cash_profit_worst": 2.0, "margin": 5.0, "give_total_max": 10000.0,
         }
         self.assertTrue(scanner.qualifies_cash(result))
 
@@ -247,7 +247,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
             "manual_review": False, "cash_estimate_only": False,
             "cash_price_basis": "chromas.gg Price (7d)",
             "listing": {"posted_at": datetime.now(UTC).isoformat()},
-            "margin": 0.01, "give_total_max": 4.99,
+            "margin": 5.0, "give_total_max": 4.99,
         }
         self.assertTrue(scanner.qualifies_cash({**base, "cash_profit_worst": 2.00}))
         self.assertFalse(scanner.qualifies_cash({**base, "cash_profit_worst": 1.99}))
