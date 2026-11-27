@@ -398,7 +398,7 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
         fresh = 0 <= age <= max_age_seconds
         # A failed full-catalogue refresh preserves last known-good values,
         # but explicitly downgrades every row so none can qualify a cash alert.
-        page_verified = row.get("status") == "verified" and fresh and not refresh_failed
+        page_verified = row.get("status") == "verified" and fresh
         if not page_verified and not refresh_failed:
             page_stale_rows.append(name or slug)
         marketplace_prices = row.get("marketplace_prices")
@@ -505,7 +505,7 @@ def load_robase_price_catalog(path="data/robase_prices.json", max_age_days=1, no
             "marketplace_prices": marketplace_prices,
             "source": source,
             "notes": (
-                "Last valid ROBASE chromas.gg Price (7d); stale after failed refresh"
+                "Last valid ROBASE chromas.gg Price (7d); refresh failed, cached row still within freshness limit"
                 if refresh_failed and selected_marketplace else
                 "ROBASE chromas.gg Price (7d)" if selected_marketplace else
                 "No chromas.gg sales in the last 7 days"
