@@ -6,6 +6,7 @@ from pathlib import Path
 from test_support import IsolatedDataTestCase
 from tools.export_dashboard import _robase_dashboard_payload, build_dashboard_data
 from market_history import MarketHistory
+from tools.public_dashboard_history import PublicDashboardHistory
 
 
 def catalogue():
@@ -159,6 +160,41 @@ class RobaseDashboardPayloadTests(IsolatedDataTestCase):
         self.assertIsNone(summary["trackedListings"])
         self.assertIsNone(summary["opportunities7d"])
         self.assertEqual(payload["robaseSummary"]["pricedItemCount"], 1)
+
+    def test_public_cash_history_exports_listings_and_opportunities(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prices = root / "prices.json"
+            prices.write_text(json.dumps(catalogue()), encoding="utf-8")
+            database = root / "public-history.sqlite3"
+            history = PublicDashboardHistory(database)
+            listing = {
+                "id": "stable-public-id",
+                "source": "bloxswaps",
+                "source_ad_id": "post-123",
+                "url": "https://bloxswaps.com/trade-mm2?ad=post-123",
+                "source_author": "PublicTrader",
+                "give_items": [{"name": "Bat", "quantity": 1}],
+                "receive_items": [{"name": "Candy", "quantity": 2}],
+                "valuation_mode": "cash",
+            }
+            history.record_listings([listing])
+            history.record_opportunity({
+                "listing": listing,
+                "cash_profit_worst": 2.5,
+                "give_total": 10.0,
+                "receive_total": 12.5,
+                "margin": 25.0,
+                "manual_review": False,
+            })
+            payload = build_dashboard_data(database, prices)
+
+        self.assertTrue(payload["summary"]["historyAvailable"])
+        self.assertEqual(payload["summary"]["trackedListings"], 1)
+        self.assertEqual(payload["summary"]["opportunities7d"], 1)
+        self.assertEqual(payload["opportunities"][0]["profit"], 2.5)
+        self.assertEqual(payload["recentListings"][0]["owner"], "PublicTrader")
+        self.assertEqual(payload["recentListings"][0]["giveItems"], [{"name": "Bat", "quantity": 1}])
 
 if __name__ == "__main__":
     unittest.main()
