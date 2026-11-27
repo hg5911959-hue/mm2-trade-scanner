@@ -12,6 +12,10 @@ class ScannerConfigTests(IsolatedDataTestCase):
         self.assertEqual(config.bloxswaps_url, "https://bloxswaps.com/trade-mm2?trade-type=P2P")
         self.assertEqual(config.max_feed_pages, 1000)
         self.assertEqual(config.max_alerts_per_run, 0)
+        self.assertEqual(config.max_alerts_per_scan, 0)
+        self.assertEqual(config.max_alerts_per_session, 0)
+        self.assertEqual(config.scan_duration_seconds, 0)
+        self.assertEqual(config.scan_interval_seconds, 45)
         self.assertEqual(config.cash_min_profit_usd, 2.0)
         self.assertEqual(config.cash_min_profit_usd_small, 2.0)
         self.assertEqual(config.cash_min_verified_rows, 8)
@@ -47,6 +51,28 @@ class ScannerConfigTests(IsolatedDataTestCase):
         self.assertEqual(config.cash_max_listing_age_seconds, 60)
         self.assertEqual(config.cash_min_profit_usd, 1.0)
         self.assertEqual(config.cash_min_verified_rows, 0)
+
+    def test_runtime_scan_settings_are_parsed_and_session_limit_falls_back_to_run_limit(self):
+        config = ScannerConfig.from_env({
+            "MAX_ALERTS_PER_RUN": "7",
+            "MAX_ALERTS_PER_SCAN": "3",
+            "MM2_SCAN_DURATION_SECONDS": "540",
+            "MM2_SCAN_INTERVAL_SECONDS": "30",
+        })
+        self.assertEqual(config.max_alerts_per_scan, 3)
+        self.assertEqual(config.max_alerts_per_session, 7)
+        self.assertEqual(config.scan_duration_seconds, 540)
+        self.assertEqual(config.scan_interval_seconds, 30)
+
+    def test_blank_runtime_integer_uses_existing_default(self):
+        config = ScannerConfig.from_env({
+            "MM2_SCAN_DURATION_SECONDS": "",
+            "MM2_SCAN_INTERVAL_SECONDS": "",
+            "MAX_ALERTS_PER_SESSION": "",
+        })
+        self.assertEqual(config.scan_duration_seconds, 0)
+        self.assertEqual(config.scan_interval_seconds, 45)
+        self.assertEqual(config.max_alerts_per_session, 0)
 
     def test_invalid_integer_reports_the_environment_variable(self):
         with self.assertRaisesRegex(ValueError, "MAX_FEED_PAGES"):
