@@ -1,6 +1,6 @@
 # Project Status and Resume Checkpoint
 
-Last verified: 2026-11-27 18:30 UTC  
+Last verified: 2026-11-27 18:57 UTC  
 Repository: `hg5911959-hue/mm2-trade-scanner`  
 Production branch: `main`  
 Main baseline at checkpoint: PR #260 merged; the next production scan is running on that baseline.
@@ -18,14 +18,14 @@ Main baseline at checkpoint: PR #260 merged; the next production scan is running
 - Freshness: listing age at most 60 minutes; each ROBASE item verification at most 20 minutes old.
 - Selection: estimated gross spread at least USD 2.00 and gross margin at least 0%; no manual-review or estimate-only rows.
 - Delivery: no per-scan alert cap; Telegram pacing is 3.2 seconds between messages. Uncertain sends are quarantined and are never automatically resent.
-- Supreme Value and Stability: read from the RBLXValue daily snapshot and appended to Telegram as **reference information only**. They do not affect cash valuation, filtering, ranking, or alert decisions.
+- Supreme Value: read only from RBLXValue API `value_source_b` (the Supreme Values source indexed by RBLXValue); Stability: read from the same API's `stability` field. Both are appended to Telegram in a compact, boxed **REFERENCE INFO ONLY** layout. They never affect cash valuation, filtering, ranking, or alert decisions. No direct Supreme website extraction is used.
 
 ## Current data coverage
 
 - ROBASE catalogue: 222/222 item pages present and freshly verified in the latest persisted snapshot.
 - Chroma.gg 7-day price: 200/222 items have a price.
 - Cash eligibility: 189/222 items also meet the 3+ sales sample threshold. The remaining 22 have no 7-day price; 11 have fewer than 3 sales. They are blocked rather than assigned guessed/fallback prices.
-- RBLXValue: 214/214 Supreme Value entries; Stability is available for 212/214. Missing Stability is displayed as unavailable, not inferred.
+- RBLXValue: 214/214 exact weapon identities and 214/214 numeric `value_source_b` Supreme entries; Stability is available for 212/214. Latest archived snapshot: `2026-11-27T05:12:48Z` (dataset `last_updated=2026-11-27 00:02:34`); the archive is scheduled twice daily at 11:30 and 23:30 UTC (12:30 and 00:30 Algeria). Missing Stability is displayed as unavailable, not inferred. Daily history contains 1,498 rows.
 - Latest persisted ROBASE snapshot: `2026-11-27T18:21:37Z`.
 
 ## Reliability and live verification
@@ -33,7 +33,7 @@ Main baseline at checkpoint: PR #260 merged; the next production scan is running
 - Latest completed scan job: run `46048822099` (started before PR #260 was merged). Its scanner job and state persistence completed successfully; 14 cycles were observed, with two Telegram alerts sent. Feed pagination reported complete pages and the seen boundary on each observed cycle.
 - Previous completed scan: run `46047079955`; 14 cycles, complete pagination, no scanner errors, and no new alert met the selection rules during that run.
 - Earlier live validation: run `46046592893`; 14 cycles and two alerts sent. Telegram API response times for those sends were approximately 388 ms and 452 ms. One already-alerted listing was correctly blocked by the duplicate guard.
-- A scan on the post-PR-260 baseline is currently running; verify its final result before declaring the release fully operational.
+- Production scan run `46053198590` is running on `main` (`eef62970`); its ROBASE refresh, state restore, preflight, and optional RBLXValue/Supreme snapshot restore all succeeded before the scanner step. Verify final pagination, Telegram sends, and state persistence before declaring the release fully operational.
 - Watch recheck queue: 1,784 tracked listings; pending rechecks: 0. Recheck batch is 50 listings every 4 cycles.
 - Unmatched-name registry: 601 actual item-name entries after removing two historical generic rejection-reason entries.
 - Telegram quarantine: 2 unresolved delivery IDs and 2 corresponding context records. One context was reconstructed from the workflow log with its BloxSwaps source post ID, timestamp, and estimated gross spread. Do not resend either message without manual confirmation.
@@ -53,14 +53,14 @@ Main baseline at checkpoint: PR #260 merged; the next production scan is running
 ## Open or experimental work
 
 - PR #159 — draft hardening work; do not merge wholesale without a fresh review against current `main`.
-- PR #203 — RBLXValue shadow analysis; no production Telegram alerts.
+- PR #203 — isolated RBLXValue blended-value shadow analysis; no production Telegram alerts. Its proposed `value`-only change is not the source for the reference card and must not replace `value_source_b` for Supreme Value.
 - PR #100 — experimental Market Book work; not part of the production scanner.
-- Current documentation branch: `docs/gross-cash-estimate-and-project-handoff`. It clarifies that the USD 2 threshold and displayed profit are **gross estimates before fees/slippage**, updates Telegram/dashboard labels, and adds this handoff file. It is not merged yet.
+- Current PR #261 branch: `docs/gross-cash-estimate-and-project-handoff`. It clarifies the USD 2 threshold and displayed profit as **gross estimates before fees/slippage**, updates Telegram/dashboard labels, adds this handoff file, and renders reference information as a compact labeled card. Three stale tests that still expected the old `CASH PROFIT` label were corrected; latest full test and ROBASE pricing CI runs are in progress (run IDs `46053224905` and `46053224664`). Not merged yet.
 
 ## Remaining release checks
 
 1. Finish and inspect the post-PR-260 live scan.
-2. Complete review and CI for the gross-estimate label/handoff branch, then merge only if all checks pass.
+2. Complete review and CI for PR #261, then merge only if the full suite passes twice, Ruff checks pass, ROBASE pricing tests pass, and the production scan is healthy.
 3. Confirm the two quarantined Telegram messages manually; the system intentionally will not auto-resend them.
 4. Monitor the next RBLXValue archive update (scheduled for 23:30 UTC / 00:30 Algeria time).
 5. Re-check price freshness, feed pagination, Telegram latency, and state persistence on the first scan after the final merge.
