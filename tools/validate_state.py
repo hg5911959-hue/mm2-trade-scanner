@@ -257,8 +257,19 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
                 for field in ("listing_url", "owner_url"):
                     value = entry.get(field, "")
                     if value:
-                        parsed = urlsplit(value)
-                        if parsed.scheme != "https" or (parsed.hostname or "").casefold() not in allowed_hosts:
+                        try:
+                            parsed = urlsplit(value)
+                            port = parsed.port
+                        except ValueError:
+                            unsafe_link = True
+                            break
+                        if (
+                            parsed.scheme != "https"
+                            or (parsed.hostname or "").casefold() not in allowed_hosts
+                            or port not in (None, 443)
+                            or parsed.username is not None
+                            or parsed.password is not None
+                        ):
                             unsafe_link = True
                             break
                 if unsafe_link:
