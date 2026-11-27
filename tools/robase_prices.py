@@ -19,6 +19,7 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlsplit
 from urllib.request import Request, urlopen
+from tools.retry_after import retry_after_seconds
 
 URL = "https://robase.gg/"
 DEFAULT_OUTPUT = Path("data/robase_prices.json")
@@ -401,11 +402,9 @@ def _fetch_item_detail(url: str, cached: dict | None):
                 return retained, "not_modified"
             if exc.code not in {429, 500, 502, 503, 504} or attempt == 2:
                 raise
-            retry_after = 0.0
-            try:
-                retry_after = float(exc.headers.get("Retry-After", "0"))
-            except (AttributeError, TypeError, ValueError):
-                pass
+            retry_after = retry_after_seconds(
+                (exc.headers or {}).get("Retry-After", "")
+            ) or 0.0
             time.sleep(min(8.0, max(retry_after, 0.5 * (2 ** attempt))))
         except (TimeoutError, URLError, UnicodeDecodeError, ValueError) as exc:
             if attempt == 2:
