@@ -173,7 +173,7 @@ def build_dashboard_data(db_path: str | Path, robase_path: str | Path | None = N
         summary = {
             "historyAvailable": True,
             "trackedListings": db.execute(
-                "SELECT COUNT(*) FROM listings WHERE lower(source) != 'discord'"
+                "SELECT COUNT(*) FROM listings WHERE lower(source) = 'bloxswaps'"
             ).fetchone()[0],
             "opportunities7d": 0,
             "trackedItems": robase_summary["pricedItemCount"],
