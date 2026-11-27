@@ -93,6 +93,7 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
             self.assertIn("rm -f state-bundle/data/market_history.sqlite3", artifact)
             self.assertNotIn("rm -f state-bundle/data/public_dashboard_history.sqlite3", artifact)
         self.assertIn("--database data/public_dashboard_history.sqlite3", dashboard)
+        self.assertIn("verified=public_dashboard_history.sqlite3", scan)
         self.assertIn("PublicDashboardHistory", scanner)
         self.assertIn("public_history_store.record_listings(listings)", scanner)
         self.assertIn("public_history_store.record_opportunity(result)", scanner)
