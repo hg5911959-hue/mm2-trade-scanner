@@ -557,3 +557,15 @@ class ConfirmedTelegramDeliveryFinalizationTests(IsolatedDataTestCase):
 
         self.assertIn("trade-1", uncertain)
         self.assertEqual(events, [("alerted", "trade-1"), ("watch_failed", None)])
+
+
+class CashMessageFeeBasisTests(IsolatedDataTestCase):
+    def test_cash_alert_explains_chroma_7d_after_fee_basis(self):
+        message = str(scanner.format_trade_message(
+            {"source": "bloxswaps", "valuation_mode": "cash"},
+            10.0, [], 12.0, [], 2.0, market_info=None,
+        ))
+        self.assertIn("after marketplace fee; before extra costs", message)
+        self.assertIn("seller proceeds after marketplace fees", message)
+        self.assertIn("additional costs/slippage are not included", message)
+        self.assertNotIn("before fees/slippage", message)
