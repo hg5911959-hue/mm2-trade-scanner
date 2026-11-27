@@ -193,9 +193,11 @@ The one-time 2026-11-21 weapon identity review inputs are retained under [docs/a
 
 ## SQLite market history and public dashboard
 
-The codebase includes optional SQLite history at `data/market_history.sqlite3`, but the current scan workflow removes this database and `history.csv` from the state artifact before persistence. Therefore, SQLite history is not durable across scheduled runs in the current deployment. Do not rely on historical listing/opportunity views as a persistent record until a private durable store or an explicitly approved public-safe data design is implemented.
+The production cash scanner maintains a separate `data/public_dashboard_history.sqlite3` store for the dashboard. It contains only sanitized public BloxSwaps listings and cash-qualified opportunities; it has no Supreme/RBLXValue value tables and rejects Discord or other non-BloxSwaps sources. State validation enforces the exact two-table schema, trusted BloxSwaps links, cash-only opportunity records, bounded row counts and SQLite integrity before the public state branch is updated. Listings are retained for 90 days and opportunities for 180 days.
 
-**Privacy:** private Discord messages, listings, and opportunities are deliberately excluded from this database and from the public dashboard. The state branch belongs to the public repository, so private-server content must never be written there.
+The legacy `data/market_history.sqlite3` remains ephemeral and is removed before public-state persistence because it can contain third-party value history. The dashboard reads only `public_dashboard_history.sqlite3`; if that file is missing or invalid, it reports history as unavailable while the independent ROBASE catalogue can still load.
+
+**Privacy:** private Discord messages, listings, and opportunities are excluded from the public store and dashboard. The state branch belongs to the public repository, so private-server content and Supreme/RBLXValue-derived values must never be written there.
 
 ### GitHub Pages dashboard
 
