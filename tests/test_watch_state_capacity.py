@@ -17,7 +17,11 @@ class WatchStateCapacityTests(IsolatedDataTestCase):
             path = Path(directory) / "watch_ads.json"
             original = {"old-a": {"created_at": 100.0, "updated_at": 100.0}}
             path.write_text(json.dumps({"version": 1, "ads": original}), encoding="utf-8")
-            with patch.object(scanner, "WATCH_FILE", path), patch.object(scanner, "MAX_WATCHED_ADS", 2):
+            with (
+                patch.object(scanner, "WATCH_FILE", path),
+                patch.object(scanner, "MAX_WATCHED_ADS", 2),
+                patch.object(scanner.time, "time", return_value=1_000.0),
+            ):
                 with self.assertRaisesRegex(RuntimeError, "refusing to evict unresolved listings"):
                     scanner.save_watch_state({
                         "old-a": {"created_at": 100.0, "updated_at": 100.0},
@@ -35,7 +39,11 @@ class WatchStateCapacityTests(IsolatedDataTestCase):
                 for index in range(3)
             }
             path.write_text(json.dumps({"version": 1, "ads": entries}), encoding="utf-8")
-            with patch.object(scanner, "WATCH_FILE", path), patch.object(scanner, "MAX_WATCHED_ADS", 2), patch.object(scanner.time, "time", return_value=1_000_000_100.0):
+            with (
+                patch.object(scanner, "WATCH_FILE", path),
+                patch.object(scanner, "MAX_WATCHED_ADS", 2),
+                patch.object(scanner.time, "time", return_value=1_000_000_100.0),
+            ):
                 with self.assertRaisesRegex(RuntimeError, "refusing to evict unresolved listings"):
                     scanner.load_watch_state()
             stored = json.loads(path.read_text(encoding="utf-8"))
