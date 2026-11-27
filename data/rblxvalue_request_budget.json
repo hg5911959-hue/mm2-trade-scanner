@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "window": "rolling_24_hours",
+  "limit": 60,
+  "request_timestamps_epoch": [
+    1795814781.7991512,
+    1795814784.3439345,
+    1795814786.8800678,
+    1795814789.2489266,
+    1795814791.7990248,
+    1795814794.169858,
+    1795814796.5308082,
+    1795814798.890428,
+    1795814801.1515582,
+    1795814803.7179172,
+    1795814806.251547,
+    1795814808.5143924
+  ],
+  "request_workflows": [
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History"
+  ],
+  "request_counts_by_workflow": {
+    "RBLXValue Daily Weapon History": 12
+  },
+  "updated_at_utc": "2026-11-27T21:26:48.514392+00:00"
+}
