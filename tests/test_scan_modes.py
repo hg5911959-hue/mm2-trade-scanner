@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import unittest
+from test_support import IsolatedDataTestCase
 
 from tools.scan_modes import resolve_scan_modes
 
 
-class ScanModeTests(unittest.TestCase):
+class ScanModeTests(IsolatedDataTestCase):
     def test_default_mode_requires_telegram_credentials_for_live_delivery(self):
         with self.assertRaisesRegex(RuntimeError, "TELEGRAM_BOT_TOKEN"):
             resolve_scan_modes({}, cash_filter=True, bot_token="", chat_id="")
