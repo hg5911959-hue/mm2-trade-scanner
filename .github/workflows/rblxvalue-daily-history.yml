@@ -62,7 +62,7 @@ jobs:
               "request_workflows": [],
               "request_counts_by_workflow": {},
               "updated_at_utc": datetime.now(timezone.utc).isoformat(),
-          }, indent=2) + "\\n", encoding="utf-8")
+          }, indent=2) + "\n", encoding="utf-8")
           PY
             echo "[rblxvalue-budget] initialized an empty rolling 24-hour request ledger"
           fi
