@@ -9,15 +9,15 @@ def reconcile_uncertain_quarantine(uncertain_state, alerted_ids, context):
     Context rows without a matching quarantine are stale metadata and are pruned.
     """
     state = dict(uncertain_state or {})
+    original_ids = set(state)
     alerted = {str(value) for value in (alerted_ids or []) if str(value)}
-    confirmed = sorted(set(state) & alerted)
+    confirmed = sorted(original_ids & alerted)
     for trade_id in confirmed:
         state.pop(trade_id, None)
 
     details = dict(context or {})
-    live_ids = set(state)
-    orphaned = sorted(set(details) - live_ids)
-    for trade_id in orphaned:
+    orphaned = sorted(set(details) - original_ids)
+    for trade_id in set(confirmed) | set(orphaned):
         details.pop(trade_id, None)
 
     return state, details, {
