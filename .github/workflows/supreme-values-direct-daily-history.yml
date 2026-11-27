@@ -1,0 +1,189 @@
+name: Supreme Values Direct Daily Weapon History
+
+on:
+  schedule:
+    # Twice daily so same-day Stability changes can be observed.
+    - cron: "45 4,16 * * *"
+  workflow_dispatch:
+  # Pull-request validation is handled by tests.yml with offline fixtures.
+  # Do not make PR checks depend on Supreme's live anti-bot/access policy.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/supreme-values-direct-daily-history.yml"
+      - "tools/supreme_values_daily.py"
+
+concurrency:
+  group: supreme-values-direct-daily-history
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    name: Fetch Supreme website directly (read-only, no API keys)
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out main branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Load current exact ROBASE weapon crosswalk
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin robase-daily-history:refs/remotes/origin/robase-daily-history
+          git show origin/robase-daily-history:data/weapon_identity_map.json > /tmp/weapon_identity_map.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("/tmp/weapon_identity_map.json").read_text(encoding="utf-8"))
+          if not isinstance(data, dict) or len(data) != 214:
+              raise SystemExit("Current ROBASE crosswalk must contain exactly 214 identities")
+          print(f"Loaded {len(data)} exact ROBASE weapon identities")
+          PY
+
+      - name: Extract all supported Supreme category pages directly
+        run: |
+          set -euo pipefail
+          python tools/supreme_values_daily.py \
+            --identity-map /tmp/weapon_identity_map.json \
+            --json-output /tmp/supreme_values_latest.json \
+            --csv-output /tmp/supreme_values_snapshot.csv
+
+      - name: Upload validated direct-source snapshot
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: supreme-values-direct-snapshot
+          path: |
+            /tmp/supreme_values_latest.json
+            /tmp/supreme_values_snapshot.csv
+          if-no-files-found: error
+          retention-days: 1
+
+  archive:
+    name: Archive direct Supreme snapshot (no secrets)
+    if: github.event_name != 'pull_request'
+    needs: collect
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out archive branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: robase-daily-history
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Download validated snapshot
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: supreme-values-direct-snapshot
+          path: /tmp/supreme-values-direct
+
+      - name: Validate and append daily history
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv, json
+          from pathlib import Path
+          root = Path("/tmp/supreme-values-direct")
+          latest = json.loads((root / "supreme_values_latest.json").read_text(encoding="utf-8"))
+          incoming = list(csv.DictReader((root / "supreme_values_snapshot.csv").open(encoding="utf-8", newline="")))
+          counts = latest.get("counts") or {}
+          if latest.get("source") != "Supreme Values direct website":
+              raise SystemExit("Refusing non-direct Supreme source")
+          if latest.get("expected_weapons") != 214 or len(incoming) != 214:
+              raise SystemExit("Refusing incomplete direct Supreme snapshot")
+          if counts.get("matched") != 214 or counts.get("missing") or counts.get("ambiguous"):
+              raise SystemExit(f"Refusing unmatched or ambiguous Supreme identities: {counts}")
+          if counts.get("with_numeric_value") != 214:
+              raise SystemExit(f"Refusing incomplete numeric Supreme values: {counts}")
+          if counts.get("with_stability") != 214 or any(not row.get("stability") for row in incoming):
+              raise SystemExit(f"Refusing incomplete Supreme Stability coverage: {counts}")
+          if latest.get("source_timestamp_consistent") is not True or not latest.get("source_last_updated"):
+              raise SystemExit("Refusing a snapshot without one consistent source update timestamp across all categories")
+          auth = latest.get("third_party_authorization") or {}
+          if auth.get("source") != "Supreme Values" or auth.get("authorization_date") != "2026-11-26":
+              raise SystemExit("Missing recorded Supreme authorization metadata")
+          if auth.get("attribution") != "Supreme Values (supremevalues.com)":
+              raise SystemExit("Missing required Supreme attribution")
+          fetched_at = latest.get("fetched_at_utc")
+          if not fetched_at or {row.get("snapshot_date") for row in incoming} != {latest.get("snapshot_date")}:
+              raise SystemExit("JSON and CSV snapshot dates differ")
+          if {row.get("fetched_at_utc") for row in incoming} != {fetched_at}:
+              raise SystemExit("JSON and CSV fetch timestamps differ")
+          data_dir = Path("data")
+          latest_path = data_dir / "supreme_values_latest.json"
+          history_path = data_dir / "supreme_values_daily_history.csv"
+          manifest_path = data_dir / "supreme_values_manifest.json"
+          fields = list(incoming[0])
+          existing = []
+          if history_path.exists():
+              with history_path.open(encoding="utf-8", newline="") as handle:
+                  reader = csv.DictReader(handle)
+                  if reader.fieldnames != fields:
+                      raise SystemExit("Direct Supreme history CSV schema mismatch")
+                  existing = list(reader)
+          day = latest["snapshot_date"]
+          fetched_at = latest["fetched_at_utc"]
+          # Preserve both scheduled captures on the same local date; only exact reruns are replaced.
+          combined = [
+              row for row in existing
+              if not (row.get("snapshot_date") == day and row.get("fetched_at_utc") == fetched_at)
+          ] + incoming
+          combined.sort(key=lambda row: (row["snapshot_date"], row["fetched_at_utc"], row["robase_slug"]))
+          temp = history_path.with_suffix(".csv.tmp")
+          with temp.open("w", encoding="utf-8", newline="") as handle:
+              writer = csv.DictWriter(handle, fieldnames=fields)
+              writer.writeheader()
+              writer.writerows(combined)
+          temp.replace(history_path)
+          latest_path.write_text(json.dumps(latest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          manifest = {
+              "schema_version": 1,
+              "source": latest["source"],
+              "source_url": latest["source_url"],
+              "source_base_url": latest["source_base_url"],
+              "source_last_updated": latest.get("source_last_updated"),
+              "last_snapshot_date": day,
+              "expected_weapons": latest["expected_weapons"],
+              "history_rows": len(combined),
+              "snapshot_counts": counts,
+              "category_counts": latest.get("category_counts"),
+              "third_party_authorization": auth,
+              "source_attribution": "Supreme Values (supremevalues.com)",
+              "stability_history": "Daily source Stability label and published score are stored per weapon; changes are preserved across dates.",
+              "coverage_note": "ROBASE's current 222-item catalogue comprises 214 weapons and 8 Pets (the <3 Common Pet plus seven Chroma Fire Pets). This collector intentionally covers all 214 weapons and excludes Pets, non-tradable Evos, and the Untradables category (effects, radios, emotes, and powers).",
+          }
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps(manifest, ensure_ascii=False, sort_keys=True))
+          PY
+
+      - name: Commit validated direct Supreme history
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -f data/supreme_values_latest.json data/supreme_values_daily_history.csv data/supreme_values_manifest.json
+          if git diff --cached --quiet; then
+            echo "Direct Supreme daily snapshot is unchanged."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "data: archive direct Supreme Values weapon snapshot"
+            git push origin HEAD:robase-daily-history
+          fi
