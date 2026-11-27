@@ -83,6 +83,21 @@ class WorkflowReliabilityTests(IsolatedDataTestCase):
 
 
 
+    def test_public_dashboard_history_is_persisted_and_exported_separately(self):
+        scan = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
+        core = (ROOT / ".github/workflows/scan-core.yml").read_text(encoding="utf-8")
+        dashboard = (ROOT / ".github/workflows/dashboard-pages.yml").read_text(encoding="utf-8")
+        scanner = (ROOT / "scanner.py").read_text(encoding="utf-8")
+        for workflow in (scan, core):
+            artifact = workflow.split("      - name: Prepare state artifact", 1)[1].split("      - name:", 1)[0]
+            self.assertIn("rm -f state-bundle/data/market_history.sqlite3", artifact)
+            self.assertNotIn("rm -f state-bundle/data/public_dashboard_history.sqlite3", artifact)
+        self.assertIn("--database data/public_dashboard_history.sqlite3", dashboard)
+        self.assertIn("verified=public_dashboard_history.sqlite3", scan)
+        self.assertIn("PublicDashboardHistory", scanner)
+        self.assertIn("public_history_store.record_listings(listings)", scanner)
+        self.assertIn("public_history_store.record_opportunity(result)", scanner)
+
     def test_reusable_workflows_declare_explicit_optional_secrets(self):
         scan = (ROOT / ".github/workflows/scan.yml").read_text(encoding="utf-8")
         watchdog = (ROOT / ".github/workflows/watchdog.yml").read_text(encoding="utf-8")
