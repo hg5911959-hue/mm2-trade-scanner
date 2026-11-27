@@ -77,7 +77,6 @@ class BloxSwapsApiAdapterTests(IsolatedDataTestCase):
             post,
             {"a": {"displayName": "Candy"}, "b": {"displayName": "Knife"}},
             strict_quantity=strict_quantity,
-            max_item_quantity=9999,
             stable_listing_id=lambda *args: "stable",
             legacy_stable_listing_id=lambda *args: "legacy",
         )
