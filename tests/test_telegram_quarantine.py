@@ -1,10 +1,50 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
+import scanner
 from test_support import IsolatedDataTestCase
 from tools.telegram_quarantine import reconcile_uncertain_quarantine
 
 
 class TelegramQuarantineReconciliationTests(IsolatedDataTestCase):
+
+    def test_uncertain_context_preserves_known_bloxswaps_api_source_without_url(self):
+        with tempfile.TemporaryDirectory() as directory:
+            context_path = Path(directory) / "telegram_uncertain_context.json"
+            listing = {
+                "source": "BloxSwaps API",
+                "source_ad_id": "post-recovered",
+                "url": "",
+                "owner_url": "",
+            }
+            with patch.object(scanner, "UNCERTAIN_CONTEXT_FILE", context_path):
+                scanner.record_uncertain_context(listing, "trade-recovered", "individual")
+                saved = json.loads(context_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(saved["trade-recovered"]["source"], "bloxswaps")
+        self.assertEqual(saved["trade-recovered"]["source_ad_id"], "post-recovered")
+        self.assertEqual(saved["trade-recovered"]["listing_url"], "")
+
+    def test_uncertain_context_uses_safe_bloxswaps_url_when_source_label_is_unknown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            context_path = Path(directory) / "telegram_uncertain_context.json"
+            listing = {
+                "source": "legacy-api-label",
+                "source_ad_id": "post-url",
+                "url": "https://bloxswaps.com/trade-mm2?ad=post-url",
+                "owner_url": "",
+            }
+            with patch.object(scanner, "UNCERTAIN_CONTEXT_FILE", context_path):
+                scanner.record_uncertain_context(listing, "trade-url", "individual")
+                saved = json.loads(context_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(saved["trade-url"]["source"], "bloxswaps")
+        self.assertEqual(saved["trade-url"]["source_ad_id"], "post-url")
+        self.assertIn("bloxswaps.com", saved["trade-url"]["listing_url"])
+
     def test_only_confirmed_alerts_are_removed_and_orphan_context_is_pruned(self):
         state = {
             "confirmed-a": 100.0,
