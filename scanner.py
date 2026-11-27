@@ -13,7 +13,6 @@ import time
 import signal
 import unicodedata
 from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
 import urllib.request
 from urllib.error import HTTPError, URLError
 from pathlib import Path
@@ -38,6 +37,7 @@ from tools.daily_chart_shadow import build_daily_chart_shadow_catalog
 from tools.rblxvalue_value_profit_shadow import load_values_from_snapshot
 from tools.scan_loop import BloxSwapsRateLimitError, run_scan_loop as _run_scan_loop
 from tools.state_store import atomic_write_text
+from tools.retry_after import retry_after_seconds
 from tools.redaction import (
     RedactingStream as _RedactingStream,
     install_redacting_streams as _install_redacting_streams,
@@ -1085,21 +1085,7 @@ def request_with_retry(req, timeout, label, attempts=4, return_headers=False, al
                 ) from exc
             if exc.code == 429 and not is_rblxvalue:
                 retry_after = (exc.headers or {}).get("Retry-After", "")
-                delay = None
-                if retry_after:
-                    try:
-                        delay = max(0, int(retry_after))
-                    except ValueError:
-                        try:
-                            parsed_retry_after = parsedate_to_datetime(retry_after)
-                            if parsed_retry_after.tzinfo is None:
-                                parsed_retry_after = parsed_retry_after.replace(tzinfo=timezone.utc)
-                            delay = max(
-                                0,
-                                (parsed_retry_after - datetime.now(timezone.utc)).total_seconds(),
-                            )
-                        except (TypeError, ValueError, OverflowError, OSError):
-                            delay = None
+                delay = retry_after_seconds(retry_after)
                 if delay is not None and delay > MAX_RETRY_AFTER_SECONDS:
                     raise BloxSwapsRateLimitError(
                         f"{label}: HTTP 429; Retry-After exceeds the safe wait "
@@ -1135,16 +1121,10 @@ def request_with_retry(req, timeout, label, attempts=4, return_headers=False, al
                     safe_detail = "[HTML response omitted]"
                 raise RuntimeError(f"{label}: HTTP {exc.code}: {safe_detail[:200]}") from exc
             delay = min(30, 2 ** (attempt + 1))
-            retry_after = exc.headers.get("Retry-After", "")
-            if retry_after:
-                try:
-                    delay = max(0, int(retry_after))
-                except ValueError:
-                    try:
-                        delay = max(0, (parsedate_to_datetime(retry_after) -
-                            datetime.now(timezone.utc)).total_seconds())
-                    except Exception:
-                        pass
+            retry_after = (exc.headers or {}).get("Retry-After", "")
+            parsed_delay = retry_after_seconds(retry_after)
+            if parsed_delay is not None:
+                delay = parsed_delay
             if delay > MAX_RETRY_AFTER_SECONDS:
                 raise RuntimeError(
                     f"{label}: Retry-After exceeds the safe per-attempt wait "
