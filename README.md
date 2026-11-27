@@ -324,3 +324,7 @@ Safety rules:
 - An incomplete archive, identity map, or catalogue causes a fail-closed shadow result.
 
 This is a diagnostic mode, not a production price switch. Production valuation remains unchanged until shadow results are reviewed and separately approved.
+
+## Historical engineering records
+
+- [Archived engineering report](docs/archive/REPORT.md) — historical phase log and superseded implementation notes; use this README and [configuration guide](docs/CONFIGURATION.md) for current behavior.
