@@ -3304,6 +3304,8 @@ def unmatched_names_from_missing(missing, cash_mode=False):
         if any(marker in lowered for marker in (
             "wildcard", "not eligible", "incomplete trade sides",
             "cash mode accepts", "invalid trade sides",
+            "value-weighted demand is low", "value weighted demand is low",
+            "no numeric supreme value",
         )):
             continue
         if lowered in {"quantity unknown", "quantity uncertain"} or "stability" in lowered:
