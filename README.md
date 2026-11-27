@@ -2,7 +2,7 @@
 
 Automated scanner for public **BloxSwaps MM2 P2P listings**, with concise Telegram alerts. GitHub Actions schedules a scan every 10 minutes; each scan polls the feed every 30 seconds for up to 540 seconds (9 minutes), leaving a short persistence window. GitHub cron can be delayed, so this is a target cadence, not a real-time guarantee.
 
-## Current production architecture (verified 2026-11-24)
+## Current production architecture (verified 2026-11-27)
 
 The live GitHub Actions scanner runs with `CASH_FILTER=true`. Its cash qualification path uses the complete ROBASE price snapshot and exact BloxSwaps item-identity metadata; it does not load Supreme Values or query RBLXValue to calculate cash profit. The production workflow uses a **$2.00 minimum conservative cash profit** and sends each qualified offer individually, subject to Telegram pacing and duplicate-delivery safeguards.
 
