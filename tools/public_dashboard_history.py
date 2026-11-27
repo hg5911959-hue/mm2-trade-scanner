@@ -32,6 +32,11 @@ def _safe_text(value: object, limit: int) -> str:
     return str(value or "").strip()[:limit]
 
 
+def _safe_identifier(value: object, limit: int) -> str:
+    raw = _safe_text(value, limit)
+    return raw if raw and all(char.isalnum() or char in "_-" for char in raw) else ""
+
+
 def _safe_link(value: object) -> str:
     raw = _safe_text(value, 1000)
     if not raw:
@@ -167,8 +172,8 @@ class PublicDashboardHistory:
                     continue
                 if _safe_text(listing.get("source"), 32).casefold() != "bloxswaps":
                     continue
-                listing_id = _safe_text(listing.get("id"), 128)
-                source_id = _safe_text(listing.get("source_ad_id"), 160)
+                listing_id = _safe_identifier(listing.get("id"), 128)
+                source_id = _safe_identifier(listing.get("source_ad_id"), 160)
                 listing_url = _safe_link(listing.get("url"))
                 if not listing_id or not source_id or not listing_url:
                     continue
