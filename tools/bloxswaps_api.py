@@ -18,7 +18,7 @@ def api_post_is_single_sided(post):
 
 
 def api_trade_post_to_listing(
-    post, item_map, *, strict_quantity, max_item_quantity,
+    post, item_map, *, strict_quantity,
     stable_listing_id, legacy_stable_listing_id,
 ):
     post_id = str(post.get("id") or "")
