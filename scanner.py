@@ -30,6 +30,7 @@ from tools.cash_market import calculate_cash_side, cash_profit_bounds, normalize
 from tools.robase_identity import build_robase_bloxswaps_map
 from tools.daily_chart_shadow import build_daily_chart_shadow_catalog
 from tools.rblxvalue_value_profit_shadow import load_values_from_snapshot
+from tools.scan_loop import BloxSwapsRateLimitError, run_scan_loop as _run_scan_loop
 from tools.scan_loop_policy import (
     minimum_cycle_start_window as _minimum_cycle_start_window,
     should_run_backlog_recheck as _should_run_backlog_recheck,
@@ -1160,10 +1161,6 @@ def _open_rblxvalue_url(req, timeout):
     # RBLXValue requests carry X-Api-Key, so reject redirects before following.
     opener = urllib.request.build_opener(_RejectCredentialRedirects())
     return opener.open(req, timeout=timeout)
-
-
-class BloxSwapsRateLimitError(RuntimeError):
-    """A BloxSwaps HTTP 429 stops the current scan without retrying."""
 
 
 def request_with_retry(req, timeout, label, attempts=4, return_headers=False, allow_not_modified=False):
@@ -6487,83 +6484,35 @@ def should_run_backlog_recheck(cycle_number, every=None):
     return _should_run_backlog_recheck(cycle_number, cadence)
 
 
-def run_scan_loop(duration_seconds=720, interval_seconds=45):
-    """Poll repeatedly in one Actions job while preserving one alert budget per job."""
+def _reset_session_alert_budget():
     global _SESSION_ALERTS_SENT, _SESSION_ALERT_LIMIT
-    duration_seconds = max(1, int(duration_seconds))
-    interval_seconds = max(30, min(60, int(interval_seconds)))
     _SESSION_ALERTS_SENT = 0
-    _SESSION_ALERT_LIMIT = max(0, int(os.environ.get("MAX_ALERTS_PER_SESSION", str(MAX_ALERTS_PER_RUN))))
-    started = time.monotonic()
-    deadline = started + duration_seconds
-    stop = {"requested": False}
-    previous_handlers = {}
+    _SESSION_ALERT_LIMIT = max(
+        0, int(os.environ.get("MAX_ALERTS_PER_SESSION", str(MAX_ALERTS_PER_RUN)))
+    )
 
-    def request_stop(signum, frame):
-        stop["requested"] = True
-        print(f"[loop] Graceful shutdown requested (signal={signum}); finishing current scan cycle.")
 
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        try:
-            previous_handlers[sig] = signal.getsignal(sig)
-            signal.signal(sig, request_stop)
-        except (ValueError, OSError):
-            pass
+def _get_session_alert_budget():
+    return _SESSION_ALERTS_SENT, _SESSION_ALERT_LIMIT
 
-    cycles = 0
-    successful_cycles = 0
-    last_failure = None
-    try:
-        while not stop["requested"] and should_start_scan_cycle(deadline - time.monotonic(), duration_seconds):
-            cycle_started = time.monotonic()
-            cycles += 1
-            print(f"[loop] Starting scan cycle {cycles}; elapsed={cycle_started - started:.1f}s")
-            try:
-                include_backlog = should_run_backlog_recheck(cycles)
-                scan_once(include_backlog_rechecks=include_backlog)
-                successful_cycles += 1
-            except BloxSwapsRateLimitError as exc:
-                last_failure = exc
-                print(
-                    f"[loop] Upstream rate limit in cycle {cycles}; stopping the polling window: "
-                    f"{redact(exc)[:240]}"
-                )
-                break
-            except Exception as exc:
-                last_failure = exc
-                print(f"[loop] Scan cycle {cycles} failed safely: {type(exc).__name__}; reason={redact(exc)[:240]}")
-                record_failure(exc)
-            cycle_elapsed = time.monotonic() - cycle_started
-            remaining = deadline - time.monotonic()
-            print(
-                f"[loop] Cycle {cycles} finished in {cycle_elapsed:.1f}s; "
-                f"alerts_this_session={_SESSION_ALERTS_SENT}/{_SESSION_ALERT_LIMIT}; "
-                f"remaining={max(0, remaining):.1f}s"
-            )
-            sleep_for = min(max(0.0, interval_seconds - cycle_elapsed), max(0.0, remaining))
-            sleep_until = time.monotonic() + sleep_for
-            while not stop["requested"] and time.monotonic() < sleep_until:
-                time.sleep(min(1.0, sleep_until - time.monotonic()))
-    finally:
-        for sig, handler in previous_handlers.items():
-            try:
-                signal.signal(sig, handler)
-            except (ValueError, OSError):
-                pass
-    elapsed = time.monotonic() - started
-    rblxvalue_guard.log_request_count()
-    update_metrics(increments={"rblxvalue_requests": rblxvalue_guard.requests_this_run()})
-    print(f"[loop] Finished: cycles={cycles}, successful={successful_cycles}, elapsed={elapsed:.1f}s")
-    if isinstance(last_failure, BloxSwapsRateLimitError):
-        raise last_failure
-    if successful_cycles == 0:
-        if last_failure and (
-            "[rblxvalue-key-blocked]" in str(last_failure)
-            or "[rblxvalue-budget-exhausted]" in str(last_failure)
-        ):
-            raise RuntimeError(str(last_failure))
-        raise RuntimeError("No scan cycle completed successfully during the scheduled polling window.")
-    return {"cycles": cycles, "successful_cycles": successful_cycles, "elapsed_seconds": elapsed}
+
+def run_scan_loop(duration_seconds=720, interval_seconds=45):
+    """Compatibility wrapper around the extracted scan-loop orchestrator."""
+    return _run_scan_loop(
+        duration_seconds,
+        interval_seconds,
+        scan_once=scan_once,
+        should_start_scan_cycle=should_start_scan_cycle,
+        should_run_backlog_recheck=should_run_backlog_recheck,
+        reset_alert_budget=_reset_session_alert_budget,
+        get_alert_budget=_get_session_alert_budget,
+        record_failure=record_failure,
+        redact=redact,
+        rblxvalue_guard=rblxvalue_guard,
+        update_metrics=update_metrics,
+        time_module=time,
+        signal_module=signal,
+    )
 
 
 def main():
