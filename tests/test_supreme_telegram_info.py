@@ -114,7 +114,7 @@ class SupremeTelegramInfoTests(IsolatedDataTestCase):
             5.0, ["Weapon 1 x1 — $5.00 each = $5.00"], 2.5,
         )
         self.assertNotIn("REFERENCE INFO ONLY", message)
-        self.assertIn("CASH PROFIT: +$2.5", message)
+        self.assertIn("EST. CASH PROFIT (before fees/slippage): +$2.5", message)
 
 
 if __name__ == "__main__":
