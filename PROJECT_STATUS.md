@@ -1,6 +1,6 @@
 # Project Status and Resume Checkpoint
 
-Last verified: 2026-11-27 19:28 UTC  
+Last verified: 2026-11-27 19:33 UTC  
 Repository: `hg5911959-hue/mm2-trade-scanner`  
 Production branch: `main`  
 Main baseline at checkpoint: PR #261 merged as `f7169b2d5bb40f489749e43f37a0d97f6f2e7b21`; the RBLXValue reference card and archive-policy changes are now live on `main`.
@@ -26,23 +26,24 @@ Main baseline at checkpoint: PR #261 merged as `f7169b2d5bb40f489749e43f37a0d97f
 - Chroma.gg 7-day price: 200/222 items have a price.
 - Cash eligibility: 189/222 items also meet the 3+ sales sample threshold. The remaining 22 have no 7-day price; 11 have fewer than 3 sales. They are blocked rather than assigned guessed/fallback prices.
 - RBLXValue: 214/214 exact weapon identities and 214/214 numeric `value_source_b` Supreme entries; Stability is available for 212/214. Post-merge archive run `46055994741` fetched the latest snapshot at `2026-11-27T19:20:59Z` (dataset `last_updated=2026-11-27 12:02:34`). The manifest records optional Telegram reference display only, never cash valuation/eligibility/ranking/alert decisions. Daily history contains 1,712 rows; scheduled updates remain 11:30 and 23:30 UTC (12:30 and 00:30 Algeria). Missing Stability is displayed as unavailable, not inferred.
-- Latest persisted ROBASE snapshot: `2026-11-27T19:17:49Z`.
+- Latest persisted ROBASE snapshot: `2026-11-27T19:25:36Z`.
 
 ## Reliability and live verification
 
-- Latest completed production scan: run `46053198590` on `main`. Scanner and state-persistence jobs succeeded across 14 cycles and 66 pagination pages / 1,320 API posts; every page batch reported `complete=True` and `seen_boundary=True`. One actual trade alert was accepted by Telegram. Two other candidates were skipped by the duplicate guard and both IDs were confirmed in `alerted.json`. No new uncertain delivery was created; the two existing quarantines remained blocked. No scanner errors were found. The accepted trade alert was sent 32.50 seconds after the relevant feed refresh.
+- Latest completed production scan: run `46055994878` on merge SHA `f7169b2d`. Scanner and state-persistence jobs succeeded across 14 cycles and 225 pagination pages / 4,500 API posts; every page batch reported `complete=True` and `seen_boundary=True`. It parsed 453 listings, evaluated 91, and sent one qualified trade alert; no scanner errors occurred. Telegram accepted trade message `9500` and scan-summary maintenance message `9501`. The trade alert request took 302 ms and was sent 33.57 seconds after feed refresh. Trade ID `531dc1f9eb507a4911228507` was confirmed persisted in `alerted.json`.
+- The production scan loaded RBLXValue reference data on all 14 cycles: 214/214 Supreme `value_source_b`, 212/214 Stability, snapshot age 0.08–0.19 hours, `informational_only=true`. The scanner made zero RBLXValue API requests; it used the archived snapshot. Logs explicitly confirm third-party valuation sources are disabled for cash eligibility and that cash decisions use ROBASE + BloxSwaps only.
 - Previous completed scan: run `46047079955`; 14 cycles, complete pagination, no scanner errors, and no new alert met the selection rules during that run.
 - Earlier live validation: run `46046592893`; 14 cycles and two alerts sent. Telegram API response times for those sends were approximately 388 ms and 452 ms. One already-alerted listing was correctly blocked by the duplicate guard.
 - Follow-up scan `46054424527` restored the cleaned state branch, completed scanner and state persistence successfully, and processed 5 complete pages / 100 API posts. One trade alert was accepted 1.45 seconds after feed refresh; no new uncertain delivery or scanner error occurred. Its alert ID was confirmed persisted in `alerted.json`.
-- Pre-merge chain run `46055635362` completed its scanner and state-persistence jobs successfully on old SHA `eef62970`; only its ten-minute wait/continue job remains active. Post-merge scan `46055994878` is now running on merge SHA `f7169b2d`; state restore, ROBASE refresh, preflight, and the new `19:20:59Z` RBLXValue snapshot restore all succeeded. Its BloxSwaps scan step is still running.
-- Watch recheck queue: 2,101 tracked listings; pending rechecks: 0. The watch TTL is 24 hours, capacity is 50,000, and the recheck batch is 50 listings every 4 cycles.
-- Unmatched-name registry: 598 entries after removing five historical generic evaluator/rejection strings. PR #261 adds matching filters for legacy `no numeric Supreme value` and `value-weighted Demand is low` reasons so they cannot repollute the registry.
+- Pre-merge chain run `46055635362` completed scanner and state persistence on old SHA `eef62970`; its wait/continue job remains active for the next chained scan.
+- Watch recheck queue: 2,163 tracked listings; pending rechecks: 0. The watch TTL is 24 hours, capacity is 50,000, and the recheck batch is 50 listings every 4 cycles.
+- Unmatched-name registry: 598 entries after removing five historical generic evaluator/rejection strings. Main now filters legacy `no numeric Supreme value` and `value-weighted Demand is low` reasons; no such generic keys reappeared after the merge.
 - Telegram quarantine: 2 unresolved delivery IDs and 2 matching context records. One context was reconstructed from run `45996910385` logs with its BloxSwaps source post ID and exact attempt timestamp; its listing/owner URLs were not present in logs and remain blank. Do not resend either message without manual confirmation.
 - ROBASE refresh safety: PR #257 preserves the last complete snapshot after a failed refresh. Cached prices remain usable only while their individual verification timestamps are within the 20-minute freshness limit.
 - Feed and quarantine hardening: PR #258 added candidate accounting, wildcard-policy coverage, and reconciliation of confirmed/ orphaned Telegram quarantine state.
 - Public dashboard: PR #259 added a strict item-data whitelist; the dashboard publish workflow succeeded.
 - PR #260 filters generic evaluator rejection messages out of the unmatched-item registry and normalizes BloxSwaps API source aliases when preserving uncertain Telegram context.
-- The direct Supreme scraping workflow was removed; PR #205 is closed. PR #261 is merged: the unused direct-site collector and its tests are deleted from `main`. Production reference info uses RBLXValue API v2 only, and the refreshed archive metadata explicitly limits production use to optional Telegram reference display.
+- The direct Supreme scraping workflow was removed; PR #205 is closed. PR #261 is merged: the unused direct-site collector and its tests are deleted from `main`. Production reference info uses RBLXValue API v2 only, and the refreshed archive metadata explicitly limits production use to optional Telegram reference display. Post-merge CI passed: 750 tests twice plus Ruff (`46055994728` and `46057274129`), ROBASE Pricing Tests (`46055994775`), dashboard publish (`46055994780`), and RBLXValue archive refresh (`46055994741`).
 
 ## Merged changes
 
@@ -55,17 +56,15 @@ Main baseline at checkpoint: PR #261 merged as `f7169b2d5bb40f489749e43f37a0d97f
 ## Open or experimental work
 
 - PR #159 — draft hardening work; do not merge wholesale without a fresh review against current `main`.
-- PR #203 — isolated RBLXValue value-profit shadow analysis; automatically runs after the daily archive in `dry_run` with `CASH_FILTER=false`, an isolated empty state, read-only repository permissions, no Telegram alerts, and zero RBLXValue API requests. It can apply separate shadow-analysis thresholds but cannot affect production cash alerts or state. Its proposed `value`-only change is not the source for the reference card and must not replace `value_source_b` for Supreme Value.
+- PR #203 — isolated RBLXValue value-profit shadow analysis; automatically runs after the daily archive in `dry_run` with `CASH_FILTER=false`, an isolated empty state, read-only repository permissions, no Telegram alerts, and zero RBLXValue API requests. Run `46056098581` completed with zero alerts and no production state writes. It can apply separate shadow-analysis thresholds but cannot affect production cash alerts or state. Its proposed `value`-only change is not the source for the reference card and must not replace `value_source_b` for Supreme Value.
 - PR #100 — experimental Market Book work; not part of the production scanner.
 
 
 ## Remaining release checks
 
-1. Verify completion and state persistence of post-merge scanner run `46055994878`; its scan step is currently active after all setup/restore steps succeeded.
-2. Confirm the first post-merge alert uses the compact reference card and that RBLXValue fields remain display-only.
-3. Confirm the two quarantined Telegram messages manually; the system intentionally will not auto-resend them.
-4. Monitor the next scheduled RBLXValue archive update at 23:30 UTC / 00:30 Algeria time.
-5. Re-check price freshness, feed pagination, Telegram latency, and state persistence after the next chained scan.
+1. Manually confirm the two quarantined Telegram messages; the system intentionally will not auto-resend them.
+2. Monitor the next scheduled RBLXValue archive update at 23:30 UTC / 00:30 Algeria time.
+3. Continue routine checks of price freshness, feed pagination, Telegram latency, and state persistence on subsequent chained scans.
 
 ## Resume protocol for future conversations
 
