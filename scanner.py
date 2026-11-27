@@ -4501,7 +4501,7 @@ def scan_once(include_backlog_rechecks=True):
     public_history_store = None
     if (
         CASH_FILTER and not testing_mode
-        and os.environ.get("DRY_RUN", "").strip().casefold() != "true"
+        and os.environ.get("DRY_RUN", "").strip().casefold() not in {"true", "1", "yes", "on"}
     ):
         try:
             from tools.public_dashboard_history import PublicDashboardHistory
