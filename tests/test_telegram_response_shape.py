@@ -1,7 +1,5 @@
 import json
 import unittest
-from unittest.mock import patch
-
 from test_support import IsolatedDataTestCase
 from tools.telegram_delivery import TelegramDeliveryUncertain, send_telegram
 
