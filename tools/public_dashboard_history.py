@@ -60,6 +60,15 @@ def _safe_link(value: object) -> str:
     return raw
 
 
+def _is_bloxswaps_listing(listing: dict[str, object]) -> bool:
+    source = _safe_text(listing.get("source"), 32).casefold()
+    if source in {"bloxswaps", "bloxswaps.com"}:
+        return True
+    # The structured BloxSwaps API can omit its redundant source label.
+    # Infer it only when the listing URL itself is on the trusted HTTPS host.
+    return not source and bool(_safe_link(listing.get("url")))
+
+
 def _safe_items(value: object) -> list[dict[str, object]]:
     result: list[dict[str, object]] = []
     for item in (value[:MAX_ITEMS_PER_SIDE] if isinstance(value, list) else []):
@@ -175,7 +184,7 @@ class PublicDashboardHistory:
             for listing in listings or []:
                 if not isinstance(listing, dict):
                     continue
-                if _safe_text(listing.get("source"), 32).casefold() != "bloxswaps":
+                if not _is_bloxswaps_listing(listing):
                     continue
                 listing_id = _safe_identifier(listing.get("id"), 128)
                 source_id = _safe_identifier(listing.get("source_ad_id"), 160)
@@ -224,7 +233,7 @@ class PublicDashboardHistory:
         listing = opportunity.get("listing")
         if not isinstance(listing, dict):
             raise ValueError("cash opportunity listing must be an object")
-        if _safe_text(listing.get("source"), 32).casefold() != "bloxswaps":
+        if not _is_bloxswaps_listing(listing):
             raise ValueError("public dashboard accepts only BloxSwaps opportunities")
         if _safe_text(listing.get("valuation_mode"), 24).casefold() != "cash":
             raise ValueError("public dashboard accepts only cash-mode opportunities")
