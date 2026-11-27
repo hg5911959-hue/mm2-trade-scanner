@@ -82,6 +82,10 @@ from tools.redaction import (
     install_redacting_streams as _install_redacting_streams,
     redact as _redact,
 )
+from tools.feed_checkpoint import (
+    parse_feed_timestamp as _parse_feed_timestamp_impl,
+    scan_checkpoint_requires_cold_start as _scan_checkpoint_requires_cold_start_impl,
+)
 from tools.scan_loop_policy import (
     minimum_cycle_start_window as _minimum_cycle_start_window,
     should_run_backlog_recheck as _should_run_backlog_recheck,
@@ -766,15 +770,8 @@ def _merge_html_quantity_diagnostics(api_listing, html_listing):
     return api_listing
 
 def _parse_feed_timestamp(raw):
-    if not raw:
-        return None
-    try:
-        value = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc).timestamp()
-    except (TypeError, ValueError, OverflowError):
-        return None
+    """Compatibility wrapper for the pure feed timestamp parser."""
+    return _parse_feed_timestamp_impl(raw)
 
 
 def _last_successful_scan_timestamp():
@@ -788,19 +785,10 @@ def _last_successful_scan_timestamp():
 
 
 def scan_checkpoint_requires_cold_start(last_success_ts, now=None):
-    """Avoid replaying a multi-day feed after a prolonged scanner outage."""
-    if last_success_ts is None:
-        return True
-    current = time.time() if now is None else float(now)
-    try:
-        last_success = float(last_success_ts)
-    except (TypeError, ValueError, OverflowError):
-        return True
-    if not math.isfinite(last_success) or not math.isfinite(current) or last_success <= 0:
-        return True
-    if last_success > current + 300:
-        return True
-    return current - last_success > MAX_SUCCESS_GAP_SECONDS
+    """Compatibility wrapper for the pure feed checkpoint policy."""
+    return _scan_checkpoint_requires_cold_start_impl(
+        last_success_ts, now=now, max_success_gap_seconds=MAX_SUCCESS_GAP_SECONDS
+    )
 
 
 def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None):
