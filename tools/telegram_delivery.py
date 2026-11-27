@@ -90,6 +90,7 @@ def send_telegram(
     # sendMessage is non-idempotent. Never retry uncertain network/5xx outcomes.
     for attempt in range(2):
         wait_for_rate_limit()
+        request_started = time.monotonic()
         req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
         try:
             with opener.open(req, timeout=20) as response:
@@ -141,10 +142,12 @@ def send_telegram(
         if result["ok"] is True:
             message_result = result.get("result") if isinstance(result.get("result"), dict) else {}
             message_id = message_result.get("message_id")
+            request_ms = max(0.0, (time.monotonic() - request_started) * 1000.0)
             if message_id is not None:
                 print(f"[telegram] Bot API accepted message; message_id={message_id}")
             else:
                 print("[telegram] Bot API accepted message; response omitted message_id")
+            print(f"[telegram-timing] confirmed_request_ms={request_ms:.1f}")
             return
         if result.get("error_code") == 429 and attempt < 1:
             parameters = result.get("parameters")
