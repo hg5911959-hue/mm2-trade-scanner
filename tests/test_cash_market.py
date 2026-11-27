@@ -523,5 +523,30 @@ class CashMarketTests(IsolatedDataTestCase):
             self.assertNotEqual(before["sha256"], after["sha256"])
 
 
+
+    def test_failed_robase_refresh_keeps_last_prices_but_disables_cash_eligibility(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "robase.json"
+            now = datetime(2026, 11, 21, tzinfo=UTC)
+            snapshot = self._robase_snapshot(now)
+            snapshot["last_refresh_status"] = "failed"
+            snapshot["last_refresh_attempt_at_utc"] = (now + timedelta(minutes=1)).isoformat()
+            path.write_text(json.dumps(snapshot), encoding="utf-8")
+
+            catalog = load_robase_price_catalog(path, now=now)
+            self.assertEqual(catalog["refresh_status"], "failed")
+            self.assertEqual(catalog["verified_count"], 0)
+            retained = catalog["items_by_slug"]["item-2"]
+            self.assertEqual(retained["cash_price_usd"], 2.5)
+            self.assertEqual(retained["status"], "unverified")
+            result = calculate_cash_side(
+                [{"canonical_name": "Item 2", "robase_slug": "item-2",
+                  "quantity_min": 1, "quantity_max": 1}],
+                catalog, "give", 0, now=now,
+            )
+            self.assertEqual(result[0:2], (0.0, 0.0))
+            self.assertIn("cash price unverified", result[3][0])
+
+
 if __name__ == "__main__":
     unittest.main()
