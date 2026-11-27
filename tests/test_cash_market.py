@@ -535,17 +535,18 @@ class CashMarketTests(IsolatedDataTestCase):
 
             catalog = load_robase_price_catalog(path, now=now)
             self.assertEqual(catalog["refresh_status"], "failed")
-            self.assertEqual(catalog["verified_count"], 0)
+            self.assertEqual(catalog["verified_count"], 222)
+            self.assertEqual(catalog["cash_eligible_count"], 220)
             retained = catalog["items_by_slug"]["item-2"]
             self.assertEqual(retained["cash_price_usd"], 2.5)
-            self.assertEqual(retained["status"], "unverified")
+            self.assertEqual(retained["status"], "verified")
             result = calculate_cash_side(
                 [{"canonical_name": "Item 2", "robase_slug": "item-2",
                   "quantity_min": 1, "quantity_max": 1}],
                 catalog, "give", 0, now=now,
             )
-            self.assertEqual(result[0:2], (0.0, 0.0))
-            self.assertIn("cash price unverified", result[3][0])
+            self.assertEqual(result[0:2], (2.5, 2.5))
+            self.assertEqual(result[3], [])
 
 
 if __name__ == "__main__":
