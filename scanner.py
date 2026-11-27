@@ -728,7 +728,6 @@ def _api_trade_post_to_listing(post, item_map):
         post,
         item_map,
         strict_quantity=strict_quantity,
-        max_item_quantity=MAX_ITEM_QUANTITY,
         stable_listing_id=stable_listing_id,
         legacy_stable_listing_id=legacy_stable_listing_id,
     )
