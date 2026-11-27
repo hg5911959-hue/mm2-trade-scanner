@@ -798,6 +798,40 @@ def scan_checkpoint_requires_cold_start(last_success_ts, now=None):
     )
 
 
+def _refresh_item_catalogue_for_post(post, item_map):
+    """Refresh missing BloxSwaps item IDs without ever guessing item names."""
+    unknown_ids = {
+        str(row.get("itemDetailsId") or "")
+        for row in (post.get("tradePostItems") or [])
+        if isinstance(row, dict)
+        and row.get("itemDetailsId")
+        and str(row.get("itemDetailsId")) not in item_map
+    }
+    if not unknown_ids:
+        return item_map
+    try:
+        refreshed_map = fetch_bloxswaps_items_map(force_refresh=True)
+        if refreshed_map:
+            item_map = refreshed_map
+        still_unknown = sorted(unknown_ids - set(item_map.keys()))
+        if still_unknown:
+            send_maintenance_alert(
+                "unknown-item-id-catalogue",
+                "BloxSwaps returned itemDetailsId values absent from its catalogue: "
+                + ", ".join(still_unknown[:12])
+                + ". No item names or values were guessed; affected posts remain eligible for recheck.",
+                cooldown_seconds=3600,
+            )
+    except Exception as exc:
+        send_maintenance_alert(
+            "unknown-item-id-catalogue-refresh-failed",
+            "Could not refresh the BloxSwaps item catalogue after an unknown itemDetailsId. "
+            f"Refresh failed safely ({type(exc).__name__}); no values were guessed.",
+            cooldown_seconds=3600,
+        )
+    return item_map
+
+
 def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None):
     """Fetch recent RSC/API posts and recheck unresolved IDs beyond seen posts."""
     if seen_ad_ids is None and pending_ad_ids:
@@ -898,34 +932,6 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
         cursor = (initial_page.get('meta') or {}).get('cursor')
         by_ad_id = {str(item.get('source_ad_id')): item for item in first_listings if item.get('source_ad_id')}
 
-        def refresh_catalogue_for_post(post):
-            nonlocal initial_item_map
-            unknown_ids = {
-                str(row.get('itemDetailsId') or '')
-                for row in (post.get('tradePostItems') or []) if isinstance(row, dict)
-                if row.get('itemDetailsId') and str(row.get('itemDetailsId')) not in initial_item_map
-            }
-            if not unknown_ids: return
-            try:
-                refreshed_map = fetch_bloxswaps_items_map(force_refresh=True)
-                if refreshed_map: initial_item_map = refreshed_map
-                still_unknown = sorted(unknown_ids - set(initial_item_map.keys()))
-                if still_unknown:
-                    send_maintenance_alert(
-                        'unknown-item-id-catalogue',
-                        'BloxSwaps returned itemDetailsId values absent from its catalogue: '
-                        + ', '.join(still_unknown[:12])
-                        + '. No item names or values were guessed; affected posts remain eligible for recheck.',
-                        cooldown_seconds=3600,
-                    )
-            except Exception as exc:
-                send_maintenance_alert(
-                    'unknown-item-id-catalogue-refresh-failed',
-                    'Could not refresh the BloxSwaps item catalogue after an unknown itemDetailsId. '
-                    f'Refresh failed safely ({type(exc).__name__}); no values were guessed.',
-                    cooldown_seconds=3600,
-                )
-
         while True:
             for post in page_items:
                 if not isinstance(post, dict) or not str(post.get('id') or '').strip():
@@ -972,7 +978,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                 if wildcard_kind == "offres":
                     offers_excluded += 1
                     continue
-                refresh_catalogue_for_post(post)
+                initial_item_map = _refresh_item_catalogue_for_post(post, initial_item_map)
                 listing = _api_trade_post_to_listing(post, initial_item_map)
                 if listing:
                     html_listing = by_ad_id.get(post_id)
@@ -1144,33 +1150,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                     for row in (raw.get("tradePostItems") or [])
                 )
                 item_map = fetch_bloxswaps_items_map() if needs_catalogue else {}
-            unknown_ids = {
-                str(row.get("itemDetailsId") or "")
-                for row in (raw.get("tradePostItems") or [])
-                if isinstance(row, dict) and row.get("itemDetailsId")
-                and str(row.get("itemDetailsId")) not in item_map
-            }
-            if unknown_ids:
-                try:
-                    refreshed_map = fetch_bloxswaps_items_map(force_refresh=True)
-                    if refreshed_map:
-                        item_map = refreshed_map
-                    still_unknown = sorted(unknown_ids - set(item_map.keys()))
-                    if still_unknown:
-                        send_maintenance_alert(
-                            "unknown-item-id-catalogue",
-                            "BloxSwaps returned itemDetailsId values absent from its catalogue: "
-                            + ", ".join(sorted(unknown_ids)[:12])
-                            + ". No item names or values were guessed; affected posts remain eligible for recheck.",
-                            cooldown_seconds=3600,
-                        )
-                except Exception as exc:
-                    send_maintenance_alert(
-                        "unknown-item-id-catalogue-refresh-failed",
-                        "Could not refresh the BloxSwaps item catalogue after an unknown itemDetailsId. "
-                        f"Refresh failed safely ({type(exc).__name__}); no values were guessed.",
-                        cooldown_seconds=3600,
-                    )
+            item_map = _refresh_item_catalogue_for_post(raw, item_map)
             listing = _api_trade_post_to_listing(raw, item_map)
             if listing and compare_html:
                 html_listing = by_ad_id.get(post_id)
