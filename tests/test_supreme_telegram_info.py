@@ -110,7 +110,7 @@ class SupremeTelegramInfoTests(IsolatedDataTestCase):
         self.assertIn("Supreme <code>160</code>", message)
         self.assertIn("Stability <code>Stable</code>", message)
         self.assertIn("Stability <code>N/A</code>", message)
-        self.assertIn("EST. CASH PROFIT (before fees/slippage): +$2.5", message)
+        self.assertIn("EST. CASH PROFIT (after marketplace fee; before extra costs): +$2.5", message)
         self.assertNotIn("weapon-2", message)
         self.assertNotIn("RBLXValue/Supreme", message)
 
@@ -121,7 +121,7 @@ class SupremeTelegramInfoTests(IsolatedDataTestCase):
             5.0, ["Weapon 1 x1 — $5.00 each = $5.00"], 2.5,
         )
         self.assertNotIn("REFERENCE INFO ONLY", message)
-        self.assertIn("EST. CASH PROFIT (before fees/slippage): +$2.5", message)
+        self.assertIn("EST. CASH PROFIT (after marketplace fee; before extra costs): +$2.5", message)
 
 
 if __name__ == "__main__":
