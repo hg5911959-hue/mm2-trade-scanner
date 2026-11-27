@@ -928,6 +928,223 @@ def _load_initial_bloxswaps_feed(api_only: bool) -> InitialBloxSwapsFeed:
     )
 
 
+@dataclass(slots=True)
+class ColdStartFeedState:
+    initial_feed: InitialBloxSwapsFeed
+    api_only: bool
+    cutoff: float
+    seed_ids: list
+    recent_ids: list
+    recent_listings: list
+    addition_ids: list
+    unparsed_ids: list
+    unidentified_feed_samples: list
+    additions: int
+    offers_excluded: int
+    malformed: int
+    candidate_count: int
+    parsed_candidate_count: int
+    malformed_candidate_count: int
+    unidentified_feed_records: int
+    api_posts: int
+    old_streak: int
+    page_count: int
+    age_boundary: bool
+    complete: bool
+    seen_raw_ids: set
+    page_items: list
+    cursor: str | None
+    by_ad_id: dict
+
+
+def _consume_cold_start_page(state: ColdStartFeedState) -> None:
+    """Classify one cold-start page and collect only verifiably recent listings."""
+    for post in state.page_items:
+        if not isinstance(post, dict) or not str(post.get("id") or "").strip():
+            state.malformed += 1
+            state.candidate_count += 1
+            state.malformed_candidate_count += 1
+            state.unidentified_feed_records += 1
+            state.unidentified_feed_samples.append(
+                "object-without-stable-id" if isinstance(post, dict)
+                else f"invalid-record-type:{type(post).__name__}"
+            )
+            continue
+        post_id = str(post["id"])
+        if post_id in state.seen_raw_ids:
+            continue
+        state.seen_raw_ids.add(post_id)
+        refreshed_ts = _parse_feed_timestamp(
+            post.get("lastRefreshedAt") or post.get("createdAt") or post.get("created_at")
+        )
+        is_pinned = bool(post.get("isPinned") or post.get("pinned"))
+        if refreshed_ts is None:
+            state.seed_ids.append(post_id)
+            state.old_streak = 0
+            continue
+        if refreshed_ts < state.cutoff:
+            state.seed_ids.append(post_id)
+            state.old_streak = 0 if is_pinned else state.old_streak + 1
+            if state.old_streak >= 25:
+                state.age_boundary = True
+                state.complete = True
+                break
+            continue
+
+        state.old_streak = 0
+        state.recent_ids.append(post_id)
+        state.candidate_count += 1
+        wildcard_kind = requested_wildcard_kind(post.get("requestedWildcards") or [])
+        if wildcard_kind == "ajout":
+            state.additions += 1
+            state.addition_ids.append(post_id)
+            continue
+        if state.api_only and _api_post_is_single_sided(post):
+            state.initial_feed.single_sided_count += 1
+            state.initial_feed.single_sided_ids.append(post_id)
+            continue
+        if wildcard_kind == "offres":
+            state.offers_excluded += 1
+            continue
+
+        state.initial_feed.initial_item_map = _refresh_item_catalogue_for_post(
+            post, state.initial_feed.initial_item_map
+        )
+        listing = _api_trade_post_to_listing(
+            post, state.initial_feed.initial_item_map
+        )
+        if listing:
+            html_listing = state.by_ad_id.get(post_id)
+            if html_listing:
+                listing = _merge_html_quantity_diagnostics(listing, html_listing)
+            state.recent_listings.append(listing)
+            state.parsed_candidate_count += 1
+        else:
+            state.malformed += 1
+            state.malformed_candidate_count += 1
+            state.unparsed_ids.append(post_id)
+
+
+def _fetch_cold_start_pages(state: ColdStartFeedState) -> None:
+    """Follow the cursor until the verified age boundary or the safe page cap."""
+    while True:
+        _consume_cold_start_page(state)
+        if state.age_boundary:
+            break
+        if not state.cursor:
+            state.complete = True
+            break
+        if state.page_count >= MAX_FEED_PAGES:
+            state.complete = False
+            break
+        page = bloxswaps_api_get_json(
+            "/trade-posts",
+            {"cursor": state.cursor, "pageSize": BLOXSWAPS_PAGE_SIZE},
+        )
+        if not isinstance(page, dict) or not isinstance(page.get("items"), list):
+            raise RuntimeError(
+                "[bloxswaps] Cursor API returned an invalid page during cold-start discovery."
+            )
+        state.page_items = page.get("items") or []
+        state.api_posts += len(state.page_items)
+        state.page_count += 1
+        next_cursor = (page.get("meta") or {}).get("cursor")
+        if next_cursor and next_cursor == state.cursor:
+            raise RuntimeError(
+                "[bloxswaps] Cursor did not advance during cold-start discovery; "
+                "refusing to seed an incomplete feed."
+            )
+        state.cursor = next_cursor
+
+
+def _finalize_cold_start_feed(state: ColdStartFeedState):
+    """Validate cold-start accounting and assemble the feed result."""
+    from tools.feed_accounting import validate_candidate_accounting
+
+    single_sided_count = state.initial_feed.single_sided_count
+    validate_candidate_accounting(
+        candidate_count=state.candidate_count,
+        additions=state.additions,
+        single_sided=single_sided_count,
+        offers_excluded=state.offers_excluded,
+        malformed=state.malformed_candidate_count,
+        parsed=state.parsed_candidate_count,
+        context="cold-start feed",
+    )
+    stats = state.initial_feed.stats
+    stats.update({
+        "parsed_candidate_count": state.parsed_candidate_count,
+        "malformed_candidate_count": state.malformed_candidate_count,
+        "pagination_pages": state.page_count,
+        "pagination_api_posts": state.api_posts,
+        "pagination_complete": state.complete,
+        "pagination_source": "api-cold-start" if state.api_only else "rsc-cold-start",
+        "seen_boundary_reached": state.age_boundary,
+        "seen_streak": state.old_streak,
+        "cold_start": True,
+        "cold_start_seed_ids": state.seed_ids,
+        "cold_start_recent_ids": state.recent_ids,
+        "candidate_count": state.candidate_count,
+        "unidentified_feed_record_count": state.unidentified_feed_records,
+        "unidentified_feed_samples": state.unidentified_feed_samples[:10],
+        "addition_count": state.additions,
+        "offers_excluded_count": state.offers_excluded,
+        "malformed_count": state.malformed,
+        "addition_ids": state.addition_ids,
+        "single_sided_count": single_sided_count,
+        "single_sided_ids": state.initial_feed.single_sided_ids,
+        "unparsed_ad_ids": state.unparsed_ids,
+        "pending_remaining_ids": [],
+        "watch_remaining_ids": [],
+        "owner_link_count": sum(
+            1 for item in state.recent_listings if item.get("owner_url")
+        ),
+    })
+    discovered = state.seed_ids + state.recent_ids
+    return state.recent_listings, stats, discovered
+
+
+def _run_cold_start_feed(
+    initial_feed: InitialBloxSwapsFeed, api_only: bool
+):
+    """Run the bounded cold-start feed discovery stage."""
+    raw_first_items = initial_feed.raw_first_items
+    now_ts = datetime.now(timezone.utc).timestamp()
+    state = ColdStartFeedState(
+        initial_feed=initial_feed,
+        api_only=api_only,
+        cutoff=now_ts - 3600,
+        seed_ids=[],
+        recent_ids=[],
+        recent_listings=[],
+        addition_ids=[],
+        unparsed_ids=[],
+        unidentified_feed_samples=[],
+        additions=0,
+        offers_excluded=0,
+        malformed=0,
+        candidate_count=0,
+        parsed_candidate_count=0,
+        malformed_candidate_count=0,
+        unidentified_feed_records=0,
+        api_posts=len(raw_first_items) if api_only else 0,
+        old_streak=1,
+        page_count=1,
+        age_boundary=False,
+        complete=False,
+        seen_raw_ids=set(),
+        page_items=raw_first_items,
+        cursor=(initial_feed.initial_page.get("meta") or {}).get("cursor"),
+        by_ad_id={
+            str(item.get("source_ad_id")): item
+            for item in initial_feed.first_listings
+            if item.get("source_ad_id")
+        },
+    )
+    _fetch_cold_start_pages(state)
+    return _finalize_cold_start_feed(state)
+
+
 def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None):
     """Fetch recent RSC/API posts and recheck unresolved IDs beyond seen posts."""
     if seen_ad_ids is None and pending_ad_ids:
@@ -943,138 +1160,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     stats = initial_feed.stats
 
     if seen_ad_ids is None:
-        # Cold start: evaluate verifiably recent posts across cursor pages, then
-        # seed older posts. Undated and pinned posts never advance the age boundary.
-        now_ts = datetime.now(timezone.utc).timestamp()
-        cutoff = now_ts - 3600
-        seed_ids, recent_ids, recent_listings = [], [], []
-        addition_ids, unparsed_ids = [], []
-        unidentified_feed_samples = []
-        additions = offers_excluded = malformed = candidate_count = 0
-        parsed_candidate_count = malformed_candidate_count = unidentified_feed_records = 0
-        api_posts = len(raw_first_items) if api_only else 0
-        old_streak = page_count = 1
-        age_boundary = False
-        complete = False
-        seen_raw_ids = set()
-        page_items = raw_first_items
-        cursor = (initial_page.get('meta') or {}).get('cursor')
-        by_ad_id = {str(item.get('source_ad_id')): item for item in first_listings if item.get('source_ad_id')}
-
-        while True:
-            for post in page_items:
-                if not isinstance(post, dict) or not str(post.get('id') or '').strip():
-                    malformed += 1
-                    candidate_count += 1
-                    malformed_candidate_count += 1
-                    unidentified_feed_records += 1
-                    unidentified_feed_samples.append(
-                        "object-without-stable-id" if isinstance(post, dict)
-                        else f"invalid-record-type:{type(post).__name__}"
-                    )
-                    continue
-                post_id = str(post['id'])
-                if post_id in seen_raw_ids: continue
-                seen_raw_ids.add(post_id)
-                refreshed_ts = _parse_feed_timestamp(
-                    post.get('lastRefreshedAt') or post.get('createdAt') or post.get('created_at')
-                )
-                is_pinned = bool(post.get('isPinned') or post.get('pinned'))
-                if refreshed_ts is None:
-                    seed_ids.append(post_id)
-                    old_streak = 0
-                    continue
-                if refreshed_ts < cutoff:
-                    seed_ids.append(post_id)
-                    old_streak = 0 if is_pinned else old_streak + 1
-                    if old_streak >= 25:
-                        age_boundary = True
-                        complete = True
-                        break
-                    continue
-                old_streak = 0
-                recent_ids.append(post_id)
-                candidate_count += 1
-                wildcard_kind = requested_wildcard_kind(post.get('requestedWildcards') or [])
-                if wildcard_kind == "ajout":
-                    additions += 1
-                    addition_ids.append(post_id)
-                    continue
-                if api_only and _api_post_is_single_sided(post):
-                    single_sided_count += 1
-                    single_sided_ids.append(post_id)
-                    continue
-                if wildcard_kind == "offres":
-                    offers_excluded += 1
-                    continue
-                initial_item_map = _refresh_item_catalogue_for_post(post, initial_item_map)
-                listing = _api_trade_post_to_listing(post, initial_item_map)
-                if listing:
-                    html_listing = by_ad_id.get(post_id)
-                    if html_listing: listing = _merge_html_quantity_diagnostics(listing, html_listing)
-                    recent_listings.append(listing)
-                    parsed_candidate_count += 1
-                else:
-                    malformed += 1
-                    malformed_candidate_count += 1
-                    unparsed_ids.append(post_id)
-            if age_boundary:
-                break
-            if not cursor:
-                complete = True
-                break
-            if page_count >= MAX_FEED_PAGES:
-                complete = False
-                break
-            page = bloxswaps_api_get_json('/trade-posts', {'cursor': cursor, 'pageSize': BLOXSWAPS_PAGE_SIZE})
-            if not isinstance(page, dict) or not isinstance(page.get('items'), list):
-                raise RuntimeError('[bloxswaps] Cursor API returned an invalid page during cold-start discovery.')
-            page_items = page.get('items') or []
-            api_posts += len(page_items)
-            page_count += 1
-            next_cursor = (page.get('meta') or {}).get('cursor')
-            if next_cursor and next_cursor == cursor:
-                raise RuntimeError('[bloxswaps] Cursor did not advance during cold-start discovery; refusing to seed an incomplete feed.')
-            cursor = next_cursor
-
-        from tools.feed_accounting import validate_candidate_accounting
-        validate_candidate_accounting(
-            candidate_count=candidate_count,
-            additions=additions,
-            single_sided=single_sided_count,
-            offers_excluded=offers_excluded,
-            malformed=malformed_candidate_count,
-            parsed=parsed_candidate_count,
-            context="cold-start feed",
-        )
-        stats.update({
-            'parsed_candidate_count': parsed_candidate_count,
-            'malformed_candidate_count': malformed_candidate_count,
-            'pagination_pages': page_count,
-            'pagination_api_posts': api_posts,
-            'pagination_complete': complete,
-            'pagination_source': 'api-cold-start' if api_only else 'rsc-cold-start',
-            'seen_boundary_reached': age_boundary,
-            'seen_streak': old_streak,
-            'cold_start': True,
-            'cold_start_seed_ids': seed_ids,
-            'cold_start_recent_ids': recent_ids,
-            'candidate_count': candidate_count,
-            'unidentified_feed_record_count': unidentified_feed_records,
-            'unidentified_feed_samples': unidentified_feed_samples[:10],
-            'addition_count': additions,
-            'offers_excluded_count': offers_excluded,
-            'malformed_count': malformed,
-            'addition_ids': addition_ids,
-            'single_sided_count': single_sided_count,
-            'single_sided_ids': single_sided_ids,
-            'unparsed_ad_ids': unparsed_ids,
-            'pending_remaining_ids': [],
-            'watch_remaining_ids': [],
-            'owner_link_count': sum(1 for item in recent_listings if item.get('owner_url')),
-        })
-        discovered = seed_ids + recent_ids
-        return recent_listings, stats, discovered
+        return _run_cold_start_feed(initial_feed, api_only)
 
     seen = set(str(value) for value in seen_ad_ids)
     pending_remaining = set(str(value) for value in (pending_ad_ids or []))
