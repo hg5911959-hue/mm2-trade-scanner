@@ -23,6 +23,7 @@ from tools.scanner_config import CONFIG
 from tools.telegram_transport import TELEGRAM_OPENER, telegram_alert_delay
 from tools.item_parser import (
     ARABIC_DIGITS as ARABIC_DIGITS,
+    MAX_ITEM_QUANTITY as MAX_ITEM_QUANTITY,
     _explicit_stack_quantities as _explicit_stack_quantities,
     _explicit_stack_quantity as _explicit_stack_quantity,
     _has_unreadable_quantity_hint as _has_unreadable_quantity_hint,
@@ -182,7 +183,6 @@ CASH_MAX_LISTING_AGE_SECONDS = CONFIG.cash_max_listing_age_seconds
 CASH_PRICE_FILE = Path("data/cash_prices.csv")
 CASH_PRICE_SNAPSHOT_FILE = Path("data/cash_price_snapshot.json")
 TELEGRAM_MAX_CHARS = 4000
-MAX_ITEM_QUANTITY = 9999  # Public BloxSwaps feed includes valid stacks above 100.
 _LAST_TELEGRAM_SEND_AT = 0.0
 _LAST_ITEMS_FORCE_REFRESH_AT = 0.0
 
