@@ -29,7 +29,7 @@ runtime-only switches are still read by the component that uses them.
 | `MAX_ALERTS_PER_SCAN` | `0` | Per-scan alert cap; zero means unlimited. Production workflow uses zero. |
 | `TELEGRAM_CHAT_TYPE` | empty | Use `private` for private-chat pacing |
 | `ALERT_DELAY_SECONDS` | `3.2` | Requested delay; group pacing retains its 3.2-second floor |
-| `MAX_PENDING_RECHECK_PER_SCAN` | `50` | Minimum 1 |
+| `MAX_PENDING_RECHECK_PER_SCAN` | `50` | Maximum combined direct lookups for pending and watched BloxSwaps offers per scan; pending items take priority and watch entries rotate oldest-first. |
 | `MAX_BACKLOG_RECHECK_PAGES` | `25` | Cursor fallback limit for unresolved pending IDs after the fresh-feed boundary. Watched offers use rotating direct-ID lookups instead; 25 pages cap each pending fallback at 500 posts. |
 | `BACKLOG_RECHECK_EVERY_CYCLES` | `4` | Minimum 1 |
 | `MAX_FEED_PAGES` | `1000` | Clamped to 1–1000 |
