@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from test_support import IsolatedDataTestCase
+import scanner
 from tools.bloxswaps_api import api_post_is_single_sided, api_trade_post_to_listing
 
 
@@ -82,3 +85,45 @@ class BloxSwapsApiAdapterTests(IsolatedDataTestCase):
         )
         self.assertIsNone(listing["receive_items"][0]["quantity"])
         self.assertEqual(listing["receive_items"][0]["quantity_source"], "uncertain")
+
+    def test_unidentified_api_feed_records_are_counted_as_malformed_candidates(self):
+        recent = "2026-11-27T17:00:00Z"
+        payload = {
+            "items": [
+                {"tradePostItems": [], "lastRefreshedAt": recent},
+                {
+                    "id": "valid-post",
+                    "user": {"robloxUserId": "123", "robloxUsername": "trader"},
+                    "tradePostItems": [
+                        {"itemDetailsId": "give-id", "quantity": 1, "tradeRole": "OFFERED"},
+                        {"itemDetailsId": "receive-id", "quantity": 1, "tradeRole": "REQUESTED"},
+                    ],
+                    "requestedWildcards": [],
+                    "lastRefreshedAt": recent,
+                },
+            ],
+            "meta": {"cursor": None},
+        }
+        listing = {"id": "stable-valid-post", "source_ad_id": "valid-post"}
+        item_map = {
+            "give-id": {"displayName": "Give", "slug": "give", "type": "Knife"},
+            "receive-id": {"displayName": "Receive", "slug": "receive", "type": "Knife"},
+        }
+
+        with (
+            patch.dict("os.environ", {"BLOXSWAPS_API_ONLY": "true"}),
+            patch("scanner.bloxswaps_api_get_json", return_value=payload),
+            patch("scanner.fetch_bloxswaps_items_map", return_value=item_map),
+            patch("scanner._last_successful_scan_timestamp", return_value=None),
+            patch("scanner._api_trade_post_to_listing", return_value=listing),
+        ):
+            listings, stats, _ = scanner.fetch_bloxswaps_all(
+                seen_ad_ids=set(), pending_ad_ids=[], watch_ad_ids=[]
+            )
+
+        self.assertEqual([row["id"] for row in listings], ["stable-valid-post"])
+        self.assertEqual(stats["candidate_count"], 2)
+        self.assertEqual(stats["parsed_candidate_count"], 1)
+        self.assertEqual(stats["malformed_candidate_count"], 1)
+        self.assertEqual(stats["unidentified_feed_record_count"], 1)
+        self.assertTrue(stats["pagination_complete"])
