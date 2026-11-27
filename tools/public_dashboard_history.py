@@ -24,6 +24,7 @@ MAX_OPPORTUNITIES = 1_000
 MAX_ITEMS_PER_SIDE = 20
 MAX_ITEM_NAME_CHARS = 60
 MAX_OWNER_NAME_CHARS = 80
+MAX_DATABASE_BYTES = 64 * 1024 * 1024
 
 
 def _now() -> str:
@@ -159,6 +160,8 @@ class PublicDashboardHistory:
         try:
             yield db
             db.commit()
+            if self.db_path.stat().st_size > MAX_DATABASE_BYTES:
+                raise ValueError("public dashboard history exceeds its 64 MiB safety limit")
         except Exception:
             db.rollback()
             raise
