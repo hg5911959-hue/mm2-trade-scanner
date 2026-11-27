@@ -120,6 +120,7 @@ class ScannerConfig:
         source = os.environ if env is None else env
         cash_filter = _bool(source, "CASH_FILTER")
         default_values_ttl = 24 * 60 * 60 if cash_filter else 12 * 60 * 60
+        max_alerts_per_run = _int(source, "MAX_ALERTS_PER_RUN", 0, minimum=0)
         return cls(
             bloxswaps_url=str(source.get(
                 "BLOXSWAPS_URL",
@@ -133,12 +134,12 @@ class ScannerConfig:
             min_receive_demand_score=_float(source, "MIN_RECEIVE_DEMAND_SCORE", 4.0),
             min_receive_stability_score=_float(source, "MIN_RECEIVE_STABILITY_SCORE", 3.0),
             failure_alert_threshold=_int(source, "FAILURE_ALERT_THRESHOLD", 3),
-            max_alerts_per_run=_int(source, "MAX_ALERTS_PER_RUN", 0, minimum=0),
+            max_alerts_per_run=max_alerts_per_run,
             max_alerts_per_scan=_int(source, "MAX_ALERTS_PER_SCAN", 0, minimum=0),
             max_alerts_per_session=_int(
                 source,
                 "MAX_ALERTS_PER_SESSION",
-                _int(source, "MAX_ALERTS_PER_RUN", 0, minimum=0),
+                max_alerts_per_run,
                 minimum=0,
             ),
             scan_duration_seconds=_int(source, "MM2_SCAN_DURATION_SECONDS", 0, minimum=0),
