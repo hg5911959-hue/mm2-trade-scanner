@@ -213,16 +213,16 @@ class PublicDashboardHistory:
     def record_opportunity(self, opportunity: dict[str, object]) -> bool:
         listing = opportunity.get("listing")
         if not isinstance(listing, dict):
-            return False
+            raise ValueError("cash opportunity listing must be an object")
         if _safe_text(listing.get("source"), 32).casefold() != "bloxswaps":
-            return False
+            raise ValueError("public dashboard accepts only BloxSwaps opportunities")
         if _safe_text(listing.get("valuation_mode"), 24).casefold() != "cash":
-            return False
+            raise ValueError("public dashboard accepts only cash-mode opportunities")
         listing_id = _safe_text(listing.get("id"), 128)
         listing_url = _safe_link(listing.get("url"))
         profit = _finite_number(opportunity.get("cash_profit_worst"))
         if not listing_id or not listing_url or profit is None:
-            return False
+            raise ValueError("cash opportunity is missing a safe listing identity, URL, or profit")
         give_total = _finite_number(opportunity.get("give_total"))
         receive_total = _finite_number(opportunity.get("receive_total"))
         margin = _finite_number(opportunity.get("margin"), minimum=-1_000_000.0)
