@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import unittest
 
+from test_support import IsolatedDataTestCase
 from tools.scanner_config import ScannerConfig
 
 
-class ScannerConfigTests(unittest.TestCase):
+class ScannerConfigTests(IsolatedDataTestCase):
     def test_defaults_preserve_existing_scanner_defaults(self):
         config = ScannerConfig.from_env({})
         self.assertEqual(config.bloxswaps_url, "https://bloxswaps.com/trade-mm2?trade-type=P2P")
