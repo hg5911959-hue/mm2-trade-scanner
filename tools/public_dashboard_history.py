@@ -18,8 +18,9 @@ DEFAULT_DB_PATH = Path("data/public_dashboard_history.sqlite3")
 ALLOWED_HOSTS = {"bloxswaps.com", "www.bloxswaps.com"}
 LISTING_RETENTION_DAYS = 90
 OPPORTUNITY_RETENTION_DAYS = 180
-MAX_LISTINGS = 10_000
-MAX_OPPORTUNITIES = 5_000
+MAX_LISTINGS = 3_000
+MAX_OPPORTUNITIES = 1_000
+MAX_ITEMS_PER_SIDE = 50
 
 
 def _now() -> str:
@@ -42,7 +43,7 @@ def _safe_link(value: object) -> str:
 
 def _safe_items(value: object) -> list[dict[str, object]]:
     result: list[dict[str, object]] = []
-    for item in value if isinstance(value, list) else []:
+    for item in (value[:MAX_ITEMS_PER_SIDE] if isinstance(value, list) else []):
         if not isinstance(item, dict):
             continue
         name = _safe_text(item.get("name"), 100)
