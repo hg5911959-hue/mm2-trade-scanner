@@ -42,7 +42,7 @@ from tools.item_parser import (
     quantity_from_image_node,
     requested_wildcard_kind,
     split_item_label,
-)
+)  # noqa: F401 - preserve scanner.py parser compatibility exports
 from tools.html_tree import (
     Node,  # noqa: F401 - compatibility export
     PageTree,
