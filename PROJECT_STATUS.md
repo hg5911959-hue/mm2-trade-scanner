@@ -1,6 +1,6 @@
 # Project Status and Resume Checkpoint
 
-Last verified: 2026-11-27 19:11 UTC  
+Last verified: 2026-11-27 19:14 UTC  
 Repository: `hg5911959-hue/mm2-trade-scanner`  
 Production branch: `main`  
 Main baseline at checkpoint: PR #260 merged; latest post-PR-260 production scan completed successfully and the next chained scan is running on that baseline.
@@ -41,7 +41,7 @@ Main baseline at checkpoint: PR #260 merged; latest post-PR-260 production scan 
 - Feed and quarantine hardening: PR #258 added candidate accounting, wildcard-policy coverage, and reconciliation of confirmed/ orphaned Telegram quarantine state.
 - Public dashboard: PR #259 added a strict item-data whitelist; the dashboard publish workflow succeeded.
 - PR #260 filters generic evaluator rejection messages out of the unmatched-item registry and normalizes BloxSwaps API source aliases when preserving uncertain Telegram context.
-- The direct Supreme scraping workflow was removed; PR #205 is closed. The unused direct-site collector and its tests are also deleted in PR #261. Production reference info uses RBLXValue API v2 only.
+- The direct Supreme scraping workflow was removed; PR #205 is closed. The unused direct-site collector and its tests are also deleted in PR #261. Production reference info uses RBLXValue API v2 only. The archive metadata now explicitly says its production use is optional Telegram reference display only, never a cash valuation/filter/alert decision; the archive workflow will refresh this metadata on the PR merge push.
 
 ## Merged changes
 
@@ -55,7 +55,7 @@ Main baseline at checkpoint: PR #260 merged; latest post-PR-260 production scan 
 - PR #159 — draft hardening work; do not merge wholesale without a fresh review against current `main`.
 - PR #203 — isolated RBLXValue blended-value shadow analysis; no production Telegram alerts. Its proposed `value`-only change is not the source for the reference card and must not replace `value_source_b` for Supreme Value.
 - PR #100 — experimental Market Book work; not part of the production scanner.
-- Current PR #261 branch: `docs/gross-cash-estimate-and-project-handoff` (latest code-bearing commit `072c7b9c`; documentation checkpoint commits follow). It clarifies the USD 2 threshold and displayed profit as **gross estimates before fees/slippage**, renders Telegram reference data as a compact labeled card with one clean separator, filters legacy generic rejection reasons, removes the unused direct Supreme website collector and its tests, updates docs, and adds this handoff file. Latest CI on the current code-bearing head: 750 tests passed twice, Ruff passed, and ROBASE Pricing Tests passed (runs `46054658106` and `46054658101`). A separate docs-only checkpoint commit also passed 750 tests twice (run `46054602718`). PR is mergeable but not merged yet.
+- Current PR #261 branch: `docs/gross-cash-estimate-and-project-handoff` (latest code-bearing commit `072c7b9c`; documentation checkpoint commits follow). It clarifies the USD 2 threshold and displayed profit as **gross estimates before fees/slippage**, renders Telegram reference data as a compact labeled card with one clean separator, filters legacy generic rejection reasons, removes the unused direct Supreme website collector and its tests, updates docs, and adds this handoff file. Latest CI on the current code-bearing head: 750 tests passed twice, Ruff passed, and ROBASE Pricing Tests passed (runs `46055063917` and `46055063978`). The preceding workflow-policy commit also passed 750 tests twice and ROBASE Pricing Tests (runs `46055054717` and `46055054734`). PR is mergeable but not merged yet.
 
 ## Remaining release checks
 
