@@ -116,6 +116,19 @@ jobs:
           PREFLIGHT_SEND_NOTICES: ${{ (inputs.dry_run || inputs.robase_daily_chart_shadow) && 'false' || 'true' }}
         run: python -m tools.preflight --warn
 
+      - name: Restore optional RBLXValue/Supreme display snapshot
+        run: |
+          set -euo pipefail
+          mkdir -p data
+          if git fetch --no-tags origin refs/heads/robase-daily-history:refs/remotes/origin/robase-daily-history >/dev/null 2>&1 \
+            && git cat-file -e refs/remotes/origin/robase-daily-history:data/rblxvalue_latest.json 2>/dev/null; then
+            git show refs/remotes/origin/robase-daily-history:data/rblxvalue_latest.json > data/rblxvalue_latest.json
+            echo "Restored optional daily Supreme/RBLXValue display snapshot."
+          else
+            rm -f data/rblxvalue_latest.json
+            echo "::warning::Optional Supreme/RBLXValue display snapshot unavailable; cash scanning and alert delivery continue without it."
+          fi
+
       - name: Run BloxSwaps scanner
         id: scan
         env:
@@ -171,6 +184,7 @@ jobs:
           rm -f state-bundle/data/supreme_values.json state-bundle/data/supreme_values_audit.json
           # Retain only the separately validated public BloxSwaps cash-history database.
           rm -f state-bundle/data/market_history.sqlite3 state-bundle/data/history.csv
+          rm -f state-bundle/data/rblxvalue_latest.json
           rm -f state-bundle/data/rblxvalue_meta.json state-bundle/data/rblxvalue_detail_enrichment.json
           rm -f state-bundle/data/rblxvalue_key_health.json state-bundle/data/rblxvalue_request_budget.json
           rm -f state-bundle/data/api_key_blocked.json
