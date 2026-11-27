@@ -19,9 +19,9 @@ class CashProfitLabelTests(IsolatedDataTestCase):
                 2.75,
             )
         )
-        self.assertIn("EST. CASH PROFIT (before fees/slippage)", message)
+        self.assertIn("EST. CASH PROFIT (after marketplace fee; before extra costs)", message)
         self.assertIn("Chroma.gg Price (7d)", message)
-        self.assertIn("fees/slippage not included", message)
+        self.assertIn("additional costs/slippage are not included", message)
 
     def test_legacy_value_alert_does_not_receive_cash_fee_disclaimer(self):
         message = str(
@@ -34,4 +34,4 @@ class CashProfitLabelTests(IsolatedDataTestCase):
                 2.0,
             )
         )
-        self.assertNotIn("fees/slippage not included", message)
+        self.assertNotIn("additional costs/slippage are not included", message)
