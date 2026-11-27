@@ -295,7 +295,7 @@ class RobasePriceParserTests(IsolatedDataTestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "robase_prices.json"
             old_checked = (
-                datetime.now(timezone.utc) - timedelta(hours=1)
+                datetime.now(timezone.utc) - timedelta(minutes=5)
             ).isoformat().replace("+00:00", "Z")
             previous = {
                 "schema_version": 6,
