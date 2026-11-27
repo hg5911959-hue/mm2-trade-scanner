@@ -42,7 +42,7 @@ jobs:
           PY
           node --check /tmp/mm2-dashboard-inline.js
 
-      - name: Restore market history from state branch
+      - name: Restore public dashboard history from state branch
         run: |
           set -euo pipefail
           mkdir -p data public
@@ -55,7 +55,7 @@ jobs:
 
       - name: Export public dashboard data
         run: |
-          python tools/export_dashboard.py --database data/market_history.sqlite3 --output public/dashboard-data.json
+          python tools/export_dashboard.py --database data/public_dashboard_history.sqlite3 --output public/dashboard-data.json
           cp docs/index.html public/index.html
           test -s public/dashboard-data.json
           test -s public/index.html
