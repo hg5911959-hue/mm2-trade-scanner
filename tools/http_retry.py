@@ -59,7 +59,7 @@ def request_with_retry(
             # Detect edge/CDN challenges before interpreting HTTP 403 as an API-key
             # suspension. Cloudflare can return 403 even when the configured key is valid.
             challenge_markers = ("cloudflare", "captcha", "just a moment", "challenge-platform", "cf-chl-")
-            cf_mitigated = str(exc.headers.get("cf-mitigated", "")).casefold()
+            cf_mitigated = str((exc.headers or {}).get("cf-mitigated", "")).casefold()
             if exc.code in (403, 503) and (
                 any(marker in detail.casefold() for marker in challenge_markers)
                 or cf_mitigated == "challenge"
