@@ -56,12 +56,9 @@ jobs:
       - name: Install Ruff
         run: python -m pip install --disable-pip-version-check ruff==0.17.5
 
-      - name: Run Ruff on parser, API guard, history and dashboard modules
-        run: ruff check tools/preflight.py tools/weekly_report.py tools/next_to_verify.py discord_parser.py rblxvalue_guard.py market_history.py market_intelligence/ai_advisor.py market_intelligence/public_sources.py tools/export_dashboard.py tools/cash_market.py tools/validate_state.py tests/test_cash_market.py tests/test_state_validation.py tests/test_discord_parser.py tests/test_rblxvalue_guard.py tests/test_rblxvalue_cache_migration.py tests/test_market_history.py tests/test_market_intelligence.py
+      - name: Run repository-wide Ruff correctness checks
+        run: ruff check .
 
-      - name: Run focused correctness lint on scanner
-        run: ruff check --select F scanner.py
-
-      - name: Run undefined and unused-name checks across the repository
+      - name: Retain explicit repository-wide undefined and unused-name guard
         run: ruff check --select F .
 
