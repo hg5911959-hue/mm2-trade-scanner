@@ -3400,24 +3400,21 @@ def _format_telegram_market_info(listing, market_info):
                 continue
             seen.add((side, slug))
             name = str(entry.get("name") or item.get("name") or "Unknown item")
-            details = []
             value = entry.get("supreme_value")
-            if value is not None:
-                details.append(f"Supreme Value: {format_number(value)}")
-            stability = str(entry.get("stability") or "").strip()
-            details.append(f"Stability (RBLXValue): {stability or 'N/A'}")
+            stability = str(entry.get("stability") or "").strip() or "N/A"
+            value_label = format_number(value) if value is not None else "N/A"
             rows.append(
-                f"• <b>{_telegram_escape(side)} · {_telegram_escape(name)}</b> — "
-                f"{_telegram_escape(' | '.join(details))}"
+                f"│ <b>{_telegram_escape(side)}</b> · {_telegram_escape(name)}"
+                f"  · SV <code>{_telegram_escape(value_label)}</code>"
+                f"  · ST <code>{_telegram_escape(stability)}</code>"
             )
     if not rows:
         return []
     return [
         "",
-        "📊 <b>REFERENCE INFO ONLY</b>",
-        "<i>Not used for cash profit, filtering, ranking, or alert decisions</i>",
+        "┌─ 📊 <b>REFERENCE INFO ONLY</b>",
         *rows,
-        "<i>Supreme Value via RBLXValue · Stability field from RBLXValue</i>",
+        "└ <i>RBLXValue · informational only</i>",
     ]
 
 
