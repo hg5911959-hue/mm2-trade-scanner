@@ -36,11 +36,12 @@ class CashBlockerMetricsTests(IsolatedDataTestCase):
             sentinel.write_text("must remain unchanged", encoding="utf-8")
             predictable_temp.symlink_to(sentinel)
 
-            update_metrics(path, increments={"scans": 1})
+            now = datetime(2026, 11, 14, tzinfo=timezone.utc)
+            update_metrics(path, increments={"scans": 1}, now=now)
 
             self.assertEqual(sentinel.read_text(encoding="utf-8"), "must remain unchanged")
             self.assertTrue(predictable_temp.is_symlink())
-            self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["2026-11-27"]["scans"], 1)
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["2026-11-14"]["scans"], 1)
 
     def test_invalid_blocker_names_and_counts_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
