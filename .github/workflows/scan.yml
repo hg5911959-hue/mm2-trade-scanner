@@ -169,6 +169,7 @@ jobs:
           # Never persist manual prices or legacy third-party valuation caches/history.
           rm -f state-bundle/data/cash_prices.csv
           rm -f state-bundle/data/supreme_values.json state-bundle/data/supreme_values_audit.json
+          # Retain only the separately validated public BloxSwaps cash-history database.
           rm -f state-bundle/data/market_history.sqlite3 state-bundle/data/history.csv
           rm -f state-bundle/data/rblxvalue_meta.json state-bundle/data/rblxvalue_detail_enrichment.json
           rm -f state-bundle/data/rblxvalue_key_health.json state-bundle/data/rblxvalue_request_budget.json
