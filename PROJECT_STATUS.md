@@ -1,6 +1,6 @@
 # Project Status and Resume Checkpoint
 
-Last verified: 2026-11-27 19:36 UTC  
+Last verified: 2026-11-27 19:52 UTC  
 Repository: `hg5911959-hue/mm2-trade-scanner`  
 Production branch: `main`  
 Main baseline at checkpoint: PR #261 merged as `f7169b2d5bb40f489749e43f37a0d97f6f2e7b21`; the RBLXValue reference card and archive-policy changes are now live on `main`.
@@ -30,7 +30,10 @@ Main baseline at checkpoint: PR #261 merged as `f7169b2d5bb40f489749e43f37a0d97f
 
 ## Reliability and live verification
 
-- Latest completed production scan: run `46055994878` on merge SHA `f7169b2d`. Scanner and state-persistence jobs succeeded across 14 cycles and 225 pagination pages / 4,500 API posts; every page batch reported `complete=True` and `seen_boundary=True`. It parsed 453 listings, evaluated 91, and sent one qualified trade alert; no scanner errors occurred. Telegram accepted trade message `9500` and scan-summary maintenance message `9501`. The trade alert request took 302 ms and was sent 33.57 seconds after feed refresh. Trade ID `531dc1f9eb507a4911228507` was confirmed persisted in `alerted.json`.
+- Latest completed production scan: run `46058653488` on `main` SHA `599af899`. Scanner and state-persistence jobs succeeded across 14 cycles and 97 pagination pages / 1,940 API posts; every page batch reported `complete=True` and `seen_boundary=True`. It parsed 447 listings, evaluated 100, and found one qualified candidate, but the immediate pre-send delivery guard correctly blocked it because the same listing ID had already been alerted and its content/value fingerprint was unchanged. No new Telegram alert was sent and no scanner errors occurred. The chained workflow's ten-minute wait/continue job is active for the next scan.
+- Previous post-merge scan `46057491594` also completed successfully: 14 cycles, 92 pages / 1,840 API posts, 422 parsed listings, 91 evaluations, and two Telegram-accepted cash alerts (`9502`, `9503`); no scanner errors. Their feed-refresh-to-alert times were 55.64s and 26.22s; confirmed Telegram request times were 332ms and 346ms.
+- In run `46058653488`, the RBLXValue snapshot was loaded on all 14 cycles: 214/214 Supreme `value_source_b`, 212/214 Stability, age 0.38–0.49 hours, `informational_only=true`; the scanner made zero RBLXValue API requests. Cash eligibility logs explicitly confirm ROBASE + BloxSwaps only.
+- Latest persisted ROBASE snapshot after run `46058653488`: `2026-11-27T19:43:40Z`; 222 catalogue rows, 200 with Chroma.gg 7D price, 189 meeting the 3+ sales sample. All 222 rows had a fresh check timestamp at persistence time. State: 2,272 watched listings, 0 pending rechecks, 4,935 alerted IDs, 598 unmatched-name entries, and 2 quarantined Telegram delivery IDs with 2 context records.
 - The production scan loaded RBLXValue reference data on all 14 cycles: 214/214 Supreme `value_source_b`, 212/214 Stability, snapshot age 0.08–0.19 hours, `informational_only=true`. The scanner made zero RBLXValue API requests; it used the archived snapshot. Logs explicitly confirm third-party valuation sources are disabled for cash eligibility and that cash decisions use ROBASE + BloxSwaps only.
 - Previous completed scan: run `46047079955`; 14 cycles, complete pagination, no scanner errors, and no new alert met the selection rules during that run.
 - Earlier live validation: run `46046592893`; 14 cycles and two alerts sent. Telegram API response times for those sends were approximately 388 ms and 452 ms. One already-alerted listing was correctly blocked by the duplicate guard.
@@ -57,6 +60,7 @@ Main baseline at checkpoint: PR #261 merged as `f7169b2d5bb40f489749e43f37a0d97f
 
 - PR #159 — draft hardening work; do not merge wholesale without a fresh review against current `main`.
 - PR #203 — isolated RBLXValue value-profit shadow analysis; automatically runs after the daily archive in `dry_run` with `CASH_FILTER=false`, an isolated empty state, read-only repository permissions, no Telegram alerts, and zero RBLXValue API requests. Run `46056098581` completed with zero alerts and no production state writes. It can apply separate shadow-analysis thresholds but cannot affect production cash alerts or state. Its proposed `value`-only change is not the source for the reference card and must not replace `value_source_b` for Supreme Value.
+- PR #262 — restore the previously requested minimum 5% gross cash margin in both production workflow entry points and ScannerConfig defaults, retaining the separate $2 minimum gross-profit floor. First CI attempt exposed two fixtures still using 0.01% and a workflow-parity test; fixtures and both workflow files were corrected. Latest full scanner CI is running on head `bf41f512`; ROBASE Pricing Tests passed on the previous PR head. Do not merge until the latest head passes the full suite twice and Ruff.
 - PR #100 — experimental Market Book work; not part of the production scanner.
 
 
