@@ -34,6 +34,8 @@ def _int(
     maximum: int | None = None,
 ) -> int:
     raw = env.get(name, str(default))
+    if raw is None or str(raw).strip() == "":
+        raw = str(default)
     try:
         value = int(raw)
     except (TypeError, ValueError) as exc:
@@ -87,6 +89,10 @@ class ScannerConfig:
     min_receive_stability_score: float
     failure_alert_threshold: int
     max_alerts_per_run: int
+    max_alerts_per_scan: int
+    max_alerts_per_session: int
+    scan_duration_seconds: int
+    scan_interval_seconds: int
     telegram_chat_type: str
     alert_delay_seconds: float
     max_pending_recheck_per_scan: int
@@ -128,6 +134,15 @@ class ScannerConfig:
             min_receive_stability_score=_float(source, "MIN_RECEIVE_STABILITY_SCORE", 3.0),
             failure_alert_threshold=_int(source, "FAILURE_ALERT_THRESHOLD", 3),
             max_alerts_per_run=_int(source, "MAX_ALERTS_PER_RUN", 0, minimum=0),
+            max_alerts_per_scan=_int(source, "MAX_ALERTS_PER_SCAN", 0, minimum=0),
+            max_alerts_per_session=_int(
+                source,
+                "MAX_ALERTS_PER_SESSION",
+                _int(source, "MAX_ALERTS_PER_RUN", 0, minimum=0),
+                minimum=0,
+            ),
+            scan_duration_seconds=_int(source, "MM2_SCAN_DURATION_SECONDS", 0, minimum=0),
+            scan_interval_seconds=_int(source, "MM2_SCAN_INTERVAL_SECONDS", 45, minimum=1),
             telegram_chat_type=str(source.get("TELEGRAM_CHAT_TYPE", "")).strip().casefold(),
             alert_delay_seconds=_float(source, "ALERT_DELAY_SECONDS", 3.2, minimum=0.0),
             max_pending_recheck_per_scan=_int(source, "MAX_PENDING_RECHECK_PER_SCAN", 50, minimum=1),
