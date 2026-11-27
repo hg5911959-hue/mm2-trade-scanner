@@ -52,8 +52,26 @@ jobs:
             python tools/validate_state.py --directory /tmp/rblxvalue-budget-check --api-safety-only
             echo "[rblxvalue-budget] restored persistent rolling 24-hour request ledger"
           else
-            echo "[rblxvalue-budget] no prior ledger; first request will create it"
+            python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+          path = Path("data/rblxvalue_request_budget.json")
+          path.write_text(json.dumps({
+              "schema_version": 1,
+              "window": "rolling_24_hours",
+              "limit": 60,
+              "request_timestamps_epoch": [],
+              "request_workflows": [],
+              "request_counts_by_workflow": {},
+              "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+          }, indent=2) + "\\n", encoding="utf-8")
+          PY
+            echo "[rblxvalue-budget] initialized an empty rolling 24-hour request ledger"
           fi
+          mkdir -p /tmp/rblxvalue-budget-check
+          cp data/rblxvalue_request_budget.json /tmp/rblxvalue-budget-check/
+          python tools/validate_state.py --directory /tmp/rblxvalue-budget-check --api-safety-only
       - name: Load exact ROBASE weapon crosswalk
         shell: bash
         run: |
