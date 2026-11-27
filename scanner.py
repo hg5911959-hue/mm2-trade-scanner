@@ -70,6 +70,7 @@ from tools.cash_market import calculate_cash_side, cash_profit_bounds, normalize
 from tools.robase_identity import build_robase_bloxswaps_map
 from tools.daily_chart_shadow import build_daily_chart_shadow_catalog
 from tools.rblxvalue_value_profit_shadow import load_values_from_snapshot
+from tools.supreme_telegram_info import load_telegram_market_info
 from tools.scan_loop import BloxSwapsRateLimitError, run_scan_loop as _run_scan_loop
 from tools.state_store import atomic_write_text
 from tools.http_retry import request_with_retry as _request_with_retry
@@ -3338,7 +3339,48 @@ def _clean_owner_link(url):
     return str(url or BLOXSWAPS_URL)
 
 
-def format_trade_message(listing, give_total, give_lines, receive_total, receive_lines, difference):
+def _format_telegram_market_info(listing, market_info):
+    """Render optional Supreme/RBLXValue reference fields; never used for eligibility."""
+    if not isinstance(market_info, dict) or not market_info:
+        return []
+    if str(listing.get("source", "bloxswaps")).strip().casefold() not in {"bloxswaps", "bloxswaps.com"}:
+        return []
+    rows = []
+    seen = set()
+    for side, field in (("GIVE", "give_items"), ("GET", "receive_items")):
+        for item in listing.get(field, []) or []:
+            if not isinstance(item, dict):
+                continue
+            slug = normalize_slug(
+                item.get("catalog_slug") or item.get("bloxswaps_slug") or item.get("slug") or ""
+            )
+            entry = market_info.get(slug)
+            if not isinstance(entry, dict) or (side, slug) in seen:
+                continue
+            seen.add((side, slug))
+            name = str(entry.get("name") or item.get("name") or "Unknown item")
+            details = []
+            value = entry.get("supreme_value")
+            if value is not None:
+                details.append(f"Supreme Value: {format_number(value)}")
+            stability = str(entry.get("stability") or "").strip()
+            details.append(f"Stability (RBLXValue): {stability or 'N/A'}")
+            rows.append(
+                f"• <b>{_telegram_escape(side)} · {_telegram_escape(name)}</b> — "
+                f"{_telegram_escape(' | '.join(details))}"
+            )
+    if not rows:
+        return []
+    return [
+        "",
+        "📊 <b>REFERENCE INFO ONLY</b>",
+        "<i>Not used for cash profit, filtering, ranking, or alert decisions</i>",
+        *rows,
+        "<i>Supreme Value via RBLXValue · Stability field from RBLXValue</i>",
+    ]
+
+
+def format_trade_message(listing, give_total, give_lines, receive_total, receive_lines, difference, market_info=None):
     """Readable, clickable Telegram trade card with escaped item data."""
     result = "WIN" if difference > 0 else ("FAIR" if difference == 0 else "LOSS")
     status_icon = "🟢" if difference > 0 else ("🟡" if difference == 0 else "🔴")
@@ -3368,6 +3410,7 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
             *_format_telegram_items(receive_lines),
             f"Total: <b>{chr(36)}{format_number(receive_total)}</b>",
             "",
+            *_format_telegram_market_info(listing, market_info),
             f"💵 <b>CASH PROFIT: +{chr(36)}{format_number(difference)}</b>",
         ])
     else:
@@ -3416,7 +3459,7 @@ def deliver_digest_items_individually(items, prepare_one, send_one):
     return outcomes
 
 
-def format_opportunity_digest(opportunities):
+def format_opportunity_digest(opportunities, market_info=None):
     """One same-cycle digest for all qualified offers beyond the individual-alert budget."""
     cash_only = bool(opportunities) and all(
         op.get("listing", {}).get("valuation_mode") == "cash" for op in opportunities
@@ -3462,6 +3505,7 @@ def format_opportunity_digest(opportunities):
         lines.append(f"   GIVE:\n{give_summary}")
         lines.append(f"   GET:\n{receive_summary}")
         lines.append(f"   TOTAL: {_telegram_escape(totals)}")
+        lines.extend(_format_telegram_market_info(listing, market_info))
         lines.append("")
     return TelegramHTML("\n".join(lines).rstrip())
 
@@ -4603,6 +4647,23 @@ def scan_once(include_backlog_rechecks=True):
             print("[cash] No verified cash prices yet; cash-profit alerts are safely disabled until prices are manually verified.")
     else:
         print("[mode] mode=value")
+    telegram_market_info = {}
+    if CASH_FILTER and not testing_mode and not value_profit_shadow_mode:
+        info_path = os.environ.get("RBLXVALUE_INFO_FILE", "data/rblxvalue_latest.json")
+        try:
+            telegram_market_info, info_summary = load_telegram_market_info(info_path)
+            print(
+                "[telegram-market-info] "
+                + json.dumps(info_summary, ensure_ascii=False, sort_keys=True)
+                + "; informational_only=true"
+            )
+        except Exception as info_error:
+            # This sidecar is display-only. A missing/stale/corrupt archive must
+            # never block the cash scanner or delay its Telegram alerts.
+            print(
+                "[telegram-market-info] unavailable; alerts continue unchanged; "
+                f"reason={type(info_error).__name__}"
+            )
     values_snapshot_changed = False
     history_store = None
     if (CASH_FILTER and not testing_mode) or value_profit_shadow_mode:
@@ -5217,7 +5278,8 @@ def scan_once(include_backlog_rechecks=True):
             listing["alert_attempted_at_utc"] = datetime.now(timezone.utc).isoformat()
         message = format_trade_message(
             listing, op["give_total"], op["give_lines"],
-            op["receive_total"], op["receive_lines"], op["difference"]
+            op["receive_total"], op["receive_lines"], op["difference"],
+            market_info=telegram_market_info,
         )
         if op.get("manual_review"):
             message = (
@@ -5369,7 +5431,7 @@ def scan_once(include_backlog_rechecks=True):
         outcomes = deliver_digest_items_individually(
             eligible,
             prepare_digest_item,
-            lambda op: send_telegram(format_opportunity_digest([op])),
+            lambda op: send_telegram(format_opportunity_digest([op], market_info=telegram_market_info)),
         )
         delivered = 0
         for status, op, error in outcomes:
