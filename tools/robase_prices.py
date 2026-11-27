@@ -566,7 +566,8 @@ def fetch_snapshot(output: Path = DEFAULT_OUTPUT, timeout: int = REQUEST_TIMEOUT
     rows = sorted(results.values(), key=lambda item: (item["name"].casefold(), item["robase_slug"]))
     now = _utc_now()
     complete = (
-        len(rows) == expected_count
+        not failures
+        and len(rows) == expected_count
         and len({row.get("robase_slug") for row in rows}) == expected_count
         and all(
             row.get("name")
