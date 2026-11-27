@@ -4660,7 +4660,7 @@ def scan_once(include_backlog_rechecks=True):
         else "backlog-recheck" if include_backlog_rechecks
         else "fast-new-feed"
     )
-    print(f"[scan-mode] {scan_mode}; backlog_recheck_cap={MAX_PENDING_RECHECK_PER_SCAN}; page_lookahead={MAX_BACKLOG_RECHECK_PAGES}")
+    print(f"[scan-mode] {scan_mode}; direct_recheck_budget={MAX_PENDING_RECHECK_PER_SCAN}; watch_batch={len(bloxswaps_watch_ids)}; pending_cursor_lookahead={MAX_BACKLOG_RECHECK_PAGES}")
     listings, stats, discovered_ids = fetch_bloxswaps_all(
         seen_ads, due_pending_ids.keys(), bloxswaps_watch_ids
     )
