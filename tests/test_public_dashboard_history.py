@@ -3,6 +3,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tools.public_dashboard_history import PublicDashboardHistory
 
@@ -105,6 +106,11 @@ class PublicDashboardHistoryTests(unittest.TestCase):
             self.history.record_opportunity(
                 self.opportunity(listing, cash_profit_worst=None)
             )
+
+    def test_database_size_limit_fails_closed(self):
+        with patch("tools.public_dashboard_history.MAX_DATABASE_BYTES", 1):
+            with self.assertRaisesRegex(ValueError, "64 MiB"):
+                self.history.record_listings([self.listing()])
 
     def test_symlink_database_path_is_rejected(self):
         target = Path(self.directory.name) / "target.sqlite3"
