@@ -1,5 +1,11 @@
+import json
+import tempfile
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from unittest.mock import patch
+
 from test_support import IsolatedDataTestCase
-from tools.robase_prices import _TableParser, _parse_item_detail, parse_robase_html
+from tools.robase_prices import _TableParser, _parse_item_detail, fetch_snapshot, parse_robase_html
 
 
 class RobasePriceParserTests(IsolatedDataTestCase):
@@ -284,3 +290,70 @@ class RobasePriceParserTests(IsolatedDataTestCase):
         self.assertEqual(item["bloxswaps_copies"], 99868)
         self.assertEqual(item["bloxswaps_holders"], 70527)
         self.assertEqual(item["status"], "verified")
+
+    def test_failed_refresh_retains_last_complete_snapshot_and_marks_it_stale(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "robase_prices.json"
+            old_checked = (
+                datetime.now(timezone.utc) - timedelta(hours=1)
+            ).isoformat().replace("+00:00", "Z")
+            previous = {
+                "schema_version": 6,
+                "price_basis": "chromas_gg_7d_price",
+                "catalog_expected_count": 200,
+                "catalog_complete": True,
+                "fetched_at_utc": old_checked,
+                "items": [
+                    {
+                        "name": f"Item {index}",
+                        "robase_slug": f"item-{index}",
+                        "cash_price_usd": 3.25,
+                        "price_display": "$3.25",
+                        "status": "verified",
+                        "last_checked_at_utc": old_checked,
+                    }
+                    for index in range(200)
+                ],
+            }
+            output.write_text(json.dumps(previous), encoding="utf-8")
+            homepage = (
+                "<p>All MM2 items 200</p>"
+                + "".join(
+                    f'<a href="/item/item-{index}">Item {index}</a>'
+                    for index in range(200)
+                )
+            )
+
+            class FakeResponse:
+                status = 200
+                headers = {}
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, exc_type, exc, traceback):
+                    return False
+
+                def read(self, limit):
+                    return homepage.encode("utf-8")
+
+            with (
+                patch("tools.robase_prices.urlopen", return_value=FakeResponse()),
+                patch(
+                    "tools.robase_prices._fetch_item_detail",
+                    side_effect=RuntimeError("simulated item-page outage"),
+                ),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "last valid snapshot was retained"):
+                    fetch_snapshot(output)
+
+            retained = json.loads(output.read_text(encoding="utf-8"))
+            self.assertTrue(retained["catalog_complete"])
+            self.assertEqual(retained["last_refresh_status"], "failed")
+            self.assertEqual(retained["items"][0]["cash_price_usd"], 3.25)
+            self.assertEqual(retained["items"][0]["last_checked_at_utc"], old_checked)
+            report = json.loads(
+                output.with_name(output.name + ".refresh-failed.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["failure_count"], 200)
