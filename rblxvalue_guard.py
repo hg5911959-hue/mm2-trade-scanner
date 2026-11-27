@@ -13,12 +13,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from tools.scanner_config import CONFIG
+
 BUDGET_FILE = Path("data/rblxvalue_request_budget.json")
 BLOCK_FILE = Path("data/api_key_blocked.json")
 HARD_DAILY_REQUEST_LIMIT = 60
 DAILY_REQUEST_LIMIT = min(
     HARD_DAILY_REQUEST_LIMIT,
-    max(1, int(os.environ.get("RBLXVALUE_DAILY_REQUEST_LIMIT", "60"))),
+    CONFIG.rblxvalue_daily_request_limit,
 )
 BLOCK_STEPS = (21600, 43200, 86400, 172800)
 PERMANENT_BLOCK_AFTER = 3

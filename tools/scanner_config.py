@@ -101,6 +101,7 @@ class ScannerConfig:
     max_feed_pages: int
     cash_filter: bool
     rblxvalue_max_detail_lookups_per_day: int
+    rblxvalue_daily_request_limit: int
     rblxvalue_meta_poll_enabled: bool
     default_values_ttl_seconds: int
     values_ttl_seconds: int
@@ -153,6 +154,9 @@ class ScannerConfig:
             cash_filter=cash_filter,
             rblxvalue_max_detail_lookups_per_day=_int(
                 source, "RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY", 6, minimum=0
+            ),
+            rblxvalue_daily_request_limit=_int(
+                source, "RBLXVALUE_DAILY_REQUEST_LIMIT", 60, minimum=1, maximum=60
             ),
             rblxvalue_meta_poll_enabled=_bool(source, "RBLXVALUE_META_POLL_ENABLED"),
             default_values_ttl_seconds=default_values_ttl,
