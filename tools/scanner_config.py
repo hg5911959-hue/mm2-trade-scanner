@@ -64,6 +64,17 @@ def _float(
     return value
 
 
+def _nonnegative_float(env: Mapping[str, str], name: str, default: float) -> float:
+    raw = env.get(name, str(default))
+    try:
+        value = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be finite and non-negative") from exc
+    if not math.isfinite(value) or value < 0:
+        raise ValueError(f"{name} must be finite and non-negative")
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class ScannerConfig:
     bloxswaps_url: str
@@ -148,8 +159,8 @@ class ScannerConfig:
                 source, "CASH_MIN_PROFIT_USD_SMALL", 2.0, minimum=1.0
             ),
             cash_min_verified_rows=_int(source, "CASH_MIN_VERIFIED_ROWS", 8, minimum=0),
-            cash_min_margin_percent=_float(
-                source, "CASH_MIN_MARGIN_PERCENT", 0.0, minimum=0.0
+            cash_min_margin_percent=_nonnegative_float(
+                source, "CASH_MIN_MARGIN_PERCENT", 0.0
             ),
             cash_max_age_days=_int(source, "CASH_MAX_AGE_DAYS", 1, minimum=1),
             cash_max_listing_age_seconds=_int(
