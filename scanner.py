@@ -1156,6 +1156,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     watch_remaining.difference_update(pending_not_found_ids)
     watch_to_fetch = watch_remaining - first_page_ids - pending_to_fetch
     direct_watch_posts, watch_not_found_ids = fetch_pending_posts_by_id(watch_to_fetch)
+    watch_not_found_ids = set(watch_not_found_ids) | (set(pending_not_found_ids) & watch_ids)
     watch_remaining.difference_update(watch_not_found_ids)
     if direct_pending_posts or pending_not_found_ids:
         print(
