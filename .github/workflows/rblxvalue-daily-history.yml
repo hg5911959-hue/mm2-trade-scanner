@@ -38,6 +38,22 @@ jobs:
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: "3.12"
+      - name: Restore and validate rolling RBLXValue request budget
+        id: restore-budget
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin refs/heads/robase-daily-history:refs/remotes/origin/robase-daily-history
+          mkdir -p data
+          if git cat-file -e refs/remotes/origin/robase-daily-history:data/rblxvalue_request_budget.json 2>/dev/null; then
+            git show refs/remotes/origin/robase-daily-history:data/rblxvalue_request_budget.json > data/rblxvalue_request_budget.json
+            mkdir -p /tmp/rblxvalue-budget-check
+            cp data/rblxvalue_request_budget.json /tmp/rblxvalue-budget-check/
+            python tools/validate_state.py --directory /tmp/rblxvalue-budget-check --api-safety-only
+            echo "[rblxvalue-budget] restored persistent rolling 24-hour request ledger"
+          else
+            echo "[rblxvalue-budget] no prior ledger; first request will create it"
+          fi
       - name: Load exact ROBASE weapon crosswalk
         shell: bash
         run: |
@@ -55,6 +71,7 @@ jobs:
       - name: Fetch RBLXValue API dataset
         env:
           RBLXVALUE_API_KEY: ${{ secrets.RBLXVALUE_API_KEY }}
+          RBLXVALUE_DAILY_REQUEST_LIMIT: "60"
         shell: bash
         run: |
           set -euo pipefail
@@ -64,6 +81,14 @@ jobs:
           fi
           echo "::add-mask::${RBLXVALUE_API_KEY}"
           python tools/rblxvalue_daily.py --identity-map /tmp/weapon_identity_map.json --json-output /tmp/rblxvalue_latest.json --csv-output /tmp/rblxvalue_snapshot.csv
+      - name: Upload rolling request budget even if collection fails
+        if: always() && steps.restore-budget.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: rblxvalue-request-budget
+          path: data/rblxvalue_request_budget.json
+          if-no-files-found: warn
+          retention-days: 1
       - name: Upload validated snapshot for isolated archive job
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -74,9 +99,61 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  persist-budget:
+    name: Persist rolling API request budget (no API secret)
+    needs: collect
+    if: always() && needs.collect.result != 'cancelled'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out archive branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: robase-daily-history
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Download request budget artifact
+        if: always()
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        continue-on-error: true
+        with:
+          name: rblxvalue-request-budget
+          path: /tmp/rblxvalue-budget
+      - name: Validate and persist request budget
+        env:
+          COLLECT_RESULT: ${{ needs.collect.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          budget="/tmp/rblxvalue-budget/rblxvalue_request_budget.json"
+          if [ ! -f "$budget" ]; then
+            if [ "$COLLECT_RESULT" = "success" ]; then
+              echo "::error::Successful collection did not upload its rolling request budget."
+              exit 1
+            fi
+            echo "No request ledger was created before collection failed; nothing to persist."
+            exit 0
+          fi
+          mkdir -p /tmp/rblxvalue-budget-check data
+          cp "$budget" /tmp/rblxvalue-budget-check/
+          python tools/validate_state.py --directory /tmp/rblxvalue-budget-check --api-safety-only
+          cp "$budget" data/rblxvalue_request_budget.json
+          git add -f data/rblxvalue_request_budget.json
+          if git diff --cached --quiet; then
+            echo "Rolling RBLXValue request budget unchanged."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore: persist RBLXValue rolling request budget"
+            git push origin HEAD:robase-daily-history
+          fi
+
   archive:
     name: Archive snapshot (no API secret)
-    needs: collect
+    needs: [collect, persist-budget]
+    if: needs.collect.result == 'success' && needs.persist-budget.result == 'success'
     permissions:
       contents: write
     runs-on: ubuntu-latest
