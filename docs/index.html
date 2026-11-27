@@ -97,8 +97,8 @@
       rows.map(row=>{
         const url=safeUrl(row.url);
         const title=url?'<a href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">Open listing ↗</a>':'<span class="small">Link unavailable</span>';
-        const give=(row.giveItems||[]).map(x=>(x.quantity||1)+'× '+x.name).join(', ');
-        const receive=(row.receiveItems||[]).map(x=>(x.quantity||1)+'× '+x.name).join(', ');
+        const give=(row.giveItems||[]).map(x=>x.quantity == null ? x.name : x.quantity+'× '+x.name).join(', ');
+        const receive=(row.receiveItems||[]).map(x=>x.quantity == null ? x.name : x.quantity+'× '+x.name).join(', ');
         return '<tr><td><div class="item">'+esc(row.listingId).slice(0,12)+'</div><div class="small">'+title+'</div></td><td>'+esc(give)+'</td><td>'+esc(receive)+'</td><td class="num profit">'+usd(row.profit)+'</td><td class="num margin">'+number(row.margin)+'%</td><td>'+pill('good',row.source)+'</td></tr>';
       }).join('')+'</tbody></table>';
   }
@@ -113,8 +113,8 @@
     if(!rows.length){$("recent-listings").innerHTML='<div class="empty">No public listings recorded yet.</div>';return;}
     $("recent-listings").innerHTML=rows.map(row=>{
       const url=safeUrl(row.url), owner=safeUrl(row.ownerUrl);
-      const give=(row.giveItems||[]).map(x=>(x.quantity||1)+'× '+x.name).join(', ');
-      const receive=(row.receiveItems||[]).map(x=>(x.quantity||1)+'× '+x.name).join(', ');
+      const give=(row.giveItems||[]).map(x=>x.quantity == null ? x.name : x.quantity+'× '+x.name).join(', ');
+      const receive=(row.receiveItems||[]).map(x=>x.quantity == null ? x.name : x.quantity+'× '+x.name).join(', ');
       return '<article class="listing"><div class="listing-top"><strong>'+esc(row.owner||row.source||"Public listing")+'</strong><span class="pill">'+esc(row.source)+'</span></div><div class="items">Gives: '+esc(give||"—")+'<br>Wants: '+esc(receive||"—")+'</div><div class="small">'+(url?'<a href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">View listing ↗</a>':'')+(owner?' · <a href="'+esc(owner)+'" target="_blank" rel="noopener noreferrer">Owner ↗</a>':'')+' · Seen '+esc(date(row.lastSeen))+'</div></article>';
     }).join('');
   }
