@@ -1,5 +1,8 @@
 import json
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
+from unittest.mock import patch
 from test_support import IsolatedDataTestCase
 from tools.telegram_delivery import TelegramDeliveryUncertain, send_telegram
 
@@ -58,6 +61,13 @@ class TelegramResponseShapeTests(IsolatedDataTestCase):
 
     def test_confirmed_success_is_accepted(self):
         self.assertIsNone(self._send(b'{"ok": true, "result": {"message_id": 77}}'))
+
+    def test_confirmed_success_logs_request_round_trip_latency(self):
+        output = StringIO()
+        with patch("tools.telegram_delivery.time.monotonic", side_effect=[10.0, 10.125]):
+            with redirect_stdout(output):
+                self._send(b'{"ok": true, "result": {"message_id": 77}}')
+        self.assertIn("[telegram-timing] confirmed_request_ms=125.0", output.getvalue())
 
     def test_explicit_api_rejection_remains_a_definite_failure(self):
         with self.assertRaisesRegex(RuntimeError, "API rejected message: blocked"):
