@@ -3452,7 +3452,8 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
             f"Total: <b>{chr(36)}{format_number(receive_total)}</b>",
             "",
             *_format_telegram_market_info(listing, market_info),
-            f"💵 <b>CASH PROFIT: +{chr(36)}{format_number(difference)}</b>",
+            f"💵 <b>EST. CASH PROFIT (before fees/slippage): +{chr(36)}{format_number(difference)}</b>",
+            "<i>Based on Chroma.gg Price (7d); fees/slippage not included.</i>",
         ])
     else:
         lines.extend([
@@ -3530,8 +3531,8 @@ def format_opportunity_digest(opportunities, market_info=None):
         receive_summary = "\n".join(_format_telegram_items(op.get("receive_lines", []))) or "—"
         if listing.get("valuation_mode") == "cash":
             low = float(op.get("cash_profit_worst", op.get("difference", 0)) or 0)
-            profit_label = f"+{chr(36)}{low:.2f}"
-            quality_label = "ROBASE verified"
+            profit_label = f"EST. +{chr(36)}{low:.2f}"
+            quality_label = "ROBASE 7d gross estimate"
             totals = f"{chr(36)}{float(op.get('give_total', 0) or 0):.2f} → {chr(36)}{float(op.get('receive_total', 0) or 0):.2f}"
         else:
             conservative = float(op.get("profit_worst", op.get("difference", 0)) or 0)
