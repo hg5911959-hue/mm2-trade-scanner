@@ -185,7 +185,7 @@ def build_dashboard_data(db_path: str | Path, robase_path: str | Path | None = N
             SELECT listing_id, source, detected_at_utc, give_total, receive_total,
                    profit, margin_percent, listing_url, details_json
             FROM opportunities
-            WHERE lower(source) != 'discord'
+            WHERE lower(source) = 'bloxswaps'
             ORDER BY profit DESC, detected_at_utc DESC
             """
         ).fetchall()
@@ -219,7 +219,7 @@ def build_dashboard_data(db_path: str | Path, robase_path: str | Path | None = N
             SELECT source, owner_name, owner_url, listing_url, first_seen_at_utc,
                    last_seen_at_utc, give_items_json, receive_items_json
             FROM listings
-            WHERE lower(source) != 'discord'
+            WHERE lower(source) = 'bloxswaps'
             ORDER BY last_seen_at_utc DESC
             LIMIT 40
             """
@@ -249,7 +249,7 @@ def build_dashboard_data(db_path: str | Path, robase_path: str | Path | None = N
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--database", default="data/market_history.sqlite3")
+    parser.add_argument("--database", default="data/public_dashboard_history.sqlite3")
     parser.add_argument("--output", default="public/dashboard-data.json")
     parser.add_argument("--robase-catalogue", default="data/robase_prices.json")
     args = parser.parse_args()
