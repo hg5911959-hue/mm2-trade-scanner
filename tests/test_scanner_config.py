@@ -15,6 +15,7 @@ class ScannerConfigTests(IsolatedDataTestCase):
         self.assertEqual(config.cash_min_profit_usd, 2.0)
         self.assertEqual(config.cash_min_profit_usd_small, 2.0)
         self.assertEqual(config.cash_min_verified_rows, 8)
+        self.assertEqual(config.cash_min_margin_percent, 5.0)
         self.assertFalse(config.cash_filter)
         self.assertEqual(config.default_values_ttl_seconds, 12 * 60 * 60)
         self.assertEqual(config.values_ttl_seconds, 12 * 60 * 60)

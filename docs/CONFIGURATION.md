@@ -44,7 +44,7 @@ runtime-only switches are still read by the component that uses them.
 | `CASH_MIN_PROFIT_USD` | `2.00` | Minimum estimated gross cash spread before fees/slippage; minimum 1.00 |
 | `CASH_MIN_PROFIT_USD_SMALL` | `2.00` | Small-offer threshold; minimum 1.00 |
 | `CASH_MIN_VERIFIED_ROWS` | `8` | Preflight minimum; minimum 0 |
-| `CASH_MIN_MARGIN_PERCENT` | `0` | Gross margin threshold based on Chroma.gg Price (7d), before fees/slippage |
+| `CASH_MIN_MARGIN_PERCENT` | `5.0` | Gross margin threshold based on Chroma.gg Price (7d), before fees/slippage |
 | `CASH_MAX_AGE_DAYS` | `1` | Minimum 1 day; production also enforces the stricter freshness gates |
 | `CASH_MAX_LISTING_AGE_SECONDS` | `3600` | Minimum 60 seconds |
 

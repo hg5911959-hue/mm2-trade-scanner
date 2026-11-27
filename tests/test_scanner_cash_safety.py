@@ -99,7 +99,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
             "cash_estimate_only": False, "manual_review": False,
             "cash_price_basis": "chromas.gg Price (7d)",
             "listing": {"posted_at": datetime.now(UTC).isoformat()},
-            "cash_profit_worst": 2.0, "margin": 0.01, "give_total_max": 10000.0,
+            "cash_profit_worst": 2.0, "margin": 5.0, "give_total_max": 10000.0,
         }
         self.assertTrue(scanner.qualifies_cash(result))
 
@@ -108,11 +108,11 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
             "cash_estimate_only": False, "manual_review": False,
             "cash_price_basis": "chromas.gg Price (7d)",
             "listing": {"posted_at": datetime.now(UTC).isoformat()},
-            "cash_profit_worst": 2.0, "margin": 0.01, "give_total_max": 10000.0,
+            "cash_profit_worst": 2.0, "margin": 4.99, "give_total_max": 10000.0,
         }
-        with patch.object(scanner, "CASH_MIN_MARGIN_PERCENT", 0.5):
-            self.assertFalse(scanner.qualifies_cash(base))
-            self.assertTrue(scanner.qualifies_cash({**base, "margin": 0.5}))
+        self.assertEqual(scanner.CASH_MIN_MARGIN_PERCENT, 5.0)
+        self.assertFalse(scanner.qualifies_cash(base))
+        self.assertTrue(scanner.qualifies_cash({**base, "margin": 5.0}))
 
     def test_robase_items_resolve_through_exact_rblxvalue_slugs(self):
         names = (
@@ -247,7 +247,7 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
             "manual_review": False, "cash_estimate_only": False,
             "cash_price_basis": "chromas.gg Price (7d)",
             "listing": {"posted_at": datetime.now(UTC).isoformat()},
-            "margin": 0.01, "give_total_max": 4.99,
+            "margin": 5.0, "give_total_max": 4.99,
         }
         self.assertTrue(scanner.qualifies_cash({**base, "cash_profit_worst": 2.00}))
         self.assertFalse(scanner.qualifies_cash({**base, "cash_profit_worst": 1.99}))
