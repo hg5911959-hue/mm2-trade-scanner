@@ -17,6 +17,8 @@ def make_snapshot():
         rows.append({
             "bloxswaps_slug": f"weapon-{index}",
             "robase_name": f"Weapon {index}",
+            "value": 9999 + index,
+            "value_source_a": 8888 + index,
             "value_source_b": 160 + index,
             "stability": "Stable" if index != 1 else None,
             "status": "matched" if index < 158 else "matched_missing_blended_value",
@@ -49,7 +51,10 @@ class SupremeTelegramInfoTests(IsolatedDataTestCase):
             self.write_snapshot(snapshot),
             now=datetime(2026, 11, 27, 12, 0, tzinfo=timezone.utc),
         )
+        self.assertEqual(mapping["weapon0"]["supreme_value"], 160)
         self.assertEqual(mapping["weapon1"]["supreme_value"], 161)
+        self.assertEqual(mapping["weapon0"]["value_source"], "Supreme Values via RBLXValue")
+        self.assertEqual(mapping["weapon0"]["stability_source"], "RBLXValue")
         self.assertIsNone(mapping["weapon1"]["stability"])
         self.assertEqual(mapping["weapon0"]["stability"], "Stable")
         self.assertEqual(summary["with_supreme_value"], 214)
