@@ -15,6 +15,7 @@ back into `scanner.py` where legacy symbol names must remain available.
 | `tools/state_store.py` | Durable same-directory temporary writes with fsync and atomic replacement |
 | `tools/html_tree.py` | Small event-based HTML tree, traversal, text extraction and trade-side matching |
 | `tools/item_parser.py` | Item-name normalization, Arabic digit handling, DOM-scoped quantity evidence and trade-side item extraction |
+| `tools/listing_identity.py` | Durable source listing IDs, normalized item identity and legacy alert-state migration |
 | `tools/telegram_transport.py` | Telegram redirect protection and conservative per-chat pacing |
 | `tools/redaction.py` | Secret discovery, credential scrubbing and line-buffered safe log streams |
 | `tools/retry_after.py` | Shared delta-seconds and HTTP-date parsing for upstream retry responses |
