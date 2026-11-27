@@ -4965,6 +4965,7 @@ def _open_scan_history_data(modes: ScanModes, values: dict) -> ScanHistoryData:
 
 @dataclass(slots=True)
 class ScanPersistentState:
+    aliases: dict
     seen_ads: set | None
     pending_ids: dict
     pending_schedule: dict
@@ -4986,19 +4987,20 @@ class ScanFeedResult:
     mapping_audit: dict | None
 
 
-def _load_scan_persistent_state(
-    include_backlog_rechecks: bool,
-    values_snapshot_changed: bool,
-    cash_prices_changed: bool,
-) -> ScanPersistentState:
-    """Load, clean, and schedule seen/pending/watch state for one scan."""
-    aliases = load_aliases()
-    print(f"[aliases] Loaded {len(aliases)} reviewed item aliases")
-    print("[stage] Loading seen-offer and pending-recheck state")
-    seen_ads = load_seen_ads()
-    pending_ids = load_pending_ids()
-    pending_schedule = load_pending_recheck_schedule()
+@dataclass(slots=True)
+class ScanRecheckSchedule:
+    seen_ads: set | None
+    all_due_pending_ids: dict
+    due_pending_ids: dict
+    watch_state: dict
+    last_success_ts: float | None
+    run_backlog_rechecks: bool
+    watch_recheck_ids: list
+    scan_mode: str
 
+
+def _retire_legacy_pending_ids(seen_ads, pending_ids, pending_schedule):
+    """Close obsolete offer-review queue entries while retaining technical retries."""
     retryable_reasons = {"unparsed_feed", "telegram_failure"}
     retired_pending = []
     for pending_id in list(pending_ids):
@@ -5018,7 +5020,6 @@ def _load_scan_persistent_state(
             f"[state] Closed {len(retired_pending)} legacy review/deferred offer IDs; "
             "no offer-level manual-review backlog remains."
         )
-
     if seen_ads is not None:
         new_pending_seen = set(pending_ids) - seen_ads
         if new_pending_seen:
@@ -5028,7 +5029,18 @@ def _load_scan_persistent_state(
                 f"[state] Seeded {len(new_pending_seen)} pending IDs into the seen set; "
                 "they remain queued for bounded rechecks."
             )
+    return seen_ads
 
+
+def _prepare_scan_recheck_schedule(
+    seen_ads,
+    pending_ids,
+    pending_schedule,
+    include_backlog_rechecks,
+    values_snapshot_changed,
+    cash_prices_changed,
+) -> ScanRecheckSchedule:
+    """Choose bounded pending/watch work and the scan mode for this invocation."""
     all_due_pending_ids = due_pending_ids_for_scan(
         pending_ids, pending_schedule, limit=0
     )
@@ -5081,17 +5093,51 @@ def _load_scan_persistent_state(
         f"[scan-mode] {scan_mode}; direct_recheck_budget={MAX_PENDING_RECHECK_PER_SCAN}; "
         f"watch_batch={len(watch_recheck_ids)}; pending_cursor_lookahead={MAX_BACKLOG_RECHECK_PAGES}"
     )
-    return ScanPersistentState(
+    return ScanRecheckSchedule(
         seen_ads=seen_ads,
-        pending_ids=pending_ids,
-        pending_schedule=pending_schedule,
-        watch_state=watch_state,
         all_due_pending_ids=all_due_pending_ids,
         due_pending_ids=due_pending_ids,
+        watch_state=watch_state,
         last_success_ts=last_success_ts,
         run_backlog_rechecks=run_backlog_rechecks,
         watch_recheck_ids=watch_recheck_ids,
         scan_mode=scan_mode,
+    )
+
+
+def _load_scan_persistent_state(
+    include_backlog_rechecks: bool,
+    values_snapshot_changed: bool,
+    cash_prices_changed: bool,
+) -> ScanPersistentState:
+    """Load and clean durable scanner state, then prepare bounded rechecks."""
+    aliases = load_aliases()
+    print(f"[aliases] Loaded {len(aliases)} reviewed item aliases")
+    print("[stage] Loading seen-offer and pending-recheck state")
+    seen_ads = load_seen_ads()
+    pending_ids = load_pending_ids()
+    pending_schedule = load_pending_recheck_schedule()
+    seen_ads = _retire_legacy_pending_ids(seen_ads, pending_ids, pending_schedule)
+    schedule = _prepare_scan_recheck_schedule(
+        seen_ads,
+        pending_ids,
+        pending_schedule,
+        include_backlog_rechecks,
+        values_snapshot_changed,
+        cash_prices_changed,
+    )
+    return ScanPersistentState(
+        aliases=aliases,
+        seen_ads=schedule.seen_ads,
+        pending_ids=pending_ids,
+        pending_schedule=pending_schedule,
+        watch_state=schedule.watch_state,
+        all_due_pending_ids=schedule.all_due_pending_ids,
+        due_pending_ids=schedule.due_pending_ids,
+        last_success_ts=schedule.last_success_ts,
+        run_backlog_rechecks=schedule.run_backlog_rechecks,
+        watch_recheck_ids=schedule.watch_recheck_ids,
+        scan_mode=schedule.scan_mode,
     )
 
 
@@ -5188,6 +5234,7 @@ def scan_once(include_backlog_rechecks=True):
         values_snapshot_changed,
         cash_prices_changed,
     )
+    aliases = persistent_state.aliases
     seen_ads = persistent_state.seen_ads
     pending_ids = persistent_state.pending_ids
     pending_schedule = persistent_state.pending_schedule
