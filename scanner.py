@@ -30,6 +30,11 @@ from tools.cash_market import calculate_cash_side, cash_profit_bounds, normalize
 from tools.robase_identity import build_robase_bloxswaps_map
 from tools.daily_chart_shadow import build_daily_chart_shadow_catalog
 from tools.rblxvalue_value_profit_shadow import load_values_from_snapshot
+from tools.scan_loop_policy import (
+    minimum_cycle_start_window as _minimum_cycle_start_window,
+    should_run_backlog_recheck as _should_run_backlog_recheck,
+    should_start_scan_cycle as _should_start_scan_cycle,
+)
 
 
 def load_cash_price_catalog(*args, **kwargs):
@@ -6467,28 +6472,19 @@ def record_failure(error):
 
 
 def minimum_cycle_start_window(duration_seconds):
-    """Keep a modest finish buffer without wasting most of the polling window.
-
-    Bounded production cycles now normally finish in seconds. Long sessions
-    reserve 25% (at least 120s and at most 180s) for a slower final cycle;
-    short sessions reserve 25% with a 30s floor.
-    """
-    duration = max(0.1, float(duration_seconds))
-    if duration <= 30:
-        return max(0.1, duration * 0.25)
-    if duration <= 300:
-        return max(30.0, duration * 0.25)
-    return min(180.0, max(120.0, duration * 0.25))
+    """Compatibility wrapper for the extracted scan-loop policy."""
+    return _minimum_cycle_start_window(duration_seconds)
 
 
 def should_start_scan_cycle(remaining_seconds, duration_seconds):
-    """Do not begin a full scan cycle when the polling window is nearly exhausted."""
-    return float(remaining_seconds) >= minimum_cycle_start_window(duration_seconds)
+    """Compatibility wrapper for the extracted scan-loop policy."""
+    return _should_start_scan_cycle(remaining_seconds, duration_seconds)
+
 
 def should_run_backlog_recheck(cycle_number, every=None):
-    """Schedule expensive pending/watch work separately from the hot new-feed path."""
+    """Use the configured cadence while retaining the scanner's public helper."""
     cadence = BACKLOG_RECHECK_EVERY_CYCLES if every is None else max(1, int(every))
-    return int(cycle_number) > 0 and int(cycle_number) % cadence == 0
+    return _should_run_backlog_recheck(cycle_number, cadence)
 
 
 def run_scan_loop(duration_seconds=720, interval_seconds=45):
