@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """BloxSwaps MM2 scanner with verified Supreme Values calculations."""
 import csv
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field as dataclass_field
 import html as html_lib
 import itertools
 import hashlib
@@ -1158,19 +1158,19 @@ class IncrementalFeedState:
     item_map: dict | None
     single_sided_count: int
     single_sided_ids: list
-    pending_found_ids: list = field(default_factory=list)
-    pending_not_found_ids: list = field(default_factory=list)
-    watch_not_found_ids: set = field(default_factory=set)
-    collected: list = field(default_factory=list)
-    discovered_ids: list = field(default_factory=list)
-    addition_ids: list = field(default_factory=list)
-    unparsed_ids: list = field(default_factory=list)
-    unparsed_samples: list = field(default_factory=list)
-    unidentified_feed_samples: list = field(default_factory=list)
-    html_parse_warning_ids: list = field(default_factory=list)
+    pending_found_ids: list = dataclass_field(default_factory=list)
+    pending_not_found_ids: list = dataclass_field(default_factory=list)
+    watch_not_found_ids: set = dataclass_field(default_factory=set)
+    collected: list = dataclass_field(default_factory=list)
+    discovered_ids: list = dataclass_field(default_factory=list)
+    addition_ids: list = dataclass_field(default_factory=list)
+    unparsed_ids: list = dataclass_field(default_factory=list)
+    unparsed_samples: list = dataclass_field(default_factory=list)
+    unidentified_feed_samples: list = dataclass_field(default_factory=list)
+    html_parse_warning_ids: list = dataclass_field(default_factory=list)
     boundary_reached: bool = False
     seen_streak: int = 0
-    seen_ids_skipped: list = field(default_factory=list)
+    seen_ids_skipped: list = dataclass_field(default_factory=list)
     additions: int = 0
     offers_excluded: int = 0
     malformed: int = 0
