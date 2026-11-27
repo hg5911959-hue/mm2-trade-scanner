@@ -31,7 +31,9 @@ class CashMarketTests(IsolatedDataTestCase):
             writer.writerows(rows)
         return load_cash_price_catalog(path)
 
-    def _row(self, name="Chroma Laser", price="10", status="verified", verified="2026-11-14T00:00:00Z"):
+    def _row(self, name="Chroma Laser", price="10", status="verified", verified=None):
+        if verified is None:
+            verified = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         return {
             "name": name, "cash_price_usd": price, "tier": "test",
             "status": status, "verified_at_utc": verified if status == "verified" else "",
@@ -43,7 +45,9 @@ class CashMarketTests(IsolatedDataTestCase):
 
     def test_synthetic_fixture_has_verified_and_unverified_rows(self):
         fixture = Path(__file__).resolve().parent / "fixtures" / "cash_prices_test.csv"
-        catalog = load_cash_price_catalog(fixture)
+        # This test checks CSV parsing, not the freshness policy. Keep the
+        # synthetic fixture valid regardless of the date the suite is run.
+        catalog = load_cash_price_catalog(fixture, max_age_days=3650)
         self.assertEqual(catalog["row_count"], 2)
         self.assertEqual(catalog["verified_count"], 1)
         self.assertEqual(
