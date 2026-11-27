@@ -1,9 +1,8 @@
-import unittest
-
+from test_support import IsolatedDataTestCase
 from tools.telegram_quarantine import reconcile_uncertain_quarantine
 
 
-class TelegramQuarantineReconciliationTests(unittest.TestCase):
+class TelegramQuarantineReconciliationTests(IsolatedDataTestCase):
     def test_only_confirmed_alerts_are_removed_and_orphan_context_is_pruned(self):
         state = {
             "confirmed-a": 100.0,
