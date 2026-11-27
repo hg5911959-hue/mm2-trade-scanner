@@ -45,6 +45,32 @@ class BloxSwapsRateLimitTests(IsolatedDataTestCase):
         self.assertEqual(len(calls), 1)
         sleep.assert_not_called()
 
+
+    def test_http_429_http_date_retry_after_is_parsed(self):
+        class FrozenDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2015, 10, 21, 7, 27, 55, tzinfo=timezone.utc)
+
+        def rate_limited(req, timeout):
+            raise HTTPError(
+                req.full_url,
+                429,
+                "too many requests",
+                {"Retry-After": "Wed, 21 Oct 2015 07:28:32 GMT"},
+                BytesIO(b"rate limited"),
+            )
+
+        request = Request("https://bloxswaps.com/trade-mm2")
+        with (
+            patch("tools.retry_after.datetime", FrozenDateTime),
+            patch("scanner.urllib.request.urlopen", side_effect=rate_limited),
+        ):
+            with self.assertRaisesRegex(
+                scanner.BloxSwapsRateLimitError, r"Retry-After=37s"
+            ):
+                scanner.request_with_retry(request, 10, "BloxSwaps page")
+
     def test_rate_limit_stops_the_polling_window_without_another_cycle(self):
         failure = scanner.BloxSwapsRateLimitError("BloxSwaps page: HTTP 429 rate limited")
         with (
