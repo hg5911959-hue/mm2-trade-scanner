@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -95,6 +97,17 @@ class RBLXValueDailyTests(IsolatedDataTestCase):
         self.assertNotEqual(normalize_name("Bat"),normalize_name("Batwing"))
     def test_number_parser_does_not_coerce_invalid_values(self):
         self.assertEqual(parse_number("1,250"),1250); self.assertIsNone(parse_number("x3")); self.assertIsNone(parse_number(-1)); self.assertIsNone(parse_number("155.5"))
+    def test_script_entrypoint_can_import_root_request_guard(self):
+        script = Path(daily.__file__).resolve()
+        result = subprocess.run(
+            [sys.executable, str(script), "--help"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--identity-map", result.stdout)
+
     def test_api_key_is_required(self):
         with self.assertRaisesRegex(ValueError,"RBLXVALUE_API_KEY"): RBLXValueClient("")
     def test_client_persists_every_http_attempt_in_the_rolling_budget(self):
