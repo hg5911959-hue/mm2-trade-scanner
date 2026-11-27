@@ -114,8 +114,11 @@ def _validate_public_dashboard_history(path: Path) -> list[str]:
     """Validate the deliberately public, BloxSwaps-only dashboard database."""
     errors: list[str] = []
     max_bytes = 64 * 1024 * 1024
-    if not path.is_file() or path.stat().st_size > max_bytes:
-        return ["public dashboard history is not a regular file or exceeds 64 MiB"]
+    try:
+        if not path.is_file() or path.stat().st_size > max_bytes:
+            return ["public dashboard history is not a regular file or exceeds 64 MiB"]
+    except OSError:
+        return ["public dashboard history cannot be safely inspected"]
     required_columns = {
         "listings": {
             "listing_id", "source", "source_id", "owner_name", "owner_url",
@@ -144,7 +147,7 @@ def _validate_public_dashboard_history(path: Path) -> list[str]:
             items = json.loads(raw) if isinstance(raw, str) else None
         except ValueError:
             return False
-        if not isinstance(items, list):
+        if not isinstance(items, list) or len(items) > 50:
             return False
         for item in items:
             if not isinstance(item, dict) or set(item) - {"name", "quantity"}:
@@ -181,9 +184,9 @@ def _validate_public_dashboard_history(path: Path) -> list[str]:
                 return errors
             listing_count = db.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
             opportunity_count = db.execute("SELECT COUNT(*) FROM opportunities").fetchone()[0]
-            if type(listing_count) is not int or not 0 <= listing_count <= 10_000:
+            if type(listing_count) is not int or not 0 <= listing_count <= 3_000:
                 errors.append("public dashboard listing count exceeds its safety bound")
-            if type(opportunity_count) is not int or not 0 <= opportunity_count <= 5_000:
+            if type(opportunity_count) is not int or not 0 <= opportunity_count <= 1_000:
                 errors.append("public dashboard opportunity count exceeds its safety bound")
             for row in db.execute(
                 "SELECT source, source_id, owner_url, listing_url, give_items_json, receive_items_json FROM listings"
