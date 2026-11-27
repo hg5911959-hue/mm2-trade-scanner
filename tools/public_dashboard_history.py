@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import contextmanager
 import math
 import sqlite3
 from datetime import UTC, datetime, timedelta
@@ -90,7 +91,7 @@ class PublicDashboardHistory:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         if self.db_path.is_symlink():
             raise ValueError("public dashboard history path must not be a symlink")
-        with self._connect() as db:
+        with self._connection() as db:
             db.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS listings (
@@ -134,6 +135,18 @@ class PublicDashboardHistory:
         db.execute("PRAGMA busy_timeout = 10000")
         db.execute("PRAGMA foreign_keys = ON")
         return db
+
+    @contextmanager
+    def _connection(self):
+        db = self._connect()
+        try:
+            yield db
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
 
     def record_listings(self, listings: list[dict[str, object]]) -> int:
         now = _now()
