@@ -69,6 +69,17 @@ class PublicDashboardHistoryTests(IsolatedDataTestCase):
         self.assertEqual(items, [{"name": "Candy", "quantity": 2}])
         self.assertEqual(tables, {"listings", "opportunities"})
 
+    def test_source_less_api_listing_is_inferred_from_trusted_bloxswaps_url(self):
+        listing = self.listing(valuation_mode="cash")
+        listing.pop("source")
+        self.assertEqual(self.history.record_listings([listing]), 1)
+        self.assertTrue(self.history.record_opportunity(self.opportunity(listing)))
+        with sqlite3.connect(self.database) as db:
+            sources = db.execute(
+                "SELECT source FROM listings UNION SELECT source FROM opportunities"
+            ).fetchall()
+        self.assertEqual(sources, [("bloxswaps",)])
+
     def test_records_only_cash_bloxswaps_opportunities(self):
         cash_listing = self.listing(valuation_mode="cash")
         self.assertTrue(self.history.record_opportunity(self.opportunity(cash_listing)))
