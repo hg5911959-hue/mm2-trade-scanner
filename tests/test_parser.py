@@ -3743,6 +3743,41 @@ class CatalogueRefreshRegressionTests(IsolatedDataTestCase):
                 api.assert_not_called()
 
 
+    def test_shared_catalogue_refresh_replaces_stale_item_map(self):
+        post = {"tradePostItems": [{"itemDetailsId": "new-id"}]}
+        refreshed = {"new-id": {"id": "new-id", "displayName": "New Item"}}
+        with (
+            patch("scanner.fetch_bloxswaps_items_map", return_value=refreshed) as fetch,
+            patch("scanner.send_maintenance_alert") as alert,
+        ):
+            result = scanner._refresh_item_catalogue_for_post(post, {})
+        self.assertEqual(result, refreshed)
+        fetch.assert_called_once_with(force_refresh=True)
+        alert.assert_not_called()
+
+    def test_shared_catalogue_refresh_reports_ids_still_missing(self):
+        post = {"tradePostItems": [{"itemDetailsId": "unknown-id"}]}
+        with (
+            patch("scanner.fetch_bloxswaps_items_map", return_value={}),
+            patch("scanner.send_maintenance_alert") as alert,
+        ):
+            result = scanner._refresh_item_catalogue_for_post(post, {})
+        self.assertEqual(result, {})
+        alert.assert_called_once()
+        self.assertIn("unknown-id", alert.call_args.args[1])
+
+    def test_shared_catalogue_refresh_reports_refresh_failure_without_guessing(self):
+        post = {"tradePostItems": [{"itemDetailsId": "unknown-id"}]}
+        with (
+            patch("scanner.fetch_bloxswaps_items_map", side_effect=RuntimeError("offline")),
+            patch("scanner.send_maintenance_alert") as alert,
+        ):
+            result = scanner._refresh_item_catalogue_for_post(post, {})
+        self.assertEqual(result, {})
+        alert.assert_called_once()
+        self.assertEqual(alert.call_args.args[0], "unknown-item-id-catalogue-refresh-failed")
+
+
 class ColdStartRecentOfferTests(IsolatedDataTestCase):
     def test_cold_start_evaluates_recently_refreshed_post(self):
         post = CursorPaginationTests._post("recent-cold-post")
