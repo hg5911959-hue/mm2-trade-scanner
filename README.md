@@ -29,7 +29,7 @@ Key production thresholds and defaults (full environment reference: [docs/CONFIG
 - `CASH_MIN_MARGIN_PERCENT=0`
 - `MIN_PROFIT_PERCENT=5`
 
-The scheduled scanner runs every 10 minutes as a GitHub Actions target cadence, not a real-time guarantee. Each scan polls for up to nine minutes; GitHub may delay scheduled workflows. Manual scheduler dispatch defaults to dry-run.
+The scheduled scanner runs every 10 minutes as a GitHub Actions target cadence, not a real-time guarantee. Each scan polls for up to nine minutes; GitHub may delay scheduled workflows. Manual scheduler dispatch defaults to dry-run. The hot path polls the newest feed every 30 seconds. Old watch-window entries are rechecked through rotating direct listing-ID lookups (sharing a 50-item per-scan budget with pending rechecks), rather than crawling hundreds of historical cursor pages; cursor lookahead is capped at 25 pages and reserved for unresolved pending IDs.
 
 The tracked `data/cash_prices.csv` and its verifier are legacy/manual-catalogue support. They are not the production ROBASE price snapshot source. The weekly report remains separately configured and does not enable cash pricing by changing scanner settings.
 
