@@ -56,11 +56,12 @@ class ScannerConfigTests(IsolatedDataTestCase):
         config = ScannerConfig.from_env({
             "MAX_ALERTS_PER_RUN": "7",
             "MAX_ALERTS_PER_SCAN": "3",
+            "MAX_ALERTS_PER_SESSION": "4",
             "MM2_SCAN_DURATION_SECONDS": "540",
             "MM2_SCAN_INTERVAL_SECONDS": "30",
         })
         self.assertEqual(config.max_alerts_per_scan, 3)
-        self.assertEqual(config.max_alerts_per_session, 7)
+        self.assertEqual(config.max_alerts_per_session, 4)
         self.assertEqual(config.scan_duration_seconds, 540)
         self.assertEqual(config.scan_interval_seconds, 30)
 
