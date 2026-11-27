@@ -1,5 +1,16 @@
+import json
+import tempfile
+import time
 import unittest
+from email.message import Message
+from pathlib import Path
+from unittest.mock import patch
+from urllib.error import HTTPError
+
 from test_support import IsolatedDataTestCase
+
+import tools.rblxvalue_daily as daily
+from rblxvalue_guard import RblxValueBudgetExceeded, reserve_request
 from tools.rblxvalue_daily import RBLXValueClient, candidate_matches, build_snapshot, normalize_name, parse_number, EXACT_IDENTITY_ALIASES
 
 class RBLXValueDailyTests(IsolatedDataTestCase):
@@ -86,6 +97,67 @@ class RBLXValueDailyTests(IsolatedDataTestCase):
         self.assertEqual(parse_number("1,250"),1250); self.assertIsNone(parse_number("x3")); self.assertIsNone(parse_number(-1)); self.assertIsNone(parse_number("155.5"))
     def test_api_key_is_required(self):
         with self.assertRaisesRegex(ValueError,"RBLXVALUE_API_KEY"): RBLXValueClient("")
+    def test_client_persists_every_http_attempt_in_the_rolling_budget(self):
+        class Response:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, _limit):
+                return b'{"meta":{"last_updated":"today"}}'
+
+        with tempfile.TemporaryDirectory() as directory:
+            budget = Path(directory) / "rblxvalue_request_budget.json"
+            blocked = Path(directory) / "api_key_blocked.json"
+            retry_after = Message()
+            first_error = HTTPError(
+                "https://api.rblxvalue.com/v2/meta",
+                429,
+                "Too Many Requests",
+                retry_after,
+                None,
+            )
+            client = RBLXValueClient("rbx_test_key", sleep=lambda _seconds: None)
+            with (
+                patch.object(daily.rblxvalue_guard, "BUDGET_FILE", budget),
+                patch.object(daily.rblxvalue_guard, "BLOCK_FILE", blocked),
+                patch.object(daily, "urlopen", side_effect=[first_error, Response()]) as request,
+            ):
+                self.assertEqual(client._get_json("/meta")["meta"]["last_updated"], "today")
+            self.assertEqual(request.call_count, 2)
+            ledger = json.loads(budget.read_text(encoding="utf-8"))
+            self.assertEqual(len(ledger["request_timestamps_epoch"]), 2)
+            self.assertEqual(ledger["request_counts_by_workflow"], {
+                "RBLXValue Daily Weapon History": 2,
+            })
+
+    def test_exhausted_rolling_budget_stops_before_network_io(self):
+        with tempfile.TemporaryDirectory() as directory:
+            budget = Path(directory) / "rblxvalue_request_budget.json"
+            blocked = Path(directory) / "api_key_blocked.json"
+            now = time.time()
+            with (
+                patch.object(daily.rblxvalue_guard, "BUDGET_FILE", budget),
+                patch.object(daily.rblxvalue_guard, "BLOCK_FILE", blocked),
+            ):
+                for _ in range(60):
+                    reserve_request(
+                        now=now,
+                        key="rbx_test_key",
+                        budget_path=budget,
+                        block_path=blocked,
+                        workflow="prior archive run",
+                    )
+                client = RBLXValueClient("rbx_test_key", sleep=lambda _seconds: None)
+                with patch.object(daily, "urlopen") as request:
+                    with self.assertRaises(RblxValueBudgetExceeded):
+                        client._get_json("/meta")
+                    request.assert_not_called()
+
     def test_full_214_weapon_snapshot_keeps_both_value_sources(self):
         identities={f"weapon-{i}":self.identity(name=f"Weapon {i}",slug=f"weapon-{i}") for i in range(214)}
         items=[self.source(name=f"Weapon {i}",slug=f"weapon-{i}") for i in range(214)]
