@@ -1,3 +1,5 @@
+import unittest
+
 from test_support import IsolatedDataTestCase
 from tools.telegram_quarantine import reconcile_uncertain_quarantine
 
