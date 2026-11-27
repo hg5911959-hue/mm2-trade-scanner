@@ -100,8 +100,8 @@ class SupremeTelegramInfoTests(IsolatedDataTestCase):
             "weapon1": {"name": "Weapon 1", "supreme_value": 161, "stability": None},
         }
         message = scanner.format_trade_message(
-            listing, 2.5, ["Weapon 0 x1 — $2.50 each = $2.50"],
-            5.0, ["Weapon 1 x1 — $5.00 each = $5.00"], 2.5,
+            listing, 2.5, ["Weapon 0 x1 — $2.50 each = $2.50 | Supreme: 160 · Stability: Stable"],
+            5.0, ["Weapon 1 x1 — $5.00 each = $5.00 | Supreme: 161 · Stability: N/A"], 2.5,
             market_info=market_info,
         )
         self.assertIn("\n\n┌─ 📊 <b>REFERENCE INFO ONLY</b>", message)
@@ -110,6 +110,10 @@ class SupremeTelegramInfoTests(IsolatedDataTestCase):
         self.assertIn("Supreme <code>160</code>", message)
         self.assertIn("Stability <code>Stable</code>", message)
         self.assertIn("Stability <code>N/A</code>", message)
+        self.assertEqual(message.count("Supreme <code>160</code>"), 1)
+        self.assertEqual(message.count("Stability <code>Stable</code>"), 1)
+        self.assertNotIn("Supreme: 160", message)
+        self.assertNotIn("Stability: Stable", message)
         self.assertIn("EST. CASH PROFIT (after marketplace fee; before extra costs): +$2.5", message)
         self.assertNotIn("weapon-2", message)
         self.assertNotIn("RBLXValue/Supreme", message)

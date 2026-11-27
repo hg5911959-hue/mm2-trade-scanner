@@ -2718,7 +2718,10 @@ def _format_telegram_item_line(line):
     details = []
     for detail in core_parts[1:]:
         label = detail.strip()
-        if label.startswith("Rarity:"):
+        # Supreme and Stability have one authoritative home: the boxed
+        # REFERENCE INFO ONLY section below. Older evaluation paths may still
+        # append them to item lines; suppress those copies to avoid duplication.
+        if label.startswith(("Rarity:", "Supreme:", "Stability:")):
             continue
         label = label.replace("Demand:", "Demand")
         if label:
