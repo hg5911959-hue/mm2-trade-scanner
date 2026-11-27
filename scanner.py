@@ -3290,6 +3290,13 @@ def unmatched_names_from_missing(missing, cash_mode=False):
         lowered = text.casefold()
         if not text or lowered.startswith("one side has"):
             continue
+        # These are evaluator rejection reasons, not item identities. Keeping
+        # them in the unmatched-name registry pollutes mapping coverage metrics.
+        if any(marker in lowered for marker in (
+            "wildcard", "not eligible", "incomplete trade sides",
+            "cash mode accepts", "invalid trade sides",
+        )):
+            continue
         if lowered in {"quantity unknown", "quantity uncertain"} or "stability" in lowered:
             continue
         if cash_mode and any(reason in lowered for reason in ignored_cash_reasons):
@@ -3323,7 +3330,7 @@ def record_unmatched_names(names):
         ).hexdigest()[:16]
         send_maintenance_alert(
             alert_key,
-            "New item names not found in Supreme source_b (no values guessed): "
+            "New item names not found in the active exact item-identity mapping (no values guessed): "
             + ", ".join(unique)
             + "\nThey are stored in the item-identity review registry, not queued as offers. "
             "A verified mapping will be applied to new listings and still-active watched listings.",
