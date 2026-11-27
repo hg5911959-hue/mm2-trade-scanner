@@ -11,7 +11,6 @@ import re
 import sys
 import time
 import signal
-import tempfile
 import unicodedata
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -31,6 +30,7 @@ from tools.robase_identity import build_robase_bloxswaps_map
 from tools.daily_chart_shadow import build_daily_chart_shadow_catalog
 from tools.rblxvalue_value_profit_shadow import load_values_from_snapshot
 from tools.scan_loop import BloxSwapsRateLimitError, run_scan_loop as _run_scan_loop
+from tools.state_store import atomic_write_text
 from tools.scan_loop_policy import (
     minimum_cycle_start_window as _minimum_cycle_start_window,
     should_run_backlog_recheck as _should_run_backlog_recheck,
@@ -232,24 +232,6 @@ def install_redacting_streams():
         sys.stdout = RedactingStream(sys.stdout)
     if not isinstance(sys.stderr, RedactingStream):
         sys.stderr = RedactingStream(sys.stderr)
-
-def atomic_write_text(path, content):
-    """Atomically write text through a unique same-directory temporary file."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(
-        prefix=path.name + ".", suffix=".tmp", dir=path.parent
-    )
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
-
 
 class Node:
     def __init__(self, tag="", attrs=None, parent=None):
