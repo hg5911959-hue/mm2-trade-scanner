@@ -36,8 +36,18 @@ def _safe_link(value: object) -> str:
     raw = _safe_text(value, 1000)
     if not raw:
         return ""
-    parsed = urlsplit(raw)
-    if parsed.scheme != "https" or (parsed.hostname or "").casefold() not in ALLOWED_HOSTS:
+    try:
+        parsed = urlsplit(raw)
+        port = parsed.port
+    except ValueError:
+        return ""
+    if (
+        parsed.scheme != "https"
+        or (parsed.hostname or "").casefold() not in ALLOWED_HOSTS
+        or port not in (None, 443)
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
         return ""
     return raw
 
