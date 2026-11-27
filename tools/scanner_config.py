@@ -160,7 +160,7 @@ class ScannerConfig:
             ),
             cash_min_verified_rows=_int(source, "CASH_MIN_VERIFIED_ROWS", 8, minimum=0),
             cash_min_margin_percent=_nonnegative_float(
-                source, "CASH_MIN_MARGIN_PERCENT", 0.0
+                source, "CASH_MIN_MARGIN_PERCENT", 5.0
             ),
             cash_max_age_days=_int(source, "CASH_MAX_AGE_DAYS", 1, minimum=1),
             cash_max_listing_age_seconds=_int(
