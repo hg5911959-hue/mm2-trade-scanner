@@ -1153,15 +1153,26 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     pending_to_fetch = pending_remaining - first_page_ids
     direct_pending_posts, pending_not_found_ids = fetch_pending_posts_by_id(pending_to_fetch)
     pending_remaining.difference_update(pending_not_found_ids)
+    watch_remaining.difference_update(pending_not_found_ids)
+    watch_to_fetch = watch_remaining - first_page_ids - pending_to_fetch
+    direct_watch_posts, watch_not_found_ids = fetch_pending_posts_by_id(watch_to_fetch)
+    watch_remaining.difference_update(watch_not_found_ids)
     if direct_pending_posts or pending_not_found_ids:
         print(
             f"[pending] Direct lookup resolved {len(direct_pending_posts)} active post(s) "
             f"and {len(pending_not_found_ids)} unavailable post(s)."
         )
+    if direct_watch_posts or watch_not_found_ids:
+        print(
+            f"[watch] Direct lookup resolved {len(direct_watch_posts)} active watched post(s) "
+            f"and {len(watch_not_found_ids)} unavailable post(s)."
+        )
 
     consume_raw_posts(raw_first_items, compare_html=not api_only)
     if direct_pending_posts:
         consume_raw_posts(direct_pending_posts, compare_html=False)
+    if direct_watch_posts:
+        consume_raw_posts(direct_watch_posts, compare_html=False)
     cursor = (initial_page.get("meta") or {}).get("cursor")
     pages_scanned = 1
     seen_cursors = {str(cursor)} if cursor else set()
@@ -1170,7 +1181,9 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     if cursor:
         while cursor and pages_scanned < MAX_FEED_PAGES:
             if boundary_reached:
-                if not (pending_remaining or watch_remaining):
+                # Watched offers are resolved by bounded direct ID lookups above.
+                # Cursor lookahead is only a fallback for unresolved pending IDs.
+                if not pending_remaining:
                     break
                 if backlog_pages_scanned >= MAX_BACKLOG_RECHECK_PAGES:
                     backlog_page_limit_reached = True
@@ -1187,7 +1200,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
             if boundary_before_page:
                 backlog_pages_scanned += 1
             consume_raw_posts(page_items, compare_html=False)
-            if boundary_reached and not (pending_remaining or watch_remaining):
+            if boundary_reached and not pending_remaining:
                 break
             next_cursor = (payload.get("meta") or {}).get("cursor")
             if not next_cursor:
@@ -1222,6 +1235,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
         "seen_streak": seen_streak,
         "seen_ids_skipped": seen_ids_skipped,
         "watch_remaining_ids": sorted(watch_remaining),
+        "watch_not_found_ids": sorted(watch_not_found_ids),
         "pending_found_ids": pending_found_ids,
         "pending_not_found_ids": pending_not_found_ids,
         "pending_remaining_ids": sorted(pending_remaining),
@@ -4312,6 +4326,30 @@ def save_watch_state(ads):
     if len(active) > MAX_WATCHED_ADS: active = dict(sorted(active.items(), key=lambda pair: float(pair[1].get('updated_at', 0)))[-300:])
     atomic_write_text(WATCH_FILE, json.dumps({'version': 1, 'ads': active}, ensure_ascii=False, indent=2) + "\n")
 
+def select_watch_recheck_ids(watch_state, limit):
+    """Select the oldest non-Discord watch entries for fair bounded direct rechecks."""
+    try:
+        budget = max(0, int(limit))
+    except (TypeError, ValueError, OverflowError):
+        return []
+    if budget == 0 or not isinstance(watch_state, dict):
+        return []
+    candidates = []
+    for ad_id, entry in watch_state.items():
+        key = str(ad_id)
+        if key.startswith("discord:") or not isinstance(entry, dict):
+            continue
+        try:
+            updated = float(entry.get("updated_at", entry.get("created_at", 0)) or 0)
+        except (TypeError, ValueError, OverflowError):
+            updated = 0.0
+        if not math.isfinite(updated):
+            updated = 0.0
+        candidates.append((updated, key))
+    candidates.sort()
+    return [key for _updated, key in candidates[:budget]]
+
+
 _CASH_PROFIT_HISTORY_CACHE_KEY = None
 _CASH_PROFIT_HISTORY_CACHE = {}
 
@@ -4608,8 +4646,11 @@ def scan_once(include_backlog_rechecks=True):
         f"{len(due_pending_ids)} selected for this scan (cap={MAX_PENDING_RECHECK_PER_SCAN})"
     )
     print("[stage] Fetching BloxSwaps listings and cursor pages")
+    watch_recheck_budget = max(
+        0, MAX_PENDING_RECHECK_PER_SCAN - len(due_pending_ids)
+    )
     bloxswaps_watch_ids = (
-        [key for key in watch_state if not str(key).startswith("discord:")]
+        select_watch_recheck_ids(watch_state, watch_recheck_budget)
         if run_backlog_rechecks else []
     )
     scan_mode = (
@@ -4622,6 +4663,16 @@ def scan_once(include_backlog_rechecks=True):
     listings, stats, discovered_ids = fetch_bloxswaps_all(
         seen_ads, due_pending_ids.keys(), bloxswaps_watch_ids
     )
+    watch_not_found_ids = set(stats.get("watch_not_found_ids", []))
+    if bloxswaps_watch_ids:
+        for ad_id in bloxswaps_watch_ids:
+            if ad_id in watch_not_found_ids:
+                watch_state.pop(ad_id, None)
+            elif ad_id in watch_state:
+                # Rotate every attempted ID, including unchanged or temporarily
+                # unresolved records, so a bad record cannot starve later entries.
+                watch_state[ad_id]["updated_at"] = time.time()
+        save_watch_state(watch_state)
     mapping_audit = None
     if CASH_FILTER:
         try:
@@ -4861,16 +4912,15 @@ def scan_once(include_backlog_rechecks=True):
             f"[bloxswaps] Excluded {len(single_sided_ids)} single-sided posts; "
             "they are not trade opportunities and will not be retried as parser failures."
         )
-    if stats.get("watch_remaining_ids") and stats.get("watch_search_complete", False):
-        missing_watch_ids = set(stats.get("watch_remaining_ids", []))
-        for ad_id in missing_watch_ids:
-            watch_state.pop(str(ad_id), None)
-        save_watch_state(watch_state)
-        send_maintenance_alert(
-            "watch-ads-not-found",
-            f"{len(missing_watch_ids)} watched listing(s) were no longer present in the searched feed window; "
-            "they were removed from the 24-hour watch window.",
-            cooldown_seconds=3600,
+    if stats.get("watch_not_found_ids"):
+        print(
+            f"[watch] Removed {len(stats['watch_not_found_ids'])} expired watched listing(s) "
+            "after authoritative direct 404 lookups."
+        )
+    if stats.get("watch_remaining_ids"):
+        print(
+            f"[watch] {len(stats['watch_remaining_ids'])} direct lookups were inconclusive; "
+            "they remain in the rotating watch queue for a later retry."
         )
     if stats.get("pending_remaining_ids"):
         print(
