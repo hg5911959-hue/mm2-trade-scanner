@@ -12,6 +12,7 @@ back into `scanner.py` where legacy symbol names must remain available.
 | `tools/scanner_config.py` | Typed, immutable startup configuration; validates environment booleans, integers and finite thresholds |
 | `tools/scan_loop_policy.py` | Pure scan-window and backlog-cadence decisions |
 | `tools/feed_checkpoint.py` | Pure UTC feed timestamp parsing and safe cold-start checkpoint policy |
+| `tools/opportunity_policy.py` | Pure conservative profit/margin qualification gate for automated alerts |
 | `tools/scan_loop.py` | Bounded polling orchestration, graceful signal handling, rate-limit stop behavior and metrics |
 | `tools/state_store.py` | Durable same-directory temporary writes with fsync and atomic replacement |
 | `tools/html_tree.py` | Small event-based HTML tree, traversal, text extraction and trade-side matching |

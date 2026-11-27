@@ -82,6 +82,7 @@ from tools.redaction import (
     install_redacting_streams as _install_redacting_streams,
     redact as _redact,
 )
+from tools.opportunity_policy import qualifies as _qualifies_impl
 from tools.feed_checkpoint import (
     parse_feed_timestamp as _parse_feed_timestamp_impl,
     scan_checkpoint_requires_cold_start as _scan_checkpoint_requires_cold_start_impl,
@@ -3548,27 +3549,12 @@ def evaluate_listing(listing, values, aliases=None):
 
 
 def qualifies(result, min_diff=None, min_percent=None):
-    min_diff = MIN_DIFF if min_diff is None else min_diff
-    min_percent = MIN_PROFIT_PERCENT if min_percent is None else min_percent
-    # Only fully verified, conservative-positive trades are eligible for Telegram.
-    # A best-case-only profit is uncertain and must never be advertised as a WIN.
-    if not isinstance(result, dict):
-        return False
-    if result.get("manual_review") or result.get("cash_estimate_only"):
-        return False
-    metric = result.get("profit_worst", result.get("difference", 0))
-    margin = result.get("margin")
-    numeric_values = (metric, margin, min_diff, min_percent)
-    if any(
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(value)
-        for value in numeric_values
-    ):
-        return False
-    if min_diff < 0 or min_percent < 0:
-        return False
-    return metric > 0 and metric >= min_diff and margin >= min_percent
+    """Compatibility wrapper for the pure conservative qualification gate."""
+    return _qualifies_impl(
+        result,
+        MIN_DIFF if min_diff is None else min_diff,
+        MIN_PROFIT_PERCENT if min_percent is None else min_percent,
+    )
 
 
 ROBASE_CATEGORY_TO_RBLX = {"classic": "vintage"}
