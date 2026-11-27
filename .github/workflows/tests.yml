@@ -39,7 +39,8 @@ jobs:
           for pass in 1 2; do
             echo "Regression suite pass $pass/2"
             before_hash="$(data_hash)"
-            python -m unittest discover -s tests
+            # Prove the shared test bootstrap works without CI-provided defaults.
+            env -u MM2_TESTING -u CASH_MAX_AGE_DAYS python -m unittest discover -s tests
             after_hash="$(data_hash)"
             if [ "$before_hash" != "$after_hash" ]; then
               echo "::error::Test suite changed one or more files under data/"
