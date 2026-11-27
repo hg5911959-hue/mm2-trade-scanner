@@ -17,6 +17,7 @@ back into `scanner.py` where legacy symbol names must remain available.
 | `tools/item_parser.py` | Item-name normalization, Arabic digit handling, DOM-scoped quantity evidence and trade-side item extraction |
 | `tools/listing_identity.py` | Durable source listing IDs, normalized item identity and legacy alert-state migration |
 | `tools/telegram_transport.py` | Telegram redirect protection and conservative per-chat pacing |
+| `tools/telegram_delivery.py` | Trusted HTML formatting, attribution, multipart delivery and non-idempotent send safety |
 | `tools/redaction.py` | Secret discovery, credential scrubbing and line-buffered safe log streams |
 | `tools/retry_after.py` | Shared delta-seconds and HTTP-date parsing for upstream retry responses |
 | `tools/http_retry.py` | Bounded transient HTTP retries, credential-origin allowlisting and safe 429 handling |
