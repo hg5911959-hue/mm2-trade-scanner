@@ -55,7 +55,6 @@ class BloxSwapsApiAdapterTests(IsolatedDataTestCase):
             post,
             item_map,
             strict_quantity=strict_quantity,
-            max_item_quantity=9999,
             stable_listing_id=lambda *args: "stable-id",
             legacy_stable_listing_id=lambda *args: "legacy-id",
         )
