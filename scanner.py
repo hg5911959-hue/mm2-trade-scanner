@@ -22,7 +22,7 @@ from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 
 import rblxvalue_guard
 from tools.scanner_config import CONFIG
-from tools.telegram_transport import TELEGRAM_OPENER
+from tools.telegram_transport import TELEGRAM_OPENER, telegram_alert_delay
 from tools.metrics import update_metrics
 from tools.alert_policy import rank_and_split
 from tools.cash_market import calculate_cash_side, cash_profit_bounds, normalize_cash_name, cash_price_is_fresh, strict_quantity
@@ -71,17 +71,6 @@ MAX_ALERTS_PER_RUN = CONFIG.max_alerts_per_run
 _SESSION_ALERTS_SENT = 0
 _SESSION_ALERT_LIMIT = MAX_ALERTS_PER_RUN
 TELEGRAM_CHAT_TYPE = CONFIG.telegram_chat_type
-
-
-def telegram_alert_delay(chat_type, configured_delay=3.2):
-    """Use Telegram's documented per-chat limits without assuming the target is private."""
-    configured = max(0.0, float(configured_delay))
-    if str(chat_type or "").strip().casefold() == "private":
-        # Telegram allows roughly one message per second in a private chat.
-        # Keep a small safety margin and never accept a faster configured value.
-        return 1.05
-    # Groups are limited to 20 messages per minute; keep the existing margin.
-    return max(3.2, configured)
 
 
 ALERT_DELAY_SECONDS = telegram_alert_delay(
