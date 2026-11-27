@@ -1,6 +1,6 @@
 # Project Status and Resume Checkpoint
 
-Last verified: 2026-11-27 21:02 UTC  
+Last verified: 2026-11-27 21:05 UTC  
 Repository: `hg5911959-hue/mm2-trade-scanner`  
 Production branch: `main`  
 Main baseline at checkpoint: PR #261 merged as `f7169b2d5bb40f489749e43f37a0d97f6f2e7b21`, PR #262 merged as `89eeec4e9abdeeca3b9d73d44c8eea8c93f16691`, PR #263 merged as `9bf3394196bc9ab3a75e6e9a22a1476419e03b0e`, and PR #264 merged as `41505ac92417e9630a003ba2a57c7a5c481b40ea`; the RBLXValue reference card, archive policy, 5% cash-margin gate, and single-location Supreme/Stability display are on `main`.
@@ -57,7 +57,7 @@ Main baseline at checkpoint: PR #261 merged as `f7169b2d5bb40f489749e43f37a0d97f
 - PR #261 — compact Telegram reference card, RBLXValue-only Supreme/ Stability display, direct collector removal, archive policy correction, gross estimate labels, and legacy rejection filtering.
 - PR #262 — restored the requested 5% minimum gross cash margin in both production workflow entry points and ScannerConfig defaults; retained the $2 gross-profit floor. Merged as `89eeec4e`.
 - PR #263 — corrected cash Telegram wording to state that Chroma.gg 7D prices are seller proceeds after marketplace fees, with additional costs/slippage excluded; added a regression test.
-- PR #264 — removed duplicate inline Supreme and Stability copies from Telegram item lines; the RBLXValue-sourced values now appear only once in the boxed `REFERENCE INFO ONLY` card. Regression test passed with 751 tests twice plus Ruff; ROBASE Pricing Tests also passed. Merged as `41505ac9`. Merged as `9bf33941`.
+- PR #264 — removed duplicate inline Supreme and Stability copies from Telegram item lines; the RBLXValue-sourced values now appear only once in the boxed `REFERENCE INFO ONLY` card. Regression test passed with 751 tests twice plus Ruff; ROBASE Pricing Tests also passed. Merged as `41505ac9`.
 
 ## Open or experimental work
 
@@ -70,7 +70,8 @@ Main baseline at checkpoint: PR #261 merged as `f7169b2d5bb40f489749e43f37a0d97f
 
 1. Manually confirm the two quarantined Telegram messages; the system intentionally will not auto-resend them.
 2. Monitor the next scheduled RBLXValue archive update at 23:30 UTC / 00:30 Algeria time.
-3. Continue routine checks of price freshness, feed pagination, Telegram latency, and state persistence on subsequent chained scans.
+3. Verify a fresh live scan and state-persistence run after PR #264 merge `41505ac9`; do not infer post-merge production validation from pre-merge run `46062726916`.
+4. Continue routine checks of price freshness, feed pagination, Telegram latency, and state persistence on subsequent chained scans.
 
 ## Resume protocol for future conversations
 
