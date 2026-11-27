@@ -1,12 +1,14 @@
 import unittest
 
+from test_support import IsolatedDataTestCase
+
 from tools.feed_checkpoint import (
     parse_feed_timestamp,
     scan_checkpoint_requires_cold_start,
 )
 
 
-class FeedCheckpointTests(unittest.TestCase):
+class FeedCheckpointTests(IsolatedDataTestCase):
     def test_zulu_timestamp_is_parsed_as_utc(self):
         self.assertEqual(parse_feed_timestamp("2033-05-18T03:33:20Z"), 2_000_000_000)
 
