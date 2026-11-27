@@ -328,3 +328,5 @@ This is a diagnostic mode, not a production price switch. Production valuation r
 ## Historical engineering records
 
 - [Archived engineering report](docs/archive/REPORT.md) — historical phase log and superseded implementation notes; use this README and [configuration guide](docs/CONFIGURATION.md) for current behavior.
+
+- [Architecture and module boundaries](docs/ARCHITECTURE.md) — current extracted modules, compatibility rules and remaining refactor candidates.
