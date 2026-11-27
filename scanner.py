@@ -1021,8 +1021,6 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
             'cold_start_seed_ids': seed_ids,
             'cold_start_recent_ids': recent_ids,
             'candidate_count': candidate_count,
-            'parsed_candidate_count': parsed_candidate_count,
-            'malformed_candidate_count': malformed_candidate_count,
             'unidentified_feed_record_count': unidentified_feed_records,
             'unidentified_feed_samples': unidentified_feed_samples[:10],
             'addition_count': additions,
