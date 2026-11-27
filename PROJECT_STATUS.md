@@ -1,6 +1,6 @@
 # Project Status and Resume Checkpoint
 
-Last verified: 2026-11-27 19:08 UTC  
+Last verified: 2026-11-27 19:11 UTC  
 Repository: `hg5911959-hue/mm2-trade-scanner`  
 Production branch: `main`  
 Main baseline at checkpoint: PR #260 merged; latest post-PR-260 production scan completed successfully and the next chained scan is running on that baseline.
@@ -55,7 +55,7 @@ Main baseline at checkpoint: PR #260 merged; latest post-PR-260 production scan 
 - PR #159 — draft hardening work; do not merge wholesale without a fresh review against current `main`.
 - PR #203 — isolated RBLXValue blended-value shadow analysis; no production Telegram alerts. Its proposed `value`-only change is not the source for the reference card and must not replace `value_source_b` for Supreme Value.
 - PR #100 — experimental Market Book work; not part of the production scanner.
-- Current PR #261 branch: `docs/gross-cash-estimate-and-project-handoff` (latest commit `efe121cd`). It clarifies the USD 2 threshold and displayed profit as **gross estimates before fees/slippage**, renders Telegram reference data as a compact labeled card with one clean separator, filters legacy generic rejection reasons, removes the unused direct Supreme website collector and its tests, updates docs, and adds this handoff file. Latest CI: 750 tests passed twice, Ruff passed, and ROBASE Pricing Tests passed (runs `46054316356` and `46054316340`). PR is mergeable but not merged yet.
+- Current PR #261 branch: `docs/gross-cash-estimate-and-project-handoff` (latest code-bearing commit `072c7b9c`; documentation checkpoint commits follow). It clarifies the USD 2 threshold and displayed profit as **gross estimates before fees/slippage**, renders Telegram reference data as a compact labeled card with one clean separator, filters legacy generic rejection reasons, removes the unused direct Supreme website collector and its tests, updates docs, and adds this handoff file. Latest CI on the current code-bearing head: 750 tests passed twice, Ruff passed, and ROBASE Pricing Tests passed (runs `46054658106` and `46054658101`). A separate docs-only checkpoint commit also passed 750 tests twice (run `46054602718`). PR is mergeable but not merged yet.
 
 ## Remaining release checks
 
