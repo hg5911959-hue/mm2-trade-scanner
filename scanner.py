@@ -3017,8 +3017,20 @@ def load_uncertain_context():
         for field in ("listing_url", "owner_url"):
             value = entry.get(field, "")
             if value:
-                parsed = urlsplit(value)
-                if parsed.scheme != "https" or (parsed.hostname or "").casefold() not in allowed_hosts:
+                try:
+                    parsed = urlsplit(value)
+                    port = parsed.port
+                except ValueError as exc:
+                    raise RuntimeError(
+                        "[state] Telegram uncertain-delivery context contains an unsafe link."
+                    ) from exc
+                if (
+                    parsed.scheme != "https"
+                    or (parsed.hostname or "").casefold() not in allowed_hosts
+                    or port not in (None, 443)
+                    or parsed.username is not None
+                    or parsed.password is not None
+                ):
                     raise RuntimeError("[state] Telegram uncertain-delivery context contains an unsafe link.")
         if entry.get("delivery_path") not in {"individual", "digest", "recovered"}:
             raise RuntimeError("[state] Telegram uncertain-delivery context delivery path is invalid.")
