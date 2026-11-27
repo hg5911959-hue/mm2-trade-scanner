@@ -122,6 +122,24 @@ class TelegramUncertainContextTests(IsolatedDataTestCase):
         self.assertIn("public-hash", context)
         self.assertNotIn("discord.com", self.path.read_text(encoding="utf-8"))
 
+    def test_uncertain_context_rejects_credentials_and_nonstandard_ports(self):
+        self.path.write_text(json.dumps({
+            "version": 1,
+            "details": {
+                "stable-hash": {
+                    "source_ad_id": "post-123",
+                    "listing_url": "https://user@bloxswaps.com:8443/trade-mm2?ad=post-123",
+                    "owner_url": "",
+                    "source": "bloxswaps",
+                    "delivery_path": "individual",
+                    "attempted_at_utc": "2026-11-27T12:20:18+00:00",
+                }
+            },
+        }), encoding="utf-8")
+
+        with self.assertRaisesRegex(RuntimeError, "unsafe link"):
+            scanner.load_uncertain_context()
+
     def test_corrupt_context_fails_closed(self):
         self.path.write_text(json.dumps({"version": 9, "details": {}}), encoding="utf-8")
         with self.assertRaisesRegex(RuntimeError, "invalid structure"):
