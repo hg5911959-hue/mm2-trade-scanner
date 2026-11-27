@@ -530,6 +530,7 @@ def parse_listings(html):
 
 
 RBLXVALUE_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+BLOXSWAPS_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 MAX_RETRY_AFTER_SECONDS = 120
 
 
@@ -567,6 +568,7 @@ def request_with_retry(req, timeout, label, attempts=4, return_headers=False, al
         rblxvalue_guard=rblxvalue_guard,
         rblxvalue_api_key=RBLXVALUE_API_KEY,
         rblxvalue_max_response_bytes=RBLXVALUE_MAX_RESPONSE_BYTES,
+        bloxswaps_max_response_bytes=BLOXSWAPS_MAX_RESPONSE_BYTES,
         open_rblxvalue_url=_open_rblxvalue_url,
         redact=redact,
         max_retry_after_seconds=MAX_RETRY_AFTER_SECONDS,

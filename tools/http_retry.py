@@ -12,7 +12,8 @@ from tools.retry_after import retry_after_seconds
 def request_with_retry(
     req, timeout, label, attempts=4, return_headers=False,
     allow_not_modified=False, *, rblxvalue_guard, rblxvalue_api_key,
-    rblxvalue_max_response_bytes, open_rblxvalue_url, redact,
+    rblxvalue_max_response_bytes, bloxswaps_max_response_bytes,
+    open_rblxvalue_url, redact,
     max_retry_after_seconds, rate_limit_error,
 ):
     """Retry transient failures with exponential backoff and respect Retry-After."""
@@ -48,7 +49,11 @@ def request_with_retry(
                             "[rblxvalue] Response exceeded the 8 MiB safety limit; refusing payload"
                         )
                 else:
-                    body = response.read()
+                    body = response.read(bloxswaps_max_response_bytes + 1)
+                    if len(body) > bloxswaps_max_response_bytes:
+                        raise RuntimeError(
+                            "[http] BloxSwaps response exceeded the 16 MiB safety limit; refusing payload"
+                        )
                 print(f"[http] {label}: HTTP {response.status} ({len(body)} bytes)")
                 return (body, response.headers) if return_headers else body
         except HTTPError as exc:

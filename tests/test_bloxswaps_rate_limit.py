@@ -13,6 +13,32 @@ from test_support import IsolatedDataTestCase
 
 
 class BloxSwapsRateLimitTests(IsolatedDataTestCase):
+    def test_bloxswaps_response_body_is_read_with_a_hard_size_limit(self):
+        class OversizedResponse:
+            status = 200
+            headers = {}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self, size=-1):
+                self.requested_size = size
+                return b"x" * size
+
+        response = OversizedResponse()
+        request = Request("https://bloxswaps.com/trade-mm2")
+        with (
+            patch.object(scanner, "BLOXSWAPS_MAX_RESPONSE_BYTES", 3),
+            patch("scanner.urllib.request.urlopen", return_value=response),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "16 MiB safety limit"):
+                scanner.request_with_retry(request, 10, "BloxSwaps page")
+
+        self.assertEqual(response.requested_size, 4)
+
     def test_http_429_stops_without_retries_and_reports_retry_after(self):
         calls = []
 

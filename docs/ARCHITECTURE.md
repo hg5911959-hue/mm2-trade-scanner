@@ -20,7 +20,7 @@ back into `scanner.py` where legacy symbol names must remain available.
 | `tools/telegram_delivery.py` | Trusted HTML formatting, attribution, multipart delivery and non-idempotent send safety |
 | `tools/redaction.py` | Secret discovery, credential scrubbing and line-buffered safe log streams |
 | `tools/retry_after.py` | Shared delta-seconds and HTTP-date parsing for upstream retry responses |
-| `tools/http_retry.py` | Bounded transient HTTP retries, credential-origin allowlisting and safe 429 handling |
+| `tools/http_retry.py` | Bounded response reads, transient HTTP retries, credential-origin allowlisting and safe 429 handling |
 | `tools/robase_prices.py` | ROBASE price snapshot parsing and Chroma.gg 7-day source validation |
 | `tools/cash_market.py` | Conservative cash-market valuation and qualification helpers |
 | `tools/robase_identity.py` | Identity matching between the feed and ROBASE catalog |
@@ -46,7 +46,7 @@ fallbacks. Cash eligibility also requires the configured minimum completed-sale 
 ## Remaining extraction candidates
 
 The remaining large sections of `scanner.py` are intentionally not moved in this pass.
-Good future boundaries are feed retrieval/pagination, opportunity evaluation, Telegram
-message delivery, and state serialization/reconciliation. Each requires dependency
+Good future boundaries are feed retrieval/pagination, opportunity evaluation, and state
+serialization/reconciliation. Each requires dependency
 injection and dedicated regression tests before extraction; avoid copying those blocks
 without their source and failure-mode tests.
