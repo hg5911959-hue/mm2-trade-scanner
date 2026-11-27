@@ -12,6 +12,7 @@ class ScannerConfigTests(IsolatedDataTestCase):
         self.assertEqual(config.bloxswaps_url, "https://bloxswaps.com/trade-mm2?trade-type=P2P")
         self.assertEqual(config.max_feed_pages, 1000)
         self.assertEqual(config.max_alerts_per_run, 0)
+        self.assertEqual(config.rblxvalue_daily_request_limit, 60)
         self.assertEqual(config.max_alerts_per_scan, 0)
         self.assertEqual(config.max_alerts_per_session, 0)
         self.assertEqual(config.scan_duration_seconds, 0)
@@ -74,6 +75,18 @@ class ScannerConfigTests(IsolatedDataTestCase):
         self.assertEqual(config.scan_duration_seconds, 0)
         self.assertEqual(config.scan_interval_seconds, 45)
         self.assertEqual(config.max_alerts_per_session, 0)
+
+    def test_rblxvalue_daily_request_limit_is_bounded_and_validated(self):
+        self.assertEqual(
+            ScannerConfig.from_env({"RBLXVALUE_DAILY_REQUEST_LIMIT": "100"}).rblxvalue_daily_request_limit,
+            60,
+        )
+        self.assertEqual(
+            ScannerConfig.from_env({"RBLXVALUE_DAILY_REQUEST_LIMIT": "0"}).rblxvalue_daily_request_limit,
+            1,
+        )
+        with self.assertRaisesRegex(ValueError, "RBLXVALUE_DAILY_REQUEST_LIMIT"):
+            ScannerConfig.from_env({"RBLXVALUE_DAILY_REQUEST_LIMIT": "many"})
 
     def test_invalid_integer_reports_the_environment_variable(self):
         with self.assertRaisesRegex(ValueError, "MAX_FEED_PAGES"):
