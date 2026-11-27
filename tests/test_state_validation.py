@@ -310,6 +310,12 @@ class StateValidationTests(IsolatedDataTestCase):
         self.assertTrue(any(
             "unexpected or missing tables" in error for error in validate_state(self.root)
         ))
+        with sqlite3.connect(database) as db:
+            db.execute("DROP TABLE market_values")
+            db.execute("ALTER TABLE listings ADD COLUMN private_blob TEXT")
+        self.assertTrue(any(
+            "unexpected or incomplete schema" in error for error in validate_state(self.root)
+        ))
 
     def test_corrupt_sqlite_database_blocks_persistence(self):
         (self.root / "market_history.sqlite3").write_text("not a database", encoding="utf-8")
