@@ -67,7 +67,7 @@ from tools.daily_chart_shadow import build_daily_chart_shadow_catalog
 from tools.rblxvalue_value_profit_shadow import load_values_from_snapshot
 from tools.scan_loop import BloxSwapsRateLimitError, run_scan_loop as _run_scan_loop
 from tools.state_store import atomic_write_text
-from tools.retry_after import retry_after_seconds
+from tools.http_retry import request_with_retry as _request_with_retry
 from tools.redaction import (
     RedactingStream as _RedactingStream,
     install_redacting_streams as _install_redacting_streams,
@@ -551,125 +551,22 @@ def _open_rblxvalue_url(req, timeout):
 
 
 def request_with_retry(req, timeout, label, attempts=4, return_headers=False, allow_not_modified=False):
-    """Retry transient failures with exponential backoff and respect Retry-After."""
-    request_url = req.full_url if isinstance(req, urllib.request.Request) else str(req)
-    request_headers = {}
-    request_headers.update(getattr(req, "headers", {}) or {})
-    request_headers.update(getattr(req, "unredirected_hdrs", {}) or {})
-    carries_api_key = any(str(name).casefold() == "x-api-key" for name in request_headers)
-    is_rblxvalue = label == "RBLXValue API" or carries_api_key
-    if is_rblxvalue:
-        target = urlsplit(request_url)
-        if (
-            target.scheme != "https"
-            or target.hostname != "api.rblxvalue.com"
-            or target.port not in (None, 443)
-        ):
-            raise RuntimeError(
-                "[rblxvalue] Refusing credential-bearing request to a non-allowlisted HTTPS origin"
-            )
-    for attempt in range(attempts):
-        if is_rblxvalue:
-            rblxvalue_guard.reserve_request(key=RBLXVALUE_API_KEY)
-        try:
-            response_context = (
-                _open_rblxvalue_url(req, timeout)
-                if is_rblxvalue else urllib.request.urlopen(req, timeout=timeout)
-            )
-            with response_context as response:
-                if is_rblxvalue:
-                    body = response.read(RBLXVALUE_MAX_RESPONSE_BYTES + 1)
-                    if len(body) > RBLXVALUE_MAX_RESPONSE_BYTES:
-                        raise RuntimeError(
-                            "[rblxvalue] Response exceeded the 8 MiB safety limit; refusing payload"
-                        )
-                else:
-                    body = response.read()
-                print(f"[http] {label}: HTTP {response.status} ({len(body)} bytes)")
-                return (body, response.headers) if return_headers else body
-        except HTTPError as exc:
-            if exc.code == 304 and allow_not_modified:
-                print(f"[http] {label}: HTTP 304 (ETag unchanged)")
-                return None, exc.headers
-            detail = exc.read(400).decode("utf-8", errors="replace")
-            # Detect edge/CDN challenges before interpreting HTTP 403 as an API-key
-            # suspension. Cloudflare can return 403 even when the configured key is valid.
-            challenge_markers = ("cloudflare", "captcha", "just a moment", "challenge-platform", "cf-chl-")
-            cf_mitigated = str(exc.headers.get("cf-mitigated", "")).casefold()
-            if exc.code in (403, 503) and (
-                any(marker in detail.casefold() for marker in challenge_markers)
-                or cf_mitigated == "challenge"
-            ):
-                raise RuntimeError(f"[cloudflare] {label} blocked by Cloudflare/CAPTCHA challenge (HTTP {exc.code}).") from exc
-            if is_rblxvalue:
-                rblxvalue_guard.raise_for_key_error(exc.code, detail, key=RBLXVALUE_API_KEY)
-            if exc.code == 403:
-                safe_detail = redact(detail).strip()
-                if safe_detail.startswith("<"):
-                    safe_detail = "[HTML response omitted; inspect response headers in diagnostics]"
-                if not safe_detail:
-                    safe_detail = "empty response body"
-                raise RuntimeError(
-                    f"[http] {label}: HTTP 403 Forbidden; upstream response: {safe_detail[:240]}"
-                ) from exc
-            if exc.code == 429 and not is_rblxvalue:
-                retry_after = (exc.headers or {}).get("Retry-After", "")
-                delay = retry_after_seconds(retry_after)
-                if delay is not None and delay > MAX_RETRY_AFTER_SECONDS:
-                    raise BloxSwapsRateLimitError(
-                        f"{label}: HTTP 429; Retry-After exceeds the safe wait "
-                        f"({int(delay)}s > {MAX_RETRY_AFTER_SECONDS}s); aborting this scan without retry"
-                    ) from exc
-                if not retry_after:
-                    suffix = "; no Retry-After header"
-                elif delay is None:
-                    suffix = "; invalid Retry-After header"
-                else:
-                    suffix = f"; Retry-After={int(delay)}s"
-                headers = exc.headers or {}
-                diagnostic_headers = []
-                for header in (
-                    "Server", "CF-Ray", "Content-Type", "X-RateLimit-Limit",
-                    "X-RateLimit-Remaining", "X-RateLimit-Reset",
-                ):
-                    value = headers.get(header)
-                    if value:
-                        diagnostic_headers.append(f"{header}={str(value)[:100]}")
-                header_summary = (
-                    "; response=" + ", ".join(diagnostic_headers)
-                    if diagnostic_headers else ""
-                )
-                raise BloxSwapsRateLimitError(
-                    f"{label}: HTTP 429 rate limited{suffix}{header_summary}; "
-                    "aborting this scan without retry"
-                ) from exc
-            retryable = exc.code == 429 or 500 <= exc.code <= 599
-            if not retryable or attempt == attempts - 1:
-                safe_detail = redact(detail).strip()
-                if safe_detail.startswith("<"):
-                    safe_detail = "[HTML response omitted]"
-                raise RuntimeError(f"{label}: HTTP {exc.code}: {safe_detail[:200]}") from exc
-            delay = min(30, 2 ** (attempt + 1))
-            retry_after = (exc.headers or {}).get("Retry-After", "")
-            parsed_delay = retry_after_seconds(retry_after)
-            if parsed_delay is not None:
-                delay = parsed_delay
-            if delay > MAX_RETRY_AFTER_SECONDS:
-                raise RuntimeError(
-                    f"{label}: Retry-After exceeds the safe per-attempt wait "
-                    f"({int(delay)}s > {MAX_RETRY_AFTER_SECONDS}s); aborting this scan without retry"
-                ) from exc
-            delay = rblxvalue_guard.jittered_delay(delay)
-            print(f"[retry] {label}: HTTP {exc.code}; waiting {delay:.2f}s")
-            time.sleep(delay)
-        except (URLError, TimeoutError) as exc:
-            if attempt == attempts - 1:
-                raise RuntimeError(f"{label}: network failure after {attempts} attempts: {exc}") from exc
-            delay = rblxvalue_guard.jittered_delay(min(30, 2 ** (attempt + 1)))
-            print(f"[retry] {label}: network error; waiting {delay:.2f}s")
-            time.sleep(delay)
-
-
+    """Compatibility wrapper for the extracted bounded HTTP retry policy."""
+    return _request_with_retry(
+        req,
+        timeout,
+        label,
+        attempts=attempts,
+        return_headers=return_headers,
+        allow_not_modified=allow_not_modified,
+        rblxvalue_guard=rblxvalue_guard,
+        rblxvalue_api_key=RBLXVALUE_API_KEY,
+        rblxvalue_max_response_bytes=RBLXVALUE_MAX_RESPONSE_BYTES,
+        open_rblxvalue_url=_open_rblxvalue_url,
+        redact=redact,
+        max_retry_after_seconds=MAX_RETRY_AFTER_SECONDS,
+        rate_limit_error=BloxSwapsRateLimitError,
+    )
 def http_get(url, timeout=35):
     req = urllib.request.Request(url, headers={
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36",

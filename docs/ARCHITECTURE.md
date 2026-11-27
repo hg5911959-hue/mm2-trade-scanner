@@ -19,6 +19,7 @@ back into `scanner.py` where legacy symbol names must remain available.
 | `tools/telegram_transport.py` | Telegram redirect protection and conservative per-chat pacing |
 | `tools/redaction.py` | Secret discovery, credential scrubbing and line-buffered safe log streams |
 | `tools/retry_after.py` | Shared delta-seconds and HTTP-date parsing for upstream retry responses |
+| `tools/http_retry.py` | Bounded transient HTTP retries, credential-origin allowlisting and safe 429 handling |
 | `tools/robase_prices.py` | ROBASE price snapshot parsing and Chroma.gg 7-day source validation |
 | `tools/cash_market.py` | Conservative cash-market valuation and qualification helpers |
 | `tools/robase_identity.py` | Identity matching between the feed and ROBASE catalog |
