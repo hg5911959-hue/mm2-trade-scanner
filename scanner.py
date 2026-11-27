@@ -3449,8 +3449,8 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
             f"Total: <b>{chr(36)}{format_number(receive_total)}</b>",
             "",
             *_format_telegram_market_info(listing, market_info),
-            f"💵 <b>EST. CASH PROFIT (before fees/slippage): +{chr(36)}{format_number(difference)}</b>",
-            "<i>Based on Chroma.gg Price (7d); fees/slippage not included.</i>",
+            f"💵 <b>EST. CASH PROFIT (after marketplace fee; before extra costs): +{chr(36)}{format_number(difference)}</b>",
+            "<i>Chroma.gg Price (7d) is seller proceeds after marketplace fees; additional costs/slippage are not included.</i>",
         ])
     else:
         lines.extend([
