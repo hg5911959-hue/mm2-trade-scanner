@@ -14,7 +14,10 @@ back into `scanner.py` where legacy symbol names must remain available.
 | `tools/scan_loop.py` | Bounded polling orchestration, graceful signal handling, rate-limit stop behavior and metrics |
 | `tools/state_store.py` | Durable same-directory temporary writes with fsync and atomic replacement |
 | `tools/html_tree.py` | Small event-based HTML tree, traversal, text extraction and trade-side matching |
+| `tools/item_parser.py` | Item-name normalization, Arabic digit handling, DOM-scoped quantity evidence and trade-side item extraction |
 | `tools/telegram_transport.py` | Telegram redirect protection and conservative per-chat pacing |
+| `tools/redaction.py` | Secret discovery, credential scrubbing and line-buffered safe log streams |
+| `tools/retry_after.py` | Shared delta-seconds and HTTP-date parsing for upstream retry responses |
 | `tools/robase_prices.py` | ROBASE price snapshot parsing and Chroma.gg 7-day source validation |
 | `tools/cash_market.py` | Conservative cash-market valuation and qualification helpers |
 | `tools/robase_identity.py` | Identity matching between the feed and ROBASE catalog |
