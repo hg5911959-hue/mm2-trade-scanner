@@ -21,6 +21,13 @@ from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 import rblxvalue_guard
 from tools.scanner_config import CONFIG
 from tools.telegram_transport import TELEGRAM_OPENER, telegram_alert_delay
+from tools.listing_identity import (
+    identity_items as _identity_items_impl,
+    listing_identifier as _listing_identifier,
+    legacy_alert_state as _legacy_alert_state,
+    legacy_stable_listing_id as _legacy_stable_listing_id,
+    stable_listing_id as _stable_listing_id,
+)
 from tools.item_parser import (
     ARABIC_DIGITS as ARABIC_DIGITS,
     MAX_ITEM_QUANTITY as MAX_ITEM_QUANTITY,
@@ -253,116 +260,31 @@ def listing_links(node):
 
 
 def _identity_items(items):
-    grouped = {}
-    for item in items:
-        key = normalize_name(item["name"])
-        entry = grouped.setdefault(key, {"quantity": 0, "uncertain": False})
-        quantity = item.get("quantity")
-        if quantity is None or item.get("quantity_source") == "uncertain":
-            entry["uncertain"] = True
-        elif not entry["uncertain"]:
-            entry["quantity"] += int(quantity)
-    return sorted(
-        (name, None if entry["uncertain"] else entry["quantity"])
-        for name, entry in grouped.items()
-    )
+    """Compatibility wrapper for the extracted listing identity helper."""
+    return _identity_items_impl(items, normalize_name)
 
 
 def listing_identifier(node):
-    """Read stable per-card IDs exposed as common data attributes by the source page."""
-    for child in walk_nodes(node):
-        for key in ("data-ad-id", "data-listing-id", "data-trade-id", "data-post-id"):
-            value = child.attrs.get(key)
-            if value and str(value).strip():
-                return str(value).strip()
-    return ""
+    """Compatibility wrapper for stable source-card identifiers."""
+    return _listing_identifier(node)
 
 
 def legacy_stable_listing_id(owner_url, receive_items, give_items, listing_url="", listing_key_hint=""):
-    """Reproduce the pre-ad-ID hash so persisted alerts/quarantines migrate safely."""
-    owner = urlsplit(owner_url or "")
-    listing = urlsplit(listing_url or "")
-    ad_values = []
-    for key, values in parse_qs(listing.query, keep_blank_values=False).items():
-        if key.casefold() in {"ad", "id", "listing", "post", "trade"}:
-            ad_values.extend((key.casefold(), value) for value in values)
-    stable_params = []
-    for key, values in parse_qs(listing.query, keep_blank_values=False).items():
-        if key.casefold() not in {"page", "sort", "trade-type", "type", "filter", "search"}:
-            stable_params.extend((key.casefold(), value) for value in values)
-    owner_identity = (
-        (owner.scheme + "://" + owner.netloc + owner.path).rstrip("/").casefold()
-        if owner_url else
-        (listing.scheme + "://" + listing.netloc + listing.path).rstrip("/").casefold()
+    return _legacy_stable_listing_id(
+        owner_url, receive_items, give_items, listing_url, listing_key_hint,
+        normalize_name=normalize_name,
     )
-    if listing_key_hint:
-        listing_key = {"hint": listing_key_hint}
-    elif ad_values:
-        listing_key = sorted(ad_values)
-    else:
-        listing_key = {"path": listing.path, "query": sorted(stable_params)}
-    identity = {
-        "owner": owner_identity,
-        "listing_key": listing_key,
-        "receive": _identity_items(receive_items),
-        "give": _identity_items(give_items),
-    }
-    payload = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
 
 
 def legacy_alert_state(listing, alerted_ids, uncertain_ids):
-    """Return the old hash's persisted delivery state for one-time migration."""
-    legacy_id = str(listing.get("legacy_id") or "")
-    trade_id = str(listing.get("id") or "")
-    if not legacy_id or legacy_id == trade_id:
-        return ""
-    if legacy_id in alerted_ids:
-        return "alerted"
-    if legacy_id in uncertain_ids:
-        return "uncertain"
-    return ""
+    return _legacy_alert_state(listing, alerted_ids, uncertain_ids)
 
 
 def stable_listing_id(owner_url, receive_items, give_items, listing_url="", listing_key_hint=""):
-    owner = urlsplit(owner_url or "")
-    listing = urlsplit(listing_url or "")
-    ad_values = []
-    for key, values in parse_qs(listing.query, keep_blank_values=False).items():
-        if key.casefold() in {"ad", "id", "listing", "post", "trade"}:
-            ad_values.extend((key.casefold(), value) for value in values)
-    stable_params = []
-    for key, values in parse_qs(listing.query, keep_blank_values=False).items():
-        if key.casefold() not in {"page", "sort", "trade-type", "type", "filter", "search"}:
-            stable_params.extend((key.casefold(), value) for value in values)
-    owner_identity = (
-        (owner.scheme + "://" + owner.netloc + owner.path).rstrip("/").casefold()
-        if owner_url else
-        (listing.scheme + "://" + listing.netloc + listing.path).rstrip("/").casefold()
+    return _stable_listing_id(
+        owner_url, receive_items, give_items, listing_url, listing_key_hint,
+        normalize_name=normalize_name,
     )
-    if listing_key_hint:
-        listing_key = {"hint": listing_key_hint}
-    elif ad_values:
-        # Prefer the source post ID; item contents and quantities can change.
-        listing_key = sorted(ad_values)
-    elif owner_url:
-        listing_key = {"path": listing.path, "query": sorted(stable_params)}
-    else:
-        listing_key = {"path": listing.path, "query": sorted(stable_params)}
-    # A source ad ID is the durable identity of a BloxSwaps post. Item
-    # quantities and card text can change while the post remains the same;
-    # including them here would create a fresh ID and resend an old alert.
-    if ad_values or listing_key_hint:
-        identity = {"owner": owner_identity, "listing_key": listing_key}
-    else:
-        identity = {
-            "owner": owner_identity,
-            "listing_key": listing_key,
-            "receive": _identity_items(receive_items),
-            "give": _identity_items(give_items),
-        }
-    payload = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
 
 
 def _extract_balanced_json_object(text, marker):
