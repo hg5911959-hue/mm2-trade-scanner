@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """BloxSwaps MM2 scanner with verified Supreme Values calculations."""
 import csv
+from dataclasses import dataclass
 import html as html_lib
 import itertools
 import hashlib
@@ -89,7 +90,7 @@ from tools.feed_checkpoint import (
     scan_checkpoint_requires_cold_start as _scan_checkpoint_requires_cold_start_impl,
 )
 from tools.telegram_quarantine import reconcile_uncertain_quarantine
-from tools.scan_modes import resolve_scan_modes
+from tools.scan_modes import ScanModes, resolve_scan_modes
 from tools.scan_loop_policy import (
     minimum_cycle_start_window as _minimum_cycle_start_window,
     should_run_backlog_recheck as _should_run_backlog_recheck,
@@ -4603,6 +4604,161 @@ def accumulate_cash_blockers(missing, counts, groups):
     return blocked
 
 
+@dataclass(slots=True)
+class ScanMarketData:
+    values: dict
+    cash_catalog: dict | None
+    cash_prices_changed: bool
+    telegram_market_info: dict
+
+
+@dataclass(slots=True)
+class ScanHistoryData:
+    values_snapshot_changed: bool
+    history_store: object | None
+    public_history_store: object | None
+
+
+def _load_scan_market_data(modes: ScanModes) -> ScanMarketData:
+    """Load valuation inputs and optional reference data for one scan."""
+    if modes.value_profit_shadow_mode:
+        archive_path = os.environ.get(
+            "RBLXVALUE_DAILY_ARCHIVE_FILE",
+            "rblxvalue-archive/data/rblxvalue_latest.json",
+        )
+        values, archive_summary = load_values_from_snapshot(archive_path)
+        print(
+            "[value-profit-shadow] "
+            + json.dumps(archive_summary, ensure_ascii=False, sort_keys=True)
+        )
+        print(
+            f"[value-profit-shadow] thresholds: minimum Supreme value profit={MIN_DIFF:g}; "
+            f"minimum margin={MIN_PROFIT_PERCENT:g}%"
+        )
+    elif CASH_FILTER and not modes.testing_mode:
+        print("[mode] ROBASE cash-only: Supreme Values and RBLXValue are not loaded or queried")
+        values = {}
+    elif modes.testing_mode:
+        values = load_supreme_values()
+    else:
+        raise RuntimeError("Value mode is disabled until third-party data rights are verified.")
+
+    cash_catalog = None
+    cash_prices_changed = False
+    if CASH_FILTER:
+        cash_catalog = load_robase_cash_price_catalog()
+        all_cash_rows = list(cash_catalog.get("items_by_slug", {}).values())
+        verified_cash_rows = sum(
+            1 for row in all_cash_rows
+            if row["status"] == "verified" and cash_price_is_fresh(row, CASH_MAX_AGE_DAYS)
+        )
+        expired_cash_rows = [
+            row for row in all_cash_rows
+            if row["status"] == "verified" and not cash_price_is_fresh(row, CASH_MAX_AGE_DAYS)
+        ]
+        expired_cash_rows.sort(key=lambda row: row.get("verified_at_utc") or "")
+        unverified_cash_rows = sum(1 for row in all_cash_rows if row["status"] == "unverified")
+        alert_cash_price_runway(cash_catalog, verified_cash_rows)
+        previous_cash_hash = cash_catalog_snapshot_hash()
+        cash_prices_changed = previous_cash_hash != cash_catalog["sha256"]
+        print("[mode] mode=cash")
+        if modes.daily_shadow_mode:
+            print(
+                "[cash] Loaded %s/%s baseline ROBASE catalogue rows for identity only; "
+                "rolling prices are replaced before shadow evaluation."
+                % (
+                    cash_catalog["row_count"],
+                    cash_catalog.get("expected_count", cash_catalog["row_count"]),
+                )
+            )
+        else:
+            print(
+                "[cash] Loaded %s/%s exact ROBASE prices; verified=%s; expired=%s; unverified=%s"
+                % (
+                    cash_catalog["row_count"],
+                    cash_catalog.get("expected_count", cash_catalog["row_count"]),
+                    verified_cash_rows,
+                    len(expired_cash_rows),
+                    unverified_cash_rows,
+                )
+            )
+        if unverified_cash_rows > 0:
+            send_maintenance_alert(
+                "cash-price-catalog-unverified",
+                f"Cash-first alerts only use verified USD prices. Current catalogue: {verified_cash_rows} verified, "
+                f"{unverified_cash_rows} unverified. Offers with missing/unverified prices are held, not sent.",
+            )
+        if verified_cash_rows == 0:
+            print(
+                "[cash] No verified cash prices yet; cash-profit alerts are safely disabled "
+                "until prices are manually verified."
+            )
+    else:
+        print("[mode] mode=value")
+
+    telegram_market_info = {}
+    if CASH_FILTER and not modes.testing_mode and not modes.value_profit_shadow_mode:
+        info_path = os.environ.get("RBLXVALUE_INFO_FILE", "data/rblxvalue_latest.json")
+        try:
+            telegram_market_info, info_summary = load_telegram_market_info(info_path)
+            print(
+                "[telegram-market-info] "
+                + json.dumps(info_summary, ensure_ascii=False, sort_keys=True)
+                + "; informational_only=true"
+            )
+        except Exception as info_error:
+            # This sidecar is display-only. A missing/stale/corrupt archive must
+            # never block the cash scanner or delay its Telegram alerts.
+            print(
+                "[telegram-market-info] unavailable; alerts continue unchanged; "
+                f"reason={type(info_error).__name__}"
+            )
+
+    return ScanMarketData(
+        values=values,
+        cash_catalog=cash_catalog,
+        cash_prices_changed=cash_prices_changed,
+        telegram_market_info=telegram_market_info,
+    )
+
+
+def _open_scan_history_data(modes: ScanModes, values: dict) -> ScanHistoryData:
+    """Open optional history stores after valuation inputs have been validated."""
+    values_snapshot_changed = False
+    history_store = None
+    if (CASH_FILTER and not modes.testing_mode) or modes.value_profit_shadow_mode:
+        # Shadow modes do not open or mutate the legacy market-history database.
+        history_store = None
+    else:
+        try:
+            from market_history import MarketHistory
+            history_store = MarketHistory()
+            if history_store.record_values_snapshot(values):
+                values_snapshot_changed = True
+        except Exception as history_error:
+            print(f"[market-history] Snapshot storage skipped safely: {type(history_error).__name__}")
+
+    public_history_store = None
+    if (
+        CASH_FILTER and not modes.testing_mode
+        and os.environ.get("DRY_RUN", "").strip().casefold() not in {"true", "1", "yes", "on"}
+    ):
+        try:
+            from tools.public_dashboard_history import PublicDashboardHistory
+            public_history_store = PublicDashboardHistory()
+        except Exception as history_error:
+            raise RuntimeError(
+                "Public dashboard history could not be initialized; refusing to send alerts "
+                "without a state artifact that can pass privacy validation."
+            ) from history_error
+
+    return ScanHistoryData(
+        values_snapshot_changed=values_snapshot_changed,
+        history_store=history_store,
+        public_history_store=public_history_store,
+    )
+
+
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     scan_modes = resolve_scan_modes(
@@ -4624,103 +4780,18 @@ def scan_once(include_backlog_rechecks=True):
         print("[stage] Offline Supreme value-profit shadow from the daily RBLXValue archive; no API key or API requests")
     else:
         print("[stage] Third-party valuation sources disabled; cash eligibility uses ROBASE + BloxSwaps only")
-    if value_profit_shadow_mode:
-        archive_path = os.environ.get(
-            "RBLXVALUE_DAILY_ARCHIVE_FILE",
-            "rblxvalue-archive/data/rblxvalue_latest.json",
-        )
-        values, archive_summary = load_values_from_snapshot(archive_path)
-        print(
-            "[value-profit-shadow] "
-            + json.dumps(archive_summary, ensure_ascii=False, sort_keys=True)
-        )
-        print(
-            f"[value-profit-shadow] thresholds: minimum Supreme value profit={MIN_DIFF:g}; "
-            f"minimum margin={MIN_PROFIT_PERCENT:g}%"
-        )
-    elif CASH_FILTER and not testing_mode:
-        print("[mode] ROBASE cash-only: Supreme Values and RBLXValue are not loaded or queried")
-        values = {}
-    elif testing_mode:
-        values = load_supreme_values()
-    else:
-        raise RuntimeError("Value mode is disabled until third-party data rights are verified.")
-    cash_catalog = None
-    cash_prices_changed = False
-    if CASH_FILTER:
-        cash_catalog = load_robase_cash_price_catalog()
-        all_cash_rows = list(cash_catalog.get("items_by_slug", {}).values())
-        verified_cash_rows = sum(1 for row in all_cash_rows if row["status"] == "verified" and cash_price_is_fresh(row, CASH_MAX_AGE_DAYS))
-        expired_cash_rows = [row for row in all_cash_rows
-                             if row["status"] == "verified" and not cash_price_is_fresh(row, CASH_MAX_AGE_DAYS)]
-        expired_cash_rows.sort(key=lambda row: row.get("verified_at_utc") or "")
-        unverified_cash_rows = sum(1 for row in all_cash_rows if row["status"] == "unverified")
-        alert_cash_price_runway(cash_catalog, verified_cash_rows)
-        previous_cash_hash = cash_catalog_snapshot_hash()
-        cash_prices_changed = previous_cash_hash != cash_catalog["sha256"]
-        print("[mode] mode=cash")
-        if daily_shadow_mode:
-            print("[cash] Loaded %s/%s baseline ROBASE catalogue rows for identity only; rolling prices are replaced before shadow evaluation." % (
-                cash_catalog["row_count"], cash_catalog.get("expected_count", cash_catalog["row_count"])
-            ))
-        else:
-            print("[cash] Loaded %s/%s exact ROBASE prices; verified=%s; expired=%s; unverified=%s" % (
-                cash_catalog["row_count"], cash_catalog.get("expected_count", cash_catalog["row_count"]),
-                verified_cash_rows, len(expired_cash_rows), unverified_cash_rows
-            ))
-        if unverified_cash_rows > 0:
-            send_maintenance_alert(
-                "cash-price-catalog-unverified",
-                f"Cash-first alerts only use verified USD prices. Current catalogue: {verified_cash_rows} verified, "
-                f"{unverified_cash_rows} unverified. Offers with missing/unverified prices are held, not sent.",
-            )
-        if verified_cash_rows == 0:
-            print("[cash] No verified cash prices yet; cash-profit alerts are safely disabled until prices are manually verified.")
-    else:
-        print("[mode] mode=value")
-    telegram_market_info = {}
-    if CASH_FILTER and not testing_mode and not value_profit_shadow_mode:
-        info_path = os.environ.get("RBLXVALUE_INFO_FILE", "data/rblxvalue_latest.json")
-        try:
-            telegram_market_info, info_summary = load_telegram_market_info(info_path)
-            print(
-                "[telegram-market-info] "
-                + json.dumps(info_summary, ensure_ascii=False, sort_keys=True)
-                + "; informational_only=true"
-            )
-        except Exception as info_error:
-            # This sidecar is display-only. A missing/stale/corrupt archive must
-            # never block the cash scanner or delay its Telegram alerts.
-            print(
-                "[telegram-market-info] unavailable; alerts continue unchanged; "
-                f"reason={type(info_error).__name__}"
-            )
-    values_snapshot_changed = False
-    history_store = None
-    if (CASH_FILTER and not testing_mode) or value_profit_shadow_mode:
-        # Shadow modes do not open or mutate the legacy market-history database.
-        history_store = None
-    else:
-        try:
-            from market_history import MarketHistory
-            history_store = MarketHistory()
-            if history_store.record_values_snapshot(values):
-                values_snapshot_changed = True
-        except Exception as history_error:
-            print(f"[market-history] Snapshot storage skipped safely: {type(history_error).__name__}")
-    public_history_store = None
-    if (
-        CASH_FILTER and not testing_mode
-        and os.environ.get("DRY_RUN", "").strip().casefold() not in {"true", "1", "yes", "on"}
-    ):
-        try:
-            from tools.public_dashboard_history import PublicDashboardHistory
-            public_history_store = PublicDashboardHistory()
-        except Exception as history_error:
-            raise RuntimeError(
-                "Public dashboard history could not be initialized; refusing to send alerts "
-                "without a state artifact that can pass privacy validation."
-            ) from history_error
+
+    market_data = _load_scan_market_data(scan_modes)
+    values = market_data.values
+    cash_catalog = market_data.cash_catalog
+    cash_prices_changed = market_data.cash_prices_changed
+    telegram_market_info = market_data.telegram_market_info
+
+    history_data = _open_scan_history_data(scan_modes, values)
+    values_snapshot_changed = history_data.values_snapshot_changed
+    history_store = history_data.history_store
+    public_history_store = history_data.public_history_store
+
     aliases = load_aliases()
     print(f"[aliases] Loaded {len(aliases)} reviewed item aliases")
     print("[stage] Loading seen-offer and pending-recheck state")
