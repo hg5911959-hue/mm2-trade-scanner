@@ -647,7 +647,7 @@ def fetch_pending_posts_by_id(pending_ids):
         if not isinstance(payload, dict) or str(payload.get("id") or "") != pending_id:
             print(
                 f"[pending] Direct lookup returned an invalid or mismatched record for {pending_id}; "
-                "retaining it for bounded cursor fallback."
+                "retaining it for a later bounded direct-ID retry."
             )
             continue
         posts.append(payload)
@@ -1213,7 +1213,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
             cursor = next_cursor
 
     pagination_complete = not cursor or boundary_reached
-    watch_search_complete = not watch_remaining or not cursor
+    watch_search_complete = not watch_remaining
     unique = {}
     for listing in collected:
         unique[listing["id"]] = listing
