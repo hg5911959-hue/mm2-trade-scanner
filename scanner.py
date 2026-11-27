@@ -2676,15 +2676,6 @@ def _wait_for_telegram_rate_limit():
 RBLXVALUE_ATTRIBUTION = "Data from rblxvalue.com"
 ROBASE_ATTRIBUTION = "Prices: chromas.gg Price (7d) via ROBASE"
 
-    def __add__(self, other):
-        suffix = str(other) if isinstance(other, TelegramHTML) else html_lib.escape(str(other), quote=False)
-        return TelegramHTML(str(self) + suffix)
-
-    def __radd__(self, other):
-        prefix = str(other) if isinstance(other, TelegramHTML) else html_lib.escape(str(other), quote=False)
-        return TelegramHTML(prefix + str(self))
-
-
 def _telegram_escape(value):
     return html_lib.escape(str(value), quote=False)
 
