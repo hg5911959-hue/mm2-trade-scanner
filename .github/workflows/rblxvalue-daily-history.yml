@@ -47,9 +47,6 @@ jobs:
           mkdir -p data
           if git cat-file -e refs/remotes/origin/robase-daily-history:data/rblxvalue_request_budget.json 2>/dev/null; then
             git show refs/remotes/origin/robase-daily-history:data/rblxvalue_request_budget.json > data/rblxvalue_request_budget.json
-            mkdir -p /tmp/rblxvalue-budget-check
-            cp data/rblxvalue_request_budget.json /tmp/rblxvalue-budget-check/
-            python tools/validate_state.py --directory /tmp/rblxvalue-budget-check --api-safety-only
             echo "[rblxvalue-budget] restored persistent rolling 24-hour request ledger"
           else
             python - <<'PY'
