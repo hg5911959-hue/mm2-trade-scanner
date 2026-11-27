@@ -3146,12 +3146,21 @@ def record_uncertain_context(listing, trade_id, delivery_path):
             else ""
         )
 
-    source = str(listing.get("source") or "").strip().casefold()
-    if not source:
-        # The structured BloxSwaps API adapter may omit the redundant source
-        # label; infer it only from a trusted HTTPS listing host.
-        source = "bloxswaps" if safe_link(listing.get("url")) else ""
-    if source not in {"bloxswaps", "bloxswaps.com"}:
+    source = (
+        str(listing.get("source") or "")
+        .strip()
+        .casefold()
+        .replace("-", "_")
+        .replace(" ", "_")
+    )
+    listing_url = safe_link(listing.get("url"))
+    owner_url = safe_link(listing.get("owner_url"))
+    known_bloxswaps_labels = {
+        "bloxswaps", "bloxswaps.com", "bloxswaps_api", "bloxswaps_api_v2",
+    }
+    if source not in known_bloxswaps_labels and not (listing_url or owner_url):
+        # Unknown source labels are accepted only when a trusted BloxSwaps
+        # HTTPS reference independently proves the source.
         context.pop(str(trade_id), None)
         save_uncertain_context(context)
         return
@@ -3159,8 +3168,8 @@ def record_uncertain_context(listing, trade_id, delivery_path):
 
     context[str(trade_id)] = {
         "source_ad_id": str(listing.get("source_ad_id") or ""),
-        "listing_url": safe_link(listing.get("url")),
-        "owner_url": safe_link(listing.get("owner_url")),
+        "listing_url": listing_url,
+        "owner_url": owner_url,
         "source": source[:32],
         "delivery_path": str(delivery_path),
         "attempted_at_utc": str(
