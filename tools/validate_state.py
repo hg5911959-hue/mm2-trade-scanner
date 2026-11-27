@@ -115,7 +115,7 @@ def _validate_public_dashboard_history(path: Path) -> list[str]:
     errors: list[str] = []
     max_bytes = 64 * 1024 * 1024
     try:
-        if not path.is_file() or path.stat().st_size > max_bytes:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > max_bytes:
             return ["public dashboard history is not a regular file or exceeds 64 MiB"]
     except OSError:
         return ["public dashboard history cannot be safely inspected"]
@@ -137,10 +137,18 @@ def _validate_public_dashboard_history(path: Path) -> list[str]:
             return True
         if not isinstance(value, str) or not value:
             return False
-        parsed = urlsplit(value)
-        return parsed.scheme == "https" and (parsed.hostname or "").casefold() in {
-            "bloxswaps.com", "www.bloxswaps.com",
-        }
+        try:
+            parsed = urlsplit(value)
+            port = parsed.port
+        except ValueError:
+            return False
+        return (
+            parsed.scheme == "https"
+            and (parsed.hostname or "").casefold() in {"bloxswaps.com", "www.bloxswaps.com"}
+            and port in (None, 443)
+            and parsed.username is None
+            and parsed.password is None
+        )
 
     def safe_items(raw: object) -> bool:
         try:
