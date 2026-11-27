@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """Daily RBLXValue API snapshot for the 214 ROBASE weapons (research-only)."""
 from __future__ import annotations
-import argparse, csv, json, math, os, re, time, unicodedata
+import argparse, csv, importlib, json, math, os, re, sys, time, unicodedata
 from datetime import datetime
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
+rblxvalue_guard = importlib.import_module("rblxvalue_guard")
 
 API_BASE = "https://api.rblxvalue.com/v2"
 PAGE_SIZE = 100
@@ -62,6 +68,13 @@ class RBLXValueClient:
             elapsed = time.monotonic() - self.last_request_at
             if self.last_request_at and elapsed < MIN_REQUEST_INTERVAL_SECONDS:
                 self.sleep(MIN_REQUEST_INTERVAL_SECONDS - elapsed)
+            # Reserve every HTTP attempt (including retries) before network I/O.
+            # The rolling ledger is restored from and persisted to the archive branch.
+            rblxvalue_guard.reserve_request(
+                key=self.api_key,
+                workflow="RBLXValue Daily Weapon History",
+            )
+            self.last_request_at = time.monotonic()
             try:
                 with urlopen(Request(url, headers=headers), timeout=self.timeout) as response:
                     if response.status != 200: raise RuntimeError(f"RBLXValue API returned HTTP {response.status}")
@@ -81,6 +94,7 @@ class RBLXValueClient:
                     raise RuntimeError(f"RBLXValue API authentication/access failed (HTTP {exc.code}); check key activation") from exc
                 raise RuntimeError(f"RBLXValue API returned HTTP {exc.code}") from exc
             except (URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError) as exc:
+                self.last_request_at = time.monotonic()
                 last_error = exc
                 if attempt < 3: self.sleep(2 ** attempt)
         raise RuntimeError(f"RBLXValue API request failed: {type(last_error).__name__}: {last_error}")
@@ -192,7 +206,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--identity-map", required=True); parser.add_argument("--json-output", required=True); parser.add_argument("--csv-output", required=True); parser.add_argument("--api-key-env", default="RBLXVALUE_API_KEY")
     args = parser.parse_args()
-    snapshot = collect_snapshot(args.identity_map, os.environ.get(args.api_key_env, ""))
+    try:
+        snapshot = collect_snapshot(args.identity_map, os.environ.get(args.api_key_env, ""))
+    finally:
+        rblxvalue_guard.log_request_count()
     write_outputs(snapshot, args.json_output, args.csv_output)
     return 0
 
