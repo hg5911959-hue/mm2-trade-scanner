@@ -87,8 +87,8 @@
 
   function renderOpportunities(rows, historyAvailable) {
     if (!historyAvailable) {
-      $("opp-count").textContent = "Not persisted";
-      $("opportunity-table").innerHTML='<div class="empty">Listing and opportunity history is not persisted in this deployment.</div>';
+      $("opp-count").textContent = "Unavailable";
+      $("opportunity-table").innerHTML='<div class="empty">History is unavailable in this state snapshot. A successful production scan will populate it.</div>';
       return;
     }
     $("opp-count").textContent = rows.length + " shown";
@@ -106,7 +106,7 @@
   function renderListings(rows, historyAvailable) {
     if (!historyAvailable) {
       $("listing-count").textContent = "Not persisted";
-      $("recent-listings").innerHTML='<div class="empty">Public listing history is not persisted in this deployment.</div>';
+      $("recent-listings").innerHTML='<div class="empty">Public listing history is unavailable in this state snapshot. A successful production scan will populate it.</div>';
       return;
     }
     $("listing-count").textContent=rows.length+" shown";
@@ -163,7 +163,7 @@
     .then(response=>{if(!response.ok)throw new Error("Dashboard data is not published yet");return response.json();})
     .then(data=>{
       const s=data.summary||{};
-      $("listings").textContent=s.historyAvailable ? number(s.trackedListings) : "Not retained";
+      $("listings").textContent=s.historyAvailable ? number(s.trackedListings) : "Unavailable";
       $("opportunities").textContent=s.historyAvailable ? number(s.opportunities7d) : "Not retained";
       $("items").textContent=number(s.trackedItems);
       $("crosschecked").textContent=number((data.robaseSummary||{}).totalSold7d);
