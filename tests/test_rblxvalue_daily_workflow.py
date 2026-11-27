@@ -22,6 +22,8 @@ class RBLXValueDailyWorkflowBudgetTests(IsolatedDataTestCase):
         self.assertLess(restore, fetch)
         self.assertIn("data/rblxvalue_request_budget.json", self.workflow[restore:fetch])
         self.assertIn("--api-safety-only", self.workflow[restore:fetch])
+        self.assertIn("request_timestamps_epoch", self.workflow[restore:fetch])
+        self.assertIn("request_workflows", self.workflow[restore:fetch])
 
     def test_every_http_attempt_is_reserved_before_network_io(self):
         reserve = self.collector.index("rblxvalue_guard.reserve_request(")
