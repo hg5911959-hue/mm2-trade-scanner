@@ -3412,7 +3412,6 @@ def _format_telegram_market_info(listing, market_info):
     if not rows:
         return []
     return [
-        "",
         "┌─ 📊 <b>REFERENCE INFO ONLY</b>",
         *rows,
         "└ <i>RBLXValue · not used in cash filters or alert decisions</i>",
@@ -3545,7 +3544,10 @@ def format_opportunity_digest(opportunities, market_info=None):
         lines.append(f"   GIVE:\n{give_summary}")
         lines.append(f"   GET:\n{receive_summary}")
         lines.append(f"   TOTAL: {_telegram_escape(totals)}")
-        lines.extend(_format_telegram_market_info(listing, market_info))
+        reference_info = _format_telegram_market_info(listing, market_info)
+        if reference_info:
+            lines.append("")
+            lines.extend(reference_info)
         lines.append("")
     return TelegramHTML("\n".join(lines).rstrip())
 
