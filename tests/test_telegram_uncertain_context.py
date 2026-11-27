@@ -39,6 +39,33 @@ class TelegramUncertainContextTests(IsolatedDataTestCase):
         scanner.clear_uncertain_context("stable-hash")
         self.assertEqual(scanner.load_uncertain_context(), {})
 
+    def test_api_listing_without_source_label_uses_trusted_bloxswaps_host(self):
+        listing = {
+            "source_ad_id": "post-api-123",
+            "url": "https://bloxswaps.com/trade-mm2?ad=post-api-123",
+            "owner_url": "https://www.bloxswaps.com/fr/users/12345",
+            "alert_attempted_at_utc": "2026-11-27T12:20:18+00:00",
+        }
+
+        scanner.record_uncertain_context(listing, "stable-api-hash", "individual")
+
+        context = scanner.load_uncertain_context()
+        self.assertEqual(context["stable-api-hash"]["source"], "bloxswaps")
+        self.assertEqual(context["stable-api-hash"]["source_ad_id"], "post-api-123")
+        self.assertEqual(context["stable-api-hash"]["listing_url"], listing["url"])
+        self.assertEqual(context["stable-api-hash"]["owner_url"], listing["owner_url"])
+
+    def test_missing_source_with_untrusted_host_is_not_assumed_public(self):
+        listing = {
+            "source_ad_id": "private-post",
+            "url": "https://attacker.example/trade",
+            "owner_url": "",
+        }
+
+        scanner.record_uncertain_context(listing, "private-hash", "individual")
+
+        self.assertEqual(scanner.load_uncertain_context(), {})
+
     def test_external_links_are_not_persisted(self):
         listing = {
             "source": "bloxswaps",
@@ -94,6 +121,24 @@ class TelegramUncertainContextTests(IsolatedDataTestCase):
         self.assertNotIn("private-hash", context)
         self.assertIn("public-hash", context)
         self.assertNotIn("discord.com", self.path.read_text(encoding="utf-8"))
+
+    def test_uncertain_context_rejects_credentials_and_nonstandard_ports(self):
+        self.path.write_text(json.dumps({
+            "version": 1,
+            "details": {
+                "stable-hash": {
+                    "source_ad_id": "post-123",
+                    "listing_url": "https://user@bloxswaps.com:8443/trade-mm2?ad=post-123",
+                    "owner_url": "",
+                    "source": "bloxswaps",
+                    "delivery_path": "individual",
+                    "attempted_at_utc": "2026-11-27T12:20:18+00:00",
+                }
+            },
+        }), encoding="utf-8")
+
+        with self.assertRaisesRegex(RuntimeError, "unsafe link"):
+            scanner.load_uncertain_context()
 
     def test_corrupt_context_fails_closed(self):
         self.path.write_text(json.dumps({"version": 9, "details": {}}), encoding="utf-8")

@@ -3017,8 +3017,20 @@ def load_uncertain_context():
         for field in ("listing_url", "owner_url"):
             value = entry.get(field, "")
             if value:
-                parsed = urlsplit(value)
-                if parsed.scheme != "https" or (parsed.hostname or "").casefold() not in allowed_hosts:
+                try:
+                    parsed = urlsplit(value)
+                    port = parsed.port
+                except ValueError as exc:
+                    raise RuntimeError(
+                        "[state] Telegram uncertain-delivery context contains an unsafe link."
+                    ) from exc
+                if (
+                    parsed.scheme != "https"
+                    or (parsed.hostname or "").casefold() not in allowed_hosts
+                    or port not in (None, 443)
+                    or parsed.username is not None
+                    or parsed.password is not None
+                ):
                     raise RuntimeError("[state] Telegram uncertain-delivery context contains an unsafe link.")
         if entry.get("delivery_path") not in {"individual", "digest", "recovered"}:
             raise RuntimeError("[state] Telegram uncertain-delivery context delivery path is invalid.")
@@ -3044,19 +3056,37 @@ def save_uncertain_context(context):
 def record_uncertain_context(listing, trade_id, delivery_path):
     """Store only public BloxSwaps references before a non-idempotent Telegram send."""
     context = load_uncertain_context()
-    source = str(listing.get("source") or "").casefold()
-    if source != "bloxswaps":
-        context.pop(str(trade_id), None)
-        save_uncertain_context(context)
-        return
     allowed_hosts = {"bloxswaps.com", "www.bloxswaps.com"}
 
     def safe_link(value):
         raw = str(value or "").strip()
         if not raw:
             return ""
-        parsed = urlsplit(raw)
-        return raw[:2048] if parsed.scheme == "https" and (parsed.hostname or "").casefold() in allowed_hosts else ""
+        try:
+            parsed = urlsplit(raw)
+            port = parsed.port
+        except ValueError:
+            return ""
+        return (
+            raw[:2048]
+            if parsed.scheme == "https"
+            and (parsed.hostname or "").casefold() in allowed_hosts
+            and port in (None, 443)
+            and parsed.username is None
+            and parsed.password is None
+            else ""
+        )
+
+    source = str(listing.get("source") or "").strip().casefold()
+    if not source:
+        # The structured BloxSwaps API adapter may omit the redundant source
+        # label; infer it only from a trusted HTTPS listing host.
+        source = "bloxswaps" if safe_link(listing.get("url")) else ""
+    if source not in {"bloxswaps", "bloxswaps.com"}:
+        context.pop(str(trade_id), None)
+        save_uncertain_context(context)
+        return
+    source = "bloxswaps"
 
     context[str(trade_id)] = {
         "source_ad_id": str(listing.get("source_ad_id") or ""),
