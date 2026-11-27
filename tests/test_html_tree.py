@@ -34,5 +34,5 @@ class HtmlTreeTests(IsolatedDataTestCase):
         tree = PageTree()
         tree.feed('<div>Knife<img alt="Bat"/><br/><span>End</span></div>')
 
-        self.assertIn("Knife Bat End", node_text(tree.root))
+        self.assertEqual(" ".join(node_text(tree.root).split()), "Knife Bat End")
         self.assertEqual(tree.stack[-1].tag, "document")
