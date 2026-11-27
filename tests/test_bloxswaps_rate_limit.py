@@ -46,6 +46,25 @@ class BloxSwapsRateLimitTests(IsolatedDataTestCase):
         sleep.assert_not_called()
 
 
+
+    def test_http_429_without_response_headers_stops_safely(self):
+        def rate_limited(req, timeout):
+            raise HTTPError(
+                req.full_url,
+                429,
+                "too many requests",
+                None,
+                BytesIO(b"rate limited"),
+            )
+
+        request = Request("https://bloxswaps.com/trade-mm2")
+        with patch("scanner.urllib.request.urlopen", side_effect=rate_limited):
+            with self.assertRaisesRegex(
+                scanner.BloxSwapsRateLimitError,
+                r"HTTP 429.*no Retry-After header",
+            ):
+                scanner.request_with_retry(request, 10, "BloxSwaps page")
+
     def test_http_429_http_date_retry_after_is_parsed(self):
         class FrozenDateTime(datetime):
             @classmethod
