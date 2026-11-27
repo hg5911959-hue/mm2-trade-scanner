@@ -194,6 +194,14 @@ class StateValidationTests(IsolatedDataTestCase):
             "uncertain-delivery context contains an unsafe link" in error
             for error in validate_state(self.root, require_cache=True)
         ))
+        context["details"]["stable-id"]["listing_url"] = (
+            "https://user@bloxswaps.com:8443/trade-mm2?ad=post-123"
+        )
+        (self.root / "telegram_uncertain_context.json").write_text(json.dumps(context), encoding="utf-8")
+        self.assertTrue(any(
+            "uncertain-delivery context contains an unsafe link" in error
+            for error in validate_state(self.root, require_cache=True)
+        ))
 
     def test_telegram_uncertain_context_rejects_invalid_version_and_delivery_path(self):
         self._write_valid_state()
