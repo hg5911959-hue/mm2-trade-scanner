@@ -881,6 +881,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
         seed_ids, recent_ids, recent_listings = [], [], []
         addition_ids, unparsed_ids = [], []
         additions = offers_excluded = malformed = candidate_count = 0
+        parsed_candidate_count = malformed_candidate_count = 0
         api_posts = len(raw_first_items) if api_only else 0
         old_streak = page_count = 1
         age_boundary = False
@@ -963,8 +964,10 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                     html_listing = by_ad_id.get(post_id)
                     if html_listing: listing = _merge_html_quantity_diagnostics(listing, html_listing)
                     recent_listings.append(listing)
+                    parsed_candidate_count += 1
                 else:
                     malformed += 1
+                    malformed_candidate_count += 1
                     unparsed_ids.append(post_id)
             if age_boundary:
                 break
@@ -985,7 +988,19 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                 raise RuntimeError('[bloxswaps] Cursor did not advance during cold-start discovery; refusing to seed an incomplete feed.')
             cursor = next_cursor
 
+        from tools.feed_accounting import validate_candidate_accounting
+        validate_candidate_accounting(
+            candidate_count=candidate_count,
+            additions=additions,
+            single_sided=single_sided_count,
+            offers_excluded=offers_excluded,
+            malformed=malformed_candidate_count,
+            parsed=parsed_candidate_count,
+            context="cold-start feed",
+        )
         stats.update({
+            'parsed_candidate_count': parsed_candidate_count,
+            'malformed_candidate_count': malformed_candidate_count,
             'pagination_pages': page_count,
             'pagination_api_posts': api_posts,
             'pagination_complete': complete,
@@ -1037,10 +1052,12 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     api_listings_added = 0
     api_posts_scanned = len(raw_first_items) if api_only else 0
     candidate_count = 0
+    parsed_candidate_count = 0
+    malformed_candidate_count = 0
     item_map = initial_item_map
 
     def consume_raw_posts(raw_posts, compare_html=False):
-        nonlocal boundary_reached, seen_streak, additions, offers_excluded, malformed, api_listings_added, candidate_count, item_map, watch_remaining, single_sided_count
+        nonlocal boundary_reached, seen_streak, additions, offers_excluded, malformed, api_listings_added, candidate_count, parsed_candidate_count, malformed_candidate_count, item_map, watch_remaining, single_sided_count
         for raw in raw_posts:
             if not isinstance(raw, dict) or not raw.get("id"):
                 malformed += 1
@@ -1139,10 +1156,12 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
                     html_parse_warning_ids.append(post_id)
             if listing:
                 collected.append(listing)
+                parsed_candidate_count += 1
                 if not compare_html:
                     api_listings_added += 1
             else:
                 malformed += 1
+                malformed_candidate_count += 1
                 unparsed_ids.append(post_id)
                 unparsed_samples.append(json.dumps(raw, ensure_ascii=False)[:240])
 
@@ -1212,6 +1231,16 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
             seen_cursors.add(str(next_cursor))
             cursor = next_cursor
 
+    from tools.feed_accounting import validate_candidate_accounting
+    validate_candidate_accounting(
+        candidate_count=candidate_count,
+        additions=additions,
+        single_sided=single_sided_count,
+        offers_excluded=offers_excluded,
+        malformed=malformed_candidate_count,
+        parsed=parsed_candidate_count,
+        context="incremental feed",
+    )
     pagination_complete = not cursor or boundary_reached
     watch_search_complete = not watch_remaining
     unique = {}
@@ -1221,6 +1250,8 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
     html_malformed_count = int(stats.get("malformed_count", 0))
     stats.update({
         "candidate_count": candidate_count,
+        "parsed_candidate_count": parsed_candidate_count,
+        "malformed_candidate_count": malformed_candidate_count,
         "addition_count": additions,
         "offers_excluded_count": offers_excluded,
         "malformed_count": malformed,
