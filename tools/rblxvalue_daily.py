@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Daily RBLXValue API snapshot for the 214 ROBASE weapons (research-only)."""
 from __future__ import annotations
-import argparse, csv, json, math, os, re, sys, time, unicodedata
+import argparse, csv, importlib, json, math, os, re, sys, time, unicodedata
 from datetime import datetime
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -13,7 +13,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-import rblxvalue_guard
+rblxvalue_guard = importlib.import_module("rblxvalue_guard")
 
 API_BASE = "https://api.rblxvalue.com/v2"
 PAGE_SIZE = 100
