@@ -110,6 +110,114 @@ def _validate_api_key_block_document(block: Any) -> list[str]:
     return errors
 
 
+def _validate_public_dashboard_history(path: Path) -> list[str]:
+    """Validate the deliberately public, BloxSwaps-only dashboard database."""
+    errors: list[str] = []
+    max_bytes = 64 * 1024 * 1024
+    if not path.is_file() or path.stat().st_size > max_bytes:
+        return ["public dashboard history is not a regular file or exceeds 64 MiB"]
+    required_columns = {
+        "listings": {
+            "listing_id", "source", "source_id", "owner_name", "owner_url",
+            "listing_url", "first_seen_at_utc", "last_seen_at_utc",
+            "give_items_json", "receive_items_json", "content_hash",
+        },
+        "opportunities": {
+            "opportunity_id", "listing_id", "source", "detected_at_utc",
+            "give_total", "receive_total", "profit", "margin_percent",
+            "listing_url", "details_json",
+        },
+    }
+
+    def safe_url(value: object, *, optional: bool = False) -> bool:
+        if optional and value in (None, ""):
+            return True
+        if not isinstance(value, str) or not value:
+            return False
+        parsed = urlsplit(value)
+        return parsed.scheme == "https" and (parsed.hostname or "").casefold() in {
+            "bloxswaps.com", "www.bloxswaps.com",
+        }
+
+    def safe_items(raw: object) -> bool:
+        try:
+            items = json.loads(raw) if isinstance(raw, str) else None
+        except ValueError:
+            return False
+        if not isinstance(items, list):
+            return False
+        for item in items:
+            if not isinstance(item, dict) or set(item) - {"name", "quantity"}:
+                return False
+            if not isinstance(item.get("name"), str) or not item["name"] or len(item["name"]) > 100:
+                return False
+            quantity = item.get("quantity")
+            if quantity is not None and (type(quantity) is not int or not 1 <= quantity <= 9999):
+                return False
+        return True
+
+    try:
+        with sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True) as db:
+            integrity = db.execute("PRAGMA integrity_check").fetchone()
+            if not integrity or integrity[0] != "ok":
+                return ["public dashboard SQLite integrity check failed"]
+            version = db.execute("PRAGMA user_version").fetchone()
+            if not version or version[0] != 1:
+                errors.append("public dashboard history schema version is unsupported")
+            tables = {
+                row[0] for row in db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                ).fetchall()
+            }
+            if tables != {"listings", "opportunities"}:
+                return errors + ["public dashboard history contains unexpected or missing tables"]
+            for table, columns in required_columns.items():
+                actual = {
+                    row[1] for row in db.execute(f"PRAGMA table_info({table})").fetchall()
+                }
+                if not columns.issubset(actual):
+                    errors.append(f"public dashboard table has an incomplete schema: {table}")
+            if errors:
+                return errors
+            listing_count = db.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
+            opportunity_count = db.execute("SELECT COUNT(*) FROM opportunities").fetchone()[0]
+            if type(listing_count) is not int or not 0 <= listing_count <= 10_000:
+                errors.append("public dashboard listing count exceeds its safety bound")
+            if type(opportunity_count) is not int or not 0 <= opportunity_count <= 5_000:
+                errors.append("public dashboard opportunity count exceeds its safety bound")
+            for row in db.execute(
+                "SELECT source, source_id, owner_url, listing_url, give_items_json, receive_items_json FROM listings"
+            ):
+                if (
+                    row[0] != "bloxswaps" or not isinstance(row[1], str) or not row[1]
+                    or not safe_url(row[2], optional=True) or not safe_url(row[3])
+                    or not safe_items(row[4]) or not safe_items(row[5])
+                ):
+                    errors.append("public dashboard listing contains non-public or invalid data")
+                    break
+            for row in db.execute(
+                "SELECT source, profit, listing_url, details_json FROM opportunities"
+            ):
+                try:
+                    details = json.loads(row[3])
+                except (TypeError, ValueError):
+                    details = None
+                if (
+                    row[0] != "bloxswaps" or not _finite_positive(row[1])
+                    or not safe_url(row[2]) or not isinstance(details, dict)
+                    or details.get("valuation_mode") != "cash"
+                    or not safe_items(json.dumps(details.get("give_items")))
+                    or not safe_items(json.dumps(details.get("receive_items")))
+                    or set(details) - {"give_items", "receive_items", "manual_review", "valuation_mode"}
+                    or not isinstance(details.get("manual_review"), bool)
+                ):
+                    errors.append("public dashboard opportunity contains non-cash or invalid data")
+                    break
+    except (OSError, sqlite3.DatabaseError, ValueError):
+        errors.append("public dashboard history database is unreadable or corrupt")
+    return errors
+
+
 def validate_state(directory: str | Path, *, require_cache: bool = False) -> list[str]:
     """Return validation errors; never mutate the supplied state directory."""
     root = Path(directory)
@@ -333,6 +441,10 @@ def validate_state(directory: str | Path, *, require_cache: bool = False) -> lis
             errors.append("market history database is unreadable or corrupt")
     elif require_cache:
         errors.append("successful scan is missing market_history.sqlite3")
+
+    public_dashboard_path = root / "public_dashboard_history.sqlite3"
+    if public_dashboard_path.exists():
+        errors.extend(_validate_public_dashboard_history(public_dashboard_path))
 
     return errors
 
