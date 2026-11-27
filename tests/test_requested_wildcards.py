@@ -21,5 +21,10 @@ class RequestedWildcardKindTests(IsolatedDataTestCase):
         self.assertEqual(scanner.requested_wildcard_kind(["Harvester"]), "")
         self.assertEqual(scanner.requested_wildcard_kind(["upgrade"]), "")
 
-    def test_unstructured_string_is_not_treated_as_wildcard_list(self):
-        self.assertEqual(scanner.requested_wildcard_kind("offres"), "")
+    def test_single_string_wildcard_token_is_classified(self):
+        self.assertEqual(scanner.requested_wildcard_kind("offres"), "offres")
+        self.assertEqual(scanner.requested_wildcard_kind("Ajouts"), "ajout")
+
+    def test_structured_wildcard_objects_are_classified(self):
+        self.assertEqual(scanner.requested_wildcard_kind([{"name": "Surclassements"}]), "")
+        self.assertEqual(scanner.requested_wildcard_kind([{"label": "Offres"}]), "offres")
