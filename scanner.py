@@ -127,7 +127,11 @@ MIN_RECEIVE_STABILITY_SCORE = CONFIG.min_receive_stability_score
 FAILURE_THRESHOLD = CONFIG.failure_alert_threshold
 MAX_ALERTS_PER_RUN = CONFIG.max_alerts_per_run
 _SESSION_ALERTS_SENT = 0
-_SESSION_ALERT_LIMIT = MAX_ALERTS_PER_RUN
+MAX_ALERTS_PER_SCAN = CONFIG.max_alerts_per_scan
+MAX_ALERTS_PER_SESSION = CONFIG.max_alerts_per_session
+SCAN_DURATION_SECONDS = CONFIG.scan_duration_seconds
+SCAN_INTERVAL_SECONDS = CONFIG.scan_interval_seconds
+_SESSION_ALERT_LIMIT = MAX_ALERTS_PER_SESSION
 TELEGRAM_CHAT_TYPE = CONFIG.telegram_chat_type
 
 
@@ -5686,7 +5690,7 @@ def scan_once(include_backlog_rechecks=True):
     if CASH_FILTER:
         selected, digest_items, digest_sent = [], [], 0
     else:
-        max_per_scan = max(0, int(os.environ.get("MAX_ALERTS_PER_SCAN", "0")))
+        max_per_scan = MAX_ALERTS_PER_SCAN
         selected, digest_items = rank_and_split(opportunities, max_per_scan)
         for opportunity in selected:
             deliver_opportunity(opportunity)
@@ -5885,9 +5889,7 @@ def should_run_backlog_recheck(cycle_number, every=None):
 def _reset_session_alert_budget():
     global _SESSION_ALERTS_SENT, _SESSION_ALERT_LIMIT
     _SESSION_ALERTS_SENT = 0
-    _SESSION_ALERT_LIMIT = max(
-        0, int(os.environ.get("MAX_ALERTS_PER_SESSION", str(MAX_ALERTS_PER_RUN)))
-    )
+    _SESSION_ALERT_LIMIT = MAX_ALERTS_PER_SESSION
 
 
 def _get_session_alert_budget():
@@ -5931,13 +5933,12 @@ def main():
         except Exception:
             rblxvalue_guard.log_request_count()
             raise
-    duration = int(os.environ.get("MM2_SCAN_DURATION_SECONDS", "0") or 0)
+    duration = SCAN_DURATION_SECONDS
     if duration > 0:
-        interval = int(os.environ.get("MM2_SCAN_INTERVAL_SECONDS", "45") or 45)
-        return run_scan_loop(duration, interval)
+        return run_scan_loop(duration, SCAN_INTERVAL_SECONDS)
     global _SESSION_ALERTS_SENT, _SESSION_ALERT_LIMIT
     _SESSION_ALERTS_SENT = 0
-    _SESSION_ALERT_LIMIT = max(0, int(os.environ.get("MAX_ALERTS_PER_SESSION", str(MAX_ALERTS_PER_RUN))))
+    _SESSION_ALERT_LIMIT = MAX_ALERTS_PER_SESSION
     try:
         result = scan_once(include_backlog_rechecks=False)
         rblxvalue_guard.log_request_count()
