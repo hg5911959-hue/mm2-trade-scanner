@@ -22,6 +22,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 
 import rblxvalue_guard
+from tools.scanner_config import CONFIG
 from tools.telegram_transport import TELEGRAM_OPENER
 from tools.metrics import update_metrics
 from tools.alert_policy import rank_and_split
