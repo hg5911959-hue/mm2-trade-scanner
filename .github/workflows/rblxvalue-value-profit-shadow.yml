@@ -1,11 +1,8 @@
 name: RBLXValue Supreme Value-profit Shadow Analysis
 
 on:
-  workflow_run:
-    workflows: ["RBLXValue Daily Weapon History"]
-    types: [completed]
-  # This offline analysis requires a completed snapshot for the current day.
-  # Run after the daily archive, or manually; code pushes must not trigger stale-snapshot failures.
+  # Manual-only research. Automatic archive-triggered scans add BloxSwaps API load
+  # and must not compete with the production cash scanner.
   workflow_dispatch:
 
 permissions:
@@ -14,8 +11,8 @@ permissions:
 
 jobs:
   shadow:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
-    name: Analyze Supreme value-profit without alerts or API access
+    if: github.event_name == 'workflow_dispatch'
+    name: Manual Supreme value-profit shadow analysis (no alerts or RBLXValue API)
     permissions:
       actions: read
       contents: read
