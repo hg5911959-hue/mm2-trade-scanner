@@ -5628,7 +5628,14 @@ def record_failure(error):
         state = json.loads(FAILURE_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         state = {"consecutive_failures": 0}
-    count = int(state.get("consecutive_failures", 0)) + 1
+    if not isinstance(state, dict):
+        print("[failure] Failure checkpoint has an invalid top-level structure; restarting its counter safely.")
+        state = {"consecutive_failures": 0}
+    previous_count = state.get("consecutive_failures", 0)
+    if isinstance(previous_count, bool) or not isinstance(previous_count, int) or previous_count < 0:
+        print("[failure] Failure checkpoint counter is invalid; restarting its counter safely.")
+        previous_count = 0
+    count = previous_count + 1
     update_metrics(increments={"scan_failures": 1})
     state["consecutive_failures"] = count
     atomic_write_text(FAILURE_FILE, json.dumps(state, indent=2) + "\n")
