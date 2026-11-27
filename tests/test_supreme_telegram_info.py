@@ -99,10 +99,11 @@ class SupremeTelegramInfoTests(IsolatedDataTestCase):
             5.0, ["Weapon 1 x1 — $5.00 each = $5.00"], 2.5,
             market_info=market_info,
         )
-        self.assertIn("REFERENCE INFO ONLY", message)
-        self.assertIn("SV <code>160</code>", message)
-        self.assertIn("ST <code>Stable</code>", message)
-        self.assertIn("ST <code>N/A</code>", message)
+        self.assertIn("┌─ 📊 <b>REFERENCE INFO ONLY</b>", message)
+        self.assertIn("└ <i>RBLXValue · not used in cash filters or alert decisions</i>", message)
+        self.assertIn("Supreme <code>160</code>", message)
+        self.assertIn("Stability <code>Stable</code>", message)
+        self.assertIn("Stability <code>N/A</code>", message)
         self.assertIn("EST. CASH PROFIT (before fees/slippage): +$2.5", message)
         self.assertNotIn("weapon-2", message)
         self.assertNotIn("RBLXValue/Supreme", message)
