@@ -161,7 +161,7 @@ class PublicDashboardHistory:
     def record_listings(self, listings: list[dict[str, object]]) -> int:
         now = _now()
         saved = 0
-        with self._connect() as db:
+        with self._connection() as db:
             for listing in listings or []:
                 if not isinstance(listing, dict):
                     continue
@@ -241,7 +241,7 @@ class PublicDashboardHistory:
             "margin": margin,
         }
         opportunity_id = _digest(identity)
-        with self._connect() as db:
+        with self._connection() as db:
             cursor = db.execute(
                 """
                 INSERT OR IGNORE INTO opportunities(
