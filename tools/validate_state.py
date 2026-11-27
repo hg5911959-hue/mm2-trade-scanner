@@ -221,7 +221,8 @@ def _validate_public_dashboard_history(path: Path) -> list[str]:
             ):
                 if (
                     not isinstance(row[0], str) or not 1 <= len(row[0]) <= 128
-                    or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", row[2] or "")
+                    or not isinstance(row[2], str)
+                    or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", row[2])
                     or row[1] != "bloxswaps"
                     or (row[3] is not None and (not isinstance(row[3], str) or len(row[3]) > 100))
                     or not safe_url(row[4], optional=True) or not safe_url(row[5])
