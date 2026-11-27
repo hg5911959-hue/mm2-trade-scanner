@@ -41,10 +41,10 @@ runtime-only switches are still read by the component that uses them.
 | `PENDING_TTL_SECONDS` | `604800` (7 days) | Minimum 86400 seconds |
 | `MAX_SUCCESS_GAP_SECONDS` | `86400` (24 hours) | Minimum 3600 seconds |
 | `SUSPICIOUS_PROFIT_PERCENT` | `100` | Suspicious-profit guard |
-| `CASH_MIN_PROFIT_USD` | `2.00` | Minimum estimated gross cash spread before fees/slippage; minimum 1.00 |
+| `CASH_MIN_PROFIT_USD` | `2.00` | Minimum estimated cash spread using seller proceeds after marketplace fees; excludes additional costs/slippage; minimum 1.00 |
 | `CASH_MIN_PROFIT_USD_SMALL` | `2.00` | Small-offer threshold; minimum 1.00 |
 | `CASH_MIN_VERIFIED_ROWS` | `8` | Preflight minimum; minimum 0 |
-| `CASH_MIN_MARGIN_PERCENT` | `5.0` | Gross margin threshold based on Chroma.gg Price (7d), before fees/slippage |
+| `CASH_MIN_MARGIN_PERCENT` | `5.0` | Margin threshold based on Chroma.gg Price (7d) seller proceeds after marketplace fees; excludes additional costs/slippage |
 | `CASH_MAX_AGE_DAYS` | `1` | Minimum 1 day; production also enforces the stricter freshness gates |
 | `CASH_MAX_LISTING_AGE_SECONDS` | `3600` | Minimum 60 seconds |
 
@@ -55,6 +55,8 @@ continues to use only **chromas.gg → Price (7d)** and the matching **Sold (7d)
 ROBASE. No 30-day price, StarPets price, or All marketplaces figure is a fallback. The
 existing minimum of three completed Chroma sales in the 7-day window remains a separate
 cash-eligibility requirement.
+
+ROBASE's Chroma.gg Price (7d) is the seller-proceeds figure after marketplace fees. The scanner applies no additional marketplace-fee haircut; displayed cash profit and the 5% margin gate are before any other external costs or slippage.
 
 ## Runtime-only switches
 
