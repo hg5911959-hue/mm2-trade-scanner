@@ -4970,12 +4970,8 @@ class ScanPersistentState:
     pending_ids: dict
     pending_schedule: dict
     watch_state: dict
-    all_due_pending_ids: dict
     due_pending_ids: dict
-    last_success_ts: float | None
-    run_backlog_rechecks: bool
     watch_recheck_ids: list
-    scan_mode: str
 
 
 @dataclass(slots=True)
@@ -4983,7 +4979,6 @@ class ScanFeedResult:
     listings: list
     stats: dict
     discovered_ids: list
-    watch_not_found_ids: set
     mapping_audit: dict | None
 
 
@@ -5132,12 +5127,8 @@ def _load_scan_persistent_state(
         pending_ids=pending_ids,
         pending_schedule=pending_schedule,
         watch_state=schedule.watch_state,
-        all_due_pending_ids=schedule.all_due_pending_ids,
         due_pending_ids=schedule.due_pending_ids,
-        last_success_ts=schedule.last_success_ts,
-        run_backlog_rechecks=schedule.run_backlog_rechecks,
         watch_recheck_ids=schedule.watch_recheck_ids,
-        scan_mode=schedule.scan_mode,
     )
 
 
@@ -5191,7 +5182,6 @@ def _fetch_scan_feed_and_audit(
         listings=listings,
         stats=stats,
         discovered_ids=discovered_ids,
-        watch_not_found_ids=watch_not_found_ids,
         mapping_audit=mapping_audit,
     )
 
@@ -5239,18 +5229,12 @@ def scan_once(include_backlog_rechecks=True):
     pending_ids = persistent_state.pending_ids
     pending_schedule = persistent_state.pending_schedule
     watch_state = persistent_state.watch_state
-    all_due_pending_ids = persistent_state.all_due_pending_ids
     due_pending_ids = persistent_state.due_pending_ids
-    last_success_ts = persistent_state.last_success_ts
-    run_backlog_rechecks = persistent_state.run_backlog_rechecks
-    bloxswaps_watch_ids = persistent_state.watch_recheck_ids
-    scan_mode = persistent_state.scan_mode
 
     feed_result = _fetch_scan_feed_and_audit(persistent_state, cash_catalog)
     listings = feed_result.listings
     stats = feed_result.stats
     discovered_ids = feed_result.discovered_ids
-    watch_not_found_ids = feed_result.watch_not_found_ids
     mapping_audit = feed_result.mapping_audit
 
     if daily_shadow_mode:
