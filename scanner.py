@@ -5552,7 +5552,8 @@ def scan_once(include_backlog_rechecks=True):
     outcome_counts = outcome_ledger.finalize()
     summary = (
         f"mode={'cash' if CASH_FILTER else 'value'} | Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | "
-        f"already_alerted={already_alerted_skipped} | watch_unchanged={watch_unchanged_skipped} | uncertain_quarantined={uncertain_skipped} | "
+        f"already_alerted={already_alerted_skipped} | watch_unchanged={watch_unchanged_skipped} | "
+        f"uncertain_quarantined_current={uncertain_skipped} | uncertain_quarantined_total={len(uncertain_ids)} | "
         f"pending_recheck={len(pending_ids)} | qualified={len(opportunities)} | "
         f"alerts={sent} | digest_items={digest_sent} | digest_not_sent={digest_not_sent} | "
         f"outcomes={json.dumps(outcome_counts, sort_keys=True)}"
@@ -5569,6 +5570,7 @@ def scan_once(include_backlog_rechecks=True):
             f"Eligible listings: {len(listings)}\n"
             f"Evaluated: {evaluated} · Qualified: {len(opportunities)}\n"
             f"Alerts sent: {sent} · Digest sent: {digest_sent} · Digest pending: {digest_not_sent}\n"
+            f"Telegram quarantine: {len(uncertain_ids)} unresolved delivery IDs (manual verification required)\n"
             "Outcome accounting: "
             + ", ".join(f"{name}={count}" for name, count in outcome_counts.items())
             + "\n"
