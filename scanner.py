@@ -4507,10 +4507,10 @@ def scan_once(include_backlog_rechecks=True):
             from tools.public_dashboard_history import PublicDashboardHistory
             public_history_store = PublicDashboardHistory()
         except Exception as history_error:
-            print(
-                "[public-dashboard-history] Store initialization skipped safely: "
-                f"{type(history_error).__name__}"
-            )
+            raise RuntimeError(
+                "Public dashboard history could not be initialized; refusing to send alerts "
+                "without a state artifact that can pass privacy validation."
+            ) from history_error
     aliases = load_aliases()
     print(f"[aliases] Loaded {len(aliases)} reviewed item aliases")
     print("[stage] Loading seen-offer and pending-recheck state")
@@ -4896,10 +4896,9 @@ def scan_once(include_backlog_rechecks=True):
             stored = public_history_store.record_listings(listings)
             print(f"[public-dashboard-history] Public BloxSwaps listings recorded or refreshed: {stored}")
         except Exception as history_error:
-            print(
-                "[public-dashboard-history] Listing storage skipped safely: "
-                f"{type(history_error).__name__}"
-            )
+            raise RuntimeError(
+                "Public dashboard listing history could not be persisted; refusing to send alerts."
+            ) from history_error
     duplicate_count = parsed_count - len(listings)
     if duplicate_count:
         print(f"[dedupe] Ignored {duplicate_count} duplicate listing row(s) in this scan batch.")
@@ -5370,9 +5369,6 @@ def scan_once(include_backlog_rechecks=True):
             mark_seen_ad(listing)
             continue
         opportunities.append(result)
-        if CASH_FILTER:
-            # Send each qualifying cash offer immediately; do not wait for ranking.
-            deliver_opportunity(result)
         if history_store is not None:
             try:
                 history_store.record_opportunity(result)
@@ -5382,11 +5378,13 @@ def scan_once(include_backlog_rechecks=True):
             try:
                 public_history_store.record_opportunity(result)
             except Exception as history_error:
-                print(
-                    "[public-dashboard-history] Opportunity storage skipped safely: "
-                    f"{type(history_error).__name__}"
-                )
-        # Delivery is deferred until all candidates are ranked.
+                raise RuntimeError(
+                    "Public dashboard opportunity history could not be persisted; refusing to send alerts."
+                ) from history_error
+        if CASH_FILTER:
+            # Persist the public cash opportunity before the non-idempotent Telegram send.
+            deliver_opportunity(result)
+        # Non-cash delivery is deferred until all candidates are ranked.
 
     if CASH_FILTER and cash_blocker_counts:
         update_metrics(
