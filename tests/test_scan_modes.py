@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import unittest
+
 from test_support import IsolatedDataTestCase
 
 from tools.scan_modes import resolve_scan_modes
