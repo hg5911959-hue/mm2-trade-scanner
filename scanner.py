@@ -5381,6 +5381,102 @@ def _record_first_seen_timestamps(listings, discovered_ids):
     return first_seen_ads
 
 
+def _reconcile_seen_and_pending_state(
+    listings, stats, seen_ads, pending_ids, pending_schedule, cash_catalog
+):
+    """Apply cold-start seeding, parser retries, and non-actionable ID retirement."""
+    if stats.get("cold_start"):
+        seed_ids = set(str(value) for value in stats.get("cold_start_seed_ids", []))
+        save_seen_ads(seed_ids)
+        seen_ads = seed_ids
+        seed_pending_ids_as_seen(seen_ads, pending_ids, pending_schedule)
+        save_seen_ads(seen_ads)
+        print(
+            f"[state] Cold-start baseline saved for {len(seed_ids)} historical posts; "
+            f"{len(stats.get('cold_start_recent_ids', []))} posts refreshed within 60 minutes will be evaluated."
+        )
+        if not listings:
+            record_success_if_complete(stats)
+            if CASH_FILTER:
+                save_cash_catalog_snapshot(cash_catalog["sha256"])
+            write_step_summary(
+                "Cold-start baseline saved; no verifiably recent post was eligible for evaluation."
+            )
+            return seen_ads, pending_ids, pending_schedule, True
+    else:
+        seen_ads = set(seen_ads or [])
+
+    pending_count_before = len(pending_ids)
+    for ad_id in stats.get("unparsed_ad_ids", []):
+        key = str(ad_id)
+        pending_ids.setdefault(key, time.time())
+        if key in seen_ads:
+            seen_ads.discard(key)
+            save_seen_ads(seen_ads)
+        if key not in pending_schedule or pending_schedule[key].get("reason") != "unparsed_feed":
+            previous_attempts = int(pending_schedule.get(key, {}).get("attempts", 0))
+            pending_schedule[key] = {
+                "attempts": previous_attempts,
+                "next_check_at": time.time(),
+                "reason": "unparsed_feed",
+            }
+    if len(pending_ids) != pending_count_before:
+        save_pending_ids(pending_ids)
+        save_pending_recheck_schedule(pending_schedule)
+
+    addition_ids = set(stats.get("addition_ids", []))
+    single_sided_ids = set(stats.get("single_sided_ids", []))
+    pending_not_found_ids = set(stats.get("pending_not_found_ids", []))
+    non_actionable_ids = addition_ids | single_sided_ids | pending_not_found_ids
+    if non_actionable_ids:
+        seen_ads.update(non_actionable_ids)
+        for ad_id in non_actionable_ids:
+            key = str(ad_id)
+            pending_ids.pop(key, None)
+            pending_schedule.pop(key, None)
+        save_seen_ads(seen_ads)
+        save_pending_ids(pending_ids)
+        save_pending_recheck_schedule(pending_schedule)
+    if pending_not_found_ids:
+        print(
+            f"[pending] Removed {len(pending_not_found_ids)} unavailable listing(s) "
+            "after authoritative direct 404 lookups."
+        )
+    if single_sided_ids:
+        print(
+            f"[bloxswaps] Excluded {len(single_sided_ids)} single-sided posts; "
+            "they are not trade opportunities and will not be retried as parser failures."
+        )
+    if stats.get("watch_not_found_ids"):
+        print(
+            f"[watch] Removed {len(stats['watch_not_found_ids'])} expired watched listing(s) "
+            "after authoritative direct 404 lookups."
+        )
+    if stats.get("watch_remaining_ids"):
+        print(
+            f"[watch] {len(stats['watch_remaining_ids'])} direct lookups were inconclusive; "
+            "they remain in the rotating watch queue for a later retry."
+        )
+    if stats.get("pending_remaining_ids"):
+        print(
+            f"[pending] {len(stats['pending_remaining_ids'])} unresolved ad ID(s) "
+            "were not found before the pagination boundary/cap."
+        )
+        if stats.get("pagination_complete"):
+            send_maintenance_alert(
+                "pending-ads-not-found",
+                f"Could not locate {len(stats['pending_remaining_ids'])} pending listing(s) "
+                "in the recent cursor pages. They remain queued for recheck.",
+                cooldown_seconds=21600,
+            )
+    if stats.get("backlog_page_limit_reached"):
+        print(
+            f"[pending] Backlog page lookahead capped at {MAX_BACKLOG_RECHECK_PAGES}; "
+            "unresolved IDs remain queued without blocking the new-feed boundary."
+        )
+    return seen_ads, pending_ids, pending_schedule, False
+
+
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     scan_modes = resolve_scan_modes(
