@@ -23,7 +23,7 @@ import rblxvalue_guard
 from tools.scanner_config import CONFIG
 from tools.telegram_transport import TELEGRAM_OPENER, telegram_alert_delay
 from tools.html_tree import (
-    Node,
+    Node,  # noqa: F401 - compatibility export
     PageTree,
     has_trade_sides,
     node_text,
