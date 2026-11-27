@@ -163,7 +163,7 @@ FIRST_SEEN_FILE = Path("data/first_seen_ads.json")
 LAST_SUCCESS_FILE = Path("data/last_successful_scan.json")
 WATCH_FILE = Path("data/watch_ads.json")
 WATCH_TTL_SECONDS = 24 * 60 * 60
-MAX_WATCHED_ADS = 1000
+MAX_WATCHED_ADS = MAX_SEEN_ADS
 ALIASES_FILE = Path("aliases.json")
 UNMATCHED_FILE = Path("data/unmatched_names.json")
 MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
@@ -4317,14 +4317,22 @@ def load_watch_state():
         if not isinstance(entry, dict): raise RuntimeError('[state] Watch-window entry has an invalid structure.')
         created = float(entry.get('created_at', 0) or 0)
         if created > 0 and now - created <= WATCH_TTL_SECONDS: active[str(ad_id)] = entry
-    if len(active) > MAX_WATCHED_ADS: active = dict(sorted(active.items(), key=lambda pair: float(pair[1].get('updated_at', 0)))[-300:])
+    if len(active) > MAX_WATCHED_ADS:
+        raise RuntimeError(
+            f"[state] Watch-window contains {len(active)} active listings, exceeding the "
+            f"safe limit of {MAX_WATCHED_ADS}; refusing to evict unresolved listings."
+        )
     if len(active) != len(ads): save_watch_state(active)
     return active
 
 def save_watch_state(ads):
     now = time.time()
     active = {str(k): v for k, v in ads.items() if isinstance(v, dict) and now - float(v.get('created_at', now)) <= WATCH_TTL_SECONDS}
-    if len(active) > MAX_WATCHED_ADS: active = dict(sorted(active.items(), key=lambda pair: float(pair[1].get('updated_at', 0)))[-300:])
+    if len(active) > MAX_WATCHED_ADS:
+        raise RuntimeError(
+            f"[state] Watch-window would contain {len(active)} active listings, exceeding the "
+            f"safe limit of {MAX_WATCHED_ADS}; refusing to evict unresolved listings."
+        )
     atomic_write_text(WATCH_FILE, json.dumps({'version': 1, 'ads': active}, ensure_ascii=False, indent=2) + "\n")
 
 def select_watch_recheck_ids(watch_state, limit):
