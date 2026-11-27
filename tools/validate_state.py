@@ -5,8 +5,10 @@ import argparse
 import json
 import math
 import os
+import re
 import sqlite3
 import stat
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -158,7 +160,7 @@ def _validate_public_dashboard_history(path: Path) -> list[str]:
         if not isinstance(items, list) or len(items) > 50:
             return False
         for item in items:
-            if not isinstance(item, dict) or set(item) - {"name", "quantity"}:
+            if not isinstance(item, dict) or set(item) != {"name", "quantity"}:
                 return False
             if not isinstance(item.get("name"), str) or not item["name"] or len(item["name"]) > 100:
                 return False
@@ -166,6 +168,22 @@ def _validate_public_dashboard_history(path: Path) -> list[str]:
             if quantity is not None and (type(quantity) is not int or not 1 <= quantity <= 9999):
                 return False
         return True
+
+    def valid_timestamp(value: object) -> bool:
+        if not isinstance(value, str) or not value or len(value) > 64:
+            return False
+        try:
+            datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        return True
+
+    def valid_optional_number(value: object) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return False
+        return math.isfinite(value)
 
     try:
         with sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True) as db:
@@ -197,29 +215,42 @@ def _validate_public_dashboard_history(path: Path) -> list[str]:
             if type(opportunity_count) is not int or not 0 <= opportunity_count <= 1_000:
                 errors.append("public dashboard opportunity count exceeds its safety bound")
             for row in db.execute(
-                "SELECT source, source_id, owner_url, listing_url, give_items_json, receive_items_json FROM listings"
+                "SELECT listing_id, source, source_id, owner_name, owner_url, listing_url, "
+                "first_seen_at_utc, last_seen_at_utc, give_items_json, receive_items_json, content_hash "
+                "FROM listings"
             ):
                 if (
-                    row[0] != "bloxswaps" or not isinstance(row[1], str) or not row[1]
-                    or not safe_url(row[2], optional=True) or not safe_url(row[3])
-                    or not safe_items(row[4]) or not safe_items(row[5])
+                    not isinstance(row[0], str) or not 1 <= len(row[0]) <= 128
+                    or not re.fullmatch(r"[A-Za-z0-9_-]{1,160}", row[2] or "")
+                    or row[1] != "bloxswaps"
+                    or (row[3] is not None and (not isinstance(row[3], str) or len(row[3]) > 100))
+                    or not safe_url(row[4], optional=True) or not safe_url(row[5])
+                    or not valid_timestamp(row[6]) or not valid_timestamp(row[7])
+                    or not safe_items(row[8]) or not safe_items(row[9])
+                    or not isinstance(row[10], str)
+                    or not re.fullmatch(r"[0-9a-f]{64}", row[10])
                 ):
                     errors.append("public dashboard listing contains non-public or invalid data")
                     break
             for row in db.execute(
-                "SELECT source, profit, listing_url, details_json FROM opportunities"
+                "SELECT opportunity_id, listing_id, source, detected_at_utc, give_total, "
+                "receive_total, profit, margin_percent, listing_url, details_json FROM opportunities"
             ):
                 try:
-                    details = json.loads(row[3])
+                    details = json.loads(row[9])
                 except (TypeError, ValueError):
                     details = None
                 if (
-                    row[0] != "bloxswaps" or not _finite_positive(row[1])
-                    or not safe_url(row[2]) or not isinstance(details, dict)
+                    not isinstance(row[0], str) or not re.fullmatch(r"[0-9a-f]{64}", row[0])
+                    or not isinstance(row[1], str) or not 1 <= len(row[1]) <= 128
+                    or row[2] != "bloxswaps" or not valid_timestamp(row[3])
+                    or not valid_optional_number(row[4]) or not valid_optional_number(row[5])
+                    or not _finite_positive(row[6]) or not valid_optional_number(row[7])
+                    or not safe_url(row[8]) or not isinstance(details, dict)
+                    or set(details) != {"give_items", "receive_items", "manual_review", "valuation_mode"}
                     or details.get("valuation_mode") != "cash"
                     or not safe_items(json.dumps(details.get("give_items")))
                     or not safe_items(json.dumps(details.get("receive_items")))
-                    or set(details) - {"give_items", "receive_items", "manual_review", "valuation_mode"}
                     or not isinstance(details.get("manual_review"), bool)
                 ):
                     errors.append("public dashboard opportunity contains non-cash or invalid data")
