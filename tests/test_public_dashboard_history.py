@@ -70,15 +70,18 @@ class PublicDashboardHistoryTests(unittest.TestCase):
     def test_records_only_cash_bloxswaps_opportunities(self):
         cash_listing = self.listing(valuation_mode="cash")
         self.assertTrue(self.history.record_opportunity(self.opportunity(cash_listing)))
-        self.assertFalse(self.history.record_opportunity(
-            self.opportunity(self.listing(valuation_mode="value"))
-        ))
-        self.assertFalse(self.history.record_opportunity(
-            self.opportunity(self.listing(source="discord"))
-        ))
-        self.assertFalse(self.history.record_opportunity(
-            self.opportunity(self.listing(url="https://attacker.example/listing"))
-        ))
+        with self.assertRaisesRegex(ValueError, "cash-mode"):
+            self.history.record_opportunity(
+                self.opportunity(self.listing(valuation_mode="value"))
+            )
+        with self.assertRaisesRegex(ValueError, "only BloxSwaps"):
+            self.history.record_opportunity(
+                self.opportunity(self.listing(source="discord"))
+            )
+        with self.assertRaisesRegex(ValueError, "safe listing identity"):
+            self.history.record_opportunity(
+                self.opportunity(self.listing(url="https://attacker.example/listing"))
+            )
         with sqlite3.connect(self.database) as db:
             rows = db.execute(
                 "SELECT source, profit, details_json FROM opportunities"
@@ -94,12 +97,14 @@ class PublicDashboardHistoryTests(unittest.TestCase):
 
     def test_rejects_non_finite_or_missing_conservative_profit(self):
         listing = self.listing(valuation_mode="cash")
-        self.assertFalse(self.history.record_opportunity(
-            self.opportunity(listing, cash_profit_worst=float("nan"))
-        ))
-        self.assertFalse(self.history.record_opportunity(
-            self.opportunity(listing, cash_profit_worst=None)
-        ))
+        with self.assertRaisesRegex(ValueError, "safe listing identity"):
+            self.history.record_opportunity(
+                self.opportunity(listing, cash_profit_worst=float("nan"))
+            )
+        with self.assertRaisesRegex(ValueError, "safe listing identity"):
+            self.history.record_opportunity(
+                self.opportunity(listing, cash_profit_worst=None)
+            )
 
     def test_symlink_database_path_is_rejected(self):
         target = Path(self.directory.name) / "target.sqlite3"
