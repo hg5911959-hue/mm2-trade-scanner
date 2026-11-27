@@ -5005,6 +5005,8 @@ def scan_once(include_backlog_rechecks=True):
             raise RuntimeError("[bloxswaps] No feed entries parsed and pagination could not be verified.")
     parsed_count = len(listings)
     listings = deduplicate_listings(listings)
+    from tools.scan_outcomes import ScanOutcomeLedger
+    outcome_ledger = ScanOutcomeLedger(listing.get("id") for listing in listings)
     if history_store is not None:
         try:
             stored = history_store.record_listings(listings)
@@ -5168,7 +5170,7 @@ def scan_once(include_backlog_rechecks=True):
     sent = 0
     evaluated = 0
     opportunities = []
-    def deliver_opportunity(op, send=True):
+    def deliver_opportunity(op, send=True, delivery_confirmed=False):
         nonlocal sent
         global _SESSION_ALERTS_SENT
         listing = op["listing"]
@@ -5187,14 +5189,19 @@ def scan_once(include_backlog_rechecks=True):
             previous_cash_profit = last_cash_profit_for_listing(trade_id)
             if previous_cash_profit is not None and op.get("cash_profit_worst", 0) > previous_cash_profit + 0.009:
                 variant_changed = True
-        if (trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids:
+        if not delivery_confirmed and ((trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids):
             if legacy_cash_watch and trade_id in alerted_set:
                 # One-time source migration: update the fingerprint without replaying old alerts.
                 update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
             print(f"[dedupe] Skipping unchanged or uncertain listing {trade_id} before Telegram send.")
+            outcome_ledger.record(
+                trade_id,
+                "delivery_quarantined" if trade_id in uncertain_ids else "delivery_guard_skipped",
+            )
             return
-        if os.environ.get("DRY_RUN", "").strip().casefold() == "true":
+        if not delivery_confirmed and os.environ.get("DRY_RUN", "").strip().casefold() == "true":
             print(f"[dry-run] would send: {trade_id} profit={op['difference']:g}")
+            outcome_ledger.record(trade_id, "dry_run_preview")
             return
         if send or not listing.get("alert_attempted_at_utc"):
             listing["alert_attempted_at_utc"] = datetime.now(timezone.utc).isoformat()
@@ -5260,6 +5267,7 @@ def scan_once(include_backlog_rechecks=True):
                     f"reason={redact(exc)[:180]}; quarantined, skipping this message."
                 )
                 mark_seen_ad(listing)
+                outcome_ledger.record(trade_id, "delivery_quarantined")
                 return
             except Exception as exc:
                 uncertain_ids.discard(trade_id)
@@ -5270,6 +5278,7 @@ def scan_once(include_backlog_rechecks=True):
                     f"[telegram] Definite send failure for listing {trade_id}: "
                     f"{type(exc).__name__}; queued for a later scan and continuing the batch."
                 )
+                outcome_ledger.record(trade_id, "delivery_failed_queued")
                 return
         else:
             print(f"[telegram] Finalizing listing {trade_id} already delivered in the digest.")
@@ -5308,6 +5317,7 @@ def scan_once(include_backlog_rechecks=True):
         )
         sent += 1
         update_metrics(increments={"alerts_sent": 1})
+        outcome_ledger.record(trade_id, "alert_sent")
 
     def deliver_digest(items):
         global _SESSION_ALERTS_SENT
@@ -5325,12 +5335,18 @@ def scan_once(include_backlog_rechecks=True):
                 or previous_watch.get("values_hash") != current_values_hash
             )
             if (trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids:
+                outcome_ledger.record(
+                    trade_id,
+                    "delivery_quarantined" if trade_id in uncertain_ids else "delivery_guard_skipped",
+                )
                 continue
             eligible.append(op)
         if not eligible:
             return 0
         if os.environ.get("DRY_RUN", "").strip().casefold() == "true":
             print(f"[dry-run] would send one digest containing {len(eligible)} additional qualified offers")
+            for op in eligible:
+                outcome_ledger.record(op["listing"]["id"], "dry_run_preview")
             return 0
         def prepare_digest_item(op):
             listing = op["listing"]
@@ -5356,11 +5372,13 @@ def scan_once(include_backlog_rechecks=True):
                     f"source_ad_id={source_id}; reason={redact(error)[:180]}; only this offer is quarantined."
                 )
                 mark_seen_ad(listing)
+                outcome_ledger.record(trade_id, "delivery_quarantined")
             elif status in ("failed", "not_attempted"):
                 uncertain_ids.discard(trade_id)
                 save_uncertain_ids(uncertain_ids)
                 clear_uncertain_context(trade_id)
                 mark_pending(listing, reason="telegram_failure")
+                outcome_ledger.record(trade_id, "delivery_failed_queued")
                 if status == "failed":
                     print(
                         f"[telegram] Digest send failed definitely for listing {trade_id}: "
@@ -5370,7 +5388,7 @@ def scan_once(include_backlog_rechecks=True):
                 # Remove only from this process's in-memory set. Keep the durable
                 # quarantine until the alerted/watch checkpoints are persisted.
                 uncertain_ids.discard(trade_id)
-                deliver_opportunity(op, send=False)
+                deliver_opportunity(op, send=False, delivery_confirmed=True)
                 delivered += 1
         save_uncertain_ids(uncertain_ids)
         _SESSION_ALERTS_SENT += delivered
@@ -5394,6 +5412,7 @@ def scan_once(include_backlog_rechecks=True):
             mark_alerted(trade_id)
             mark_seen_ad(listing)
             already_alerted_skipped += 1
+            outcome_ledger.record(trade_id, "already_alerted")
             continue
         if legacy_state == "uncertain":
             print(f"[state-migration] Legacy uncertain-delivery ID matched; promoting quarantine for {trade_id}.")
@@ -5402,6 +5421,7 @@ def scan_once(include_backlog_rechecks=True):
             record_uncertain_context(listing, trade_id, "recovered")
             mark_seen_ad(listing)
             uncertain_skipped += 1
+            outcome_ledger.record(trade_id, "delivery_quarantined")
             continue
         watch_id = str(listing.get("source_ad_id") or "")
         previous_watch = watch_state.get(watch_id, {})
@@ -5421,15 +5441,18 @@ def scan_once(include_backlog_rechecks=True):
                 update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
             already_alerted_skipped += 1
             mark_seen_ad(listing)
+            outcome_ledger.record(trade_id, "already_alerted")
             continue
         if previous_watch and not fingerprint_changed and watch_id not in pending_ids:
             watch_unchanged_skipped += 1
             mark_seen_ad(listing)
+            outcome_ledger.record(trade_id, "watch_unchanged")
             continue
         if trade_id in uncertain_ids:
             record_uncertain_context(listing, trade_id, "recovered")
             uncertain_skipped += 1
             mark_seen_ad(listing)
+            outcome_ledger.record(trade_id, "delivery_quarantined")
             continue
         if CASH_FILTER:
             if testing_mode:
@@ -5451,6 +5474,7 @@ def scan_once(include_backlog_rechecks=True):
                 )
                 update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
                 mark_seen_ad(listing, clear_pending=False)
+                outcome_ledger.record(trade_id, "watch_missing_cash_price")
                 continue
             print(
                 f"[skip-unknown] Listing rejected without offer-level deferral; missing/unvalued items: "
@@ -5463,6 +5487,7 @@ def scan_once(include_backlog_rechecks=True):
             # No listing is held for manual review. The item gap is remembered,
             # while the bounded watch index can re-evaluate it after a mapping changes.
             mark_seen_ad(listing)
+            outcome_ledger.record(trade_id, "watch_unmapped")
             continue
         if CASH_FILTER and result.get("cash_estimate_only"):
             print(
@@ -5474,6 +5499,7 @@ def scan_once(include_backlog_rechecks=True):
                 print(f"[dry-run-estimate] GIVE {line}")
             for line in result.get("receive_lines", []):
                 print(f"[dry-run-estimate] RECEIVE {line}")
+            outcome_ledger.record(trade_id, "dry_run_estimate")
             continue
         if not (qualifies_cash(result) if CASH_FILTER else qualifies(result)):
             uncertain_items = result.get("uncertain_items") or []
@@ -5487,8 +5513,10 @@ def scan_once(include_backlog_rechecks=True):
                     record_unmatched_names(uncertain_names)
             update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
             mark_seen_ad(listing)
+            outcome_ledger.record(trade_id, "watch_not_qualified")
             continue
         opportunities.append(result)
+        outcome_ledger.record(trade_id, "qualified_pending_delivery")
         if history_store is not None:
             try:
                 history_store.record_opportunity(result)
@@ -5521,11 +5549,13 @@ def scan_once(include_backlog_rechecks=True):
             deliver_opportunity(opportunity)
         digest_sent = deliver_digest(digest_items) if digest_items else 0
     digest_not_sent = max(0, len(digest_items) - digest_sent)
+    outcome_counts = outcome_ledger.finalize()
     summary = (
         f"mode={'cash' if CASH_FILTER else 'value'} | Parsed={len(listings)} | evaluated={evaluated} | unmatched={skipped_unknown} | "
         f"already_alerted={already_alerted_skipped} | watch_unchanged={watch_unchanged_skipped} | uncertain_quarantined={uncertain_skipped} | "
         f"pending_recheck={len(pending_ids)} | qualified={len(opportunities)} | "
-        f"alerts={sent} | digest_items={digest_sent} | digest_not_sent={digest_not_sent}"
+        f"alerts={sent} | digest_items={digest_sent} | digest_not_sent={digest_not_sent} | "
+        f"outcomes={json.dumps(outcome_counts, sort_keys=True)}"
     )
     print(f"[summary] {summary}")
     write_step_summary(summary)
@@ -5539,7 +5569,10 @@ def scan_once(include_backlog_rechecks=True):
             f"Eligible listings: {len(listings)}\n"
             f"Evaluated: {evaluated} · Qualified: {len(opportunities)}\n"
             f"Alerts sent: {sent} · Digest sent: {digest_sent} · Digest pending: {digest_not_sent}\n"
-            f"RBLXValue API requests this run: {rblxvalue_guard.requests_this_run()}\n"
+            "Outcome accounting: "
+            + ", ".join(f"{name}={count}" for name, count in outcome_counts.items())
+            + "\n"
+            + f"RBLXValue API requests this run: {rblxvalue_guard.requests_this_run()}\n"
             + (
                 f"ROBASE weapons mapped: {max(0, mapping_audit.get('expected', 0) - len(mapping_audit.get('missing', [])) - len(mapping_audit.get('ambiguous', [])))}/"
                 f"{mapping_audit.get('expected', 0)} · non-weapons excluded: {len(mapping_audit.get('non_weapons', []))}"
