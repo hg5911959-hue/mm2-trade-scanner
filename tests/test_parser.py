@@ -373,7 +373,7 @@ class ReliabilityTests(IsolatedDataTestCase):
         items = {
             scanner.normalize_cash_name(name): {
                 "name": name, "cash_price_usd": price, "status": "verified",
-                "verified_at_utc": "2026-11-14T00:00:00Z",
+                "verified_at_utc": datetime.now(timezone.utc).isoformat(),
             }
             for name, price in names.items()
         }
