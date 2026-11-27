@@ -1,14 +1,15 @@
 import json
 import sqlite3
 import tempfile
-import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+from test_support import IsolatedDataTestCase
 
 from tools.public_dashboard_history import PublicDashboardHistory
 
 
-class PublicDashboardHistoryTests(unittest.TestCase):
+class PublicDashboardHistoryTests(IsolatedDataTestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
@@ -81,7 +82,7 @@ class PublicDashboardHistoryTests(unittest.TestCase):
             )
         with self.assertRaisesRegex(ValueError, "safe listing identity"):
             self.history.record_opportunity(
-                self.opportunity(self.listing(url="https://attacker.example/listing"))
+                self.opportunity(self.listing(url="https://attacker.example/listing", valuation_mode="cash"))
             )
         with sqlite3.connect(self.database) as db:
             rows = db.execute(
