@@ -58,3 +58,6 @@ jobs:
 
       - name: Run repository-wide Ruff correctness checks
         run: ruff check .
+
+      - name: Retain explicit repository-wide undefined and unused-name guard
+        run: ruff check --select F .
