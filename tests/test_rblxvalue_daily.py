@@ -90,7 +90,7 @@ class RBLXValueDailyTests(IsolatedDataTestCase):
         identities={f"weapon-{i}":self.identity(name=f"Weapon {i}",slug=f"weapon-{i}") for i in range(214)}
         items=[self.source(name=f"Weapon {i}",slug=f"weapon-{i}") for i in range(214)]
         result=build_snapshot(identities,items,{"last_updated":"2026-11-25 05:00:00","total_items":214},snapshot_date="2026-11-25",fetched_at_utc="2026-11-25T04:00:00+00:00")
-        self.assertEqual(result["counts"]["matched"],214); self.assertEqual(result["items"][0]["value"],155); self.assertEqual(result["items"][0]["value_source_b"],160); self.assertEqual(result["items"][0]["stability"],"Stable")
+        self.assertEqual(result["counts"]["matched"],214); self.assertEqual(result["items"][0]["value"],155); self.assertEqual(result["items"][0]["value_source_b"],160); self.assertEqual(result["items"][0]["stability"],"Stable"); self.assertEqual(result["policy"]["production"],"optional Telegram reference display only; never used for cash valuation, eligibility, ranking, or alert decisions")
     def test_missing_values_remain_null(self):
         result=build_snapshot({"bat":self.identity()},[self.source(value=None,value_source_b=None,stability=None)],{"last_updated":"update","total_items":1},snapshot_date="2026-11-25",fetched_at_utc="2026-11-25T04:00:00+00:00",expected_count=1)
         row=result["items"][0]; self.assertIsNone(row["value"]); self.assertIsNone(row["value_source_b"]); self.assertEqual(row["status"],"matched_missing_blended_value")

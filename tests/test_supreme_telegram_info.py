@@ -17,6 +17,8 @@ def make_snapshot():
         rows.append({
             "bloxswaps_slug": f"weapon-{index}",
             "robase_name": f"Weapon {index}",
+            "value": 9999 + index,
+            "value_source_a": 8888 + index,
             "value_source_b": 160 + index,
             "stability": "Stable" if index != 1 else None,
             "status": "matched" if index < 158 else "matched_missing_blended_value",
@@ -49,7 +51,10 @@ class SupremeTelegramInfoTests(IsolatedDataTestCase):
             self.write_snapshot(snapshot),
             now=datetime(2026, 11, 27, 12, 0, tzinfo=timezone.utc),
         )
+        self.assertEqual(mapping["weapon0"]["supreme_value"], 160)
         self.assertEqual(mapping["weapon1"]["supreme_value"], 161)
+        self.assertEqual(mapping["weapon0"]["value_source"], "Supreme Values via RBLXValue")
+        self.assertEqual(mapping["weapon0"]["stability_source"], "RBLXValue")
         self.assertIsNone(mapping["weapon1"]["stability"])
         self.assertEqual(mapping["weapon0"]["stability"], "Stable")
         self.assertEqual(summary["with_supreme_value"], 214)
@@ -99,11 +104,13 @@ class SupremeTelegramInfoTests(IsolatedDataTestCase):
             5.0, ["Weapon 1 x1 — $5.00 each = $5.00"], 2.5,
             market_info=market_info,
         )
-        self.assertIn("REFERENCE INFO ONLY", message)
-        self.assertIn("Supreme Value: 160", message)
-        self.assertIn("Stability (RBLXValue): Stable", message)
-        self.assertIn("Stability (RBLXValue): N/A", message)
-        self.assertIn("CASH PROFIT: +$2.5", message)
+        self.assertIn("\n\n┌─ 📊 <b>REFERENCE INFO ONLY</b>", message)
+        self.assertNotIn("\n\n\n┌─ 📊", message)
+        self.assertIn("└ <i>RBLXValue · not used in cash filters or alert decisions</i>", message)
+        self.assertIn("Supreme <code>160</code>", message)
+        self.assertIn("Stability <code>Stable</code>", message)
+        self.assertIn("Stability <code>N/A</code>", message)
+        self.assertIn("EST. CASH PROFIT (before fees/slippage): +$2.5", message)
         self.assertNotIn("weapon-2", message)
         self.assertNotIn("RBLXValue/Supreme", message)
 
@@ -114,7 +121,7 @@ class SupremeTelegramInfoTests(IsolatedDataTestCase):
             5.0, ["Weapon 1 x1 — $5.00 each = $5.00"], 2.5,
         )
         self.assertNotIn("REFERENCE INFO ONLY", message)
-        self.assertIn("CASH PROFIT: +$2.5", message)
+        self.assertIn("EST. CASH PROFIT (before fees/slippage): +$2.5", message)
 
 
 if __name__ == "__main__":

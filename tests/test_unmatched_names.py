@@ -10,6 +10,9 @@ class UnmatchedNameRegistryTests(IsolatedDataTestCase):
             "Ajouts/Offres wildcards or incomplete trade sides are not eligible",
             "one side has no items",
             "quantity uncertain",
+            "received-side value-weighted Demand is low",
+            "Drool has no numeric Supreme value",
+            "Brew has no numeric Supreme value",
             "Emberknife",
             "Candy",
         ]
@@ -21,7 +24,12 @@ class UnmatchedNameRegistryTests(IsolatedDataTestCase):
     def test_wildcard_rejection_reasons_are_filtered_in_legacy_mode_too(self):
         self.assertEqual(
             scanner.unmatched_names_from_missing(
-                ["wildcard requests are not exact ROBASE-only offers", "Embergun"],
+                [
+                    "wildcard requests are not exact ROBASE-only offers",
+                    "received-side value-weighted Demand is low",
+                    "Drool has no numeric Supreme value",
+                    "Embergun",
+                ],
                 cash_mode=False,
             ),
             ["Embergun"],

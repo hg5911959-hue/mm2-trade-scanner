@@ -3304,6 +3304,8 @@ def unmatched_names_from_missing(missing, cash_mode=False):
         if any(marker in lowered for marker in (
             "wildcard", "not eligible", "incomplete trade sides",
             "cash mode accepts", "invalid trade sides",
+            "value-weighted demand is low", "value weighted demand is low",
+            "no numeric supreme value",
         )):
             continue
         if lowered in {"quantity unknown", "quantity uncertain"} or "stability" in lowered:
@@ -3400,24 +3402,19 @@ def _format_telegram_market_info(listing, market_info):
                 continue
             seen.add((side, slug))
             name = str(entry.get("name") or item.get("name") or "Unknown item")
-            details = []
             value = entry.get("supreme_value")
-            if value is not None:
-                details.append(f"Supreme Value: {format_number(value)}")
-            stability = str(entry.get("stability") or "").strip()
-            details.append(f"Stability (RBLXValue): {stability or 'N/A'}")
-            rows.append(
-                f"• <b>{_telegram_escape(side)} · {_telegram_escape(name)}</b> — "
-                f"{_telegram_escape(' | '.join(details))}"
-            )
+            stability = str(entry.get("stability") or "").strip() or "N/A"
+            value_label = format_number(value) if value is not None else "N/A"
+            rows.extend([
+                f"│ {'🟢' if side == 'GIVE' else '🔵'} <b>{_telegram_escape(side)}</b> · {_telegram_escape(name)}",
+                f"│   Supreme <code>{_telegram_escape(value_label)}</code>  ·  Stability <code>{_telegram_escape(stability)}</code>",
+            ])
     if not rows:
         return []
     return [
-        "",
-        "📊 <b>REFERENCE INFO ONLY</b>",
-        "<i>Not used for cash profit, filtering, ranking, or alert decisions</i>",
+        "┌─ 📊 <b>REFERENCE INFO ONLY</b>",
         *rows,
-        "<i>Supreme Value via RBLXValue · Stability field from RBLXValue</i>",
+        "└ <i>RBLXValue · not used in cash filters or alert decisions</i>",
     ]
 
 
@@ -3452,7 +3449,8 @@ def format_trade_message(listing, give_total, give_lines, receive_total, receive
             f"Total: <b>{chr(36)}{format_number(receive_total)}</b>",
             "",
             *_format_telegram_market_info(listing, market_info),
-            f"💵 <b>CASH PROFIT: +{chr(36)}{format_number(difference)}</b>",
+            f"💵 <b>EST. CASH PROFIT (before fees/slippage): +{chr(36)}{format_number(difference)}</b>",
+            "<i>Based on Chroma.gg Price (7d); fees/slippage not included.</i>",
         ])
     else:
         lines.extend([
@@ -3530,8 +3528,8 @@ def format_opportunity_digest(opportunities, market_info=None):
         receive_summary = "\n".join(_format_telegram_items(op.get("receive_lines", []))) or "—"
         if listing.get("valuation_mode") == "cash":
             low = float(op.get("cash_profit_worst", op.get("difference", 0)) or 0)
-            profit_label = f"+{chr(36)}{low:.2f}"
-            quality_label = "ROBASE verified"
+            profit_label = f"EST. +{chr(36)}{low:.2f}"
+            quality_label = "ROBASE 7d gross estimate"
             totals = f"{chr(36)}{float(op.get('give_total', 0) or 0):.2f} → {chr(36)}{float(op.get('receive_total', 0) or 0):.2f}"
         else:
             conservative = float(op.get("profit_worst", op.get("difference", 0)) or 0)
@@ -3546,7 +3544,10 @@ def format_opportunity_digest(opportunities, market_info=None):
         lines.append(f"   GIVE:\n{give_summary}")
         lines.append(f"   GET:\n{receive_summary}")
         lines.append(f"   TOTAL: {_telegram_escape(totals)}")
-        lines.extend(_format_telegram_market_info(listing, market_info))
+        reference_info = _format_telegram_market_info(listing, market_info)
+        if reference_info:
+            lines.append("")
+            lines.extend(reference_info)
         lines.append("")
     return TelegramHTML("\n".join(lines).rstrip())
 
