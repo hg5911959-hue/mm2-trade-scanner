@@ -5186,6 +5186,150 @@ def _fetch_scan_feed_and_audit(
     )
 
 
+def _load_daily_chart_shadow_catalog(cash_catalog):
+    """Load the exact previous-day chart catalogue or fail closed."""
+    if not CASH_FILTER or not cash_catalog or not cash_catalog.get("bloxswaps_exact_map"):
+        print("[daily-shadow] FAIL-CLOSED: cash mode or exact BloxSwaps identity map is unavailable.")
+        return None
+    try:
+        from tools.robase_daily_chart_prices import load_exact_previous_day_prices
+        target_day, daily_prices = load_exact_previous_day_prices()
+        daily_shadow_catalog, daily_stats = build_daily_chart_shadow_catalog(
+            cash_catalog, daily_prices
+        )
+    except Exception as shadow_error:
+        print(
+            f"[daily-shadow] FAIL-CLOSED: previous-day chart archive unavailable or invalid: "
+            f"{type(shadow_error).__name__}: {str(shadow_error)[:240]}"
+        )
+        return None
+    return target_day, daily_shadow_catalog, daily_stats
+
+
+def _daily_shadow_rejection_category(reason: str) -> str:
+    if "(no exact ROBASE/BloxSwaps identity mapping)" in reason:
+        return "unmapped identity"
+    if "(ROBASE price not freshly verified)" in reason:
+        return "no eligible daily price"
+    if "wildcards or incomplete trade sides" in reason:
+        return "wildcard/incomplete offer"
+    if "quantity" in reason:
+        return "uncertain quantity"
+    if "mismatch" in reason or "type mismatch" in reason:
+        return "identity metadata mismatch"
+    return "other validation failure"
+
+
+def _evaluate_daily_shadow_listings(
+    listings, cash_catalog, daily_shadow_catalog, daily_stats, target_day
+) -> None:
+    """Evaluate the daily chart shadow and print a baseline comparison only."""
+    print(
+        f"[daily-shadow] date={target_day}; weapons={daily_stats['weapons_total']}; "
+        f"eligible={daily_stats['eligible']}; excluded={daily_stats['unavailable_or_low_sample']}; "
+        f"non_daily_catalogue_entries_disabled={daily_stats['non_daily_catalogue_entries_disabled']}"
+    )
+    shadow_evaluated = shadow_qualified = shadow_rejected = 0
+    shadow_samples = []
+    shadow_rejection_reasons = {}
+    shadow_qualified_ids = set()
+    shadow_baseline_qualified_ids = set()
+    shadow_baseline_profit_by_id = {}
+    shadow_daily_profit_by_id = {}
+    for shadow_listing in listings:
+        shadow_evaluated += 1
+        listing_id = str(shadow_listing.get("id") or "")
+        baseline_result, _baseline_missing = evaluate_cash_listing_robase_only(
+            dict(shadow_listing), cash_catalog
+        )
+        if baseline_result is not None:
+            baseline_threshold = max(
+                1.0,
+                CASH_MIN_PROFIT_USD_SMALL
+                if baseline_result["give_total"] < 5.0
+                else CASH_MIN_PROFIT_USD,
+            )
+            if baseline_result["cash_profit_worst"] >= baseline_threshold and listing_id:
+                shadow_baseline_qualified_ids.add(listing_id)
+                shadow_baseline_profit_by_id[listing_id] = baseline_result["cash_profit_worst"]
+
+        result, missing = evaluate_cash_listing_robase_only(
+            dict(shadow_listing), daily_shadow_catalog
+        )
+        if result is None:
+            shadow_rejected += 1
+            for reason in (missing or ["unspecified rejection"]):
+                category = _daily_shadow_rejection_category(str(reason))
+                shadow_rejection_reasons[category] = shadow_rejection_reasons.get(category, 0) + 1
+            if missing and len(shadow_samples) < 8:
+                shadow_samples.append(
+                    f"{shadow_listing.get('id', 'unknown')}: "
+                    + "; ".join(str(value) for value in missing[:3])
+                )
+            continue
+        daily_threshold = max(
+            1.0,
+            CASH_MIN_PROFIT_USD_SMALL
+            if result["give_total"] < 5.0
+            else CASH_MIN_PROFIT_USD,
+        )
+        if listing_id:
+            shadow_daily_profit_by_id[listing_id] = result["cash_profit_worst"]
+        if result["cash_profit_worst"] >= daily_threshold:
+            shadow_qualified += 1
+            if listing_id:
+                shadow_qualified_ids.add(listing_id)
+            print(
+                f"[daily-shadow] QUALIFIED listing={shadow_listing.get('id')} "
+                f"profit={result['cash_profit_worst']:.2f}..{result['cash_profit_best']:.2f} USD "
+                f"threshold={daily_threshold:.2f} USD date={target_day}"
+            )
+
+    print(
+        f"[daily-shadow] COMPLETE date={target_day}; listings={shadow_evaluated}; "
+        f"qualified_at_{CASH_MIN_PROFIT_USD:.2f}_USD_floor={shadow_qualified}; "
+        f"rejected_or_ineligible={shadow_rejected}; telegram_sends=0; live_catalog_mutations=0"
+    )
+    comparable_ids = shadow_qualified_ids & shadow_baseline_qualified_ids
+    profit_deltas = sorted(
+        shadow_daily_profit_by_id[item_id] - shadow_baseline_profit_by_id[item_id]
+        for item_id in comparable_ids
+        if item_id in shadow_daily_profit_by_id and item_id in shadow_baseline_profit_by_id
+    )
+    median_profit_delta = None
+    if profit_deltas:
+        middle = len(profit_deltas) // 2
+        median_profit_delta = (
+            profit_deltas[middle] if len(profit_deltas) % 2
+            else (profit_deltas[middle - 1] + profit_deltas[middle]) / 2
+        )
+    print(
+        f"[daily-shadow] COMPARISON baseline_qualified={len(shadow_baseline_qualified_ids)} "
+        f"daily_qualified={len(shadow_qualified_ids)} overlap={len(comparable_ids)} "
+        f"daily_only={len(shadow_qualified_ids - shadow_baseline_qualified_ids)} "
+        f"baseline_only={len(shadow_baseline_qualified_ids - shadow_qualified_ids)} "
+        f"common_profit_delta_daily_minus_baseline_median={median_profit_delta}"
+    )
+    print(
+        f"[daily-shadow] SUMMARY unique_qualified_ids={len(shadow_qualified_ids)} "
+        f"rejection_reason_counts={json.dumps(shadow_rejection_reasons, ensure_ascii=False, sort_keys=True)}"
+    )
+    for sample in shadow_samples:
+        print(f"[daily-shadow] REJECTED {sample}")
+
+
+def _run_daily_chart_shadow(listings, cash_catalog) -> int:
+    """Run the daily-chart shadow without sending alerts or mutating live prices."""
+    context = _load_daily_chart_shadow_catalog(cash_catalog)
+    if context is None:
+        return 0
+    target_day, daily_shadow_catalog, daily_stats = context
+    _evaluate_daily_shadow_listings(
+        listings, cash_catalog, daily_shadow_catalog, daily_stats, target_day
+    )
+    return 0
+
+
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     scan_modes = resolve_scan_modes(
@@ -5238,120 +5382,7 @@ def scan_once(include_backlog_rechecks=True):
     mapping_audit = feed_result.mapping_audit
 
     if daily_shadow_mode:
-        if not CASH_FILTER or not cash_catalog or not cash_catalog.get("bloxswaps_exact_map"):
-            print("[daily-shadow] FAIL-CLOSED: cash mode or exact BloxSwaps identity map is unavailable.")
-            return 0
-        try:
-            from tools.robase_daily_chart_prices import load_exact_previous_day_prices
-            target_day, daily_prices = load_exact_previous_day_prices()
-            daily_shadow_catalog, daily_stats = build_daily_chart_shadow_catalog(
-                cash_catalog, daily_prices
-            )
-        except Exception as shadow_error:
-            print(
-                f"[daily-shadow] FAIL-CLOSED: previous-day chart archive unavailable or invalid: "
-                f"{type(shadow_error).__name__}: {str(shadow_error)[:240]}"
-            )
-            return 0
-        print(
-            f"[daily-shadow] date={target_day}; weapons={daily_stats['weapons_total']}; "
-            f"eligible={daily_stats['eligible']}; excluded={daily_stats['unavailable_or_low_sample']}; "
-            f"non_daily_catalogue_entries_disabled={daily_stats['non_daily_catalogue_entries_disabled']}"
-        )
-        shadow_evaluated = shadow_qualified = shadow_rejected = 0
-        shadow_samples = []
-        shadow_rejection_reasons = {}
-        shadow_qualified_ids = set()
-        shadow_baseline_qualified_ids = set()
-        shadow_baseline_profit_by_id = {}
-        shadow_daily_profit_by_id = {}
-        for shadow_listing in listings:
-            shadow_evaluated += 1
-            listing_id = str(shadow_listing.get("id") or "")
-            baseline_result, _baseline_missing = evaluate_cash_listing_robase_only(
-                dict(shadow_listing), cash_catalog
-            )
-            if baseline_result is not None:
-                baseline_threshold = max(
-                    1.0,
-                    CASH_MIN_PROFIT_USD_SMALL
-                    if baseline_result["give_total"] < 5.0
-                    else CASH_MIN_PROFIT_USD,
-                )
-                if baseline_result["cash_profit_worst"] >= baseline_threshold and listing_id:
-                    shadow_baseline_qualified_ids.add(listing_id)
-                    shadow_baseline_profit_by_id[listing_id] = baseline_result["cash_profit_worst"]
-
-            result, missing = evaluate_cash_listing_robase_only(dict(shadow_listing), daily_shadow_catalog)
-            if result is None:
-                shadow_rejected += 1
-                for reason in (missing or ["unspecified rejection"]):
-                    reason_text = str(reason)
-                    if "(no exact ROBASE/BloxSwaps identity mapping)" in reason_text:
-                        category = "unmapped identity"
-                    elif "(ROBASE price not freshly verified)" in reason_text:
-                        category = "no eligible daily price"
-                    elif "wildcards or incomplete trade sides" in reason_text:
-                        category = "wildcard/incomplete offer"
-                    elif "quantity" in reason_text:
-                        category = "uncertain quantity"
-                    elif "mismatch" in reason_text or "type mismatch" in reason_text:
-                        category = "identity metadata mismatch"
-                    else:
-                        category = "other validation failure"
-                    shadow_rejection_reasons[category] = shadow_rejection_reasons.get(category, 0) + 1
-                if missing and len(shadow_samples) < 8:
-                    shadow_samples.append(
-                        f"{shadow_listing.get('id', 'unknown')}: " + "; ".join(str(x) for x in missing[:3])
-                    )
-                continue
-            daily_threshold = max(
-                1.0,
-                CASH_MIN_PROFIT_USD_SMALL if result["give_total"] < 5.0 else CASH_MIN_PROFIT_USD,
-            )
-            if listing_id:
-                shadow_daily_profit_by_id[listing_id] = result["cash_profit_worst"]
-            if result["cash_profit_worst"] >= daily_threshold:
-                shadow_qualified += 1
-                if listing_id:
-                    shadow_qualified_ids.add(listing_id)
-                print(
-                    f"[daily-shadow] QUALIFIED listing={shadow_listing.get('id')} "
-                    f"profit={result['cash_profit_worst']:.2f}..{result['cash_profit_best']:.2f} USD "
-                    f"threshold={daily_threshold:.2f} USD date={target_day}"
-                )
-        print(
-            f"[daily-shadow] COMPLETE date={target_day}; listings={shadow_evaluated}; "
-            f"qualified_at_{CASH_MIN_PROFIT_USD:.2f}_USD_floor={shadow_qualified}; "
-            f"rejected_or_ineligible={shadow_rejected}; telegram_sends=0; live_catalog_mutations=0"
-        )
-        comparable_ids = shadow_qualified_ids & shadow_baseline_qualified_ids
-        profit_deltas = sorted(
-            shadow_daily_profit_by_id[item_id] - shadow_baseline_profit_by_id[item_id]
-            for item_id in comparable_ids
-            if item_id in shadow_daily_profit_by_id and item_id in shadow_baseline_profit_by_id
-        )
-        median_profit_delta = None
-        if profit_deltas:
-            middle = len(profit_deltas) // 2
-            median_profit_delta = (
-                profit_deltas[middle] if len(profit_deltas) % 2
-                else (profit_deltas[middle - 1] + profit_deltas[middle]) / 2
-            )
-        print(
-            f"[daily-shadow] COMPARISON baseline_qualified={len(shadow_baseline_qualified_ids)} "
-            f"daily_qualified={len(shadow_qualified_ids)} overlap={len(comparable_ids)} "
-            f"daily_only={len(shadow_qualified_ids - shadow_baseline_qualified_ids)} "
-            f"baseline_only={len(shadow_baseline_qualified_ids - shadow_qualified_ids)} "
-            f"common_profit_delta_daily_minus_baseline_median={median_profit_delta}"
-        )
-        print(
-            f"[daily-shadow] SUMMARY unique_qualified_ids={len(shadow_qualified_ids)} "
-            f"rejection_reason_counts={json.dumps(shadow_rejection_reasons, ensure_ascii=False, sort_keys=True)}"
-        )
-        for sample in shadow_samples:
-            print(f"[daily-shadow] REJECTED {sample}")
-        return 0
+        return _run_daily_chart_shadow(listings, cash_catalog)
     pending_schedule = record_pending_recheck_attempts(
         due_pending_ids, pending_ids, pending_schedule
     )
