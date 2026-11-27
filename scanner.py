@@ -1151,6 +1151,7 @@ def fetch_bloxswaps_all(seen_ad_ids=None, pending_ad_ids=None, watch_ad_ids=None
         seen_ad_ids = set()
     api_only = os.environ.get("BLOXSWAPS_API_ONLY", "false").strip().casefold() in {"1", "true", "yes", "on"}
     initial_feed = _load_initial_bloxswaps_feed(api_only)
+    initial_page = initial_feed.initial_page
     initial_item_map = initial_feed.initial_item_map
     raw_first_items = initial_feed.raw_first_items
     single_sided_ids = initial_feed.single_sided_ids
