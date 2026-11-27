@@ -5170,7 +5170,7 @@ def scan_once(include_backlog_rechecks=True):
     sent = 0
     evaluated = 0
     opportunities = []
-    def deliver_opportunity(op, send=True):
+    def deliver_opportunity(op, send=True, delivery_confirmed=False):
         nonlocal sent
         global _SESSION_ALERTS_SENT
         listing = op["listing"]
@@ -5189,7 +5189,7 @@ def scan_once(include_backlog_rechecks=True):
             previous_cash_profit = last_cash_profit_for_listing(trade_id)
             if previous_cash_profit is not None and op.get("cash_profit_worst", 0) > previous_cash_profit + 0.009:
                 variant_changed = True
-        if (trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids:
+        if not delivery_confirmed and ((trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids):
             if legacy_cash_watch and trade_id in alerted_set:
                 # One-time source migration: update the fingerprint without replaying old alerts.
                 update_watch_entry(watch_state, listing, values, aliases, cash_catalog)
@@ -5199,7 +5199,7 @@ def scan_once(include_backlog_rechecks=True):
                 "delivery_quarantined" if trade_id in uncertain_ids else "delivery_guard_skipped",
             )
             return
-        if os.environ.get("DRY_RUN", "").strip().casefold() == "true":
+        if not delivery_confirmed and os.environ.get("DRY_RUN", "").strip().casefold() == "true":
             print(f"[dry-run] would send: {trade_id} profit={op['difference']:g}")
             outcome_ledger.record(trade_id, "dry_run_preview")
             return
@@ -5388,7 +5388,7 @@ def scan_once(include_backlog_rechecks=True):
                 # Remove only from this process's in-memory set. Keep the durable
                 # quarantine until the alerted/watch checkpoints are persisted.
                 uncertain_ids.discard(trade_id)
-                deliver_opportunity(op, send=False)
+                deliver_opportunity(op, send=False, delivery_confirmed=True)
                 delivered += 1
         save_uncertain_ids(uncertain_ids)
         _SESSION_ALERTS_SENT += delivered
