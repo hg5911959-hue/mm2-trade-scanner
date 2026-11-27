@@ -19,9 +19,11 @@ DEFAULT_DB_PATH = Path("data/public_dashboard_history.sqlite3")
 ALLOWED_HOSTS = {"bloxswaps.com", "www.bloxswaps.com"}
 LISTING_RETENTION_DAYS = 90
 OPPORTUNITY_RETENTION_DAYS = 180
-MAX_LISTINGS = 3_000
+MAX_LISTINGS = 2_500
 MAX_OPPORTUNITIES = 1_000
-MAX_ITEMS_PER_SIDE = 50
+MAX_ITEMS_PER_SIDE = 20
+MAX_ITEM_NAME_CHARS = 60
+MAX_OWNER_NAME_CHARS = 80
 
 
 def _now() -> str:
@@ -62,7 +64,7 @@ def _safe_items(value: object) -> list[dict[str, object]]:
     for item in (value[:MAX_ITEMS_PER_SIDE] if isinstance(value, list) else []):
         if not isinstance(item, dict):
             continue
-        name = _safe_text(item.get("name"), 100)
+        name = _safe_text(item.get("name"), MAX_ITEM_NAME_CHARS)
         if not name:
             continue
         quantity = item.get("quantity")
@@ -178,7 +180,7 @@ class PublicDashboardHistory:
                 if not listing_id or not source_id or not listing_url:
                     continue
                 owner_url = _safe_link(listing.get("owner_url"))
-                owner_name = _safe_text(listing.get("source_author") or listing.get("owner_name"), 100)
+                owner_name = _safe_text(listing.get("source_author") or listing.get("owner_name"), MAX_OWNER_NAME_CHARS)
                 give_items = _safe_items(listing.get("give_items"))
                 receive_items = _safe_items(listing.get("receive_items"))
                 content = {
