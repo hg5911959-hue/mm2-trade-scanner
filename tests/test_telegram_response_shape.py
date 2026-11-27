@@ -64,7 +64,7 @@ class TelegramResponseShapeTests(IsolatedDataTestCase):
 
     def test_confirmed_success_logs_request_round_trip_latency(self):
         output = StringIO()
-        with patch("tools.telegram_delivery.time.monotonic", side_effect=[10.0, 10.125]):
+        with patch("tools.telegram_delivery.monotonic_time", side_effect=[10.0, 10.125]):
             with redirect_stdout(output):
                 self._send(b'{"ok": true, "result": {"message_id": 77}}')
         self.assertIn("[telegram-timing] confirmed_request_ms=125.0", output.getvalue())
