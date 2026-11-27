@@ -441,6 +441,12 @@ class ScannerCashSafetyTests(IsolatedDataTestCase):
                 )
                 self.assertIsNone(result)
                 self.assertIn("Ajouts/Offres", missing[0])
+        body_only, body_missing = scanner.evaluate_cash_listing_robase_only(
+            {**base, "source_text": "Looking for Offers in general; no wildcard metadata"},
+            catalog,
+        )
+        self.assertIsNotNone(body_only)
+        self.assertEqual(body_missing, [])
 
     def test_production_cash_evaluator_rejects_bloxswaps_metadata_mismatch(self):
         now = datetime.now(UTC).isoformat()
