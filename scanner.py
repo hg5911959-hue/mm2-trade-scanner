@@ -3403,18 +3403,17 @@ def _format_telegram_market_info(listing, market_info):
             value = entry.get("supreme_value")
             stability = str(entry.get("stability") or "").strip() or "N/A"
             value_label = format_number(value) if value is not None else "N/A"
-            rows.append(
-                f"│ <b>{_telegram_escape(side)}</b> · {_telegram_escape(name)}"
-                f"  · SV <code>{_telegram_escape(value_label)}</code>"
-                f"  · ST <code>{_telegram_escape(stability)}</code>"
-            )
+            rows.extend([
+                f"│ {'🟢' if side == 'GIVE' else '🔵'} <b>{_telegram_escape(side)}</b> · {_telegram_escape(name)}",
+                f"│   Supreme <code>{_telegram_escape(value_label)}</code>  ·  Stability <code>{_telegram_escape(stability)}</code>",
+            ])
     if not rows:
         return []
     return [
         "",
         "┌─ 📊 <b>REFERENCE INFO ONLY</b>",
         *rows,
-        "└ <i>RBLXValue · informational only</i>",
+        "└ <i>RBLXValue · not used in cash filters or alert decisions</i>",
     ]
 
 
