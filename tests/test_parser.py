@@ -3029,6 +3029,63 @@ class PendingDirectLookupTests(IsolatedDataTestCase):
         self.assertEqual(stats["unparsed_ad_ids"], [])
 
 
+    def test_watched_posts_are_resolved_by_direct_id_without_cursor_crawl(self):
+        seen_posts = [self._post(f"seen-watch-boundary-{i}", [("OFFERED", "Harvester"), ("REQUESTED", "Cane")]) for i in range(25)]
+        initial = {"items": seen_posts, "meta": {"cursor": "cursor-after-boundary"}}
+        watch_post = self._post("watch-post", [("OFFERED", "Harvester"), ("REQUESTED", "Cane")])
+
+        def lookup(path, params=None):
+            if path == "/trade-posts":
+                return initial
+            if path == "/trade-posts/watch-post":
+                return watch_post
+            raise AssertionError(f"unexpected cursor crawl or lookup: {path}")
+
+        with (
+            patch.dict(os.environ, {"BLOXSWAPS_API_ONLY": "true"}),
+            patch("scanner.bloxswaps_api_get_json", side_effect=lookup) as api,
+            patch("scanner.fetch_bloxswaps_items_map", return_value={
+                "a-id": {"id": "a-id", "displayName": "Knife A"},
+                "b-id": {"id": "b-id", "displayName": "Knife B"},
+            }),
+            patch("scanner._last_successful_scan_timestamp", return_value=2_000_000_000),
+        ):
+            listings, stats, _ = scanner.fetch_bloxswaps_all(
+                {post["id"] for post in seen_posts},
+                watch_ad_ids=["watch-post"],
+            )
+
+        self.assertEqual([item["source_ad_id"] for item in listings], ["watch-post"])
+        self.assertEqual(stats["watch_remaining_ids"], [])
+        self.assertEqual(stats["watch_not_found_ids"], [])
+        self.assertEqual(stats["backlog_pages_scanned"], 0)
+        self.assertEqual(api.call_count, 2)
+
+    def test_unresolved_watch_id_is_rotated_without_historical_cursor_search(self):
+        seen_posts = [self._post(f"seen-watch-unresolved-{i}", [("OFFERED", "Harvester"), ("REQUESTED", "Cane")]) for i in range(25)]
+        initial = {"items": seen_posts, "meta": {"cursor": "cursor-after-boundary"}}
+
+        with (
+            patch.dict(os.environ, {"BLOXSWAPS_API_ONLY": "true"}),
+            patch("scanner.bloxswaps_api_get_json", return_value=initial) as api,
+            patch("scanner.fetch_bloxswaps_items_map", return_value={
+                "a-id": {"id": "a-id", "displayName": "Knife A"},
+                "b-id": {"id": "b-id", "displayName": "Knife B"},
+            }),
+            patch("scanner.fetch_pending_posts_by_id", return_value=([], [])),
+            patch("scanner._last_successful_scan_timestamp", return_value=2_000_000_000),
+        ):
+            listings, stats, _ = scanner.fetch_bloxswaps_all(
+                {post["id"] for post in seen_posts},
+                watch_ad_ids=["temporarily-unresolved"],
+            )
+
+        self.assertEqual(listings, [])
+        self.assertEqual(stats["watch_remaining_ids"], ["temporarily-unresolved"])
+        self.assertEqual(stats["backlog_pages_scanned"], 0)
+        self.assertEqual(api.call_count, 1)
+
+
 class StructuredQuantityTests(IsolatedDataTestCase):
     @staticmethod
     def _html_with_rsc(trade_items, wildcards=None, visible_badge=""):
@@ -3561,6 +3618,15 @@ class HardeningRegressionTests(IsolatedDataTestCase):
 
 
 class WatchWindowRegressionTests(IsolatedDataTestCase):
+    def test_watch_rechecks_select_oldest_entries_and_exclude_private_discord_ids(self):
+        state = {
+            "newer": {"updated_at": 30},
+            "oldest": {"updated_at": 10},
+            "middle": {"updated_at": 20},
+            "discord:private-message": {"updated_at": 1},
+        }
+        self.assertEqual(scanner.select_watch_recheck_ids(state, 2), ["oldest", "middle"])
+        self.assertEqual(scanner.select_watch_recheck_ids(state, 0), [])
     def _listing(self, receive_quantity=1):
         return {
             "source_ad_id": "watch-ad",
@@ -3919,27 +3985,35 @@ class WorkflowSecurityTests(IsolatedDataTestCase):
 
 
 class WatchWindowPaginationTests(IsolatedDataTestCase):
-    def test_pagination_passes_seen_streak_to_revisit_watched_ads(self):
+    def test_watched_ids_are_revisited_by_direct_lookup_after_the_seen_boundary(self):
         seen_posts = [CursorPaginationTests._post(f"old-seen-{i}") for i in range(25)]
-        page = {"items": seen_posts, "meta": {"cursor": "cursor-to-watch"}}
-        payload = json.dumps({"initialPage": page}, separators=(",", ":"))
-        html = '<script>self.__next_f.push([1,' + json.dumps(payload) + ']);</script>'
         watched = CursorPaginationTests._post("watch-later")
-        response = {"items": [watched], "meta": {"cursor": None}}
         seen_ids = {post["id"] for post in seen_posts}
+        initial = {"items": seen_posts, "meta": {"cursor": "cursor-to-watch"}}
+
+        def lookup(path, params=None):
+            if path == "/trade-posts":
+                return initial
+            if path == "/trade-posts/watch-later":
+                return watched
+            raise AssertionError(f"unexpected historical cursor request: {path}")
+
         with (
-            patch("scanner.fetch_bloxswaps", return_value=html),
+            patch.dict(os.environ, {"BLOXSWAPS_API_ONLY": "true"}),
             patch("scanner.fetch_bloxswaps_items_map", return_value={
                 "a-id": {"displayName": "Knife A"}, "b-id": {"displayName": "Knife B"}
             }),
             patch("scanner._last_successful_scan_timestamp", return_value=2_000_000_000),
-            patch("scanner.bloxswaps_api_get_json", return_value=response),
+            patch("scanner.bloxswaps_api_get_json", side_effect=lookup) as api,
         ):
-            listings, stats, _ = scanner.fetch_bloxswaps_all(seen_ids, watch_ad_ids={"watch-later"})
+            listings, stats, _ = scanner.fetch_bloxswaps_all(seen_ids, watch_ad_ids=["watch-later"])
+
         self.assertIn("watch-later", [item["source_ad_id"] for item in listings])
         self.assertEqual(stats["watch_remaining_ids"], [])
         self.assertTrue(stats["seen_boundary_reached"])
         self.assertTrue(stats["watch_search_complete"])
+        self.assertEqual(stats["backlog_pages_scanned"], 0)
+        self.assertEqual(api.call_count, 2)
 
 
 class ColdStartPaginationTests(IsolatedDataTestCase):
