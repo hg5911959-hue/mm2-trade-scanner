@@ -89,6 +89,7 @@ from tools.feed_checkpoint import (
     scan_checkpoint_requires_cold_start as _scan_checkpoint_requires_cold_start_impl,
 )
 from tools.telegram_quarantine import reconcile_uncertain_quarantine
+from tools.scan_modes import resolve_scan_modes
 from tools.scan_loop_policy import (
     minimum_cycle_start_window as _minimum_cycle_start_window,
     should_run_backlog_recheck as _should_run_backlog_recheck,
@@ -4604,23 +4605,25 @@ def accumulate_cash_blockers(missing, counts, groups):
 
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
-    daily_shadow_mode = os.environ.get("ROBASE_DAILY_CHART_SHADOW_ENABLED", "").strip().casefold() == "true"
-    value_profit_shadow_mode = os.environ.get("RBLXVALUE_VALUE_PROFIT_SHADOW_ENABLED", "").strip().casefold() == "true"
-    if daily_shadow_mode and value_profit_shadow_mode:
-        raise RuntimeError("ROBASE cash-chart shadow and Supreme value-profit shadow must run separately.")
-    if daily_shadow_mode or value_profit_shadow_mode:
+    scan_modes = resolve_scan_modes(
+        os.environ,
+        cash_filter=CASH_FILTER,
+        bot_token=BOT_TOKEN,
+        chat_id=CHAT_ID,
+    )
+    daily_shadow_mode = scan_modes.daily_shadow_mode
+    value_profit_shadow_mode = scan_modes.value_profit_shadow_mode
+    dry_run = scan_modes.dry_run
+    testing_mode = scan_modes.testing_mode
+    if scan_modes.force_dry_run:
         # Shadow modes are strictly non-delivering, even if a caller misconfigures DRY_RUN.
         os.environ["DRY_RUN"] = "true"
-    dry_run = os.environ.get("DRY_RUN", "").strip().casefold() == "true"
-    if not dry_run and (not BOT_TOKEN or not CHAT_ID):
-        raise RuntimeError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in GitHub Actions secrets.")
     update_metrics(increments={"scans": 1})
 
     if value_profit_shadow_mode:
         print("[stage] Offline Supreme value-profit shadow from the daily RBLXValue archive; no API key or API requests")
     else:
         print("[stage] Third-party valuation sources disabled; cash eligibility uses ROBASE + BloxSwaps only")
-    testing_mode = os.environ.get("MM2_TESTING", "").strip().casefold() == "true"
     if value_profit_shadow_mode:
         if CASH_FILTER:
             raise RuntimeError("Value-profit shadow requires CASH_FILTER=false; refusing mixed valuation modes.")
