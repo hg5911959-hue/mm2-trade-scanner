@@ -4963,6 +4963,193 @@ def _open_scan_history_data(modes: ScanModes, values: dict) -> ScanHistoryData:
     )
 
 
+@dataclass(slots=True)
+class ScanPersistentState:
+    seen_ads: set | None
+    pending_ids: dict
+    pending_schedule: dict
+    watch_state: dict
+    all_due_pending_ids: dict
+    due_pending_ids: dict
+    last_success_ts: float | None
+    run_backlog_rechecks: bool
+    watch_recheck_ids: list
+    scan_mode: str
+
+
+@dataclass(slots=True)
+class ScanFeedResult:
+    listings: list
+    stats: dict
+    discovered_ids: list
+    watch_not_found_ids: set
+    mapping_audit: dict | None
+
+
+def _load_scan_persistent_state(
+    include_backlog_rechecks: bool,
+    values_snapshot_changed: bool,
+    cash_prices_changed: bool,
+) -> ScanPersistentState:
+    """Load, clean, and schedule seen/pending/watch state for one scan."""
+    aliases = load_aliases()
+    print(f"[aliases] Loaded {len(aliases)} reviewed item aliases")
+    print("[stage] Loading seen-offer and pending-recheck state")
+    seen_ads = load_seen_ads()
+    pending_ids = load_pending_ids()
+    pending_schedule = load_pending_recheck_schedule()
+
+    retryable_reasons = {"unparsed_feed", "telegram_failure"}
+    retired_pending = []
+    for pending_id in list(pending_ids):
+        reason = (pending_schedule.get(pending_id) or {}).get("reason")
+        if reason not in retryable_reasons:
+            retired_pending.append(pending_id)
+            pending_ids.pop(pending_id, None)
+            pending_schedule.pop(pending_id, None)
+    if retired_pending:
+        if seen_ads is None:
+            seen_ads = set()
+        seen_ads.update(retired_pending)
+        save_seen_ads(seen_ads)
+        save_pending_ids(pending_ids)
+        save_pending_recheck_schedule(pending_schedule)
+        print(
+            f"[state] Closed {len(retired_pending)} legacy review/deferred offer IDs; "
+            "no offer-level manual-review backlog remains."
+        )
+
+    if seen_ads is not None:
+        new_pending_seen = set(pending_ids) - seen_ads
+        if new_pending_seen:
+            seed_pending_ids_as_seen(seen_ads, new_pending_seen, pending_schedule)
+            save_seen_ads(seen_ads)
+            print(
+                f"[state] Seeded {len(new_pending_seen)} pending IDs into the seen set; "
+                "they remain queued for bounded rechecks."
+            )
+
+    all_due_pending_ids = due_pending_ids_for_scan(
+        pending_ids, pending_schedule, limit=0
+    )
+    run_backlog_rechecks = (
+        include_backlog_rechecks or values_snapshot_changed or cash_prices_changed
+    )
+    due_pending_ids = (
+        due_pending_ids_for_scan(
+            pending_ids,
+            pending_schedule,
+            force=values_snapshot_changed or cash_prices_changed,
+        )
+        if run_backlog_rechecks else {}
+    )
+    watch_state = load_watch_state()
+    last_success_ts = _last_successful_scan_timestamp()
+    if (
+        seen_ads is not None
+        and not pending_ids
+        and scan_checkpoint_requires_cold_start(last_success_ts)
+    ):
+        age_seconds = max(0.0, time.time() - last_success_ts) if last_success_ts else None
+        age_label = f"{age_seconds / 3600:.1f}h" if age_seconds is not None else "unknown age"
+        print(
+            f"[state] Last successful scan is stale ({age_label}); "
+            "switching to a bounded 60-minute cold-start window instead of replaying old listings."
+        )
+        seen_ads = None
+    if seen_ads is None and include_backlog_rechecks and (pending_ids or watch_state):
+        seen_ads = set()
+
+    print(
+        f"[state] Pending listings: {len(pending_ids)} total; "
+        f"{len(all_due_pending_ids)} due; "
+        f"{len(due_pending_ids)} selected for this scan (cap={MAX_PENDING_RECHECK_PER_SCAN})"
+    )
+    print("[stage] Fetching BloxSwaps listings and cursor pages")
+    watch_recheck_budget = max(0, MAX_PENDING_RECHECK_PER_SCAN - len(due_pending_ids))
+    watch_recheck_ids = (
+        select_watch_recheck_ids(watch_state, watch_recheck_budget)
+        if run_backlog_rechecks else []
+    )
+    scan_mode = (
+        "values-refresh-backlog" if values_snapshot_changed
+        else "cash-price-refresh-backlog" if cash_prices_changed
+        else "backlog-recheck" if include_backlog_rechecks
+        else "fast-new-feed"
+    )
+    print(
+        f"[scan-mode] {scan_mode}; direct_recheck_budget={MAX_PENDING_RECHECK_PER_SCAN}; "
+        f"watch_batch={len(watch_recheck_ids)}; pending_cursor_lookahead={MAX_BACKLOG_RECHECK_PAGES}"
+    )
+    return ScanPersistentState(
+        seen_ads=seen_ads,
+        pending_ids=pending_ids,
+        pending_schedule=pending_schedule,
+        watch_state=watch_state,
+        all_due_pending_ids=all_due_pending_ids,
+        due_pending_ids=due_pending_ids,
+        last_success_ts=last_success_ts,
+        run_backlog_rechecks=run_backlog_rechecks,
+        watch_recheck_ids=watch_recheck_ids,
+        scan_mode=scan_mode,
+    )
+
+
+def _fetch_scan_feed_and_audit(
+    state: ScanPersistentState, cash_catalog: dict | None
+) -> ScanFeedResult:
+    """Fetch the BloxSwaps feed, rotate watch state, and audit exact identities."""
+    listings, stats, discovered_ids = fetch_bloxswaps_all(
+        state.seen_ads, state.due_pending_ids.keys(), state.watch_recheck_ids
+    )
+    watch_not_found_ids = set(stats.get("watch_not_found_ids", []))
+    if state.watch_recheck_ids:
+        for ad_id in state.watch_recheck_ids:
+            if ad_id in watch_not_found_ids:
+                state.watch_state.pop(ad_id, None)
+            elif ad_id in state.watch_state:
+                # Rotate every attempted ID, including unchanged or temporarily
+                # unresolved records, so a bad record cannot starve later entries.
+                state.watch_state[ad_id]["updated_at"] = time.time()
+        save_watch_state(state.watch_state)
+
+    mapping_audit = None
+    if CASH_FILTER:
+        try:
+            mapping_audit = build_robase_bloxswaps_map(
+                cash_catalog, fetch_bloxswaps_items_map()
+            )
+            cash_catalog["bloxswaps_exact_map"] = mapping_audit.get(
+                "bloxswaps_exact_map", {}
+            )
+            mapping_gaps = mapping_audit.get("missing", []) + mapping_audit.get("ambiguous", [])
+            if mapping_gaps:
+                send_maintenance_alert(
+                    "robase-bloxswaps-mapping-gaps",
+                    "ROBASE/BloxSwaps weapon identity mapping has unresolved items: "
+                    + "; ".join(str(value) for value in mapping_gaps[:20])
+                    + f"\nUnresolved: {len(mapping_gaps)}. Affected listings are excluded; no identities are guessed.",
+                    cooldown_seconds=6 * 60 * 60,
+                )
+        except Exception as audit_error:
+            print(
+                f"[robase-bloxswaps] coverage audit unavailable: {type(audit_error).__name__}"
+            )
+            send_maintenance_alert(
+                "robase-bloxswaps-audit-unavailable",
+                "ROBASE/BloxSwaps identity audit could not complete: "
+                f"{type(audit_error).__name__}. Cash opportunities remain fail-closed.",
+                cooldown_seconds=6 * 60 * 60,
+            )
+    return ScanFeedResult(
+        listings=listings,
+        stats=stats,
+        discovered_ids=discovered_ids,
+        watch_not_found_ids=watch_not_found_ids,
+        mapping_audit=mapping_audit,
+    )
+
+
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     scan_modes = resolve_scan_modes(
@@ -4996,122 +5183,29 @@ def scan_once(include_backlog_rechecks=True):
     history_store = history_data.history_store
     public_history_store = history_data.public_history_store
 
-    aliases = load_aliases()
-    print(f"[aliases] Loaded {len(aliases)} reviewed item aliases")
-    print("[stage] Loading seen-offer and pending-recheck state")
-    seen_ads = load_seen_ads()
-    pending_ids = load_pending_ids()
-    pending_schedule = load_pending_recheck_schedule()
-    # Retire legacy offer-review/deferred queues. Only technical feed and
-    # Telegram-delivery failures remain retryable; unknown items are tracked
-    # once in the knowledge registry and watched by fingerprint instead.
-    retryable_reasons = {"unparsed_feed", "telegram_failure"}
-    retired_pending = []
-    for pending_id in list(pending_ids):
-        reason = (pending_schedule.get(pending_id) or {}).get("reason")
-        if reason not in retryable_reasons:
-            retired_pending.append(pending_id)
-            pending_ids.pop(pending_id, None)
-            pending_schedule.pop(pending_id, None)
-    if retired_pending:
-        if seen_ads is None:
-            seen_ads = set()
-        seen_ads.update(retired_pending)
-        save_seen_ads(seen_ads)
-        save_pending_ids(pending_ids)
-        save_pending_recheck_schedule(pending_schedule)
-        print(
-            f"[state] Closed {len(retired_pending)} legacy review/deferred offer IDs; "
-            "no offer-level manual-review backlog remains."
-        )
-    if seen_ads is not None:
-        new_pending_seen = set(pending_ids) - seen_ads
-        if new_pending_seen:
-            seed_pending_ids_as_seen(seen_ads, new_pending_seen, pending_schedule)
-            save_seen_ads(seen_ads)
-            print(
-                f"[state] Seeded {len(new_pending_seen)} pending IDs into the seen set; "
-                "they remain queued for bounded rechecks."
-            )
-    all_due_pending_ids = due_pending_ids_for_scan(
-        pending_ids, pending_schedule, limit=0
+    persistent_state = _load_scan_persistent_state(
+        include_backlog_rechecks,
+        values_snapshot_changed,
+        cash_prices_changed,
     )
-    run_backlog_rechecks = include_backlog_rechecks or values_snapshot_changed or cash_prices_changed
-    due_pending_ids = (
-        due_pending_ids_for_scan(
-            pending_ids, pending_schedule, force=values_snapshot_changed or cash_prices_changed
-        )
-        if run_backlog_rechecks else {}
-    )
-    watch_state = load_watch_state()
-    last_success_ts = _last_successful_scan_timestamp()
-    if seen_ads is not None and not pending_ids and scan_checkpoint_requires_cold_start(last_success_ts):
-        age_seconds = max(0.0, time.time() - last_success_ts) if last_success_ts else None
-        age_label = f"{age_seconds / 3600:.1f}h" if age_seconds is not None else "unknown age"
-        print(
-            f"[state] Last successful scan is stale ({age_label}); "
-            "switching to a bounded 60-minute cold-start window instead of replaying old listings."
-        )
-        seen_ads = None
-    # If the seen file was lost but pending items survive, do not cold-start:
-    # search due unresolved IDs before establishing a baseline.
-    if seen_ads is None and include_backlog_rechecks and (pending_ids or watch_state):
-        seen_ads = set()
-    print(
-        f"[state] Pending listings: {len(pending_ids)} total; "
-        f"{len(all_due_pending_ids)} due; "
-        f"{len(due_pending_ids)} selected for this scan (cap={MAX_PENDING_RECHECK_PER_SCAN})"
-    )
-    print("[stage] Fetching BloxSwaps listings and cursor pages")
-    watch_recheck_budget = max(
-        0, MAX_PENDING_RECHECK_PER_SCAN - len(due_pending_ids)
-    )
-    bloxswaps_watch_ids = (
-        select_watch_recheck_ids(watch_state, watch_recheck_budget)
-        if run_backlog_rechecks else []
-    )
-    scan_mode = (
-        "values-refresh-backlog" if values_snapshot_changed
-        else "cash-price-refresh-backlog" if cash_prices_changed
-        else "backlog-recheck" if include_backlog_rechecks
-        else "fast-new-feed"
-    )
-    print(f"[scan-mode] {scan_mode}; direct_recheck_budget={MAX_PENDING_RECHECK_PER_SCAN}; watch_batch={len(bloxswaps_watch_ids)}; pending_cursor_lookahead={MAX_BACKLOG_RECHECK_PAGES}")
-    listings, stats, discovered_ids = fetch_bloxswaps_all(
-        seen_ads, due_pending_ids.keys(), bloxswaps_watch_ids
-    )
-    watch_not_found_ids = set(stats.get("watch_not_found_ids", []))
-    if bloxswaps_watch_ids:
-        for ad_id in bloxswaps_watch_ids:
-            if ad_id in watch_not_found_ids:
-                watch_state.pop(ad_id, None)
-            elif ad_id in watch_state:
-                # Rotate every attempted ID, including unchanged or temporarily
-                # unresolved records, so a bad record cannot starve later entries.
-                watch_state[ad_id]["updated_at"] = time.time()
-        save_watch_state(watch_state)
-    mapping_audit = None
-    if CASH_FILTER:
-        try:
-            mapping_audit = build_robase_bloxswaps_map(cash_catalog, fetch_bloxswaps_items_map())
-            cash_catalog["bloxswaps_exact_map"] = mapping_audit.get("bloxswaps_exact_map", {})
-            mapping_gaps = mapping_audit.get("missing", []) + mapping_audit.get("ambiguous", [])
-            if mapping_gaps:
-                send_maintenance_alert(
-                    "robase-bloxswaps-mapping-gaps",
-                    "ROBASE/BloxSwaps weapon identity mapping has unresolved items: "
-                    + "; ".join(str(value) for value in mapping_gaps[:20])
-                    + f"\nUnresolved: {len(mapping_gaps)}. Affected listings are excluded; no identities are guessed.",
-                    cooldown_seconds=6 * 60 * 60,
-                )
-        except Exception as audit_error:
-            print(f"[robase-bloxswaps] coverage audit unavailable: {type(audit_error).__name__}")
-            send_maintenance_alert(
-                "robase-bloxswaps-audit-unavailable",
-                "ROBASE/BloxSwaps identity audit could not complete: "
-                f"{type(audit_error).__name__}. Cash opportunities remain fail-closed.",
-                cooldown_seconds=6 * 60 * 60,
-            )
+    seen_ads = persistent_state.seen_ads
+    pending_ids = persistent_state.pending_ids
+    pending_schedule = persistent_state.pending_schedule
+    watch_state = persistent_state.watch_state
+    all_due_pending_ids = persistent_state.all_due_pending_ids
+    due_pending_ids = persistent_state.due_pending_ids
+    last_success_ts = persistent_state.last_success_ts
+    run_backlog_rechecks = persistent_state.run_backlog_rechecks
+    bloxswaps_watch_ids = persistent_state.watch_recheck_ids
+    scan_mode = persistent_state.scan_mode
+
+    feed_result = _fetch_scan_feed_and_audit(persistent_state, cash_catalog)
+    listings = feed_result.listings
+    stats = feed_result.stats
+    discovered_ids = feed_result.discovered_ids
+    watch_not_found_ids = feed_result.watch_not_found_ids
+    mapping_audit = feed_result.mapping_audit
+
     if daily_shadow_mode:
         if not CASH_FILTER or not cash_catalog or not cash_catalog.get("bloxswaps_exact_map"):
             print("[daily-shadow] FAIL-CLOSED: cash mode or exact BloxSwaps identity map is unavailable.")
