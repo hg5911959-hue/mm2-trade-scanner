@@ -14,7 +14,7 @@ import signal
 import unicodedata
 from datetime import datetime, timezone
 import urllib.request
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from pathlib import Path
 from urllib.parse import urljoin, urlencode, urlsplit, urlunsplit, parse_qs
 
