@@ -5330,6 +5330,36 @@ def _run_daily_chart_shadow(listings, cash_catalog) -> int:
     return 0
 
 
+def _load_discord_listings_for_scan(listings):
+    """Merge the optional Discord source only outside the ROBASE cash pipeline."""
+    if CASH_FILTER:
+        print("[discord-parser] skipped: ROBASE cash mode accepts BloxSwaps offers only")
+        return listings
+    from discord_parser import load_discord_listings
+    try:
+        discord_listings, discord_rejected = load_discord_listings()
+    except Exception as discord_error:
+        print(
+            f"[discord-parser] source skipped safely: {type(discord_error).__name__}; "
+            "BloxSwaps scan continues"
+        )
+        return listings
+    if discord_listings:
+        existing_ids = {str(row.get("id") or "") for row in listings}
+        fresh_discord = [
+            row for row in discord_listings
+            if str(row.get("id") or "") not in existing_ids
+        ]
+        listings.extend(fresh_discord)
+    else:
+        fresh_discord = []
+    print(
+        f"[discord-parser] parsed={len(discord_listings)} "
+        f"new_for_batch={len(fresh_discord)} rejected={discord_rejected}"
+    )
+    return listings
+
+
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     scan_modes = resolve_scan_modes(
