@@ -52,7 +52,6 @@ class RBLXValueDailyWorkflowBudgetTests(IsolatedDataTestCase):
 
     def test_snapshot_archive_waits_for_successful_budget_persistence(self):
         start = self.workflow.index("  archive:")
-        end = self.workflow.index("    name:", start + 5)
-        block = self.workflow[start:end]
+        block = self.workflow[start:]
         self.assertIn("needs: [collect, persist-budget]", block)
         self.assertIn("needs.persist-budget.result == 'success'", block)
