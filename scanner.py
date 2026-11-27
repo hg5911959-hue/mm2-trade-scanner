@@ -4498,6 +4498,19 @@ def scan_once(include_backlog_rechecks=True):
                 values_snapshot_changed = True
         except Exception as history_error:
             print(f"[market-history] Snapshot storage skipped safely: {type(history_error).__name__}")
+    public_history_store = None
+    if (
+        CASH_FILTER and not testing_mode
+        and os.environ.get("DRY_RUN", "").strip().casefold() != "true"
+    ):
+        try:
+            from tools.public_dashboard_history import PublicDashboardHistory
+            public_history_store = PublicDashboardHistory()
+        except Exception as history_error:
+            print(
+                "[public-dashboard-history] Store initialization skipped safely: "
+                f"{type(history_error).__name__}"
+            )
     aliases = load_aliases()
     print(f"[aliases] Loaded {len(aliases)} reviewed item aliases")
     print("[stage] Loading seen-offer and pending-recheck state")
@@ -4878,6 +4891,15 @@ def scan_once(include_backlog_rechecks=True):
             print(f"[market-history] Listings recorded or refreshed: {stored}")
         except Exception as history_error:
             print(f"[market-history] Listing storage skipped safely: {type(history_error).__name__}")
+    if public_history_store is not None:
+        try:
+            stored = public_history_store.record_listings(listings)
+            print(f"[public-dashboard-history] Public BloxSwaps listings recorded or refreshed: {stored}")
+        except Exception as history_error:
+            print(
+                "[public-dashboard-history] Listing storage skipped safely: "
+                f"{type(history_error).__name__}"
+            )
     duplicate_count = parsed_count - len(listings)
     if duplicate_count:
         print(f"[dedupe] Ignored {duplicate_count} duplicate listing row(s) in this scan batch.")
@@ -5356,6 +5378,14 @@ def scan_once(include_backlog_rechecks=True):
                 history_store.record_opportunity(result)
             except Exception as history_error:
                 print(f"[market-history] Opportunity storage skipped safely: {type(history_error).__name__}")
+        if public_history_store is not None:
+            try:
+                public_history_store.record_opportunity(result)
+            except Exception as history_error:
+                print(
+                    "[public-dashboard-history] Opportunity storage skipped safely: "
+                    f"{type(history_error).__name__}"
+                )
         # Delivery is deferred until all candidates are ranked.
 
     if CASH_FILTER and cash_blocker_counts:
