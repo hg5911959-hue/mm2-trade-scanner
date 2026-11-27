@@ -1,9 +1,9 @@
 # Project Status and Resume Checkpoint
 
-Last verified: 2026-11-27 21:16 UTC  
+Last verified: 2026-11-27 21:28 UTC  
 Repository: `hg5911959-hue/mm2-trade-scanner`  
 Production branch: `main`  
-Main baseline at checkpoint: PR #261 merged as `f7169b2d5bb40f489749e43f37a0d97f6f2e7b21`, PR #262 merged as `89eeec4e9abdeeca3b9d73d44c8eea8c93f16691`, PR #263 merged as `9bf3394196bc9ab3a75e6e9a22a1476419e03b0e`, and PR #264 merged as `41505ac92417e9630a003ba2a57c7a5c481b40ea`, and PR #265 merged as `957f31c866e5ac49b7fafc43d688c1b0c59ce439`; the RBLXValue reference card, archive policy, 5% cash-margin gate, and single-location Supreme/Stability display are on `main`.
+Main baseline at checkpoint: PR #261 merged as `f7169b2d5bb40f489749e43f37a0d97f6f2e7b21`, PR #262 merged as `89eeec4e9abdeeca3b9d73d44c8eea8c93f16691`, PR #263 merged as `9bf3394196bc9ab3a75e6e9a22a1476419e03b0e`, and PR #264 merged as `41505ac92417e9630a003ba2a57c7a5c481b40ea`, and PR #265 merged as `957f31c866e5ac49b7fafc43d688c1b0c59ce439`, and PR #266 merged as `232dc8ce3c5eef76a362ab80c0f2bf041db9d50f`; the RBLXValue reference card, archive policy, 5% cash-margin gate, and single-location Supreme/Stability display are on `main`.
 
 > This file is a durable handoff, not a substitute for live verification. At the start of every new work session, re-check the current `main` SHA, open pull requests, latest GitHub Actions runs, and the `state` branch before editing.
 
@@ -25,7 +25,7 @@ Main baseline at checkpoint: PR #261 merged as `f7169b2d5bb40f489749e43f37a0d97f
 - ROBASE catalogue: 222/222 item pages present and freshly verified in the latest persisted snapshot.
 - Chroma.gg 7-day price: 200/222 items have a price.
 - Cash eligibility: 189/222 items also meet the 3+ sales sample threshold. The remaining 22 have no 7-day price; 11 have fewer than 3 sales. They are blocked rather than assigned guessed/fallback prices.
-- RBLXValue: 214/214 exact weapon identities and 214/214 numeric `value_source_b` Supreme entries; Stability is available for 212/214 (missing for Seer and Xmas, shown as unavailable rather than inferred). Latest archive snapshot `2026-11-27T20:06:06Z` (dataset `last_updated=2026-11-27 12:02:34`), 1,926 history rows. The manifest limits these fields to optional Telegram reference display, never cash valuation/eligibility/ranking/alert decisions. The authorization metadata is based on the user-provided written statement; its external authenticity has not been independently verified. Scheduled updates remain 11:30 and 23:30 UTC (12:30 and 00:30 Algeria).
+- RBLXValue: 214/214 exact weapon identities and 214/214 numeric `value_source_b` Supreme entries; Stability is available for 212/214 (missing for Seer and Xmas, shown as unavailable rather than inferred). Latest archive snapshot `2026-11-27T21:26:48Z` (dataset `last_updated=2026-11-27 12:02:34`), 2,140 history rows. The manifest limits these fields to optional Telegram reference display, never cash valuation/eligibility/ranking/alert decisions. The authorization metadata is based on the user-provided written statement; its external authenticity has not been independently verified. Scheduled updates remain 11:30 and 23:30 UTC (12:30 and 00:30 Algeria). The rolling request budget is now persisted on the archive branch: 12 requests in the last 24 hours against the hard limit of 60; it records timestamps and workflow labels only, not the API key or its fingerprint.
 - Latest persisted ROBASE snapshot after post-PR-264 run `46067478167`: `2026-11-27T21:07:01Z`; all 222 rows were checked, 200 have a Chroma.gg 7D price, and 189 meet the 3+ sales sample.
 
 ## Reliability and live verification
@@ -59,6 +59,7 @@ Main baseline at checkpoint: PR #261 merged as `f7169b2d5bb40f489749e43f37a0d97f
 - PR #263 — corrected cash Telegram wording to state that Chroma.gg 7D prices are seller proceeds after marketplace fees, with additional costs/slippage excluded; added a regression test.
 - PR #264 — removed duplicate inline Supreme and Stability copies from Telegram item lines; the RBLXValue-sourced values now appear only once in the boxed `REFERENCE INFO ONLY` card. Regression test passed with 751 tests twice plus Ruff; ROBASE Pricing Tests also passed. Merged as `41505ac9` and verified in post-merge live run `46067478167`.
 - PR #265 — test-only regression coverage for `format_opportunity_digest`, ensuring legacy inline Supreme/Stability details are suppressed and the reference card appears once. 752 tests passed twice plus Ruff on PR head and merged main. Merged as `957f31c8`.
+- PR #266 — enforced the rolling 60-request / 24-hour RBLXValue budget in the daily archive collector, counting retries before network I/O. Budget is restored and validated before collection, uploaded even on collection failure, then persisted in a separate no-secret job; snapshot publication waits for successful budget persistence. PR-head validation: 760 tests twice plus Ruff. Merged as `232dc8ce`; first real post-merge archive run `46070296288` succeeded in all 3 jobs and used 12/60 requests.
 
 ## Open or experimental work
 
@@ -70,10 +71,9 @@ Main baseline at checkpoint: PR #261 merged as `f7169b2d5bb40f489749e43f37a0d97f
 ## Remaining release checks
 
 1. Manually confirm the two quarantined Telegram messages; the system intentionally will not auto-resend them.
-2. Monitor the next scheduled RBLXValue archive update at 23:30 UTC / 00:30 Algeria time.
-3. Continue monitoring multiple chained scans after PR #264 production verification; run `46067478167` has already completed with successful state persistence.
-4. Confirm the next RBLXValue archive refresh at 23:30 UTC / 00:30 Algeria and verify the updated 214/214 value and Stability coverage.
-5. Continue routine checks of price freshness, feed pagination, Telegram latency, and state persistence on subsequent chained scans.
+2. Verify the post-PR-266 scanner live run `46070296286`, currently queued behind active chain run `46070110960`; do not overlap scans.
+3. Monitor the next scheduled RBLXValue archive update at 23:30 UTC / 00:30 Algeria time and confirm the rolling budget advances from the current 12/60.
+4. Continue routine checks of price freshness, feed pagination, Telegram latency, state persistence, and the dashboard/watchdog chain.
 
 ## Resume protocol for future conversations
 
