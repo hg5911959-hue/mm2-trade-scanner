@@ -127,3 +127,24 @@ class BloxSwapsApiAdapterTests(IsolatedDataTestCase):
         self.assertEqual(stats["malformed_candidate_count"], 1)
         self.assertEqual(stats["unidentified_feed_record_count"], 1)
         self.assertTrue(stats["pagination_complete"])
+
+    def test_api_adapter_preserves_a_single_string_wildcard_as_one_token(self):
+        post = {
+            "id": "post-wildcard-string",
+            "user": {"robloxUserId": "123", "robloxUsername": "trader"},
+            "tradePostItems": [
+                {"itemDetailsId": "a", "quantity": 1, "tradeRole": "OFFERED"},
+                {"itemDetailsId": "b", "quantity": 1, "tradeRole": "REQUESTED"},
+            ],
+            "requestedWildcards": "Offres",
+        }
+        item_map = {
+            "a": {"displayName": "A", "slug": "a", "rarity": "GODLY", "type": "Knife"},
+            "b": {"displayName": "B", "slug": "b", "rarity": "GODLY", "type": "Knife"},
+        }
+        listing = api_trade_post_to_listing(
+            post, item_map, strict_quantity=strict_quantity,
+            stable_listing_id=lambda *args: "stable",
+            legacy_stable_listing_id=lambda *args: "legacy",
+        )
+        self.assertEqual(listing["requested_wildcards"], ["Offres"])
