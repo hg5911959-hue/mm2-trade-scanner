@@ -102,7 +102,7 @@ jobs:
   persist-budget:
     name: Persist rolling API request budget (no API secret)
     needs: collect
-    if: always() && needs.collect.result != 'cancelled'
+    if: always()
     permissions:
       contents: write
     runs-on: ubuntu-latest
