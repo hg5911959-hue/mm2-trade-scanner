@@ -4625,8 +4625,6 @@ def scan_once(include_backlog_rechecks=True):
     else:
         print("[stage] Third-party valuation sources disabled; cash eligibility uses ROBASE + BloxSwaps only")
     if value_profit_shadow_mode:
-        if CASH_FILTER:
-            raise RuntimeError("Value-profit shadow requires CASH_FILTER=false; refusing mixed valuation modes.")
         archive_path = os.environ.get(
             "RBLXVALUE_DAILY_ARCHIVE_FILE",
             "rblxvalue-archive/data/rblxvalue_latest.json",
