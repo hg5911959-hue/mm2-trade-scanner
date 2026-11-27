@@ -1,6 +1,7 @@
 """Telegram message formatting boundaries and conservative delivery transport."""
 from __future__ import annotations
 
+import html as html_lib
 import json
 import time
 import urllib.request
@@ -13,6 +14,14 @@ class TelegramDeliveryUncertain(RuntimeError):
 
 class TelegramHTML(str):
     """Trusted, escaped Telegram HTML. Plain text is never interpreted as markup."""
+
+    def __add__(self, other):
+        suffix = str(other) if isinstance(other, TelegramHTML) else html_lib.escape(str(other), quote=False)
+        return TelegramHTML(str(self) + suffix)
+
+    def __radd__(self, other):
+        prefix = str(other) if isinstance(other, TelegramHTML) else html_lib.escape(str(other), quote=False)
+        return TelegramHTML(prefix + str(self))
 
 
 def send_telegram(
