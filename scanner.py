@@ -5672,7 +5672,7 @@ def _build_opportunity_telegram_message(op, market_info, values):
         secondary_note = compare_secondary_values(listing["give_items"] + listing["receive_items"], values)
         if secondary_note:
             message += "\nSECOND-SOURCE CHECK (MM2Values): " + secondary_note
-return message
+    return message
 
 
 def scan_once(include_backlog_rechecks=True):
