@@ -4291,6 +4291,98 @@ def evaluate_cash_listing_robase_only(listing, cash_catalog):
             "receive_demand_score": None, "receive_stability_score": None}, []
 
 
+def _prepare_cash_listing_item(item, values, aliases, exact_map, items_by_slug):
+    """Validate one item against exact RBLXValue identity and a fresh ROBASE price."""
+    raw_name = str(item.get("name") or "Unknown")
+    catalog_slug = normalize_slug(item.get("catalog_slug") or "")
+    catalog_type = str(item.get("catalog_type") or "").strip().casefold()
+    if not catalog_slug:
+        return None, f"{raw_name} (BloxSwaps catalogue slug missing)"
+    if catalog_type not in {"knife", "gun"}:
+        return None, f"{raw_name} (not a ROBASE weapon)"
+
+    mapping = exact_map.get(catalog_slug)
+    if not isinstance(mapping, dict):
+        return None, f"{raw_name} (no exact ROBASE/RBLXValue weapon mapping)"
+    record, match_source, candidates = resolve_value_record(
+        raw_name, values, aliases, item=item
+    )
+    variants = record.get("variants") or [record] if record else []
+    if (
+        not record or match_source not in {"slug", "metadata", "exact"}
+        or len(variants) != 1
+        or normalize_slug(variants[0].get("slug") or "") != mapping.get("rblx_slug")
+    ):
+        suffix = f": {', '.join(candidates)}" if candidates else ""
+        return None, f"{raw_name} (RBLXValue identity mismatch{suffix})"
+
+    selected = variants[0]
+    selected_type = str(selected.get("type") or "").strip().casefold()
+    selected_category = str(selected.get("category") or "").strip().casefold()
+    expected_type = str(mapping.get("type") or "").strip().casefold()
+    expected_category = str(mapping.get("category") or "").strip().casefold()
+    if selected_type not in {"knife", "gun"} or selected_type != expected_type or selected_category != expected_category:
+        return None, f"{raw_name} (RBLXValue type/rarity mismatch)"
+
+    robase_slug = str(mapping.get("robase_slug") or "").strip().casefold()
+    cash_record = items_by_slug.get(robase_slug)
+    if not cash_record:
+        return None, f"{raw_name} (ROBASE source slug missing)"
+    canonical_name = str(mapping.get("robase_name") or cash_record.get("name") or "").strip()
+    if not canonical_name:
+        return None, f"{raw_name} (ROBASE canonical name missing)"
+    if cash_record.get("status") != "verified" or not cash_price_is_fresh(
+        cash_record, max_age_days=CASH_MAX_AGE_DAYS
+    ):
+        return None, f"{canonical_name} (ROBASE price not freshly verified)"
+
+    stability = _normalize_stability(selected.get("stability"))
+    if stability and stability.casefold() == "untradeable":
+        return None, f"{canonical_name} (RBLXValue marks item untradeable)"
+
+    quantity = item.get("quantity")
+    qmin = item.get("quantity_min")
+    qmax = item.get("quantity_max")
+    quantity_source = item.get("quantity_source", "implicit_single")
+    try:
+        qmin = strict_quantity(
+            qmin if qmin is not None else (quantity if quantity is not None else 1)
+        )
+        if qmax is None and quantity is not None and quantity_source != "uncertain":
+            qmax = quantity
+        qmax = strict_quantity(qmax) if qmax is not None else None
+    except (TypeError, ValueError):
+        qmin, qmax = 1, None
+    if quantity_source == "uncertain" or qmax is None or qmax != qmin:
+        return None, f"{canonical_name} (quantity not confirmed exactly)"
+
+    value, value_status = _supreme_numeric_value(selected)
+    category = str(selected.get("category") or "").strip()
+    item_type = str(selected.get("type") or "").strip()
+    identity = "/".join(part for part in (category, item_type) if part)
+    display_name = f"{canonical_name} [{identity}]" if identity else canonical_name
+    return {
+        "name": canonical_name,
+        "canonical_name": canonical_name,
+        "display_name": display_name,
+        "robase_slug": robase_slug,
+        "quantity_min": qmin,
+        "quantity_max": qmax,
+        "stability": stability or "N/A",
+        "rblx_value": _rblxvalue_blended_value(selected),
+        "mm2values_value": _positive_numeric_value(selected.get("secondary_value")),
+        "supreme_value": _positive_numeric_value(selected.get("raw_source_value")),
+        "rblx_value_status": value_status,
+        "rblx_demand": _optional_bounded_int(selected.get("demand"), 0, 10),
+        "rblx_rarity": _optional_bounded_int(selected.get("rarity"), 0, 10),
+        "rblx_category": category,
+        "rblx_type": item_type,
+        "rblx_slug": normalize_slug(selected.get("slug") or ""),
+        "robase_identity_source": mapping.get("robase_identity_source"),
+        "robase_price_display": cash_record.get("price_display"),
+    }, None
+
+
 def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=False):
     """Evaluate only exact BloxSwaps weapon variants present in ROBASE and RBLXValue."""
     if str(listing.get("source") or "bloxswaps").strip().casefold() not in {"bloxswaps", "bloxswaps.com"}:
@@ -4308,104 +4400,13 @@ def evaluate_cash_listing(listing, values, aliases, cash_catalog, estimate_mode=
     missing = []
     for side, field in (("give", "give_items"), ("receive", "receive_items")):
         for item in listing.get(field, []):
-            raw_name = str(item.get("name") or "Unknown")
-            catalog_slug = normalize_slug(item.get("catalog_slug") or "")
-            catalog_type = str(item.get("catalog_type") or "").strip().casefold()
-            if not catalog_slug:
-                missing.append(f"{raw_name} (BloxSwaps catalogue slug missing)")
-                continue
-            if catalog_type not in {"knife", "gun"}:
-                missing.append(f"{raw_name} (not a ROBASE weapon)")
-                continue
-
-            mapping = exact_map.get(catalog_slug)
-            if not isinstance(mapping, dict):
-                missing.append(f"{raw_name} (no exact ROBASE/RBLXValue weapon mapping)")
-                continue
-            record, match_source, candidates = resolve_value_record(
-                raw_name, values, aliases, item=item
+            prepared_item, missing_reason = _prepare_cash_listing_item(
+                item, values, aliases, exact_map, items_by_slug
             )
-            variants = record.get("variants") or [record] if record else []
-            if (
-                not record or match_source not in {"slug", "metadata", "exact"}
-                or len(variants) != 1
-                or normalize_slug(variants[0].get("slug") or "") != mapping.get("rblx_slug")
-            ):
-                suffix = f": {', '.join(candidates)}" if candidates else ""
-                missing.append(f"{raw_name} (RBLXValue identity mismatch{suffix})")
-                continue
-
-            selected = variants[0]
-            selected_type = str(selected.get("type") or "").strip().casefold()
-            selected_category = str(selected.get("category") or "").strip().casefold()
-            expected_type = str(mapping.get("type") or "").strip().casefold()
-            expected_category = str(mapping.get("category") or "").strip().casefold()
-            if selected_type not in {"knife", "gun"} or selected_type != expected_type or selected_category != expected_category:
-                missing.append(f"{raw_name} (RBLXValue type/rarity mismatch)")
-                continue
-
-            robase_slug = str(mapping.get("robase_slug") or "").strip().casefold()
-            cash_record = items_by_slug.get(robase_slug)
-            if not cash_record:
-                missing.append(f"{raw_name} (ROBASE source slug missing)")
-                continue
-            canonical_name = str(mapping.get("robase_name") or cash_record.get("name") or "").strip()
-            if not canonical_name:
-                missing.append(f"{raw_name} (ROBASE canonical name missing)")
-                continue
-            if cash_record.get("status") != "verified" or not cash_price_is_fresh(
-                cash_record, max_age_days=CASH_MAX_AGE_DAYS
-            ):
-                missing.append(f"{canonical_name} (ROBASE price not freshly verified)")
-                continue
-
-            stability = _normalize_stability(selected.get("stability"))
-            if stability and stability.casefold() == "untradeable":
-                missing.append(f"{canonical_name} (RBLXValue marks item untradeable)")
-                continue
-
-            quantity = item.get("quantity")
-            qmin = item.get("quantity_min")
-            qmax = item.get("quantity_max")
-            quantity_source = item.get("quantity_source", "implicit_single")
-            try:
-                qmin = strict_quantity(
-                    qmin if qmin is not None else (quantity if quantity is not None else 1)
-                )
-                if qmax is None and quantity is not None and quantity_source != "uncertain":
-                    qmax = quantity
-                qmax = strict_quantity(qmax) if qmax is not None else None
-            except (TypeError, ValueError):
-                qmin, qmax = 1, None
-            if quantity_source == "uncertain" or qmax is None or qmax != qmin:
-                missing.append(f"{canonical_name} (quantity not confirmed exactly)")
-                continue
-
-            value, value_status = _supreme_numeric_value(selected)
-            category = str(selected.get("category") or "").strip()
-            item_type = str(selected.get("type") or "").strip()
-            identity = "/".join(part for part in (category, item_type) if part)
-            display_name = f"{canonical_name} [{identity}]" if identity else canonical_name
-            prepared[side].append({
-                "name": canonical_name,
-                "canonical_name": canonical_name,
-                "display_name": display_name,
-                "robase_slug": robase_slug,
-                "quantity_min": qmin,
-                "quantity_max": qmax,
-                "stability": stability or "N/A",
-                "rblx_value": _rblxvalue_blended_value(selected),
-                "mm2values_value": _positive_numeric_value(selected.get("secondary_value")),
-                "supreme_value": _positive_numeric_value(selected.get("raw_source_value")),
-                "rblx_value_status": value_status,
-                "rblx_demand": _optional_bounded_int(selected.get("demand"), 0, 10),
-                "rblx_rarity": _optional_bounded_int(selected.get("rarity"), 0, 10),
-                "rblx_category": category,
-                "rblx_type": item_type,
-                "rblx_slug": normalize_slug(selected.get("slug") or ""),
-                "robase_identity_source": mapping.get("robase_identity_source"),
-                "robase_price_display": cash_record.get("price_display"),
-            })
+            if missing_reason:
+                missing.append(missing_reason)
+            else:
+                prepared[side].append(prepared_item)
 
     if missing:
         return None, missing
