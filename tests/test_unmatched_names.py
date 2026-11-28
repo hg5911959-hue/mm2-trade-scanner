@@ -1,5 +1,8 @@
+from datetime import datetime, timedelta, timezone
+
 from test_support import IsolatedDataTestCase
 import scanner
+from tools.unmatched_registry import prune_stale_unmatched_names
 
 
 class UnmatchedNameRegistryTests(IsolatedDataTestCase):
