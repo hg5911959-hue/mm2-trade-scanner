@@ -5382,6 +5382,142 @@ def _assign_first_seen_timestamps(
     return first_seen_ads, changed
 
 
+def _apply_cold_start_baseline(
+    stats, discovered_ids, listings, seen_ads, pending_ids, pending_schedule,
+    cash_filter: bool, cash_catalog,
+) -> tuple[set, bool]:
+    """Persist a cold-start baseline and signal the no-recent-listings early exit."""
+    if not stats.get("cold_start"):
+        return set(seen_ads or []), False
+
+    seed_ids = set(str(value) for value in stats.get("cold_start_seed_ids", discovered_ids))
+    save_seen_ads(seed_ids)
+    seen_ads = seed_ids
+    seed_pending_ids_as_seen(seen_ads, pending_ids, pending_schedule)
+    save_seen_ads(seen_ads)
+    print(
+        f"[state] Cold-start baseline saved for {len(seed_ids)} historical posts; "
+        f"{len(stats.get('cold_start_recent_ids', []))} posts refreshed within 60 minutes will be evaluated."
+    )
+    if listings:
+        return seen_ads, False
+
+    record_success_if_complete(stats)
+    if cash_filter:
+        save_cash_catalog_snapshot(cash_catalog["sha256"])
+    write_step_summary("Cold-start baseline saved; no verifiably recent post was eligible for evaluation.")
+    return seen_ads, True
+
+
+def _reconcile_feed_pending_state(stats, seen_ads, pending_ids, pending_schedule):
+    """Schedule technical parser retries and retire confirmed non-actionable IDs."""
+    pending_count_before = len(pending_ids)
+    for ad_id in stats.get("unparsed_ad_ids", []):
+        key = str(ad_id)
+        pending_ids.setdefault(key, time.time())
+        if key in seen_ads:
+            seen_ads.discard(key)
+            save_seen_ads(seen_ads)
+        if key not in pending_schedule or pending_schedule[key].get("reason") != "unparsed_feed":
+            previous_attempts = int(pending_schedule.get(key, {}).get("attempts", 0))
+            pending_schedule[key] = {
+                "attempts": previous_attempts,
+                "next_check_at": time.time(),
+                "reason": "unparsed_feed",
+            }
+    if len(pending_ids) != pending_count_before:
+        save_pending_ids(pending_ids)
+        save_pending_recheck_schedule(pending_schedule)
+
+    addition_ids = set(stats.get("addition_ids", []))
+    single_sided_ids = set(stats.get("single_sided_ids", []))
+    pending_not_found_ids = set(stats.get("pending_not_found_ids", []))
+    non_actionable_ids = addition_ids | single_sided_ids | pending_not_found_ids
+    if non_actionable_ids:
+        seen_ads.update(non_actionable_ids)
+        for ad_id in non_actionable_ids:
+            key = str(ad_id)
+            pending_ids.pop(key, None)
+            pending_schedule.pop(key, None)
+        save_seen_ads(seen_ads)
+        save_pending_ids(pending_ids)
+        save_pending_recheck_schedule(pending_schedule)
+    return seen_ads, pending_ids, pending_schedule, addition_ids, single_sided_ids, pending_not_found_ids
+
+
+def _log_feed_reconciliation_diagnostics(stats) -> None:
+    """Report feed items that were deliberately deferred or retired."""
+    pending_not_found_ids = stats.get("pending_not_found_ids", [])
+    single_sided_ids = stats.get("single_sided_ids", [])
+    if pending_not_found_ids:
+        print(
+            f"[pending] Removed {len(pending_not_found_ids)} unavailable listing(s) "
+            "after authoritative direct 404 lookups."
+        )
+    if single_sided_ids:
+        print(
+            f"[bloxswaps] Excluded {len(single_sided_ids)} single-sided posts; "
+            "they are not trade opportunities and will not be retried as parser failures."
+        )
+    if stats.get("watch_not_found_ids"):
+        print(
+            f"[watch] Removed {len(stats['watch_not_found_ids'])} expired watched listing(s) "
+            "after authoritative direct 404 lookups."
+        )
+    if stats.get("watch_remaining_ids"):
+        print(
+            f"[watch] {len(stats['watch_remaining_ids'])} direct lookups were inconclusive; "
+            "they remain in the rotating watch queue for a later retry."
+        )
+    if stats.get("pending_remaining_ids"):
+        print(
+            f"[pending] {len(stats['pending_remaining_ids'])} unresolved ad ID(s) "
+            "were not found before the pagination boundary/cap."
+        )
+        if stats.get("pagination_complete"):
+            send_maintenance_alert(
+                "pending-ads-not-found",
+                f"Could not locate {len(stats['pending_remaining_ids'])} pending listing(s) "
+                "in the recent cursor pages. They remain queued for recheck.",
+                cooldown_seconds=21600,
+            )
+    if stats.get("backlog_page_limit_reached"):
+        print(
+            f"[pending] Backlog page lookahead capped at {MAX_BACKLOG_RECHECK_PAGES}; "
+            "unresolved IDs remain queued without blocking the new-feed boundary."
+        )
+
+
+def _handle_empty_scan_feed(stats, listings, cash_catalog, cash_filter: bool) -> bool:
+    """Handle verified empty/current feed outcomes; raise on unverifiable emptiness."""
+    if listings:
+        return False
+    update_metrics(increments={"parse_empty": 1})
+    html_issue_count = max(
+        int(stats.get("html_malformed_count", 0)),
+        int(stats.get("html_parse_warning_count", 0)),
+    )
+    if stats.get("seen_boundary_reached") and not stats.get("malformed_count") and not html_issue_count:
+        print("[bloxswaps] Feed is current: first visible offers were already processed.")
+        record_success_if_complete(stats)
+        if cash_filter:
+            save_cash_catalog_snapshot(cash_catalog["sha256"])
+        write_step_summary("Feed current: no new trade posts before the seen cursor boundary.")
+        return True
+    if stats["candidate_count"] > 0 and stats["addition_count"] == stats["candidate_count"]:
+        print(f"[bloxswaps] No eligible listings: all {stats['addition_count']} candidate cards contained Ajouts.")
+        record_success_if_complete(stats)
+        if cash_filter:
+            save_cash_catalog_snapshot(cash_catalog["sha256"])
+        write_step_summary("Successful scan: all current candidates excluded for Ajouts.")
+        return True
+    if stats["candidate_count"] == 0 and stats.get("pagination_source") == "html-only":
+        raise RuntimeError("[bloxswaps] No trade cards parsed; page structure may have changed or feed is empty.")
+    if stats["candidate_count"] == 0 and not stats.get("pagination_complete"):
+        raise RuntimeError("[bloxswaps] No feed entries parsed and pagination could not be verified.")
+    return False
+
+
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     scan_modes = resolve_scan_modes(
@@ -5446,115 +5582,19 @@ def scan_once(include_backlog_rechecks=True):
     )
     if first_seen_changed:
         save_first_seen_ads(first_seen_ads)
-    if stats.get("cold_start"):
-        seed_ids = set(str(value) for value in stats.get("cold_start_seed_ids", discovered_ids))
-        save_seen_ads(seed_ids)
-        seen_ads = seed_ids
-        seed_pending_ids_as_seen(seen_ads, pending_ids, pending_schedule)
-        save_seen_ads(seen_ads)
-        print(
-            f"[state] Cold-start baseline saved for {len(seed_ids)} historical posts; "
-            f"{len(stats.get('cold_start_recent_ids', []))} posts refreshed within 60 minutes will be evaluated."
-        )
-        if not listings:
-            record_success_if_complete(stats)
-            if CASH_FILTER:
-                save_cash_catalog_snapshot(cash_catalog["sha256"])
-            write_step_summary("Cold-start baseline saved; no verifiably recent post was eligible for evaluation.")
-            return
-    else:
-        seen_ads = set(seen_ads or [])
-    pending_count_before = len(pending_ids)
-    for ad_id in stats.get("unparsed_ad_ids", []):
-        key = str(ad_id)
-        pending_ids.setdefault(key, time.time())
-        if key in seen_ads:
-            seen_ads.discard(key)
-            save_seen_ads(seen_ads)
-        if key not in pending_schedule or pending_schedule[key].get("reason") != "unparsed_feed":
-            previous_attempts = int(pending_schedule.get(key, {}).get("attempts", 0))
-            pending_schedule[key] = {
-                "attempts": previous_attempts,
-                "next_check_at": time.time(),
-                "reason": "unparsed_feed",
-            }
-    if len(pending_ids) != pending_count_before:
-        save_pending_ids(pending_ids)
-        save_pending_recheck_schedule(pending_schedule)
-    addition_ids = set(stats.get("addition_ids", []))
-    single_sided_ids = set(stats.get("single_sided_ids", []))
-    pending_not_found_ids = set(stats.get("pending_not_found_ids", []))
-    non_actionable_ids = addition_ids | single_sided_ids | pending_not_found_ids
-    if non_actionable_ids:
-        seen_ads.update(non_actionable_ids)
-        for ad_id in non_actionable_ids:
-            key = str(ad_id)
-            pending_ids.pop(key, None)
-            pending_schedule.pop(key, None)
-        save_seen_ads(seen_ads)
-        save_pending_ids(pending_ids)
-        save_pending_recheck_schedule(pending_schedule)
-    if pending_not_found_ids:
-        print(
-            f"[pending] Removed {len(pending_not_found_ids)} unavailable listing(s) "
-            "after authoritative direct 404 lookups."
-        )
-    if single_sided_ids:
-        print(
-            f"[bloxswaps] Excluded {len(single_sided_ids)} single-sided posts; "
-            "they are not trade opportunities and will not be retried as parser failures."
-        )
-    if stats.get("watch_not_found_ids"):
-        print(
-            f"[watch] Removed {len(stats['watch_not_found_ids'])} expired watched listing(s) "
-            "after authoritative direct 404 lookups."
-        )
-    if stats.get("watch_remaining_ids"):
-        print(
-            f"[watch] {len(stats['watch_remaining_ids'])} direct lookups were inconclusive; "
-            "they remain in the rotating watch queue for a later retry."
-        )
-    if stats.get("pending_remaining_ids"):
-        print(
-            f"[pending] {len(stats['pending_remaining_ids'])} unresolved ad ID(s) "
-            "were not found before the pagination boundary/cap."
-        )
-        if stats.get("pagination_complete"):
-            send_maintenance_alert(
-                "pending-ads-not-found",
-                f"Could not locate {len(stats['pending_remaining_ids'])} pending listing(s) "
-                "in the recent cursor pages. They remain queued for recheck.",
-                cooldown_seconds=21600,
-            )
-    if stats.get("backlog_page_limit_reached"):
-        print(
-            f"[pending] Backlog page lookahead capped at {MAX_BACKLOG_RECHECK_PAGES}; "
-            "unresolved IDs remain queued without blocking the new-feed boundary."
-        )
-    if not listings:
-        update_metrics(increments={"parse_empty": 1})
-        html_issue_count = max(
-            int(stats.get("html_malformed_count", 0)),
-            int(stats.get("html_parse_warning_count", 0)),
-        )
-        if stats.get("seen_boundary_reached") and not stats.get("malformed_count") and not html_issue_count:
-            print("[bloxswaps] Feed is current: first visible offers were already processed.")
-            record_success_if_complete(stats)
-            if CASH_FILTER:
-                save_cash_catalog_snapshot(cash_catalog["sha256"])
-            write_step_summary("Feed current: no new trade posts before the seen cursor boundary.")
-            return
-        if stats["candidate_count"] > 0 and stats["addition_count"] == stats["candidate_count"]:
-            print(f"[bloxswaps] No eligible listings: all {stats['addition_count']} candidate cards contained Ajouts.")
-            record_success_if_complete(stats)
-            if CASH_FILTER:
-                save_cash_catalog_snapshot(cash_catalog["sha256"])
-            write_step_summary("Successful scan: all current candidates excluded for Ajouts.")
-            return
-        if stats["candidate_count"] == 0 and stats.get("pagination_source") == "html-only":
-            raise RuntimeError("[bloxswaps] No trade cards parsed; page structure may have changed or feed is empty.")
-        if stats["candidate_count"] == 0 and not stats.get("pagination_complete"):
-            raise RuntimeError("[bloxswaps] No feed entries parsed and pagination could not be verified.")
+    seen_ads, stop_after_cold_start = _apply_cold_start_baseline(
+        stats, discovered_ids, listings, seen_ads, pending_ids, pending_schedule,
+        CASH_FILTER, cash_catalog,
+    )
+    if stop_after_cold_start:
+        return
+    (
+        seen_ads, pending_ids, pending_schedule,
+        addition_ids, single_sided_ids, pending_not_found_ids,
+    ) = _reconcile_feed_pending_state(stats, seen_ads, pending_ids, pending_schedule)
+    _log_feed_reconciliation_diagnostics(stats)
+    if _handle_empty_scan_feed(stats, listings, cash_catalog, CASH_FILTER):
+        return
     parsed_count = len(listings)
     listings = deduplicate_listings(listings)
     from tools.scan_outcomes import ScanOutcomeLedger
