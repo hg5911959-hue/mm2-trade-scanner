@@ -3487,7 +3487,6 @@ def unmatched_names_from_missing(missing, cash_mode=False):
         "no exact robase/bloxswaps identity mapping",
         "(not a robase weapon)",
         "(bloxswaps catalogue slug missing)",
-        "cash price",
         "robase price not freshly verified",
     )
     for value in missing or []:
