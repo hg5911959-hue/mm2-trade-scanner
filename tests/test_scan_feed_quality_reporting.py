@@ -33,7 +33,7 @@ class ScanFeedQualityReportingTests(IsolatedDataTestCase):
         alert.assert_called_once()
         args, kwargs = alert.call_args
         self.assertEqual(args[0], "malformed-feed-cards")
-        self.assertIn("3/20 (15.0%)", args[1])
+        self.assertIn("5/20 (25.0%)", args[1])
         self.assertIn("sample one", args[1])
         self.assertEqual(kwargs, {"cooldown_seconds": 3600})
         self.assertIn("api_unparsed=2", output.getvalue())
