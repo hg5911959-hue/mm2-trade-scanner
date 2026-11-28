@@ -148,7 +148,7 @@ class DigestDeliveryStageTests(IsolatedDataTestCase):
         self.assertEqual(delivered, 0)
         self.assertEqual(uncertain_ids, set())
         self.assertEqual(ledger.finalize(), {"delivery_failed_queued": 1})
-        self.assertEqual(save_ids.call_count, 2)
+        self.assertEqual(save_ids.call_count, 3)
         clear_context.assert_called_once_with("failed")
         mark_pending.assert_called_once_with(item["listing"], reason="telegram_failure")
 
