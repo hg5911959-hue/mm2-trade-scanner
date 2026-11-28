@@ -5686,6 +5686,103 @@ def _build_opportunity_telegram_message(op, market_info, values):
     return message
 
 
+def _deliver_digest(
+    items,
+    *,
+    watch_state,
+    values,
+    aliases,
+    cash_catalog,
+    alerted_set,
+    uncertain_ids,
+    outcome_ledger,
+    market_info,
+    mark_seen_ad,
+    mark_pending,
+    deliver_opportunity,
+):
+    """Send individually guarded digest items and preserve per-listing outcomes."""
+        global _SESSION_ALERTS_SENT
+        eligible = []
+        for op in items:
+            listing = op["listing"]
+            trade_id = listing["id"]
+            watch_id = str(listing.get("source_ad_id") or "")
+            previous_watch = watch_state.get(watch_id, {})
+            current_content_hash, current_values_hash = listing_watch_fingerprints(
+                listing, values, aliases, cash_catalog
+            )
+            variant_changed = bool(previous_watch) and (
+                previous_watch.get("content_hash") != current_content_hash
+                or previous_watch.get("values_hash") != current_values_hash
+            )
+            if (trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids:
+                outcome_ledger.record(
+                    trade_id,
+                    "delivery_quarantined" if trade_id in uncertain_ids else "delivery_guard_skipped",
+                )
+                continue
+            eligible.append(op)
+        if not eligible:
+            return 0
+        if os.environ.get("DRY_RUN", "").strip().casefold() == "true":
+            print(f"[dry-run] would send one digest containing {len(eligible)} additional qualified offers")
+            for op in eligible:
+                outcome_ledger.record(op["listing"]["id"], "dry_run_preview")
+            return 0
+        def prepare_digest_item(op):
+            listing = op["listing"]
+            listing["alert_attempted_at_utc"] = datetime.now(timezone.utc).isoformat()
+            uncertain_ids.add(listing["id"])
+            record_uncertain_context(listing, listing["id"], "digest")
+            # Persist one offer at a time before its non-idempotent send.
+            save_uncertain_ids(uncertain_ids)
+    
+        outcomes = deliver_digest_items_individually(
+            eligible,
+            prepare_digest_item,
+            lambda op: send_telegram(format_opportunity_digest([op], market_info=market_info)),
+        )
+        delivered = 0
+        for status, op, error in outcomes:
+            listing = op["listing"]
+            trade_id = listing["id"]
+            if status == "uncertain":
+                source_id = listing.get("source_ad_id") or "unknown"
+                print(
+                    f"[telegram] Digest delivery uncertain for listing {trade_id}; "
+                    f"source_ad_id={source_id}; reason={redact(error)[:180]}; only this offer is quarantined."
+                )
+                mark_seen_ad(listing)
+                outcome_ledger.record(trade_id, "delivery_quarantined")
+            elif status in ("failed", "not_attempted"):
+                uncertain_ids.discard(trade_id)
+                save_uncertain_ids(uncertain_ids)
+                clear_uncertain_context(trade_id)
+                mark_pending(listing, reason="telegram_failure")
+                outcome_ledger.record(trade_id, "delivery_failed_queued")
+                if status == "failed":
+                    print(
+                        f"[telegram] Digest send failed definitely for listing {trade_id}: "
+                        f"{type(error).__name__}; remaining offers queued for retry."
+                    )
+            else:
+                # Remove only from this process's in-memory set. Keep the durable
+                # quarantine until the alerted/watch checkpoints are persisted.
+                uncertain_ids.discard(trade_id)
+                deliver_opportunity(op, send=False, delivery_confirmed=True)
+                delivered += 1
+        save_uncertain_ids(uncertain_ids)
+        _SESSION_ALERTS_SENT += delivered
+        if delivered:
+            update_metrics(increments={
+                "alerts_digest_messages": delivered,
+                "alerts_digest_items": delivered,
+            })
+        return delivered
+    
+
+
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     scan_modes = resolve_scan_modes(
@@ -5973,86 +6070,6 @@ def scan_once(include_backlog_rechecks=True):
         update_metrics(increments={"alerts_sent": 1})
         outcome_ledger.record(trade_id, "alert_sent")
 
-    def deliver_digest(items):
-        global _SESSION_ALERTS_SENT
-        eligible = []
-        for op in items:
-            listing = op["listing"]
-            trade_id = listing["id"]
-            watch_id = str(listing.get("source_ad_id") or "")
-            previous_watch = watch_state.get(watch_id, {})
-            current_content_hash, current_values_hash = listing_watch_fingerprints(
-                listing, values, aliases, cash_catalog
-            )
-            variant_changed = bool(previous_watch) and (
-                previous_watch.get("content_hash") != current_content_hash
-                or previous_watch.get("values_hash") != current_values_hash
-            )
-            if (trade_id in alerted_set and not variant_changed) or trade_id in uncertain_ids:
-                outcome_ledger.record(
-                    trade_id,
-                    "delivery_quarantined" if trade_id in uncertain_ids else "delivery_guard_skipped",
-                )
-                continue
-            eligible.append(op)
-        if not eligible:
-            return 0
-        if os.environ.get("DRY_RUN", "").strip().casefold() == "true":
-            print(f"[dry-run] would send one digest containing {len(eligible)} additional qualified offers")
-            for op in eligible:
-                outcome_ledger.record(op["listing"]["id"], "dry_run_preview")
-            return 0
-        def prepare_digest_item(op):
-            listing = op["listing"]
-            listing["alert_attempted_at_utc"] = datetime.now(timezone.utc).isoformat()
-            uncertain_ids.add(listing["id"])
-            record_uncertain_context(listing, listing["id"], "digest")
-            # Persist one offer at a time before its non-idempotent send.
-            save_uncertain_ids(uncertain_ids)
-
-        outcomes = deliver_digest_items_individually(
-            eligible,
-            prepare_digest_item,
-            lambda op: send_telegram(format_opportunity_digest([op], market_info=telegram_market_info)),
-        )
-        delivered = 0
-        for status, op, error in outcomes:
-            listing = op["listing"]
-            trade_id = listing["id"]
-            if status == "uncertain":
-                source_id = listing.get("source_ad_id") or "unknown"
-                print(
-                    f"[telegram] Digest delivery uncertain for listing {trade_id}; "
-                    f"source_ad_id={source_id}; reason={redact(error)[:180]}; only this offer is quarantined."
-                )
-                mark_seen_ad(listing)
-                outcome_ledger.record(trade_id, "delivery_quarantined")
-            elif status in ("failed", "not_attempted"):
-                uncertain_ids.discard(trade_id)
-                save_uncertain_ids(uncertain_ids)
-                clear_uncertain_context(trade_id)
-                mark_pending(listing, reason="telegram_failure")
-                outcome_ledger.record(trade_id, "delivery_failed_queued")
-                if status == "failed":
-                    print(
-                        f"[telegram] Digest send failed definitely for listing {trade_id}: "
-                        f"{type(error).__name__}; remaining offers queued for retry."
-                    )
-            else:
-                # Remove only from this process's in-memory set. Keep the durable
-                # quarantine until the alerted/watch checkpoints are persisted.
-                uncertain_ids.discard(trade_id)
-                deliver_opportunity(op, send=False, delivery_confirmed=True)
-                delivered += 1
-        save_uncertain_ids(uncertain_ids)
-        _SESSION_ALERTS_SENT += delivered
-        if delivered:
-            update_metrics(increments={
-                "alerts_digest_messages": delivered,
-                "alerts_digest_items": delivered,
-            })
-        return delivered
-
     cash_blocker_counts = {}
     cash_blocker_groups = {}
     for listing in listings:
@@ -6201,7 +6218,23 @@ def scan_once(include_backlog_rechecks=True):
         selected, digest_items = rank_and_split(opportunities, max_per_scan)
         for opportunity in selected:
             deliver_opportunity(opportunity)
-        digest_sent = deliver_digest(digest_items) if digest_items else 0
+        digest_sent = (
+            _deliver_digest(
+                digest_items,
+                watch_state=watch_state,
+                values=values,
+                aliases=aliases,
+                cash_catalog=cash_catalog,
+                alerted_set=alerted_set,
+                uncertain_ids=uncertain_ids,
+                outcome_ledger=outcome_ledger,
+                market_info=telegram_market_info,
+                mark_seen_ad=mark_seen_ad,
+                mark_pending=mark_pending,
+                deliver_opportunity=deliver_opportunity,
+            )
+            if digest_items else 0
+        )
     digest_not_sent = max(0, len(digest_items) - digest_sent)
     outcome_counts = outcome_ledger.finalize()
     summary = (
