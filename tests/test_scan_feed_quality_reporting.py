@@ -64,7 +64,8 @@ class ScanFeedQualityReportingTests(IsolatedDataTestCase):
             [3600, 1800],
         )
         self.assertIn("missing stable IDs: 2", output.getvalue())
-        self.assertIn("incomplete after 7 pages", output.getvalue())
+        self.assertIn("Feed pagination is incomplete", output.getvalue())
+        self.assertIn("incomplete after 7 pages", alert.call_args_list[1].args[1])
 
     def test_clean_complete_feed_does_not_send_maintenance_alerts(self):
         with (
