@@ -9,13 +9,16 @@ import argparse
 import asyncio
 import json
 import os
+import stat
 import sys
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 MAX_HISTORY_PER_CHANNEL = 100
 MAX_STORED_MESSAGES = 10000
+MAX_EXISTING_STATE_BYTES = 16 * 1024 * 1024
 
 
 def parse_guild_ids(raw: str) -> list[int]:
@@ -27,6 +30,21 @@ def parse_guild_ids(raw: str) -> list[int]:
             continue
         if not token.isdigit() or not 15 <= len(token) <= 22:
             raise ValueError("Each Discord server ID must be a 15–22 digit snowflake")
+        value = int(token)
+        if value not in ids:
+            ids.append(value)
+    return ids
+
+
+def parse_channel_ids(raw: str) -> list[int]:
+    """Parse a comma/semicolon-separated allowlist of Discord channel IDs."""
+    ids: list[int] = []
+    for token in str(raw or "").replace(";", ",").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        if not token.isdigit() or not 15 <= len(token) <= 22:
+            raise ValueError("Each Discord channel ID must be a 15–22 digit snowflake")
         value = int(token)
         if value not in ids:
             ids.append(value)
@@ -49,6 +67,9 @@ def normalize_message(message: Any) -> dict[str, Any]:
     created = getattr(message, "created_at", None)
     if created is not None and created.tzinfo is None:
         created = created.replace(tzinfo=timezone.utc)
+    author_id = str(getattr(author, "id", "") or "").strip()
+    if not author_id.isdigit() or not 15 <= len(author_id) <= 22:
+        author_id = ""
     return {
         "source": "discord",
         "message_id": str(getattr(message, "id", "")),
@@ -57,12 +78,30 @@ def normalize_message(message: Any) -> dict[str, Any]:
         "channel_id": str(getattr(channel, "id", "")) if channel else "",
         "channel_name": str(getattr(channel, "name", ""))[:100] if channel else "",
         "author": str(getattr(author, "display_name", getattr(author, "name", "unknown")))[:100],
+        "author_id": author_id,
+        "author_id_source": "discord_api" if author_id else "",
         "content": str(getattr(message, "content", "") or "")[:8000],
         "embeds": embeds,
         "attachments": attachments,
         "created_at_utc": created.isoformat() if created else "",
         "url": str(getattr(message, "jump_url", "") or "")[:1000],
     }
+
+
+def filter_messages_to_allowlist(
+    messages: list[dict[str, Any]], guild_ids: list[int], channel_ids: list[int],
+) -> list[dict[str, Any]]:
+    """Prevent retained history from leaking messages outside the current allowlist."""
+    allowed_guilds = {str(value) for value in guild_ids}
+    allowed_channels = {str(value) for value in channel_ids}
+    if not allowed_guilds or not allowed_channels:
+        return []
+    return [
+        row for row in messages
+        if isinstance(row, dict)
+        and str(row.get("guild_id") or "") in allowed_guilds
+        and str(row.get("channel_id") or "") in allowed_channels
+    ]
 
 
 def merge_messages(existing: list[dict[str, Any]], incoming: list[dict[str, Any]], retention_days: int = 7) -> list[dict[str, Any]]:
@@ -90,33 +129,69 @@ def merge_messages(existing: list[dict[str, Any]], incoming: list[dict[str, Any]
 
 
 def load_existing(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
+    flags = (
+        os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    )
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        descriptor = os.open(path, flags)
+    except FileNotFoundError:
+        return []
+    except OSError:
+        raise RuntimeError(f"Existing Discord state cannot be opened safely: {path.name}") from None
+    try:
+        with os.fdopen(descriptor, "rb") as handle:
+            metadata = os.fstat(handle.fileno())
+            if not stat.S_ISREG(metadata.st_mode):
+                raise RuntimeError(f"Existing Discord state is not a regular file: {path.name}")
+            if metadata.st_size > MAX_EXISTING_STATE_BYTES:
+                raise RuntimeError(f"Existing Discord state exceeds the size limit: {path.name}")
+            raw = handle.read(MAX_EXISTING_STATE_BYTES + 1)
+        if len(raw) > MAX_EXISTING_STATE_BYTES:
+            raise RuntimeError(f"Existing Discord state exceeds the size limit: {path.name}")
+        payload = json.loads(raw.decode("utf-8"))
         rows = payload.get("messages", []) if isinstance(payload, dict) else []
         return rows if isinstance(rows, list) else []
-    except (OSError, json.JSONDecodeError):
-        raise RuntimeError(f"Existing Discord state is unreadable: {path}") from None
+    except RuntimeError:
+        raise
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        raise RuntimeError(f"Existing Discord state is unreadable: {path.name}") from None
 
 
-def atomic_save(path: Path, messages: list[dict[str, Any]], guild_ids: list[int], scanned_channels: list[str]) -> None:
+def atomic_save(
+    path: Path, messages: list[dict[str, Any]], guild_ids: list[int],
+    channel_ids: list[int], scanned_channels: list[str],
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "schema_version": 2,
         "source": "discord",
         "updated_at_utc": datetime.now(timezone.utc).isoformat(),
         "configured_guild_ids": [str(value) for value in guild_ids],
+        "configured_channel_ids": [str(value) for value in channel_ids],
         "scanned_channel_ids": sorted(set(scanned_channels)),
         "message_count": len(messages),
         "messages": messages,
     }
-    temp = path.with_name(path.name + ".tmp")
-    temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(temp, path)
+    descriptor, temporary = tempfile.mkstemp(
+        prefix=path.name + ".", suffix=".tmp", dir=path.parent
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
-async def collect(guild_ids: list[int], output: Path, limit: int, retention_days: int) -> int:
+async def collect(
+    guild_ids: list[int], output: Path, limit: int, retention_days: int,
+    channel_ids: list[int] | None = None,
+) -> int:
     try:
         import discord
     except ImportError:
@@ -130,13 +205,19 @@ async def collect(guild_ids: list[int], output: Path, limit: int, retention_days
     if not guild_ids:
         print("Discord collection skipped: DISCORD_GUILD_IDS is empty.")
         return 0
+    if not channel_ids:
+        print("Discord collection skipped: DISCORD_CHANNEL_IDS is empty; refusing server-wide collection.")
+        return 0
 
+    allowed_channel_ids = set(channel_ids)
     intents = discord.Intents.none()
     intents.guilds = True
     intents.messages = True
     intents.message_content = True
     client = discord.Client(intents=intents)
-    state = load_existing(output)
+    state = filter_messages_to_allowlist(
+        load_existing(output), guild_ids, channel_ids
+    )
     collected: list[dict[str, Any]] = []
     errors: list[str] = []
     scanned_channels: list[str] = []
@@ -160,7 +241,11 @@ async def collect(guild_ids: list[int], output: Path, limit: int, retention_days
             # Include active public/private threads only when their parent is
             # in this explicitly allowlisted server and the bot can read them.
             channels.extend(list(getattr(guild, "threads", []) or []))
-            unique_channels = {int(channel.id): channel for channel in channels if hasattr(channel, "history")}
+            unique_channels = {
+                int(channel.id): channel
+                for channel in channels
+                if hasattr(channel, "history") and int(channel.id) in allowed_channel_ids
+            }
 
             for channel_id, channel in unique_channels.items():
                 parent = getattr(channel, "parent", None)
@@ -186,7 +271,7 @@ async def collect(guild_ids: list[int], output: Path, limit: int, retention_days
         if not scanned_channels:
             errors.append("No readable text channels found; check bot membership and channel permissions.")
         merged = merge_messages(state, collected, retention_days)
-        atomic_save(output, merged, guild_ids, scanned_channels)
+        atomic_save(output, merged, guild_ids, channel_ids, scanned_channels)
         print(f"Discord collection complete: {len(collected)} fetched, {len(merged)} retained, {len(scanned_channels)} channels scanned, {len(errors)} warnings.")
         for error in errors:
             print(f"Discord warning: {error}")
@@ -213,9 +298,12 @@ def main() -> int:
         parser.error("--limit must be between 1 and 100")
     try:
         guilds = parse_guild_ids(os.environ.get("DISCORD_GUILD_IDS", ""))
+        channels = parse_channel_ids(os.environ.get("DISCORD_CHANNEL_IDS", ""))
     except ValueError as exc:
         parser.error(str(exc))
-    return asyncio.run(collect(guilds, Path(args.output), args.limit, args.retention_days))
+    return asyncio.run(
+        collect(guilds, Path(args.output), args.limit, args.retention_days, channels)
+    )
 
 
 if __name__ == "__main__":
