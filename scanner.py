@@ -5783,6 +5783,35 @@ def _deliver_digest(
 
 
 
+def _log_scan_feed_candidates(stats, listings):
+    """Log feed coverage, parser quality, and explicit item quantities."""
+    _log_scan_feed_candidates(stats, listings)
+
+
+def _deduplicate_and_record_scan_listings(listings, history_store, public_history_store):
+    """Deduplicate feed rows and persist private/public listing history safely."""
+    parsed_count = len(listings)
+    listings = deduplicate_listings(listings)
+    if history_store is not None:
+        try:
+            stored = history_store.record_listings(listings)
+            print(f"[market-history] Listings recorded or refreshed: {stored}")
+        except Exception as history_error:
+            print(f"[market-history] Listing storage skipped safely: {type(history_error).__name__}")
+    if public_history_store is not None:
+        try:
+            stored = public_history_store.record_listings(listings)
+            print(f"[public-dashboard-history] Public BloxSwaps listings recorded or refreshed: {stored}")
+        except Exception as history_error:
+            raise RuntimeError(
+                "Public dashboard listing history could not be persisted; refusing to send alerts."
+            ) from history_error
+    duplicate_count = parsed_count - len(listings)
+    if duplicate_count:
+        print(f"[dedupe] Ignored {duplicate_count} duplicate listing row(s) in this scan batch.")
+    return listings
+
+
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     scan_modes = resolve_scan_modes(
@@ -5860,27 +5889,11 @@ def scan_once(include_backlog_rechecks=True):
     _log_feed_reconciliation_diagnostics(stats)
     if _handle_empty_scan_feed(stats, listings, cash_catalog, CASH_FILTER):
         return
-    parsed_count = len(listings)
-    listings = deduplicate_listings(listings)
+    listings = _deduplicate_and_record_scan_listings(
+        listings, history_store, public_history_store
+    )
     from tools.scan_outcomes import ScanOutcomeLedger
     outcome_ledger = ScanOutcomeLedger(listing.get("id") for listing in listings)
-    if history_store is not None:
-        try:
-            stored = history_store.record_listings(listings)
-            print(f"[market-history] Listings recorded or refreshed: {stored}")
-        except Exception as history_error:
-            print(f"[market-history] Listing storage skipped safely: {type(history_error).__name__}")
-    if public_history_store is not None:
-        try:
-            stored = public_history_store.record_listings(listings)
-            print(f"[public-dashboard-history] Public BloxSwaps listings recorded or refreshed: {stored}")
-        except Exception as history_error:
-            raise RuntimeError(
-                "Public dashboard listing history could not be persisted; refusing to send alerts."
-            ) from history_error
-    duplicate_count = parsed_count - len(listings)
-    if duplicate_count:
-        print(f"[dedupe] Ignored {duplicate_count} duplicate listing row(s) in this scan batch.")
     print(
         f"[bloxswaps] candidate_cards={stats.get('candidate_count', 0)} "
         f"excluded_ajouts={stats.get('addition_count', 0)} "
