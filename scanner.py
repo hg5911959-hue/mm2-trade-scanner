@@ -5570,7 +5570,7 @@ def scan_once(include_backlog_rechecks=True):
         due_pending_ids, pending_ids, pending_schedule
     )
     listings = _load_discord_listings_for_scan(listings)
-    first_seen_ads = _record_first_seen_timestamps(listings, discovered_ids)
+    _record_first_seen_timestamps(listings, discovered_ids)
     seen_ads, pending_ids, pending_schedule, cold_start_complete = (
         _reconcile_seen_and_pending_state(
             listings, stats, seen_ads, pending_ids, pending_schedule, cash_catalog, discovered_ids
