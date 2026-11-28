@@ -9,9 +9,9 @@
     "attribution": "Supreme Values (supremevalues.com)"
   },
   "source_attribution": "Supreme Values (supremevalues.com)",
-  "dataset_last_updated": "2026-11-27 12:02:34",
-  "last_snapshot_date": "2026-11-27",
-  "last_fetched_at_utc": "2026-11-27T21:26:48.663270+00:00",
+  "dataset_last_updated": "2026-11-28 00:02:38",
+  "last_snapshot_date": "2026-11-28",
+  "last_fetched_at_utc": "2026-11-28T04:48:27.675658+00:00",
   "scheduled_runs_per_day": 2,
   "scheduled_utc_times": [
     "11:30",
@@ -22,18 +22,18 @@
     "00:30 (next day)"
   ],
   "expected_weapons": 214,
-  "history_rows": 2140,
+  "history_rows": 2354,
   "snapshot_counts": {
     "weapons": 214,
     "exactly_mapped": 214,
     "explicit_verified_aliases": 9,
-    "matched": 158,
-    "matched_missing_blended_value": 56,
+    "matched": 156,
+    "matched_missing_blended_value": 58,
     "matched_missing_supreme_value": 0,
     "missing": 0,
     "ambiguous": 0,
     "unsupported_category_or_type": 0,
-    "with_blended_value": 158,
+    "with_blended_value": 156,
     "with_supreme_value": 214,
     "with_stability": 212
   },
