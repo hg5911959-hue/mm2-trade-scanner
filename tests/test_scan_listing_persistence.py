@@ -22,7 +22,7 @@ class ScanListingPersistenceTests(IsolatedDataTestCase):
             )
 
         self.assertEqual(result[0], deduplicated)
-        self.assertEqual([row for row in result[1].outcomes], [])
+        self.assertEqual(result[1].expected, {"one"})
         history.record_listings.assert_called_once_with(deduplicated)
         public_history.record_listings.assert_called_once_with(deduplicated)
 
