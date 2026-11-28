@@ -5702,7 +5702,7 @@ def _deliver_digest(
     deliver_opportunity,
 ):
     """Send individually guarded digest items and preserve per-listing outcomes."""
-        global _SESSION_ALERTS_SENT
+    global _SESSION_ALERTS_SENT
     eligible = []
     for op in items:
         listing = op["listing"]
