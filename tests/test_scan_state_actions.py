@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import unittest
 from unittest.mock import Mock
+
+from test_support import IsolatedDataTestCase
 
 from tools.scan_state_actions import (
     mark_alerted_state,
@@ -10,7 +11,7 @@ from tools.scan_state_actions import (
 )
 
 
-class ScanStateActionTests(unittest.TestCase):
+class ScanStateActionTests(IsolatedDataTestCase):
     def test_mark_alerted_persists_only_the_first_transition(self):
         alerted = []
         alerted_set = set()
