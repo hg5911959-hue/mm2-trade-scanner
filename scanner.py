@@ -3511,28 +3511,44 @@ def unmatched_names_from_missing(missing, cash_mode=False):
 
 
 def prune_unmatched_name_registry():
-    """Prune stale diagnostic names on every production scan, even without new misses."""
-    state = _load_json_state(UNMATCHED_FILE, {}, "unmatched-name state")
-    if not isinstance(state, dict):
-        raise RuntimeError("[state] Unmatched-name state has an invalid structure.")
-    retained, stale_keys = prune_stale_unmatched_names(
-        state,
-        now=datetime.now(timezone.utc),
-        retention_days=UNMATCHED_NAME_RETENTION_DAYS,
-    )
-    if stale_keys:
-        atomic_write_text(UNMATCHED_FILE, json.dumps(retained, ensure_ascii=False, indent=2) + "\n")
-        print(
-            f"[unmatched] Pruned {len(stale_keys)} stale diagnostic entr(y/ies) "
-            f"older than {UNMATCHED_NAME_RETENTION_DAYS} days."
+    """Prune stale diagnostic names without allowing registry faults to stop scanning."""
+    try:
+        state = _load_json_state(UNMATCHED_FILE, {}, "unmatched-name state")
+        if not isinstance(state, dict):
+            raise RuntimeError("unmatched-name state has an invalid structure")
+        retained, stale_keys = prune_stale_unmatched_names(
+            state,
+            now=datetime.now(timezone.utc),
+            retention_days=UNMATCHED_NAME_RETENTION_DAYS,
         )
-    return len(stale_keys)
+        if stale_keys:
+            atomic_write_text(UNMATCHED_FILE, json.dumps(retained, ensure_ascii=False, indent=2) + "\n")
+            print(
+                f"[unmatched] Pruned {len(stale_keys)} stale diagnostic entr(y/ies) "
+                f"older than {UNMATCHED_NAME_RETENTION_DAYS} days."
+            )
+        return len(stale_keys)
+    except Exception as exc:
+        # This registry is diagnostic only; a damaged file must not block offer scanning.
+        print(
+            "[unmatched] Registry pruning skipped; preserving existing state "
+            f"and continuing scan ({type(exc).__name__})."
+        )
+        return 0
 
 
 def record_unmatched_names(names):
-    state = _load_json_state(UNMATCHED_FILE, {}, "unmatched-name state")
-    if not isinstance(state, dict):
-        raise RuntimeError("[state] Unmatched-name state has an invalid structure.")
+    try:
+        state = _load_json_state(UNMATCHED_FILE, {}, "unmatched-name state")
+        if not isinstance(state, dict):
+            raise RuntimeError("unmatched-name state has an invalid structure")
+    except Exception as exc:
+        # Never let a diagnostic registry problem interrupt live offer evaluation.
+        print(
+            "[unmatched] Registry update skipped; preserving existing state "
+            f"and continuing scan ({type(exc).__name__})."
+        )
+        return []
     now_dt = datetime.now(timezone.utc)
     state, stale_keys = prune_stale_unmatched_names(
         state,
