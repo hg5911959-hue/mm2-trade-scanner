@@ -26,7 +26,7 @@ class UnmatchedNameRegistryTests(IsolatedDataTestCase):
             ["Emberknife", "Candy"],
         )
 
-    def test_cash_price_and_freshness_failures_are_not_recorded_as_identity_gaps(self):
+    def test_transient_robase_freshness_failures_are_not_identity_gaps(self):
         missing = [
             "Laser (ROBASE price not freshly verified)",
             "Cane (cash price missing)",
@@ -38,9 +38,9 @@ class UnmatchedNameRegistryTests(IsolatedDataTestCase):
         ]
         self.assertEqual(
             scanner.unmatched_names_from_missing(missing, cash_mode=True),
-            ["Unknown Knife"],
+            ["Cane", "Ghost", "Chroma Sweet", "Shadow", "Phaser", "Unknown Knife"],
         )
-        # The suppression is specific to the ROBASE cash path.
+        # The ROBASE freshness suppression is specific to the cash path.
         self.assertIn(
             "Laser",
             scanner.unmatched_names_from_missing(
@@ -48,6 +48,7 @@ class UnmatchedNameRegistryTests(IsolatedDataTestCase):
                 cash_mode=False,
             ),
         )
+
 
     def test_wildcard_rejection_reasons_are_filtered_in_legacy_mode_too(self):
         self.assertEqual(
