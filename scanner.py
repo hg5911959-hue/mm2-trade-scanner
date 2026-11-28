@@ -6471,14 +6471,16 @@ def record_failure(error):
             print(f"[telegram] Failure alert could not be sent: {type(notify_error).__name__}")
 
 
-def minimum_cycle_start_window(duration_seconds):
-    """Compatibility wrapper for the extracted scan-loop policy."""
-    return _minimum_cycle_start_window(duration_seconds)
+def minimum_cycle_start_window(duration_seconds, observed_cycle_max_seconds=0.0):
+    """Compatibility wrapper for the extracted adaptive scan-loop policy."""
+    return _minimum_cycle_start_window(duration_seconds, observed_cycle_max_seconds)
 
 
-def should_start_scan_cycle(remaining_seconds, duration_seconds):
-    """Compatibility wrapper for the extracted scan-loop policy."""
-    return _should_start_scan_cycle(remaining_seconds, duration_seconds)
+def should_start_scan_cycle(remaining_seconds, duration_seconds, observed_cycle_max_seconds=0.0):
+    """Compatibility wrapper for the extracted adaptive scan-loop policy."""
+    return _should_start_scan_cycle(
+        remaining_seconds, duration_seconds, observed_cycle_max_seconds
+    )
 
 
 def should_run_backlog_recheck(cycle_number, every=None):
