@@ -1,6 +1,6 @@
 # MM2 Trade Scanner — Current Project Status
 
-**Last verified:** 2026-11-28 19:38 UTC  
+**Last verified:** 2026-11-28 19:45 UTC  
 **Production branch:** `main`  
 **Current main commit:** `26801450c4d024ba17621620c22d98ffaf36c040`
 
@@ -33,7 +33,7 @@ This file is the current hand-off checkpoint. It records verified production beh
 
 ### ROBASE cash catalogue
 
-- Snapshot fetched: **2026-11-28 19:28:49 UTC**.
+- Snapshot fetched: **2026-11-28 19:36:43 UTC**.
 - **222/222** catalogue items; snapshot complete; **0** item-page failures.
 - **202** rows have a verified Chroma.gg 7-day price.
 - **190** are cash-eligible (price present and at least 3 completed 7-day sales).
@@ -52,7 +52,7 @@ This file is the current hand-off checkpoint. It records verified production beh
 - Unmatched-name registry: **538** entries after 60 expired diagnostic entries were pruned.
 - Pending rechecks: **0**.
 - Telegram uncertain-delivery quarantine: **2** unresolved IDs. One has a BloxSwaps listing and owner URL; the other has a source ad ID but no stored listing/owner URL. Both require manual verification; do not replay automatically.
-- Daily metrics after the latest persisted scan: **1,680** scans, **235** alerts sent, **0** scan failures.
+- Daily metrics after the latest persisted scan: **1,696** scans, **238** alerts sent, **0** scan failures.
 
 ## Latest completed live scans
 
@@ -73,7 +73,16 @@ This file is the current hand-off checkpoint. It records verified production beh
 
 Both runs had zero scan-cycle failures and zero pending rechecks.
 
-**Adaptive-policy validation:** run `46181949487` on current `main` commit `26801450c4d024ba17621620c22d98ffaf36c040` was in progress at this checkpoint. It is the first live scan using PR #297's adaptive finish reserve. Do not claim the adaptive policy is validated until its completed logs confirm cycle count, elapsed time, pagination completeness, and Telegram delivery.
+**Adaptive-policy validation:** run `46181949487` on current `main` commit `26801450c4d024ba17621620c22d98ffaf36c040` completed successfully:
+
+- **16/16** cycles in **480 seconds**, compared with the previous fixed-reserve baseline of 14 cycles / 420 seconds.
+- All 16 cycles logged `complete=True` and `seen_boundary=True`; page depth ranged from 3 to 12 pages.
+- Slowest cycle: **20.3 seconds**; median: **2.4 seconds**.
+- Three cash trade alerts were accepted by Telegram, with estimated profits **$2.28**, **$2.28**, and **$2.25**. Confirmed delivery latency was about **0.52–0.54 seconds** each.
+- The scan-results summary was also accepted. No send errors, no new uncertain deliveries, and no pagination warnings.
+- Persisted state after the run: **1,696** scans, **238** alerts sent, **0** scan failures, **0** pending rechecks, **538** unmatched-name entries, and the same **2** historical quarantine IDs.
+
+This validates the first adaptive live run. The chain continuation was queued after persistence; verify the next adaptive run as a repeatability check before final release evaluation.
 
 ## Code structure and validation
 
