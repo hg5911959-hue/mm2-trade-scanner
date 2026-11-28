@@ -90,6 +90,7 @@ from tools.feed_checkpoint import (
     scan_checkpoint_requires_cold_start as _scan_checkpoint_requires_cold_start_impl,
 )
 from tools.telegram_quarantine import reconcile_uncertain_quarantine
+from tools.unmatched_registry import prune_stale_unmatched_names
 from tools.scan_modes import ScanModes, resolve_scan_modes
 from tools.scan_loop_policy import (
     minimum_cycle_start_window as _minimum_cycle_start_window,
@@ -174,6 +175,7 @@ WATCH_TTL_SECONDS = 24 * 60 * 60
 MAX_WATCHED_ADS = MAX_SEEN_ADS
 ALIASES_FILE = Path("aliases.json")
 UNMATCHED_FILE = Path("data/unmatched_names.json")
+UNMATCHED_NAME_RETENTION_DAYS = 14
 MAINTENANCE_FILE = Path("data/maintenance_alerts.json")
 BLOXSWAPS_PAGE_SIZE = 20
 MAX_FEED_PAGES = CONFIG.max_feed_pages
@@ -3512,7 +3514,18 @@ def record_unmatched_names(names):
     state = _load_json_state(UNMATCHED_FILE, {}, "unmatched-name state")
     if not isinstance(state, dict):
         raise RuntimeError("[state] Unmatched-name state has an invalid structure.")
-    now = datetime.now(timezone.utc).isoformat()
+    now_dt = datetime.now(timezone.utc)
+    state, stale_keys = prune_stale_unmatched_names(
+        state,
+        now=now_dt,
+        retention_days=UNMATCHED_NAME_RETENTION_DAYS,
+    )
+    if stale_keys:
+        print(
+            f"[unmatched] Pruned {len(stale_keys)} registry entr(y/ies) "
+            f"not seen for more than {UNMATCHED_NAME_RETENTION_DAYS} days."
+        )
+    now = now_dt.isoformat()
     new_names = []
     for raw_name in names:
         name = str(raw_name).strip()
