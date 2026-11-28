@@ -3876,12 +3876,13 @@ class PollingLoopTests(IsolatedDataTestCase):
         self.assertEqual(result["cycles"], 1)
         self.assertEqual(result["successful_cycles"], 1)
 
-    def test_does_not_start_cycle_without_enough_runtime_headroom(self):
-        # Long sessions reserve at most 180s; short test windows keep a small proportional buffer.
-        self.assertTrue(scanner.should_start_scan_cycle(513, 780))
-        self.assertTrue(scanner.should_start_scan_cycle(262, 780))
-        self.assertFalse(scanner.should_start_scan_cycle(179.9, 780))
-        self.assertFalse(scanner.should_start_scan_cycle(4.7, 780))
+    def test_cycle_start_uses_adaptive_headroom_after_slow_cycles(self):
+        # Long sessions use a 60–90s baseline; slow cycles expand the reserve.
+        self.assertTrue(scanner.should_start_scan_cycle(90, 780))
+        self.assertFalse(scanner.should_start_scan_cycle(89.9, 780))
+        self.assertFalse(scanner.should_start_scan_cycle(169.9, 780, 80))
+        self.assertTrue(scanner.should_start_scan_cycle(170, 780, 80))
+        self.assertFalse(scanner.should_start_scan_cycle(4.7, 780, 80))
         self.assertTrue(scanner.should_start_scan_cycle(0.5, 1))
 
 
