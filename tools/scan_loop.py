@@ -53,9 +53,10 @@ def run_scan_loop(
     cycles = 0
     successful_cycles = 0
     last_failure = None
+    max_cycle_elapsed_seconds = 0.0
     try:
         while not stop["requested"] and should_start_scan_cycle(
-            deadline - clock.monotonic(), duration_seconds
+            deadline - clock.monotonic(), duration_seconds, max_cycle_elapsed_seconds
         ):
             cycle_started = clock.monotonic()
             cycles += 1
@@ -79,6 +80,7 @@ def run_scan_loop(
                 )
                 record_failure(exc)
             cycle_elapsed = clock.monotonic() - cycle_started
+            max_cycle_elapsed_seconds = max(max_cycle_elapsed_seconds, cycle_elapsed)
             remaining = deadline - clock.monotonic()
             alerts_sent, alert_limit = get_alert_budget()
             print(
