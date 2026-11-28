@@ -26,9 +26,33 @@
     1795841300.581621,
     1795841302.9577384,
     1795841305.2423294,
-    1795841307.5149493
+    1795841307.5149493,
+    1795892429.7711658,
+    1795892432.404219,
+    1795892435.1179416,
+    1795892437.8469577,
+    1795892440.6189833,
+    1795892443.331844,
+    1795892445.8020678,
+    1795892448.2952123,
+    1795892450.621646,
+    1795892453.0756233,
+    1795892455.4244547,
+    1795892458.0690603
   ],
   "request_workflows": [
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
+    "RBLXValue Daily Weapon History",
     "RBLXValue Daily Weapon History",
     "RBLXValue Daily Weapon History",
     "RBLXValue Daily Weapon History",
@@ -55,7 +79,7 @@
     "RBLXValue Daily Weapon History"
   ],
   "request_counts_by_workflow": {
-    "RBLXValue Daily Weapon History": 24
+    "RBLXValue Daily Weapon History": 36
   },
-  "updated_at_utc": "2026-11-28T04:48:27.514949+00:00"
+  "updated_at_utc": "2026-11-28T19:00:58.069060+00:00"
 }
