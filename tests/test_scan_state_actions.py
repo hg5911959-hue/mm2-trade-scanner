@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import unittest
 from unittest.mock import Mock
 
 from test_support import IsolatedDataTestCase
