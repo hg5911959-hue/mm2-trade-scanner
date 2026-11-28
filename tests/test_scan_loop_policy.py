@@ -17,15 +17,22 @@ class ScanLoopPolicyTests(IsolatedDataTestCase):
         self.assertEqual(minimum_cycle_start_window(60), 30.0)
         self.assertEqual(minimum_cycle_start_window(300), 75.0)
 
-    def test_long_session_reserves_between_one_hundred_twenty_and_one_hundred_eighty_seconds(self):
-        self.assertEqual(minimum_cycle_start_window(301), 120.0)
-        self.assertEqual(minimum_cycle_start_window(720), 180.0)
-        self.assertEqual(minimum_cycle_start_window(3600), 180.0)
+    def test_long_session_uses_a_sixty_to_ninety_second_baseline_reserve(self):
+        self.assertEqual(minimum_cycle_start_window(301), 60.0)
+        self.assertEqual(minimum_cycle_start_window(540), 67.5)
+        self.assertEqual(minimum_cycle_start_window(720), 90.0)
+        self.assertEqual(minimum_cycle_start_window(3600), 90.0)
 
-    def test_cycle_start_requires_the_full_finish_buffer(self):
+    def test_long_session_reserve_expands_after_a_slow_cycle(self):
+        self.assertEqual(minimum_cycle_start_window(540, 25), 67.5)
+        self.assertEqual(minimum_cycle_start_window(540, 40), 90.0)
+        self.assertEqual(minimum_cycle_start_window(540, 80), 170.0)
+
+    def test_cycle_start_requires_the_full_adaptive_finish_buffer(self):
         self.assertFalse(should_start_scan_cycle(29.9, 60))
         self.assertTrue(should_start_scan_cycle(30, 60))
-        self.assertTrue(should_start_scan_cycle(180, 720))
+        self.assertFalse(should_start_scan_cycle(169, 540, 80))
+        self.assertTrue(should_start_scan_cycle(170, 540, 80))
 
     def test_backlog_recheck_runs_only_on_positive_cadence_boundaries(self):
         self.assertFalse(should_run_backlog_recheck(0, 4))

@@ -54,7 +54,7 @@ class ScanLoopTests(IsolatedDataTestCase):
             duration_seconds=120,
             interval_seconds=30,
             scan_once=lambda **kwargs: scans.append(kwargs),
-            should_start_scan_cycle=lambda remaining, duration: next(start_checks),
+            should_start_scan_cycle=lambda remaining, duration, observed_max: next(start_checks),
             should_run_backlog_recheck=lambda cycle: cycle == 4,
             reset_alert_budget=lambda: resets.append(True),
             get_alert_budget=lambda: (2, 5),
@@ -76,6 +76,39 @@ class ScanLoopTests(IsolatedDataTestCase):
         self.assertEqual(signals.handlers[signals.SIGTERM], "term-handler")
         self.assertEqual(signals.handlers[signals.SIGINT], "int-handler")
 
+    def test_loop_passes_slowest_completed_cycle_to_adaptive_policy(self):
+        clock = FakeClock()
+        signals = FakeSignals()
+        guard = FakeGuard()
+        observed = []
+
+        def scan_once(**kwargs):
+            clock.now += 80.0
+
+        def should_start(remaining, duration, observed_max):
+            observed.append(observed_max)
+            return len(observed) == 1
+
+        result = run_scan_loop(
+            duration_seconds=120,
+            interval_seconds=30,
+            scan_once=scan_once,
+            should_start_scan_cycle=should_start,
+            should_run_backlog_recheck=lambda cycle: False,
+            reset_alert_budget=lambda: None,
+            get_alert_budget=lambda: (0, 0),
+            record_failure=lambda exc: self.fail("record_failure should not run"),
+            redact=str,
+            rblxvalue_guard=guard,
+            update_metrics=lambda **kwargs: None,
+            time_module=clock,
+            signal_module=signals,
+        )
+
+        self.assertEqual(observed, [0.0, 80.0])
+        self.assertEqual(result["cycles"], 1)
+        self.assertEqual(result["elapsed_seconds"], 80.0)
+
     def test_rate_limit_exception_stops_after_one_cycle_and_is_reraised(self):
         clock = FakeClock()
         signals = FakeSignals()
@@ -92,7 +125,7 @@ class ScanLoopTests(IsolatedDataTestCase):
                 duration_seconds=120,
                 interval_seconds=30,
                 scan_once=scan_once,
-                should_start_scan_cycle=lambda remaining, duration: True,
+                should_start_scan_cycle=lambda remaining, duration, observed_max: True,
                 should_run_backlog_recheck=lambda cycle: False,
                 reset_alert_budget=lambda: None,
                 get_alert_budget=lambda: (0, 0),
