@@ -64,5 +64,144 @@ class FirstSeenTimestampTests(IsolatedDataTestCase):
         self.assertEqual(updated["ad-1"], "2026-11-27T10:00:00+00:00")
 
 
+
+class ColdStartBaselineTests(IsolatedDataTestCase):
+    def test_cold_start_with_listings_seeds_seen_state_and_continues(self):
+        stats = {
+            "cold_start": True,
+            "cold_start_seed_ids": ["old-1", "old-2"],
+            "cold_start_recent_ids": ["recent-1"],
+        }
+        with (
+            patch("scanner.save_seen_ads") as save_seen,
+            patch("scanner.seed_pending_ids_as_seen") as seed_pending,
+            patch("scanner.record_success_if_complete") as record_success,
+            patch("scanner.write_step_summary") as summary,
+        ):
+            seen, stop = scanner._apply_cold_start_baseline(
+                stats, ["recent-1"], [{"id": "recent-1"}], None, {}, {}, False, {}
+            )
+        self.assertEqual(seen, {"old-1", "old-2"})
+        self.assertFalse(stop)
+        self.assertEqual(save_seen.call_count, 2)
+        seed_pending.assert_called_once()
+        record_success.assert_not_called()
+        summary.assert_not_called()
+
+    def test_empty_cold_start_records_success_and_stops(self):
+        stats = {"cold_start": True, "cold_start_seed_ids": ["old-1"]}
+        with (
+            patch("scanner.save_seen_ads") as save_seen,
+            patch("scanner.seed_pending_ids_as_seen"),
+            patch("scanner.record_success_if_complete") as record_success,
+            patch("scanner.write_step_summary") as summary,
+        ):
+            seen, stop = scanner._apply_cold_start_baseline(
+                stats, ["old-1"], [], None, {}, {}, False, {}
+            )
+        self.assertEqual(seen, {"old-1"})
+        self.assertTrue(stop)
+        record_success.assert_called_once_with(stats)
+        summary.assert_called_once()
+        self.assertEqual(save_seen.call_count, 2)
+
+    def test_non_cold_start_normalizes_missing_seen_state(self):
+        with patch("scanner.save_seen_ads") as save_seen:
+            seen, stop = scanner._apply_cold_start_baseline(
+                {}, [], [{"id": "new"}], None, {}, {}, False, {}
+            )
+        self.assertEqual(seen, set())
+        self.assertFalse(stop)
+        save_seen.assert_not_called()
+
+
+class PendingFeedReconciliationTests(IsolatedDataTestCase):
+    def test_retries_unparsed_ids_and_retires_confirmed_non_actionable_ids(self):
+        seen = {"unparsed", "ajout", "single-sided", "not-found"}
+        pending = {}
+        schedule = {}
+        stats = {
+            "unparsed_ad_ids": ["unparsed"],
+            "addition_ids": ["ajout"],
+            "single_sided_ids": ["single-sided"],
+            "pending_not_found_ids": ["not-found"],
+        }
+        with (
+            patch("scanner.save_seen_ads") as save_seen,
+            patch("scanner.save_pending_ids") as save_pending,
+            patch("scanner.save_pending_recheck_schedule") as save_schedule,
+        ):
+            result = scanner._reconcile_feed_pending_state(stats, seen, pending, schedule)
+        updated_seen, updated_pending, updated_schedule, additions, singles, missing = result
+        self.assertNotIn("unparsed", updated_seen)
+        self.assertTrue({"ajout", "single-sided", "not-found"}.issubset(updated_seen))
+        self.assertEqual(set(updated_pending), {"unparsed"})
+        self.assertEqual(updated_schedule["unparsed"]["reason"], "unparsed_feed")
+        self.assertEqual(additions, {"ajout"})
+        self.assertEqual(singles, {"single-sided"})
+        self.assertEqual(missing, {"not-found"})
+        self.assertGreaterEqual(save_seen.call_count, 2)
+        save_pending.assert_called()
+        save_schedule.assert_called()
+
+    def test_empty_feed_current_boundary_returns_success(self):
+        stats = {
+            "seen_boundary_reached": True,
+            "malformed_count": 0,
+            "html_malformed_count": 0,
+            "html_parse_warning_count": 0,
+            "candidate_count": 0,
+            "addition_count": 0,
+        }
+        with (
+            patch("scanner.update_metrics") as metrics,
+            patch("scanner.record_success_if_complete") as record_success,
+            patch("scanner.write_step_summary") as summary,
+        ):
+            handled = scanner._handle_empty_scan_feed(stats, [], {}, False)
+        self.assertTrue(handled)
+        metrics.assert_called_once_with(increments={"parse_empty": 1})
+        record_success.assert_called_once_with(stats)
+        summary.assert_called_once()
+
+    def test_empty_feed_all_ajouts_returns_success(self):
+        stats = {
+            "seen_boundary_reached": False,
+            "malformed_count": 0,
+            "html_malformed_count": 0,
+            "html_parse_warning_count": 0,
+            "candidate_count": 3,
+            "addition_count": 3,
+        }
+        with (
+            patch("scanner.update_metrics"),
+            patch("scanner.record_success_if_complete") as record_success,
+            patch("scanner.write_step_summary") as summary,
+        ):
+            handled = scanner._handle_empty_scan_feed(stats, [], {}, False)
+        self.assertTrue(handled)
+        record_success.assert_called_once_with(stats)
+        summary.assert_called_once()
+
+    def test_empty_unverified_feed_fails_closed(self):
+        stats = {
+            "seen_boundary_reached": False,
+            "malformed_count": 0,
+            "html_malformed_count": 0,
+            "html_parse_warning_count": 0,
+            "candidate_count": 0,
+            "addition_count": 0,
+            "pagination_complete": False,
+        }
+        with patch("scanner.update_metrics"):
+            with self.assertRaisesRegex(RuntimeError, "pagination could not be verified"):
+                scanner._handle_empty_scan_feed(stats, [], {}, False)
+
+    def test_nonempty_feed_is_not_treated_as_empty(self):
+        with patch("scanner.update_metrics") as metrics:
+            handled = scanner._handle_empty_scan_feed({}, [{"id": "offer"}], {}, False)
+        self.assertFalse(handled)
+        metrics.assert_not_called()
+
 if __name__ == "__main__":
     unittest.main()
