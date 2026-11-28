@@ -5330,6 +5330,58 @@ def _run_daily_chart_shadow(listings, cash_catalog) -> int:
     return 0
 
 
+def _merge_optional_discord_listings(listings, cash_filter: bool):
+    """Merge only fresh authorized collector listings outside the cash-only path."""
+    if cash_filter:
+        print("[discord-parser] skipped: ROBASE cash mode accepts BloxSwaps offers only")
+        return listings
+
+    # The collector writes a bounded local JSON file; keep its IDs namespaced
+    # away from BloxSwaps cursors.
+    from discord_parser import load_discord_listings
+
+    try:
+        discord_listings, discord_rejected = load_discord_listings()
+    except Exception as discord_error:
+        discord_listings, discord_rejected = [], 0
+        print(
+            f"[discord-parser] source skipped safely: "
+            f"{type(discord_error).__name__}; BloxSwaps scan continues"
+        )
+
+    existing_ids = {str(row.get("id") or "") for row in listings}
+    fresh_discord = [
+        row for row in discord_listings
+        if str(row.get("id") or "") not in existing_ids
+    ]
+    if fresh_discord:
+        listings.extend(fresh_discord)
+    print(
+        f"[discord-parser] parsed={len(discord_listings)} "
+        f"new_for_batch={len(fresh_discord)} rejected={discord_rejected}"
+    )
+    return listings
+
+
+def _assign_first_seen_timestamps(
+    listings, discovered_ids, first_seen_ads: dict, observed_at: str
+) -> tuple[dict, bool]:
+    """Assign stable first-seen timestamps and report whether state changed."""
+    changed = False
+    for ad_id in discovered_ids:
+        key = str(ad_id)
+        if key and key not in first_seen_ads:
+            first_seen_ads[key] = observed_at
+            changed = True
+    for listing in listings:
+        source_ad_id = str(listing.get("source_ad_id") or "")
+        if listing.get("source") == "discord":
+            listing["first_seen_at_utc"] = listing.get("posted_at") or observed_at
+        else:
+            listing["first_seen_at_utc"] = first_seen_ads.get(source_ad_id, observed_at)
+    return first_seen_ads, changed
+
+
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     scan_modes = resolve_scan_modes(
@@ -5386,45 +5438,12 @@ def scan_once(include_backlog_rechecks=True):
     pending_schedule = record_pending_recheck_attempts(
         due_pending_ids, pending_ids, pending_schedule
     )
-    if CASH_FILTER:
-        # Cash opportunities are intentionally BloxSwaps-only; never mix Discord
-        # or manually imported listings into the ROBASE cash pipeline.
-        discord_listings, discord_rejected, fresh_discord = [], 0, []
-        print("[discord-parser] skipped: ROBASE cash mode accepts BloxSwaps offers only")
-    else:
-        # The collector writes a bounded local JSON file; parse it into the same
-        # normalized schema, but keep its IDs namespaced away from BloxSwaps cursors.
-        from discord_parser import load_discord_listings
-
-        try:
-            discord_listings, discord_rejected = load_discord_listings()
-        except Exception as discord_error:
-            discord_listings, discord_rejected = [], 0
-            print(f"[discord-parser] source skipped safely: {type(discord_error).__name__}; BloxSwaps scan continues")
-        if discord_listings:
-            existing_ids = {str(row.get("id") or "") for row in listings}
-            fresh_discord = [row for row in discord_listings if str(row.get("id") or "") not in existing_ids]
-            listings.extend(fresh_discord)
-        else:
-            fresh_discord = []
-        print(
-            f"[discord-parser] parsed={len(discord_listings)} "
-            f"new_for_batch={len(fresh_discord)} rejected={discord_rejected}"
-        )
+    listings = _merge_optional_discord_listings(listings, CASH_FILTER)
     first_seen_ads = load_first_seen_ads()
-    first_seen_changed = False
     observed_at = datetime.now(timezone.utc).isoformat()
-    for ad_id in discovered_ids:
-        key = str(ad_id)
-        if key and key not in first_seen_ads:
-            first_seen_ads[key] = observed_at
-            first_seen_changed = True
-    for listing in listings:
-        source_ad_id = str(listing.get("source_ad_id") or "")
-        if listing.get("source") == "discord":
-            listing["first_seen_at_utc"] = listing.get("posted_at") or observed_at
-        else:
-            listing["first_seen_at_utc"] = first_seen_ads.get(source_ad_id, observed_at)
+    first_seen_ads, first_seen_changed = _assign_first_seen_timestamps(
+        listings, discovered_ids, first_seen_ads, observed_at
+    )
     if first_seen_changed:
         save_first_seen_ads(first_seen_ads)
     if stats.get("cold_start"):
