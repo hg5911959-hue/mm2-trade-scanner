@@ -1,6 +1,6 @@
 # MM2 Trade Scanner — Current Project Status
 
-**Last verified:** 2026-11-28 19:45 UTC  
+**Last verified:** 2026-11-28 19:49 UTC  
 **Production branch:** `main`  
 **Current main commit:** `26801450c4d024ba17621620c22d98ffaf36c040`
 
@@ -76,7 +76,8 @@ Both runs had zero scan-cycle failures and zero pending rechecks.
 **Adaptive-policy validation:** run `46181949487` on current `main` commit `26801450c4d024ba17621620c22d98ffaf36c040` completed successfully:
 
 - **16/16** cycles in **480 seconds**, compared with the previous fixed-reserve baseline of 14 cycles / 420 seconds.
-- All 16 cycles logged `complete=True` and `seen_boundary=True`; page depth ranged from 3 to 12 pages.
+- All 16 cycles logged `complete=True` and `seen_boundary=True`; page depth ranged from 3 to 12 pages (**83 pages / 1,660 API posts** total).
+- The parser saw **886 candidate cards**; 54 additions and 166 offers were excluded by category, 505 remained after wildcard filtering, and owner profiles were parsed for **505/505** of those listings.
 - Slowest cycle: **20.3 seconds**; median: **2.4 seconds**.
 - Three cash trade alerts were accepted by Telegram, with estimated profits **$2.28**, **$2.28**, and **$2.25**. Confirmed delivery latency was about **0.52–0.54 seconds** each.
 - The scan-results summary was also accepted. No send errors, no new uncertain deliveries, and no pagination warnings.
