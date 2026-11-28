@@ -4,7 +4,7 @@ Automated scanner for public **BloxSwaps MM2 P2P listings**, with concise Telegr
 
 ## Current production architecture (verified 2026-11-27)
 
-The live GitHub Actions scanner runs with `CASH_FILTER=true`. Its cash qualification path uses the complete ROBASE price snapshot and exact BloxSwaps item-identity metadata; it does not load Supreme Values or query RBLXValue to calculate cash profit. The production workflow uses a **$2.00 minimum estimated gross cash spread before fees/slippage** and sends each qualified offer individually, subject to Telegram pacing and duplicate-delivery safeguards. Profit figures are estimates from the selected 7-day completed-sale price, not guaranteed net proceeds.
+The live GitHub Actions scanner runs with `CASH_FILTER=true`. Its cash qualification path uses the complete ROBASE price snapshot and exact BloxSwaps item-identity metadata; it does not load Supreme Values or query RBLXValue to calculate cash profit. The production workflow uses a **$2.00 minimum estimated gross cash spread** from Chroma.gg 7-day seller-proceeds prices and sends each qualified offer individually, subject to Telegram pacing and duplicate-delivery safeguards. The selected price already reflects marketplace fees; withdrawal costs and slippage are not included, and profit is not guaranteed.
 
 ### ROBASE price methodology
 
@@ -12,7 +12,7 @@ Production cash valuation reads only the **chromas.gg row → Price (7d)** and i
 
 The scanner refreshes/revalidates the 222-item ROBASE catalogue before scanning. Each item page must have a complete identity and a fresh verification timestamp. Individual items without a usable selected-market price or with fewer than three selected-market sales are excluded from cash-profit qualification, without forcing the entire catalogue offline. The separate daily archive still stores the independent All marketplaces chart for shadow comparison only; it does not feed production cash alerts.
 
-All profit and margin figures are gross estimates based on Chroma.gg Price (7d); platform fees, withdrawal costs, and slippage are not included. For the latest verified run, outstanding issues, open pull requests, and a durable resume point for future sessions, see [PROJECT_STATUS.md](PROJECT_STATUS.md).
+All profit and margin figures are gross estimates based on Chroma.gg Price (7d), which represents seller proceeds after marketplace fees; additional withdrawal costs and slippage are not included. For the latest verified run, outstanding issues, open pull requests, and a durable resume point for future sessions, see [PROJECT_STATUS.md](PROJECT_STATUS.md).
 
 This architecture description is not legal clearance. ROBASE publicly describes its data methodology, but the project has not established a separate written redistribution or automation licence. BloxSwaps' published terms prohibit automated tools that disrupt its service; they do not expressly grant blanket permission for every automated use of its public pages or endpoints. Keep collection read-only, bounded, and respectful of service limits, and seek written permission from the relevant providers before expanding collection or republishing their data.
 
