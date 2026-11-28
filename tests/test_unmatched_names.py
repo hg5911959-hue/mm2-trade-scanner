@@ -1,4 +1,6 @@
+import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from test_support import IsolatedDataTestCase
 import scanner
@@ -58,6 +60,53 @@ class UnmatchedNameRegistryTests(IsolatedDataTestCase):
         self.assertEqual(retained["invalid"], state["invalid"])
         self.assertEqual(retained["missing"], state["missing"])
         self.assertEqual(retained["naive"], state["naive"])
+
+    def test_scan_maintenance_prunes_stale_registry_without_new_unmatched_names(self):
+        now = datetime.now(timezone.utc)
+        data_dir = Path("data")
+        data_dir.mkdir(parents=True, exist_ok=True)
+        registry = {
+            "stale": {
+                "name": "Old diagnostic item",
+                "first_seen_at": (now - timedelta(days=20)).isoformat(),
+                "last_seen_at": (now - timedelta(days=15)).isoformat(),
+                "occurrences": 2,
+            },
+            "active": {
+                "name": "Active diagnostic item",
+                "first_seen_at": (now - timedelta(days=2)).isoformat(),
+                "last_seen_at": (now - timedelta(days=1)).isoformat(),
+                "occurrences": 1,
+            },
+        }
+        scanner.atomic_write_text(
+            scanner.UNMATCHED_FILE,
+            json.dumps(registry, ensure_ascii=False, indent=2) + "\n",
+        )
+
+        removed = scanner.prune_unmatched_name_registry()
+
+        persisted = json.loads(Path(scanner.UNMATCHED_FILE).read_text(encoding="utf-8"))
+        self.assertEqual(removed, 1)
+        self.assertEqual(set(persisted), {"active"})
+
+    def test_corrupt_diagnostic_registry_does_not_block_scan_maintenance(self):
+        data_dir = Path("data")
+        data_dir.mkdir(parents=True, exist_ok=True)
+        path = Path(scanner.UNMATCHED_FILE)
+        path.write_text("{not valid json", encoding="utf-8")
+
+        self.assertEqual(scanner.prune_unmatched_name_registry(), 0)
+        self.assertEqual(path.read_text(encoding="utf-8"), "{not valid json")
+
+    def test_corrupt_diagnostic_registry_does_not_block_offer_evaluation(self):
+        data_dir = Path("data")
+        data_dir.mkdir(parents=True, exist_ok=True)
+        path = Path(scanner.UNMATCHED_FILE)
+        path.write_text("{not valid json", encoding="utf-8")
+
+        self.assertEqual(scanner.record_unmatched_names(["New Knife"]), [])
+        self.assertEqual(path.read_text(encoding="utf-8"), "{not valid json")
 
     def test_unmatched_registry_retention_requires_safe_configuration(self):
         now = datetime(2026, 11, 28, 12, tzinfo=timezone.utc)
