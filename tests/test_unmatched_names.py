@@ -90,6 +90,24 @@ class UnmatchedNameRegistryTests(IsolatedDataTestCase):
         self.assertEqual(removed, 1)
         self.assertEqual(set(persisted), {"active"})
 
+    def test_corrupt_diagnostic_registry_does_not_block_scan_maintenance(self):
+        data_dir = Path("data")
+        data_dir.mkdir(parents=True, exist_ok=True)
+        path = Path(scanner.UNMATCHED_FILE)
+        path.write_text("{not valid json", encoding="utf-8")
+
+        self.assertEqual(scanner.prune_unmatched_name_registry(), 0)
+        self.assertEqual(path.read_text(encoding="utf-8"), "{not valid json")
+
+    def test_corrupt_diagnostic_registry_does_not_block_offer_evaluation(self):
+        data_dir = Path("data")
+        data_dir.mkdir(parents=True, exist_ok=True)
+        path = Path(scanner.UNMATCHED_FILE)
+        path.write_text("{not valid json", encoding="utf-8")
+
+        self.assertEqual(scanner.record_unmatched_names(["New Knife"]), [])
+        self.assertEqual(path.read_text(encoding="utf-8"), "{not valid json")
+
     def test_unmatched_registry_retention_requires_safe_configuration(self):
         now = datetime(2026, 11, 28, 12, tzinfo=timezone.utc)
         with self.assertRaises(ValueError):
