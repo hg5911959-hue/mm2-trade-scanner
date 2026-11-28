@@ -5518,6 +5518,53 @@ def _handle_empty_scan_feed(stats, listings, cash_catalog, cash_filter: bool) ->
     return False
 
 
+def _report_scan_feed_quality(stats):
+    """Report malformed, unidentified, and incomplete feed results without hiding them."""
+        malformed_count = int(stats.get("malformed_count", 0))
+        html_issue_count = max(
+            int(stats.get("html_malformed_count", 0)),
+            int(stats.get("html_parse_warning_count", 0)),
+        )
+        issue_count = malformed_count + html_issue_count
+        if issue_count:
+            print(
+                f"[maintenance] feed issues: api_unparsed={malformed_count}, "
+                f"html_unparsed_or_malformed={html_issue_count}; "
+                f"unparsed IDs: {', '.join(stats.get('unparsed_ad_ids', [])[:10])}; "
+                f"HTML warning IDs: {', '.join(stats.get('html_parse_warning_ids', [])[:10])}"
+            )
+            ratio = issue_count / max(1, stats.get("candidate_count", 0))
+            if should_alert_malformed_cards(issue_count):
+                samples = " | ".join(stats.get("malformed_samples", [])[:3])
+                send_maintenance_alert(
+                    "malformed-feed-cards",
+                    f"Cards needing parser review: {issue_count}/{stats.get('candidate_count', 0)} "
+                    f"({ratio:.1%}). Samples: {samples[:700]}",
+                    cooldown_seconds=3600,
+                )
+        unidentified_feed_records = int(stats.get("unidentified_feed_record_count", 0) or 0)
+        if unidentified_feed_records:
+            sample_types = ", ".join(stats.get("unidentified_feed_samples", [])[:5])
+            print(
+                f"[maintenance] API feed records missing stable IDs: {unidentified_feed_records}; "
+                f"sample_types={sample_types}; counted as malformed candidates and retried on later polls."
+            )
+            send_maintenance_alert(
+                "feed-records-without-stable-id",
+                f"BloxSwaps returned {unidentified_feed_records} feed record(s) without a stable listing ID. "
+                "They were counted as malformed candidates, not silently omitted; inspect parser/API diagnostics.",
+                cooldown_seconds=3600,
+            )
+        if not stats.get("pagination_complete", False):
+            print("[maintenance] Feed pagination is incomplete; more recent posts may remain beyond the scan limit.")
+            send_maintenance_alert(
+                "pagination-incomplete",
+                f"Cursor scan incomplete after {stats.get('pagination_pages', 1)} pages. "
+                "Newer posts may remain unscanned; inspect the latest GitHub Actions logs.",
+                cooldown_seconds=1800,
+            )
+
+
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     scan_modes = resolve_scan_modes(
@@ -5629,49 +5676,7 @@ def scan_once(include_backlog_rechecks=True):
         f"complete={stats.get('pagination_complete', False)} "
         f"seen_boundary={stats.get('seen_boundary_reached', False)}"
     )
-    malformed_count = int(stats.get("malformed_count", 0))
-    html_issue_count = max(
-        int(stats.get("html_malformed_count", 0)),
-        int(stats.get("html_parse_warning_count", 0)),
-    )
-    issue_count = malformed_count + html_issue_count
-    if issue_count:
-        print(
-            f"[maintenance] feed issues: api_unparsed={malformed_count}, "
-            f"html_unparsed_or_malformed={html_issue_count}; "
-            f"unparsed IDs: {', '.join(stats.get('unparsed_ad_ids', [])[:10])}; "
-            f"HTML warning IDs: {', '.join(stats.get('html_parse_warning_ids', [])[:10])}"
-        )
-        ratio = issue_count / max(1, stats.get("candidate_count", 0))
-        if should_alert_malformed_cards(issue_count):
-            samples = " | ".join(stats.get("malformed_samples", [])[:3])
-            send_maintenance_alert(
-                "malformed-feed-cards",
-                f"Cards needing parser review: {issue_count}/{stats.get('candidate_count', 0)} "
-                f"({ratio:.1%}). Samples: {samples[:700]}",
-                cooldown_seconds=3600,
-            )
-    unidentified_feed_records = int(stats.get("unidentified_feed_record_count", 0) or 0)
-    if unidentified_feed_records:
-        sample_types = ", ".join(stats.get("unidentified_feed_samples", [])[:5])
-        print(
-            f"[maintenance] API feed records missing stable IDs: {unidentified_feed_records}; "
-            f"sample_types={sample_types}; counted as malformed candidates and retried on later polls."
-        )
-        send_maintenance_alert(
-            "feed-records-without-stable-id",
-            f"BloxSwaps returned {unidentified_feed_records} feed record(s) without a stable listing ID. "
-            "They were counted as malformed candidates, not silently omitted; inspect parser/API diagnostics.",
-            cooldown_seconds=3600,
-        )
-    if not stats.get("pagination_complete", False):
-        print("[maintenance] Feed pagination is incomplete; more recent posts may remain beyond the scan limit.")
-        send_maintenance_alert(
-            "pagination-incomplete",
-            f"Cursor scan incomplete after {stats.get('pagination_pages', 1)} pages. "
-            "Newer posts may remain unscanned; inspect the latest GitHub Actions logs.",
-            cooldown_seconds=1800,
-        )
+    _report_scan_feed_quality(stats)
     # Runtime visibility for real-feed quantity validation: log only explicit stacks.
     for listing in listings:
         for side_label, field in (("Propose/receive", "receive_items"), ("Recherche/give", "give_items")):
