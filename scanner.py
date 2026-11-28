@@ -5565,6 +5565,63 @@ def _report_scan_feed_quality(stats):
         )
 
 
+def _load_uncertain_delivery_state():
+    """Reconcile durable Telegram uncertainty and report aged quarantines without resending."""
+    alerted = load_alerted()
+    alerted_set = set(alerted)
+    uncertain_state, _ = load_uncertain_state()
+    uncertain_context = load_uncertain_context()
+    uncertain_state, uncertain_context, quarantine_reconciliation = reconcile_uncertain_quarantine(
+        uncertain_state, alerted_set, uncertain_context
+    )
+    if quarantine_reconciliation["confirmed_quarantines_cleared"] or quarantine_reconciliation["orphan_contexts_removed"]:
+        save_uncertain_state(uncertain_state)
+        save_uncertain_context(uncertain_context)
+        print(
+            "[telegram-state] Reconciled durable delivery state: "
+            f"confirmed_quarantines_cleared={len(quarantine_reconciliation['confirmed_quarantines_cleared'])} "
+            f"orphan_contexts_removed={len(quarantine_reconciliation['orphan_contexts_removed'])} "
+            f"unresolved_remaining={len(uncertain_state)}"
+        )
+    uncertain_ids = set(uncertain_state)
+    now = time.time()
+    aged_uncertain = [
+        ad_id for ad_id, timestamp in uncertain_state.items()
+        if now - timestamp >= UNCERTAIN_REVIEW_AFTER_SECONDS
+    ]
+    if aged_uncertain:
+        review_lines = []
+        for uncertain_id in aged_uncertain[:8]:
+            entry = uncertain_context.get(uncertain_id, {})
+            source_id = entry.get("source_ad_id") or uncertain_id
+            listing_url = entry.get("listing_url")
+            review_lines.append(
+                f"{source_id}: {listing_url}" if listing_url else f"{source_id} (internal ID {uncertain_id})"
+            )
+        context_suffix = (
+            "\nManual review references:\n" + "\n".join(review_lines)
+            if review_lines else ""
+        )
+        send_maintenance_alert(
+            "telegram-quarantine-review",
+            f"{len(aged_uncertain)} Telegram delivery status(es) remain unresolved for at least 24 hours. "
+            "They remain quarantined indefinitely; check Telegram manually before clearing any entry. "
+            "No automatic resend will occur."
+            + context_suffix,
+            cooldown_seconds=86400,
+        )
+    if uncertain_ids:
+        print(
+            f"[telegram] {len(uncertain_ids)} listing(s) have uncertain delivery status "
+            "and are quarantined to prevent duplicate messages."
+        )
+    print(
+        f"[state] Loaded {len(alerted_set)} previously alerted listing IDs; "
+        f"{len(uncertain_ids)} uncertain-delivery IDs."
+    )
+    return alerted, alerted_set, uncertain_ids
+
+
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     scan_modes = resolve_scan_modes(
@@ -5687,58 +5744,7 @@ def scan_once(include_backlog_rechecks=True):
                         f"[quantity] {side_label}: {item['name']} x{quantity} "
                         f"(listing {listing['id']})"
                     )
-    alerted = load_alerted()
-    alerted_set = set(alerted)
-    uncertain_state, _ = load_uncertain_state()
-    uncertain_context = load_uncertain_context()
-    uncertain_state, uncertain_context, quarantine_reconciliation = reconcile_uncertain_quarantine(
-        uncertain_state, alerted_set, uncertain_context
-    )
-    if quarantine_reconciliation["confirmed_quarantines_cleared"] or quarantine_reconciliation["orphan_contexts_removed"]:
-        save_uncertain_state(uncertain_state)
-        save_uncertain_context(uncertain_context)
-        print(
-            "[telegram-state] Reconciled durable delivery state: "
-            f"confirmed_quarantines_cleared={len(quarantine_reconciliation['confirmed_quarantines_cleared'])} "
-            f"orphan_contexts_removed={len(quarantine_reconciliation['orphan_contexts_removed'])} "
-            f"unresolved_remaining={len(uncertain_state)}"
-        )
-    uncertain_ids = set(uncertain_state)
-    now = time.time()
-    aged_uncertain = [
-        ad_id for ad_id, timestamp in uncertain_state.items()
-        if now - timestamp >= UNCERTAIN_REVIEW_AFTER_SECONDS
-    ]
-    if aged_uncertain:
-        review_lines = []
-        for uncertain_id in aged_uncertain[:8]:
-            entry = uncertain_context.get(uncertain_id, {})
-            source_id = entry.get("source_ad_id") or uncertain_id
-            listing_url = entry.get("listing_url")
-            review_lines.append(
-                f"{source_id}: {listing_url}" if listing_url else f"{source_id} (internal ID {uncertain_id})"
-            )
-        context_suffix = (
-            "\nManual review references:\n" + "\n".join(review_lines)
-            if review_lines else ""
-        )
-        send_maintenance_alert(
-            "telegram-quarantine-review",
-            f"{len(aged_uncertain)} Telegram delivery status(es) remain unresolved for at least 24 hours. "
-            "They remain quarantined indefinitely; check Telegram manually before clearing any entry. "
-            "No automatic resend will occur."
-            + context_suffix,
-            cooldown_seconds=86400,
-        )
-    if uncertain_ids:
-        print(
-            f"[telegram] {len(uncertain_ids)} listing(s) have uncertain delivery status "
-            "and are quarantined to prevent duplicate messages."
-        )
-    print(
-        f"[state] Loaded {len(alerted_set)} previously alerted listing IDs; "
-        f"{len(uncertain_ids)} uncertain-delivery IDs."
-    )
+    alerted, alerted_set, uncertain_ids = _load_uncertain_delivery_state()
     already_alerted_skipped = 0
     watch_unchanged_skipped = 0
     uncertain_skipped = 0
