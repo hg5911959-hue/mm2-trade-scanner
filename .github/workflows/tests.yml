@@ -15,7 +15,7 @@ jobs:
       CASH_MAX_AGE_DAYS: "14"
     # Regression tests are required before the production scanner can be re-enabled.
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,4 +61,13 @@ jobs:
 
       - name: Retain explicit repository-wide undefined and unused-name guard
         run: ruff check --select F .
+
+      - name: Apply stricter Ruff rules to typed utility modules
+        run: ruff check --select B,UP,SIM,E701,E702 tools/
+
+      - name: Install pinned mypy
+        run: python -m pip install --disable-pip-version-check mypy==1.18.2
+
+      - name: Type-check utility modules
+        run: mypy --ignore-missing-imports tools/
 
