@@ -2415,6 +2415,87 @@ def _source_snapshot_matches_meta(cached_document, source_meta):
     )
 
 
+def _merge_supreme_page_items(all_values, items):
+    """Merge one RBLXValue page using source-pure Supreme values and exact identities."""
+    numeric_count = 0
+            for item in items:
+                if not isinstance(item, dict) or not item.get("name"):
+                    continue
+                name = str(item["name"])
+                value, value_status = _supreme_numeric_value(item)
+                # Only value_source_b is used as the Supreme price. Do not
+                # widen it with a provider range whose source is not verified.
+                value_min = value_max = value
+                secondary = item.get("value_source_a")
+                try:
+                    secondary = float(secondary) if secondary is not None else None
+                    if secondary is not None and (not math.isfinite(secondary) or secondary <= 0):
+                        secondary = None
+                except (TypeError, ValueError):
+                    secondary = None
+                category = str(item.get("category") or "").strip().casefold()
+                item_type = str(item.get("type") or "").strip().casefold()
+                candidate = {
+                    "id": str(item.get("id") or ""), "slug": str(item.get("slug") or ""),
+                    "name": name, "value": value, "value_min": value_min, "value_max": value_max,
+                    "rblxvalue_value": _positive_numeric_value(item.get("value")),
+                    "raw_source_value": item.get("value_source_b"), "value_status": value_status,
+                    "secondary_value": secondary, "category": category, "type": item_type,
+                    # The API does not document stability as source-specific. Preserve the
+                    # provider label verbatim; do not claim it is a verified Supreme-only field.
+                    "stability": _normalize_stability(item.get("stability")),
+                    "range": str(item.get("range") or ""),
+                    "demand": _optional_bounded_int(item.get("demand"), 0, 10),
+                    "rarity": _optional_bounded_int(item.get("rarity"), 0, 10),
+                    "acronym": str(item.get("acronym") or ""),
+                    "event_name": str(item.get("event_name") or ""),
+                    "tier": _optional_bounded_int(item.get("tier"), 0, 100),
+                    "description": str(item.get("description") or "")[:500],
+                    "image_url": str(item.get("image_url") or ""),
+                    "fandom_url": str(item.get("fandom_url") or ""),
+                    "last_updated": item.get("last_updated"),
+                }
+                key = normalize_name(name)
+                existing = all_values.setdefault(key, {
+                    "name": name, "value": value, "value_min": value_min,
+                    "value_max": value_max, "secondary_value": secondary, "variants": [],
+                })
+                variants = existing["variants"]
+                identity = (
+                    candidate["id"] or candidate["slug"] or normalize_slug(name),
+                    category, item_type,
+                )
+                previous_index = next((
+                    index for index, variant in enumerate(variants)
+                    if (
+                        variant.get("id") or variant.get("slug") or normalize_slug(variant.get("name")),
+                        str(variant.get("category") or "").casefold(),
+                        str(variant.get("type") or "").casefold(),
+                    ) == identity
+                ), None)
+                if previous_index is None:
+                    variants.append(candidate)
+                    if value is not None:
+                        numeric_count += 1
+                else:
+                    previous = variants[previous_index]
+                    variants[previous_index] = candidate
+                    if previous.get("value") is None and value is not None:
+                        numeric_count += 1
+                    elif previous.get("value") is not None and value is None:
+                        numeric_count -= 1
+                if len(variants) == 1:
+                    existing.update({
+                        "name": name, "value": value, "value_min": value_min,
+                        "value_max": value_max, "secondary_value": secondary,
+                    })
+                else:
+                    # Same-name identities must never become a synthetic high/low range.
+                    existing["value"] = existing["value_min"] = existing["value_max"] = None
+                    existing["secondary_value"] = None
+    return numeric_count
+
+
 def load_supreme_values():
     # Never spend API budget or perform health checks for a credential already blocked.
     if RBLXVALUE_API_KEY and rblxvalue_guard.is_key_blocked(key=RBLXVALUE_API_KEY):
@@ -2522,81 +2603,7 @@ def load_supreme_values():
                 )
             refreshed_pages[page_key] = {"etag": etag, "total": total, "items": items}
 
-            for item in items:
-                if not isinstance(item, dict) or not item.get("name"):
-                    continue
-                name = str(item["name"])
-                value, value_status = _supreme_numeric_value(item)
-                # Only value_source_b is used as the Supreme price. Do not
-                # widen it with a provider range whose source is not verified.
-                value_min = value_max = value
-                secondary = item.get("value_source_a")
-                try:
-                    secondary = float(secondary) if secondary is not None else None
-                    if secondary is not None and (not math.isfinite(secondary) or secondary <= 0):
-                        secondary = None
-                except (TypeError, ValueError):
-                    secondary = None
-                category = str(item.get("category") or "").strip().casefold()
-                item_type = str(item.get("type") or "").strip().casefold()
-                candidate = {
-                    "id": str(item.get("id") or ""), "slug": str(item.get("slug") or ""),
-                    "name": name, "value": value, "value_min": value_min, "value_max": value_max,
-                    "rblxvalue_value": _positive_numeric_value(item.get("value")),
-                    "raw_source_value": item.get("value_source_b"), "value_status": value_status,
-                    "secondary_value": secondary, "category": category, "type": item_type,
-                    # The API does not document stability as source-specific. Preserve the
-                    # provider label verbatim; do not claim it is a verified Supreme-only field.
-                    "stability": _normalize_stability(item.get("stability")),
-                    "range": str(item.get("range") or ""),
-                    "demand": _optional_bounded_int(item.get("demand"), 0, 10),
-                    "rarity": _optional_bounded_int(item.get("rarity"), 0, 10),
-                    "acronym": str(item.get("acronym") or ""),
-                    "event_name": str(item.get("event_name") or ""),
-                    "tier": _optional_bounded_int(item.get("tier"), 0, 100),
-                    "description": str(item.get("description") or "")[:500],
-                    "image_url": str(item.get("image_url") or ""),
-                    "fandom_url": str(item.get("fandom_url") or ""),
-                    "last_updated": item.get("last_updated"),
-                }
-                key = normalize_name(name)
-                existing = all_values.setdefault(key, {
-                    "name": name, "value": value, "value_min": value_min,
-                    "value_max": value_max, "secondary_value": secondary, "variants": [],
-                })
-                variants = existing["variants"]
-                identity = (
-                    candidate["id"] or candidate["slug"] or normalize_slug(name),
-                    category, item_type,
-                )
-                previous_index = next((
-                    index for index, variant in enumerate(variants)
-                    if (
-                        variant.get("id") or variant.get("slug") or normalize_slug(variant.get("name")),
-                        str(variant.get("category") or "").casefold(),
-                        str(variant.get("type") or "").casefold(),
-                    ) == identity
-                ), None)
-                if previous_index is None:
-                    variants.append(candidate)
-                    if value is not None:
-                        numeric_count += 1
-                else:
-                    previous = variants[previous_index]
-                    variants[previous_index] = candidate
-                    if previous.get("value") is None and value is not None:
-                        numeric_count += 1
-                    elif previous.get("value") is not None and value is None:
-                        numeric_count -= 1
-                if len(variants) == 1:
-                    existing.update({
-                        "name": name, "value": value, "value_min": value_min,
-                        "value_max": value_max, "secondary_value": secondary,
-                    })
-                else:
-                    # Same-name identities must never become a synthetic high/low range.
-                    existing["value"] = existing["value_min"] = existing["value_max"] = None
-                    existing["secondary_value"] = None
+            numeric_count += _merge_supreme_page_items(all_values, items)
             offset += len(items)
             if offset < total and len(items) < page_size:
                 raise RuntimeError(
