@@ -26,7 +26,7 @@ class RobaseRblxvalueCrosswalkEntryTests(IsolatedDataTestCase):
             "name": "Bat",
             "slug": "bat",
             "type": "knife",
-            "category": scanner.ROBASE_CATEGORY_TO_RBLX["legendary"],
+            "category": scanner.ROBASE_CATEGORY_TO_RBLX.get("legendary", "legendary"),
             "value_source_b": 100,
             "raw_source_value": 100,
             "secondary_value": 80,
