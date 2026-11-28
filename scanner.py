@@ -5811,9 +5811,11 @@ def _log_scan_feed_candidates(stats, listings):
                     )
 
 def _deduplicate_and_record_scan_listings(listings, history_store, public_history_store):
-    """Deduplicate feed rows and persist private/public listing history safely."""
+    """Deduplicate feed rows, initialize outcomes, and persist listing history safely."""
     parsed_count = len(listings)
     listings = deduplicate_listings(listings)
+    from tools.scan_outcomes import ScanOutcomeLedger
+    outcome_ledger = ScanOutcomeLedger(listing.get("id") for listing in listings)
     if history_store is not None:
         try:
             stored = history_store.record_listings(listings)
@@ -5831,7 +5833,7 @@ def _deduplicate_and_record_scan_listings(listings, history_store, public_histor
     duplicate_count = parsed_count - len(listings)
     if duplicate_count:
         print(f"[dedupe] Ignored {duplicate_count} duplicate listing row(s) in this scan batch.")
-    return listings
+    return listings, outcome_ledger
 
 
 def scan_once(include_backlog_rechecks=True):
@@ -5911,11 +5913,9 @@ def scan_once(include_backlog_rechecks=True):
     _log_feed_reconciliation_diagnostics(stats)
     if _handle_empty_scan_feed(stats, listings, cash_catalog, CASH_FILTER):
         return
-    listings = _deduplicate_and_record_scan_listings(
+    listings, outcome_ledger = _deduplicate_and_record_scan_listings(
         listings, history_store, public_history_store
     )
-    from tools.scan_outcomes import ScanOutcomeLedger
-    outcome_ledger = ScanOutcomeLedger(listing.get("id") for listing in listings)
     _log_scan_feed_candidates(stats, listings)
     alerted, alerted_set, uncertain_ids = _load_uncertain_delivery_state()
     already_alerted_skipped = 0
