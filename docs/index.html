@@ -40,7 +40,7 @@
     <section class="grid" aria-label="Market summary">
       <div class="metric"><div class="label">Tracked public listings</div><div class="value" id="listings">—</div><div class="hint">Recently observed</div></div>
       <div class="metric"><div class="label">Qualified USD opportunities</div><div class="value" id="opportunities">—</div><div class="hint">Last 7 days</div></div>
-      <div class="metric"><div class="label">Chroma-priced items</div><div class="value" id="items">—</div><div class="hint">Items with a Chroma 7d price</div></div>
+      <div class="metric"><div class="label">Cash-eligible items</div><div class="value" id="items">—</div><div class="hint">At least 3 Chroma sales · 7d</div></div>
       <div class="metric"><div class="label">Chroma sales · 7d</div><div class="value" id="crosschecked">—</div><div class="hint">Completed sales volume</div></div>
     </section>
 
@@ -59,6 +59,14 @@
         </select>
       </div>
       <div id="robase-table" class="table-wrap"><div class="empty">Waiting for a complete verified ROBASE catalogue.</div></div>
+    </section>
+
+    <section class="panel" style="margin-bottom:14px" aria-label="Cash eligibility blockers">
+      <div class="panel-head">
+        <div><h2>Cash eligibility blockers</h2><div class="small">Items below the minimum of 3 Chroma.gg completed sales in the last 7 days are excluded from cash valuation.</div></div>
+        <span class="count" id="blocked-count">Loading eligibility…</span>
+      </div>
+      <div id="blocked-table" class="table-wrap"><div class="empty">Waiting for a complete verified ROBASE catalogue.</div></div>
     </section>
 
     <section class="panel">
@@ -146,7 +154,31 @@
         return '<tr><td><div class="item">' + name + '</div><div class="small">' + esc(row.category) + ' · ' + (row.priceUsd == null ? 'checked ' : 'price updated ') + esc(date(row.priceUsd == null ? row.lastCheckedAt : row.priceUpdatedAt)) + '</div></td>' +
           '<td class="num profit">' + (row.priceUsd == null ? pill('warn','No 7d price') : usd(row.priceUsd)) + '</td><td class="num">' + number(row.sold7d) + '</td>' +
           '<td class="num">' + number(row.copies) + '</td><td class="num">' + number(row.holders) + '</td>' +
-          '<td>' + pill(row.priceUsd == null ? 'warn' : 'good',row.priceBasis) + '</td></tr>';
+          '<td>' + pill(row.cashEligible ? 'good' : 'warn',row.cashEligible ? row.priceBasis : (row.priceUsd == null ? row.priceBasis : 'Below 3-sale minimum')) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  function renderBlockedItems(summary) {
+    if (!summary.available) {
+      $("blocked-count").textContent = "Unavailable";
+      $("blocked-table").innerHTML = '<div class="empty">A complete verified ROBASE snapshot is not available.</div>';
+      return;
+    }
+    const rows = robaseRows.filter(row => !row.cashEligible)
+      .sort((a,b) => a.name.localeCompare(b.name));
+    $("blocked-count").textContent = number(summary.blockedCashItemCount) + " blocked · "
+      + number(summary.cashEligibleItemCount) + " eligible";
+    if (!rows.length) {
+      $("blocked-table").innerHTML = '<div class="empty">Every catalogue item meets the 7-day sales minimum.</div>';
+      return;
+    }
+    $("blocked-table").innerHTML = '<table style="min-width:760px"><thead><tr><th>Item</th><th>Chroma sales · 7d</th><th>Why it is blocked</th></tr></thead><tbody>' +
+      rows.map(row => {
+        const url = safeUrl(row.url);
+        const name = url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + esc(row.name) + '</a>' : esc(row.name);
+        return '<tr><td><div class="item">' + name + '</div><div class="small">' + esc(row.category) + '</div></td>' +
+          '<td class="num">' + (row.sold7d == null ? 'Unavailable' : number(row.sold7d)) + '</td>' +
+          '<td>' + pill('warn',row.cashBlockReason || 'Not cash-eligible') + '</td></tr>';
       }).join('') + '</tbody></table>';
   }
 
@@ -165,7 +197,7 @@
       const s=data.summary||{};
       $("listings").textContent=s.historyAvailable ? number(s.trackedListings) : "Unavailable";
       $("opportunities").textContent=s.historyAvailable ? number(s.opportunities7d) : "Not retained";
-      $("items").textContent=number(s.trackedItems);
+      $("items").textContent=number((data.robaseSummary||{}).cashEligibleItemCount);
       $("crosschecked").textContent=number((data.robaseSummary||{}).totalSold7d);
       $("status").textContent="Market data loaded";
       $("updated").textContent="Snapshot: "+date(s.latestSnapshot)+" · Exported: "+date(data.generatedAt);
@@ -174,7 +206,7 @@
       robaseRows = data.robaseItems || [];
       window.__robaseSummary = data.robaseSummary || {};
       setupRobaseFilters(robaseRows);
-      renderRobaseItems(window.__robaseSummary);
+      renderRobaseItems(window.__robaseSummary);\n      renderBlockedItems(window.__robaseSummary);
     })
     .catch(error=>{$("status").textContent="Waiting for first deployment";$("updated").textContent=error.message;});
 </script>
