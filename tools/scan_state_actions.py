@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from typing import Any
 
 
@@ -28,7 +28,7 @@ def mark_pending_state(
     save_seen_ads: Callable[[set[str]], None],
     save_pending_recheck_schedule: Callable[[dict[str, dict[str, Any]]], None],
     save_pending_ids: Callable[[dict[str, float]], None],
-    priority_pending_reasons: Sequence[str],
+    priority_pending_reasons: Collection[str],
     pending_recheck_backoff_seconds: Sequence[float],
     reason: str = "legacy_unclassified",
     now: float | None = None,
