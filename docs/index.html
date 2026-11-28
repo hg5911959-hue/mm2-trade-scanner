@@ -206,7 +206,8 @@
       robaseRows = data.robaseItems || [];
       window.__robaseSummary = data.robaseSummary || {};
       setupRobaseFilters(robaseRows);
-      renderRobaseItems(window.__robaseSummary);\n      renderBlockedItems(window.__robaseSummary);
+      renderRobaseItems(window.__robaseSummary);
+      renderBlockedItems(window.__robaseSummary);
     })
     .catch(error=>{$("status").textContent="Waiting for first deployment";$("updated").textContent=error.message;});
 </script>
