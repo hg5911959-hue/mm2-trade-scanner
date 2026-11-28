@@ -5841,6 +5841,60 @@ def _deliver_digest(
 
 
 
+def _log_scan_feed_candidates(stats, listings):
+    """Log feed coverage, parser quality, and explicit item quantities."""
+    print(
+        f"[bloxswaps] candidate_cards={stats.get('candidate_count', 0)} "
+        f"excluded_ajouts={stats.get('addition_count', 0)} "
+        f"excluded_offres={stats.get('offers_excluded_count', 0)} "
+        f"eligible_after_wildcard_filter={len(listings)}"
+    )
+    print(f"[bloxswaps] Direct owner profiles parsed: {stats.get('owner_link_count', 0)}/{len(listings)}")
+    print(
+        f"[pagination] pages={stats.get('pagination_pages', 1)} "
+        f"api_posts={stats.get('pagination_api_posts', 0)} "
+        f"complete={stats.get('pagination_complete', False)} "
+        f"seen_boundary={stats.get('seen_boundary_reached', False)}"
+    )
+    _report_scan_feed_quality(stats)
+    # Runtime visibility for real-feed quantity validation: log only explicit stacks.
+    for listing in listings:
+        for side_label, field in (("Propose/receive", "receive_items"), ("Recherche/give", "give_items")):
+            for item in listing.get(field, []):
+                quantity = item.get("quantity")
+                if quantity is not None and quantity > 1:
+                    print(
+                        f"[quantity] {side_label}: {item['name']} x{quantity} "
+                        f"(listing {listing['id']})"
+                    )
+
+
+def _deduplicate_and_record_scan_listings(listings, history_store, public_history_store):
+    """Deduplicate feed rows, initialize outcomes, and persist listing history safely."""
+    parsed_count = len(listings)
+    listings = deduplicate_listings(listings)
+    from tools.scan_outcomes import ScanOutcomeLedger
+    outcome_ledger = ScanOutcomeLedger(listing.get("id") for listing in listings)
+    if history_store is not None:
+        try:
+            stored = history_store.record_listings(listings)
+            print(f"[market-history] Listings recorded or refreshed: {stored}")
+        except Exception as history_error:
+            print(f"[market-history] Listing storage skipped safely: {type(history_error).__name__}")
+    if public_history_store is not None:
+        try:
+            stored = public_history_store.record_listings(listings)
+            print(f"[public-dashboard-history] Public BloxSwaps listings recorded or refreshed: {stored}")
+        except Exception as history_error:
+            raise RuntimeError(
+                "Public dashboard listing history could not be persisted; refusing to send alerts."
+            ) from history_error
+    duplicate_count = parsed_count - len(listings)
+    if duplicate_count:
+        print(f"[dedupe] Ignored {duplicate_count} duplicate listing row(s) in this scan batch.")
+    return listings, outcome_ledger
+
+
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     scan_modes = resolve_scan_modes(
@@ -5919,51 +5973,10 @@ def scan_once(include_backlog_rechecks=True):
     _log_feed_reconciliation_diagnostics(stats)
     if _handle_empty_scan_feed(stats, listings, cash_catalog, CASH_FILTER):
         return
-    parsed_count = len(listings)
-    listings = deduplicate_listings(listings)
-    from tools.scan_outcomes import ScanOutcomeLedger
-    outcome_ledger = ScanOutcomeLedger(listing.get("id") for listing in listings)
-    if history_store is not None:
-        try:
-            stored = history_store.record_listings(listings)
-            print(f"[market-history] Listings recorded or refreshed: {stored}")
-        except Exception as history_error:
-            print(f"[market-history] Listing storage skipped safely: {type(history_error).__name__}")
-    if public_history_store is not None:
-        try:
-            stored = public_history_store.record_listings(listings)
-            print(f"[public-dashboard-history] Public BloxSwaps listings recorded or refreshed: {stored}")
-        except Exception as history_error:
-            raise RuntimeError(
-                "Public dashboard listing history could not be persisted; refusing to send alerts."
-            ) from history_error
-    duplicate_count = parsed_count - len(listings)
-    if duplicate_count:
-        print(f"[dedupe] Ignored {duplicate_count} duplicate listing row(s) in this scan batch.")
-    print(
-        f"[bloxswaps] candidate_cards={stats.get('candidate_count', 0)} "
-        f"excluded_ajouts={stats.get('addition_count', 0)} "
-        f"excluded_offres={stats.get('offers_excluded_count', 0)} "
-        f"eligible_after_wildcard_filter={len(listings)}"
+    listings, outcome_ledger = _deduplicate_and_record_scan_listings(
+        listings, history_store, public_history_store
     )
-    print(f"[bloxswaps] Direct owner profiles parsed: {stats.get('owner_link_count', 0)}/{len(listings)}")
-    print(
-        f"[pagination] pages={stats.get('pagination_pages', 1)} "
-        f"api_posts={stats.get('pagination_api_posts', 0)} "
-        f"complete={stats.get('pagination_complete', False)} "
-        f"seen_boundary={stats.get('seen_boundary_reached', False)}"
-    )
-    _report_scan_feed_quality(stats)
-    # Runtime visibility for real-feed quantity validation: log only explicit stacks.
-    for listing in listings:
-        for side_label, field in (("Propose/receive", "receive_items"), ("Recherche/give", "give_items")):
-            for item in listing.get(field, []):
-                quantity = item.get("quantity")
-                if quantity is not None and quantity > 1:
-                    print(
-                        f"[quantity] {side_label}: {item['name']} x{quantity} "
-                        f"(listing {listing['id']})"
-                    )
+    _log_scan_feed_candidates(stats, listings)
     alerted, alerted_set, uncertain_ids = _load_uncertain_delivery_state()
     already_alerted_skipped = 0
     watch_unchanged_skipped = 0
