@@ -1,4 +1,6 @@
+import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from test_support import IsolatedDataTestCase
 import scanner
@@ -60,9 +62,6 @@ class UnmatchedNameRegistryTests(IsolatedDataTestCase):
         self.assertEqual(retained["naive"], state["naive"])
 
     def test_scan_maintenance_prunes_stale_registry_without_new_unmatched_names(self):
-        from pathlib import Path
-        import json
-
         now = datetime.now(timezone.utc)
         data_dir = Path("data")
         data_dir.mkdir(parents=True, exist_ok=True)
@@ -82,7 +81,7 @@ class UnmatchedNameRegistryTests(IsolatedDataTestCase):
         }
         scanner.atomic_write_text(
             scanner.UNMATCHED_FILE,
-            json.dumps(registry, ensure_ascii=False, indent=2) + "\\n",
+            json.dumps(registry, ensure_ascii=False, indent=2) + "\n",
         )
 
         removed = scanner.prune_unmatched_name_registry()
