@@ -11,6 +11,7 @@ from pathlib import Path
 from tools.cash_market import load_robase_price_catalog
 from tools.next_to_verify import format_blockers
 from tools.preflight import collect_preflight_checks
+from tools.scanner_config import CONFIG
 from tools.telegram_transport import TELEGRAM_OPENER
 
 DATA_DIR = Path("data")
@@ -95,7 +96,7 @@ def main():
     except (OSError, ValueError, RuntimeError, TypeError, KeyError, OverflowError) as exc:
         preflight_checks = ["preflight unavailable (" + type(exc).__name__ + ")"]
     report = build_report(
-        metrics, discord, key, int(os.environ.get("RBLXVALUE_DAILY_REQUEST_LIMIT", "60")),
+        metrics, discord, key, CONFIG.rblxvalue_daily_request_limit,
         cash_summary=cash_summary, blocker_summary=blocker_summary,
         preflight_checks=preflight_checks,
     )
