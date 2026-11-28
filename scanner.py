@@ -4026,6 +4026,61 @@ def _resolve_robase_cash_record(catalog_slug, cash_catalog):
     return (row, mapping.get("robase_identity_source", "exact")) if row else (None, "missing")
 
 
+def _build_robase_rblxvalue_mapping_entry(row, details, identity_source, values, aliases):
+    """Resolve one BloxSwaps weapon to exactly one matching RBLXValue identity."""
+    name = str(details.get("displayName") or "").strip()
+    catalog_slug = normalize_slug(details.get("slug") or "")
+    item = {
+        "name": name,
+        "catalog_slug": catalog_slug,
+        "catalog_rarity": details.get("rarity"),
+        "catalog_type": details.get("type"),
+        "catalog_chroma": details.get("chroma"),
+        "catalog_year": details.get("year"),
+    }
+    record, source, candidates = resolve_value_record(name, values, aliases, item=item)
+    variants = record.get("variants") or [record] if record else []
+    label = f"{row.get('name')} [{catalog_slug}]"
+    if not record or source not in {"slug", "metadata", "exact"} or len(variants) != 1:
+        failure = "ambiguous" if source == "ambiguous" or candidates else "missing"
+        return catalog_slug, None, failure, label
+
+    selected = variants[0]
+    selected_slug = normalize_slug(selected.get("slug") or "")
+    selected_type = str(selected.get("type") or "").strip().casefold()
+    selected_category = str(selected.get("category") or "").strip().casefold()
+    expected_type = str(details.get("type") or "").strip().casefold()
+    expected_rarity = str(details.get("rarity") or "").strip().casefold()
+    chroma = details.get("chroma") is True
+    expected_category = "chroma" if chroma else ROBASE_CATEGORY_TO_RBLX.get(expected_rarity, expected_rarity)
+    if (
+        not selected_slug or selected_type != expected_type
+        or selected_category != expected_category
+    ):
+        return catalog_slug, None, "missing", f"{row.get('name')} [{catalog_slug}: metadata mismatch]"
+
+    value, value_status = _supreme_numeric_value(selected)
+    return catalog_slug, {
+        "bloxswaps_slug": catalog_slug,
+        "robase_slug": normalize_slug(row.get("robase_slug") or ""),
+        "robase_name": row.get("name"),
+        "robase_category": row.get("robase_category"),
+        "robase_identity_source": identity_source,
+        "rblx_slug": selected_slug,
+        "rblx_name": selected.get("name"),
+        "rblx_match_source": source,
+        "value": value,
+        "value_status": value_status,
+        "rblxvalue_value": _rblxvalue_blended_value(selected),
+        "mm2values_value": _positive_numeric_value(selected.get("secondary_value")),
+        "supreme_value": _positive_numeric_value(selected.get("raw_source_value")),
+        "stability": _normalize_stability(selected.get("stability")),
+        "demand": _optional_bounded_int(selected.get("demand"), 0, 10),
+        "category": selected.get("category"),
+        "type": selected.get("type"),
+    }, None, None
+
+
 def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
     """Build exact ROBASE -> BloxSwaps -> RBLXValue crosswalk for weapon variants."""
     robase_rows = list((cash_catalog or {}).get("items_by_slug", {}).values())
@@ -4060,58 +4115,13 @@ def audit_robase_rblxvalue_mapping(values, aliases, cash_catalog, item_map):
     rblx_ambiguous = []
     rblx_missing = []
     for row, details, identity_source in weapon_rows:
-        name = str(details.get("displayName") or "").strip()
-        catalog_slug = normalize_slug(details.get("slug") or "")
-        item = {
-            "name": name,
-            "catalog_slug": catalog_slug,
-            "catalog_rarity": details.get("rarity"),
-            "catalog_type": details.get("type"),
-            "catalog_chroma": details.get("chroma"),
-            "catalog_year": details.get("year"),
-        }
-        record, source, candidates = resolve_value_record(name, values, aliases, item=item)
-        variants = record.get("variants") or [record] if record else []
-        if not record or source not in {"slug", "metadata", "exact"} or len(variants) != 1:
-            label = f"{row.get('name')} [{catalog_slug}]"
-            if source == "ambiguous" or candidates:
-                rblx_ambiguous.append(label)
-            else:
-                rblx_missing.append(label)
+        catalog_slug, entry, failure, label = _build_robase_rblxvalue_mapping_entry(
+            row, details, identity_source, values, aliases
+        )
+        if entry is None:
+            (rblx_ambiguous if failure == "ambiguous" else rblx_missing).append(label)
             continue
-        selected = variants[0]
-        selected_slug = normalize_slug(selected.get("slug") or "")
-        selected_type = str(selected.get("type") or "").strip().casefold()
-        selected_category = str(selected.get("category") or "").strip().casefold()
-        expected_type = str(details.get("type") or "").strip().casefold()
-        expected_rarity = str(details.get("rarity") or "").strip().casefold()
-        chroma = details.get("chroma") is True
-        expected_category = "chroma" if chroma else ROBASE_CATEGORY_TO_RBLX.get(expected_rarity, expected_rarity)
-        if (
-            not selected_slug or selected_type != expected_type
-            or selected_category != expected_category
-        ):
-            rblx_missing.append(f"{row.get('name')} [{catalog_slug}: metadata mismatch]")
-            continue
-        exact_map[catalog_slug] = {
-            "bloxswaps_slug": catalog_slug,
-            "robase_slug": normalize_slug(row.get("robase_slug") or ""),
-            "robase_name": row.get("name"),
-            "robase_category": row.get("robase_category"),
-            "robase_identity_source": identity_source,
-            "rblx_slug": selected_slug,
-            "rblx_name": selected.get("name"),
-            "rblx_match_source": source,
-            "value": _supreme_numeric_value(selected)[0],
-            "value_status": _supreme_numeric_value(selected)[1],
-            "rblxvalue_value": _rblxvalue_blended_value(selected),
-            "mm2values_value": _positive_numeric_value(selected.get("secondary_value")),
-            "supreme_value": _positive_numeric_value(selected.get("raw_source_value")),
-            "stability": _normalize_stability(selected.get("stability")),
-            "demand": _optional_bounded_int(selected.get("demand"), 0, 10),
-            "category": selected.get("category"),
-            "type": selected.get("type"),
-        }
+        exact_map[catalog_slug] = entry
 
     # A matching immutable ROBASE/RBLXValue slug is itself a safe direct
     # crosswalk when the BloxSwaps metadata cache is temporarily unavailable.
