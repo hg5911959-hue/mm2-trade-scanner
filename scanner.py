@@ -3521,7 +3521,7 @@ def prune_unmatched_name_registry():
         retention_days=UNMATCHED_NAME_RETENTION_DAYS,
     )
     if stale_keys:
-        atomic_write_text(UNMATCHED_FILE, json.dumps(retained, ensure_ascii=False, indent=2) + "\\n")
+        atomic_write_text(UNMATCHED_FILE, json.dumps(retained, ensure_ascii=False, indent=2) + "\n")
         print(
             f"[unmatched] Pruned {len(stale_keys)} stale diagnostic entr(y/ies) "
             f"older than {UNMATCHED_NAME_RETENTION_DAYS} days."
