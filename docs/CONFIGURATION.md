@@ -27,6 +27,9 @@ runtime-only switches are still read by the component that uses them.
 | `FAILURE_ALERT_THRESHOLD` | `3` | Consecutive failures before alerting |
 | `MAX_ALERTS_PER_RUN` | `0` | Zero means unlimited; negative values clamp to zero |
 | `MAX_ALERTS_PER_SCAN` | `0` | Per-scan alert cap; zero means unlimited. Production workflow uses zero. |
+| `MAX_ALERTS_PER_SESSION` | `MAX_ALERTS_PER_RUN` | Session alert cap; defaults to the per-run cap. |
+| `MM2_SCAN_DURATION_SECONDS` | `0` | Positive values run repeated scan cycles for this many seconds; zero performs one scan. |
+| `MM2_SCAN_INTERVAL_SECONDS` | `45` | Delay between repeated scan cycles; minimum 1 second. |
 | `TELEGRAM_CHAT_TYPE` | empty | Use `private` for private-chat pacing |
 | `ALERT_DELAY_SECONDS` | `3.2` | Requested delay; group pacing retains its 3.2-second floor |
 | `MAX_PENDING_RECHECK_PER_SCAN` | `50` | Maximum combined direct lookups for pending and watched BloxSwaps offers per scan; pending items take priority and watch entries rotate oldest-first. |
@@ -35,6 +38,7 @@ runtime-only switches are still read by the component that uses them.
 | `MAX_FEED_PAGES` | `1000` | Clamped to 1–1000 |
 | `CASH_FILTER` | `false` | Enables the cash-only qualification path |
 | `RBLXVALUE_MAX_DETAIL_LOOKUPS_PER_DAY` | `6` | Minimum 0 |
+| `RBLXVALUE_DAILY_REQUEST_LIMIT` | `60` | Rolling 24-hour request ceiling; clamped to 1–60. |
 | `RBLXVALUE_META_POLL_ENABLED` | `false` | Enables optional metadata polling |
 | `VALUES_TTL_SECONDS` | 12h in value mode; 24h in cash mode | Clamped to 60 seconds–24 hours |
 | `BLOXSWAPS_ITEMS_TTL_SECONDS` | `3600` | Minimum 300 seconds |
@@ -60,7 +64,7 @@ ROBASE's Chroma.gg Price (7d) is the seller-proceeds figure after marketplace fe
 
 ## Runtime-only switches
 
-Some flags are deliberately read at the point of use rather than frozen in `ScannerConfig`,
-including `DRY_RUN`, `BLOXSWAPS_API_ONLY`, `MAX_ALERTS_PER_SCAN`, `MAX_ALERTS_PER_SESSION`,
-`MM2_SCAN_DURATION_SECONDS`, `MM2_SCAN_INTERVAL_SECONDS`,
-`RBLXVALUE_FORCE_KEY_CHECK`, and `MM2_TELEGRAM_SCAN_SUMMARY`.
+Only operational switches that are intentionally evaluated at the point of use remain outside `ScannerConfig`,
+including `DRY_RUN`, `BLOXSWAPS_API_ONLY`, `RBLXVALUE_FORCE_KEY_CHECK`, and
+`MM2_TELEGRAM_SCAN_SUMMARY`. Alert limits, scan duration/interval, and the RBLXValue request ceiling
+are parsed centrally at startup.
