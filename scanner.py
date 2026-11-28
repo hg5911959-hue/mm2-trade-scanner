@@ -5629,6 +5629,52 @@ def _load_uncertain_delivery_state():
     return alerted, alerted_set, uncertain_ids
 
 
+def _build_opportunity_telegram_message(op, market_info, values):
+    """Format one opportunity with explicit manual-review and valuation warnings."""
+    listing = op["listing"]
+        message = format_trade_message(
+            listing, op["give_total"], op["give_lines"],
+            op["receive_total"], op["receive_lines"], op["difference"],
+            market_info=market_info,
+        )
+        if op.get("manual_review"):
+            message = (
+                "⚠️ MANUAL CHECK — profit is not guaranteed; verify the stack before trading.\n\n"
+                + message
+            )
+            message += (
+                f"\n⚠️ POSSIBLE PROFIT RANGE: {format_number(op['profit_worst'])} "
+                f"to {format_number(op['profit_best'])}"
+            )
+        if listing.get("valuation_mode") != "cash":
+            message += f"\n📊 MARGIN: {op['margin']:.2f}%"
+        if op.get("receive_demand_score") is not None and op.get("receive_stability_score") is not None:
+            message += (
+                f"\n📈 GET QUALITY: Demand {op['receive_demand_score']:.2f}/10"
+                f" | Stability {op['receive_stability_score']:.2f}/9"
+            )
+        large_stacks = [
+            item["name"] for field in ("give_items", "receive_items")
+            for item in listing.get(field, [])
+            if (
+                (item.get("quantity") is not None and int(item["quantity"]) >= 5)
+                or int(item.get("quantity_min") or 0) >= 5
+            )
+        ]
+        if listing.get("valuation_mode") != "cash":
+            if large_stacks:
+                message += "\nWARNING: quantity 5+ — verify the stack in BloxSwaps."
+            ignored_names = ignored_item_names(listing)
+            if ignored_names:
+                message += "\nNOTE: not valued (no numeric Supreme value): " + ", ".join(ignored_names)
+            if op["margin"] >= SUSPICIOUS_PROFIT_PERCENT:
+                message += "\nWARNING: unusually high profit - verify item names and values before trading."
+            secondary_note = compare_secondary_values(listing["give_items"] + listing["receive_items"], values)
+            if secondary_note:
+                message += "\nSECOND-SOURCE CHECK (MM2Values): " + secondary_note
+    return message
+
+
 def scan_once(include_backlog_rechecks=True):
     global _SESSION_ALERTS_SENT
     scan_modes = resolve_scan_modes(
@@ -5840,46 +5886,7 @@ def scan_once(include_backlog_rechecks=True):
             return
         if send or not listing.get("alert_attempted_at_utc"):
             listing["alert_attempted_at_utc"] = datetime.now(timezone.utc).isoformat()
-        message = format_trade_message(
-            listing, op["give_total"], op["give_lines"],
-            op["receive_total"], op["receive_lines"], op["difference"],
-            market_info=telegram_market_info,
-        )
-        if op.get("manual_review"):
-            message = (
-                "⚠️ MANUAL CHECK — profit is not guaranteed; verify the stack before trading.\n\n"
-                + message
-            )
-            message += (
-                f"\n⚠️ POSSIBLE PROFIT RANGE: {format_number(op['profit_worst'])} "
-                f"to {format_number(op['profit_best'])}"
-            )
-        if listing.get("valuation_mode") != "cash":
-            message += f"\n📊 MARGIN: {op['margin']:.2f}%"
-        if op.get("receive_demand_score") is not None and op.get("receive_stability_score") is not None:
-            message += (
-                f"\n📈 GET QUALITY: Demand {op['receive_demand_score']:.2f}/10"
-                f" | Stability {op['receive_stability_score']:.2f}/9"
-            )
-        large_stacks = [
-            item["name"] for field in ("give_items", "receive_items")
-            for item in listing.get(field, [])
-            if (
-                (item.get("quantity") is not None and int(item["quantity"]) >= 5)
-                or int(item.get("quantity_min") or 0) >= 5
-            )
-        ]
-        if listing.get("valuation_mode") != "cash":
-            if large_stacks:
-                message += "\nWARNING: quantity 5+ — verify the stack in BloxSwaps."
-            ignored_names = ignored_item_names(listing)
-            if ignored_names:
-                message += "\nNOTE: not valued (no numeric Supreme value): " + ", ".join(ignored_names)
-            if op["margin"] >= SUSPICIOUS_PROFIT_PERCENT:
-                message += "\nWARNING: unusually high profit - verify item names and values before trading."
-            secondary_note = compare_secondary_values(listing["give_items"] + listing["receive_items"], values)
-            if secondary_note:
-                message += "\nSECOND-SOURCE CHECK (MM2Values): " + secondary_note
+        message = _build_opportunity_telegram_message(op, telegram_market_info, values)
         trade_id = listing["id"]
         if send:
             if listing.get("valuation_mode") == "cash":
