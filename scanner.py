@@ -3480,13 +3480,15 @@ def send_maintenance_alert(key, message, cooldown_seconds=3600):
 
 
 def unmatched_names_from_missing(missing, cash_mode=False):
-    """Keep true identity gaps for review; suppress expected out-of-ROBASE items in cash mode."""
+    """Keep identity gaps for review; suppress valuation failures and out-of-scope items in cash mode."""
     names = []
     ignored_cash_reasons = (
         "no exact robase/rblxvalue weapon mapping",
         "no exact robase/bloxswaps identity mapping",
         "(not a robase weapon)",
         "(bloxswaps catalogue slug missing)",
+        "cash price",
+        "robase price not freshly verified",
     )
     for value in missing or []:
         text = str(value or "")
