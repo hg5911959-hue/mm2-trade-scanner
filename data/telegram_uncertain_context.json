@@ -1,0 +1,21 @@
+{
+  "details": {
+    "3f62fc661f3ddb99e7206f1e": {
+      "attempted_at_utc": "2026-11-27T12:20:18.0394868+00:00",
+      "delivery_path": "individual",
+      "listing_url": "",
+      "owner_url": "",
+      "source": "bloxswaps",
+      "source_ad_id": "cmwyy8scj08oynj01ftuljcdn"
+    },
+    "b2b16167867a2cbce3a20d92": {
+      "attempted_at_utc": "2026-11-24T16:18:42.199000+00:00",
+      "delivery_path": "individual",
+      "listing_url": "https://bloxswaps.com/trade-mm2?trade-type=P2P&view=messages&with=Lolo_1378900&id=3022588321&name=Lolo_1378900&ad=cmwuw7ijs02zkm601w99t5ob1",
+      "owner_url": "https://bloxswaps.com/fr/users/3022588321",
+      "source": "bloxswaps",
+      "source_ad_id": "cmwuw7ijs02zkm601w99t5ob1"
+    }
+  },
+  "version": 1
+}
