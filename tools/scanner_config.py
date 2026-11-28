@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 import os
 from dataclasses import dataclass
-from typing import Mapping
+from collections.abc import Mapping
 
 
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
@@ -117,7 +117,7 @@ class ScannerConfig:
     cash_max_listing_age_seconds: int
 
     @classmethod
-    def from_env(cls, env: Mapping[str, str] | None = None) -> "ScannerConfig":
+    def from_env(cls, env: Mapping[str, str] | None = None) -> ScannerConfig:
         source = os.environ if env is None else env
         cash_filter = _bool(source, "CASH_FILTER")
         default_values_ttl = 24 * 60 * 60 if cash_filter else 12 * 60 * 60
