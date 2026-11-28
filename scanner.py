@@ -3573,20 +3573,30 @@ def record_unmatched_names(names):
         else:
             state[key]["last_seen_at"] = now
             state[key]["occurrences"] = max(1, int(state[key].get("occurrences", 1) or 1)) + 1
-    atomic_write_text(UNMATCHED_FILE, json.dumps(state, ensure_ascii=False, indent=2) + "\n")
+    try:
+        atomic_write_text(UNMATCHED_FILE, json.dumps(state, ensure_ascii=False, indent=2) + "\n")
+    except Exception as exc:
+        print(
+            "[unmatched] Registry persistence skipped; continuing scan "
+            f"({type(exc).__name__})."
+        )
+        return []
     if new_names:
         unique = sorted(set(new_names), key=str.casefold)
         alert_key = "unmatched:" + hashlib.sha256(
             "|".join(normalize_name(name) for name in unique).encode()
         ).hexdigest()[:16]
-        send_maintenance_alert(
-            alert_key,
-            "New item names not found in the active exact item-identity mapping (no values guessed): "
-            + ", ".join(unique)
-            + "\nThey are stored in the item-identity review registry, not queued as offers. "
-            "A verified mapping will be applied to new listings and still-active watched listings.",
-            cooldown_seconds=86400,
-        )
+        try:
+            send_maintenance_alert(
+                alert_key,
+                "New item names not found in the active exact item-identity mapping (no values guessed): "
+                + ", ".join(unique)
+                + "\nThey are stored in the item-identity review registry, not queued as offers. "
+                "A verified mapping will be applied to new listings and still-active watched listings.",
+                cooldown_seconds=86400,
+            )
+        except Exception as exc:
+            print(f"[unmatched] Review alert skipped; continuing scan ({type(exc).__name__}).")
     return new_names
 
 
