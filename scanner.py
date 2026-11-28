@@ -4,6 +4,7 @@ import csv
 from dataclasses import dataclass, field as dataclass_field
 import html as html_lib
 import itertools
+from functools import partial
 import hashlib
 import json
 import math
@@ -92,6 +93,11 @@ from tools.feed_checkpoint import (
 from tools.telegram_quarantine import reconcile_uncertain_quarantine
 from tools.unmatched_registry import prune_stale_unmatched_names
 from tools.scan_modes import ScanModes, resolve_scan_modes
+from tools.scan_state_actions import (
+    mark_alerted_state,
+    mark_pending_state,
+    mark_seen_ad_state,
+)
 from tools.scan_loop_policy import (
     minimum_cycle_start_window as _minimum_cycle_start_window,
     should_run_backlog_recheck as _should_run_backlog_recheck,
@@ -3480,7 +3486,7 @@ def send_maintenance_alert(key, message, cooldown_seconds=3600):
 
 
 def unmatched_names_from_missing(missing, cash_mode=False):
-    """Keep identity gaps for review; suppress valuation failures and out-of-scope items in cash mode."""
+    """Keep identity and cash-price gaps visible; suppress out-of-scope and transient freshness diagnostics in cash mode."""
     names = []
     ignored_cash_reasons = (
         "no exact robase/rblxvalue weapon mapping",
@@ -5983,50 +5989,32 @@ def scan_once(include_backlog_rechecks=True):
     watch_unchanged_skipped = 0
     uncertain_skipped = 0
 
-    def mark_alerted(trade_id):
-        if trade_id not in alerted_set:
-            alerted.append(trade_id)
-            alerted_set.add(trade_id)
-            save_alerted(alerted)
-
-    def mark_pending(listing, reason="legacy_unclassified"):
-        if listing.get("source") == "discord":
-            return  # Discord messages are reloaded from their own bounded source file.
-        source_id = str(listing.get("source_ad_id") or "")
-        if source_id:
-            now = time.time()
-            pending_ids.setdefault(source_id, now)
-            previous = pending_schedule.get(source_id, {})
-            attempts = int(previous.get("attempts", 0))
-            if reason in PRIORITY_PENDING_REASONS:
-                pending_schedule[source_id] = {
-                    "attempts": attempts, "next_check_at": now, "reason": reason,
-                }
-                if source_id in seen_ads:
-                    seen_ads.discard(source_id)
-                    save_seen_ads(seen_ads)
-            else:
-                next_check = previous.get("next_check_at")
-                if previous.get("reason") != reason or not next_check:
-                    next_check = now + PENDING_RECHECK_BACKOFF_SECONDS[0]
-                pending_schedule[source_id] = {
-                    "attempts": attempts, "next_check_at": float(next_check), "reason": reason,
-                }
-            save_pending_recheck_schedule(pending_schedule)
-            save_pending_ids(pending_ids)
-
-    def mark_seen_ad(listing, clear_pending=True):
-        if listing.get("source") == "discord":
-            return  # Never add Discord snowflakes to BloxSwaps seen/pending cursors.
-        source_id = str(listing.get("source_ad_id") or "")
-        if source_id and source_id not in seen_ads:
-            seen_ads.add(source_id)
-            save_seen_ads(seen_ads)
-        if clear_pending and source_id and source_id in pending_ids:
-            pending_ids.pop(source_id, None)
-            pending_schedule.pop(source_id, None)
-            save_pending_ids(pending_ids)
-            save_pending_recheck_schedule(pending_schedule)
+    mark_alerted = partial(
+        mark_alerted_state,
+        alerted=alerted,
+        alerted_set=alerted_set,
+        save_alerted=save_alerted,
+    )
+    mark_pending = partial(
+        mark_pending_state,
+        pending_ids=pending_ids,
+        pending_schedule=pending_schedule,
+        seen_ads=seen_ads,
+        save_seen_ads=save_seen_ads,
+        save_pending_recheck_schedule=save_pending_recheck_schedule,
+        save_pending_ids=save_pending_ids,
+        priority_pending_reasons=PRIORITY_PENDING_REASONS,
+        pending_recheck_backoff_seconds=PENDING_RECHECK_BACKOFF_SECONDS,
+    )
+    mark_seen_ad = partial(
+        mark_seen_ad_state,
+        seen_ads=seen_ads,
+        pending_ids=pending_ids,
+        pending_schedule=pending_schedule,
+        save_seen_ads=save_seen_ads,
+        save_pending_ids=save_pending_ids,
+        save_pending_recheck_schedule=save_pending_recheck_schedule,
+    )
 
     skipped_unknown = 0
     sent = 0
