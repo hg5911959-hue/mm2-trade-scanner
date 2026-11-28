@@ -131,12 +131,26 @@ def _robase_dashboard_payload(catalogue_path: str | Path) -> tuple[dict[str, Any
             checked_times.append(checked)
         if updated and price_value is not None:
             updated_times.append(updated)
+        sales_7d = sales if chroma is not None else None
+        cash_eligible = price_value is not None and sales_7d is not None and sales_7d >= 3
+        if cash_eligible:
+            cash_block_reason = None
+        elif not chroma:
+            cash_block_reason = "Chroma.gg 7-day sales data unavailable"
+        elif sales_7d == 0:
+            cash_block_reason = "No Chroma.gg completed sales in 7 days"
+        else:
+            cash_block_reason = (
+                f"Only {sales_7d} Chroma.gg completed sale(s) in 7 days; 3 required"
+            )
         clean.append({
             "name": str(row["name"]),
             "category": str(row.get("robase_category") or ""),
             "priceUsd": price_value,
-            "sold7d": sales if chroma is not None else None,
+            "sold7d": sales_7d,
             "salesAvailable": chroma is not None,
+            "cashEligible": cash_eligible,
+            "cashBlockReason": cash_block_reason,
             "copies": optional_count(row.get("bloxswaps_copies")),
             "holders": optional_count(row.get("bloxswaps_holders")),
             "priceBasis": (
@@ -149,8 +163,18 @@ def _robase_dashboard_payload(catalogue_path: str | Path) -> tuple[dict[str, Any
             "url": str(row.get("source") or ""),
         })
     priced = sum(item["priceUsd"] is not None for item in clean)
+    eligible = sum(item["cashEligible"] for item in clean)
     summary = {
         "available": True, "itemCount": len(clean), "pricedItemCount": priced,
+        "cashEligibleItemCount": eligible,
+        "blockedCashItemCount": len(clean) - eligible,
+        "lowSampleItemCount": sum(
+            item["salesAvailable"] and 0 < (item["sold7d"] or 0) < 3 for item in clean
+        ),
+        "noSalesItemCount": sum(
+            item["salesAvailable"] and item["sold7d"] == 0 for item in clean
+        ),
+        "minimumChromaSalesRequired": 3,
         "totalSold7d": sum(item["sold7d"] or 0 for item in clean),
         "missingPriceCount": len(clean) - priced,
         "missingChromaDataCount": sum(not item["salesAvailable"] for item in clean),
