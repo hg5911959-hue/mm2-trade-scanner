@@ -3510,6 +3510,25 @@ def unmatched_names_from_missing(missing, cash_mode=False):
     return names
 
 
+def prune_unmatched_name_registry():
+    """Prune stale diagnostic names on every production scan, even without new misses."""
+    state = _load_json_state(UNMATCHED_FILE, {}, "unmatched-name state")
+    if not isinstance(state, dict):
+        raise RuntimeError("[state] Unmatched-name state has an invalid structure.")
+    retained, stale_keys = prune_stale_unmatched_names(
+        state,
+        now=datetime.now(timezone.utc),
+        retention_days=UNMATCHED_NAME_RETENTION_DAYS,
+    )
+    if stale_keys:
+        atomic_write_text(UNMATCHED_FILE, json.dumps(retained, ensure_ascii=False, indent=2) + "\\n")
+        print(
+            f"[unmatched] Pruned {len(stale_keys)} stale diagnostic entr(y/ies) "
+            f"older than {UNMATCHED_NAME_RETENTION_DAYS} days."
+        )
+    return len(stale_keys)
+
+
 def record_unmatched_names(names):
     state = _load_json_state(UNMATCHED_FILE, {}, "unmatched-name state")
     if not isinstance(state, dict):
@@ -5829,6 +5848,7 @@ def scan_once(include_backlog_rechecks=True):
     history_store = history_data.history_store
     public_history_store = history_data.public_history_store
 
+    prune_unmatched_name_registry()
     persistent_state = _load_scan_persistent_state(
         include_backlog_rechecks,
         values_snapshot_changed,
