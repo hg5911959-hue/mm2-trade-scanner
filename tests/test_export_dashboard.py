@@ -78,7 +78,13 @@ class RobaseDashboardPayloadTests(IsolatedDataTestCase):
         self.assertTrue(summary["available"])
         self.assertEqual(summary["itemCount"], 2)
         self.assertEqual(summary["pricedItemCount"], 1)
+        self.assertEqual(summary["cashEligibleItemCount"], 1)
+        self.assertEqual(summary["blockedCashItemCount"], 1)
+        self.assertEqual(summary["lowSampleItemCount"], 0)
+        self.assertEqual(summary["noSalesItemCount"], 1)
         self.assertEqual(summary["totalSold7d"], 12)
+        self.assertFalse(rows[1]["cashEligible"])
+        self.assertIn("No Chroma.gg completed sales", rows[1]["cashBlockReason"])
         self.assertEqual(rows[0]["priceUsd"], 2.8)
         self.assertEqual(rows[0]["sold7d"], 12)
         self.assertIsNone(rows[1]["priceUsd"])
@@ -87,6 +93,35 @@ class RobaseDashboardPayloadTests(IsolatedDataTestCase):
         self.assertNotIn("totalSold30d", summary)
         self.assertEqual(rows[0]["priceBasis"], "chromas.gg Price (7d)")
 
+
+    def test_exposes_low_sample_items_as_blocked_with_a_clear_reason(self):
+        payload = catalogue()
+        low_sample = json.loads(json.dumps(payload["items"][0]))
+        low_sample.update({
+            "name": "Low Sample",
+            "cash_price_usd": 1.5,
+            "price_display": "$1.50",
+            "selected_marketplace_sold_7d": 2,
+            "source": "https://robase.gg/item/low-sample",
+        })
+        low_sample["marketplace_prices"]["chromas.gg"].update({
+            "price_usd": 1.5,
+            "price_display": "$1.50",
+            "sold_7d": 2,
+        })
+        payload["catalog_expected_count"] = 3
+        payload["items"].append(low_sample)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "prices.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            summary, rows = _robase_dashboard_payload(path)
+
+        low = next(row for row in rows if row["name"] == "Low Sample")
+        self.assertEqual(summary["cashEligibleItemCount"], 1)
+        self.assertEqual(summary["blockedCashItemCount"], 2)
+        self.assertEqual(summary["lowSampleItemCount"], 1)
+        self.assertFalse(low["cashEligible"])
+        self.assertEqual(low["cashBlockReason"], "Only 2 Chroma.gg completed sale(s) in 7 days; 3 required")
 
     def test_rejects_zero_sales_chroma_row_with_a_price(self):
         payload = catalogue()
