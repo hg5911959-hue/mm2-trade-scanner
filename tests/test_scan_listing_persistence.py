@@ -21,7 +21,8 @@ class ScanListingPersistenceTests(IsolatedDataTestCase):
                 listings, history, public_history
             )
 
-        self.assertEqual(result, deduplicated)
+        self.assertEqual(result[0], deduplicated)
+        self.assertEqual([row for row in result[1].outcomes], [])
         history.record_listings.assert_called_once_with(deduplicated)
         public_history.record_listings.assert_called_once_with(deduplicated)
 
@@ -35,7 +36,7 @@ class ScanListingPersistenceTests(IsolatedDataTestCase):
                 listings, history, None
             )
 
-        self.assertEqual(result, listings)
+        self.assertEqual(result[0], listings)
         history.record_listings.assert_called_once_with(listings)
 
     def test_public_history_failure_fails_closed(self):
